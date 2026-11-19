@@ -44,7 +44,7 @@ Le dashboard utilise aussi le compilateur React. Les règles viennent de `agenti
 
 ## Cloudflare
 
-Activez un sous-domaine `workers.dev` pour le compte choisi. Connectez ce compte dans Alchemy et ciblez d’abord la préproduction. Renseignez `BETTER_AUTH_SECRET` et `BETTER_AUTH_URL` dans le fichier d’environnement du stage. Pour le Worker `rondyr-staging`, l’origine est `https://rondyr-staging.<sous-domaine>.workers.dev`.
+Activez un sous-domaine `workers.dev` pour le compte choisi. Connectez ce compte dans Alchemy et ciblez d’abord la préproduction. Renseignez `BETTER_AUTH_SECRET` et `BETTER_AUTH_URL` dans le fichier d’environnement du stage. Pour le Worker `rondyr-staging`, l’origine est `https://rondyr-staging.<sous-domaine>.workers.dev`. En production, Alchemy associe le nom d’hôte de `BETTER_AUTH_URL` au Worker `rondyr-prod` en tant que domaine personnalisé. Cloudflare gère son DNS et son certificat TLS.
 
 ```sh
 pnpm exec alchemy profile edit --config alchemy-run.ts --add Cloudflare
@@ -62,7 +62,9 @@ La pile déploie le Worker et ses assets Vite, applique les migrations D1 et cr�
 
 Un push sur `main`, y compris un merge, lance le déploiement `prod` après `pnpm check` et `pnpm deploy:dry`. Le workflow **Deploy** permet aussi de lancer `staging` manuellement.
 
-Ajoutez `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID` aux secrets du dépôt. Pour `prod`, ajoutez le secret `BETTER_AUTH_SECRET_PROD` et la variable `BETTER_AUTH_URL_PROD` avec l’origine HTTPS de `rondyr-prod`. Pour la préproduction, utilisez `BETTER_AUTH_SECRET_STAGING` et `BETTER_AUTH_URL_STAGING`. Le jeton d’installation est facultatif et se configure via `RONDYR_SETUP_TOKEN_PROD` ou `RONDYR_SETUP_TOKEN_STAGING`.
+Ajoutez `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID` aux secrets du dépôt. Pour `prod`, ajoutez le secret `BETTER_AUTH_SECRET_PROD` et la variable `BETTER_AUTH_URL_PROD` avec l’origine HTTPS de `rondyr-prod`, `https://rondyr.basaltbytes.com` pour le dépôt Basaltbytes. Le domaine doit appartenir à une zone active du même compte Cloudflare. Pour la préproduction, utilisez `BETTER_AUTH_SECRET_STAGING` et `BETTER_AUTH_URL_STAGING`. Le jeton d’installation est facultatif et se configure via `RONDYR_SETUP_TOKEN_PROD` ou `RONDYR_SETUP_TOKEN_STAGING`.
+
+Créez un jeton Cloudflare de compte dédié à la CI. Sur le compte du Worker, attribuez `Workers Scripts Write`, `D1 Write`, `Queues Write`, `Secrets Store Read` et `Account Settings Read`. Pour la zone du domaine personnalisé, attribuez `Zone Read` et `Workers Routes Write`. Les noms correspondent aux groupes de permissions de l’API Cloudflare.
 
 Initialisez une fois le stockage d’état Alchemy sur le compte Cloudflare avant le premier déploiement non interactif.
 

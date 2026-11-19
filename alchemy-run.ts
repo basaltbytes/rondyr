@@ -1,6 +1,6 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Alchemy from "alchemy";
-import { Config, Effect, Layer, Option, type Redacted } from "effect";
+import { Config, Effect, Layer, Option, type Redacted, Schema } from "effect";
 import wrangler from "./wrangler.json" with { type: "json" };
 
 type AuthBindings = {
@@ -8,6 +8,17 @@ type AuthBindings = {
   BETTER_AUTH_URL?: string;
   RONDYR_SETUP_TOKEN?: Redacted.Redacted<string>;
 };
+
+const deployedOrigin = Config.schema(
+  Schema.URL.check(
+    Schema.makeFilter(
+      (url) =>
+        (url.protocol === "https:" && url.port === "" && url.href === `${url.origin}/`) ||
+        "Expected an HTTPS origin with no path, credentials, or custom port",
+    ),
+  ),
+  "BETTER_AUTH_URL",
+);
 
 export default Alchemy.Stack(
   "Rondyr",
@@ -23,13 +34,14 @@ export default Alchemy.Stack(
     const { dev } = yield* Alchemy.AlchemyContext;
     const { stage } = yield* Alchemy.Stack;
     const secret = Config.Redacted("BETTER_AUTH_SECRET");
-    const url = Config.String("BETTER_AUTH_URL");
     const authSecret = yield* dev ? Config.option(secret) : secret.pipe(Config.map(Option.some));
-    const authUrl = yield* dev ? Config.option(url) : url.pipe(Config.map(Option.some));
+    const authUrl = yield* dev
+      ? Config.option(Config.URL("BETTER_AUTH_URL"))
+      : deployedOrigin.pipe(Config.map(Option.some));
     const setupToken = yield* Config.option(Config.Redacted("RONDYR_SETUP_TOKEN"));
     const authBindings: AuthBindings = {};
     if (Option.isSome(authSecret)) authBindings.BETTER_AUTH_SECRET = authSecret.value;
-    if (Option.isSome(authUrl)) authBindings.BETTER_AUTH_URL = authUrl.value;
+    if (Option.isSome(authUrl)) authBindings.BETTER_AUTH_URL = authUrl.value.origin;
     if (Option.isSome(setupToken)) authBindings.RONDYR_SETUP_TOKEN = setupToken.value;
 
     const database = yield* Cloudflare.D1.Database("Database", {
@@ -40,6 +52,9 @@ export default Alchemy.Stack(
 
     const app = yield* Cloudflare.Website.Vite("App", {
       name: `rondyr-${stage}`,
+      ...(!dev && stage === "prod" && Option.isSome(authUrl)
+        ? { domain: authUrl.value.hostname, workersDev: false }
+        : { workersDev: true }),
       main: wrangler.main,
       compatibility: {
         date: wrangler.compatibility_date,
