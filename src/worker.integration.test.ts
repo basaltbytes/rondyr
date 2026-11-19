@@ -1,12 +1,11 @@
 import { applyD1Migrations } from "cloudflare:test";
-import { env, exports as worker } from "cloudflare:workers";
+import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import { Effect, Exit, Schema } from "effect";
 import { assert, beforeAll, describe, it } from "@effect/vitest";
 
-import { forms, organizations } from "../../src/adapters/database/database-schema.ts";
-
-import { testOrigin as origin, testSetupToken } from "./auth-fixture.ts";
+import { testOrigin as origin, testSetupToken } from "../tests/integration/auth-fixture.ts";
+import { forms, organizations } from "./adapters/database/database-schema.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const SessionUser = Schema.Struct({ user: Schema.Struct({ email: Schema.String }) });
@@ -30,7 +29,7 @@ describe("Rondyr Worker", () => {
   it.effect("answers the public health check without caching it", () =>
     Effect.gen(function* () {
       const response = yield* Effect.promise(() =>
-        worker.default.fetch("https://rondyr.test/health"),
+        env.TEST_WORKER.fetch("https://rondyr.test/health"),
       );
       const body = yield* Effect.promise(() => response.json());
 
@@ -43,7 +42,7 @@ describe("Rondyr Worker", () => {
   it.effect("returns 404 for a missing API route", () =>
     Effect.gen(function* () {
       const response = yield* Effect.promise(() =>
-        worker.default.fetch("https://rondyr.test/api/missing"),
+        env.TEST_WORKER.fetch("https://rondyr.test/api/missing"),
       );
 
       assert.strictEqual(response.status, 404);
@@ -71,7 +70,13 @@ describe("Rondyr Worker", () => {
       const rows = yield* Effect.promise(() => db.select().from(forms).all());
 
       assert.deepEqual(rows, [
-        { id: "test-form", organizationId: "test-org", publicId: "contact", name: "Contact" },
+        {
+          id: "test-form",
+          organizationId: "test-org",
+          publicId: "contact",
+          name: "Contact",
+          businessContext: null,
+        },
       ]);
 
       const missingId = yield* Effect.exit(
@@ -90,10 +95,10 @@ describe("Rondyr authentication", () => {
       const details = yield* encodeJson(owner);
 
       const publicRegistration = yield* Effect.promise(() =>
-        worker.default.fetch(post("/api/auth/sign-up/email", details)),
+        env.TEST_WORKER.fetch(post("/api/auth/sign-up/email", details)),
       );
       const unauthenticatedSetup = yield* Effect.promise(() =>
-        worker.default.fetch(post("/api/setup", details)),
+        env.TEST_WORKER.fetch(post("/api/setup", details)),
       );
       assert.strictEqual(publicRegistration.status, 404);
       assert.strictEqual(unauthenticatedSetup.status, 404);
@@ -101,12 +106,12 @@ describe("Rondyr authentication", () => {
       const setupHeader = { authorization: `Bearer ${testSetupToken}` };
       const invalidEmail = yield* encodeJson({ ...owner, email: "..owner@example.test" });
       const invalidSetup = yield* Effect.promise(() =>
-        worker.default.fetch(post("/api/setup", invalidEmail, setupHeader)),
+        env.TEST_WORKER.fetch(post("/api/setup", invalidEmail, setupHeader)),
       );
       assert.strictEqual(invalidSetup.status, 400);
 
       const install = () =>
-        Effect.promise(() => worker.default.fetch(post("/api/setup", details, setupHeader)));
+        Effect.promise(() => env.TEST_WORKER.fetch(post("/api/setup", details, setupHeader)));
       const [first, second] = yield* Effect.all([install(), install()], {
         concurrency: "unbounded",
       });
@@ -116,14 +121,14 @@ describe("Rondyr authentication", () => {
 
       const credentials = yield* encodeJson({ email: owner.email, password: owner.password });
       const crossOrigin = yield* Effect.promise(() =>
-        worker.default.fetch(
+        env.TEST_WORKER.fetch(
           post("/api/auth/sign-in/email", credentials, { origin: "https://other.test" }),
         ),
       );
       assert.strictEqual(crossOrigin.status, 403);
 
       const login = yield* Effect.promise(() =>
-        worker.default.fetch(post("/api/auth/sign-in/email", credentials)),
+        env.TEST_WORKER.fetch(post("/api/auth/sign-in/email", credentials)),
       );
       assert.strictEqual(login.status, 200);
       const cookie =
@@ -136,7 +141,7 @@ describe("Rondyr authentication", () => {
       const sessionHeaders = { cookie: cookie.split(";")[0] ?? "" };
 
       const session = yield* Effect.promise(() =>
-        worker.default.fetch(
+        env.TEST_WORKER.fetch(
           new Request(`${origin}/api/auth/get-session`, { headers: sessionHeaders }),
         ),
       );
@@ -145,11 +150,11 @@ describe("Rondyr authentication", () => {
       assert.strictEqual(signedIn.user.email, owner.email);
 
       const logout = yield* Effect.promise(() =>
-        worker.default.fetch(post("/api/auth/sign-out", "{}", sessionHeaders)),
+        env.TEST_WORKER.fetch(post("/api/auth/sign-out", "{}", sessionHeaders)),
       );
       assert.strictEqual(logout.status, 200);
       const revokedSession = yield* Effect.promise(() =>
-        worker.default.fetch(
+        env.TEST_WORKER.fetch(
           new Request(`${origin}/api/auth/get-session`, { headers: sessionHeaders }),
         ),
       );

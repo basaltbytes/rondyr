@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { Clock, Effect, Layer, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
@@ -34,7 +33,12 @@ function loopback(url: URL): boolean {
   return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
 }
 
+const bindings = Effect.promise(() => import("cloudflare:workers")).pipe(
+  Effect.map(({ env }) => env),
+);
+
 const readConfig = Effect.fn("Authentication.readConfig")(function* (request: Request) {
+  const env = yield* bindings;
   const settings = yield* Schema.decodeUnknownEffect(BindingConfig)(env).pipe(
     Effect.mapError(() => AuthUnavailable.make()),
   );
@@ -62,20 +66,36 @@ const readConfig = Effect.fn("Authentication.readConfig")(function* (request: Re
   return { origin: baseURL.origin, settings };
 });
 
-const handle = Effect.fn("Authentication.handle")(function* (request: Request) {
+const authFor = Effect.fn("Authentication.authFor")(function* (request: Request) {
   const { origin, settings } = yield* readConfig(request);
   // Keep the Better Auth dependencies out of the health and form request paths.
   const { createBetterAuth } = yield* Effect.tryPromise({
     try: () => import("./provider.ts"),
     catch: () => AuthUnavailable.make(),
   });
+  const env = yield* bindings;
+  return createBetterAuth(env.DB, origin, settings.BETTER_AUTH_SECRET);
+});
+
+const handle = Effect.fn("Authentication.handle")(function* (request: Request) {
+  const auth = yield* authFor(request);
   return yield* Effect.tryPromise({
-    try: () => createBetterAuth(env.DB, origin, settings.BETTER_AUTH_SECRET).handler(request),
+    try: () => auth.handler(request),
     catch: () => AuthUnavailable.make(),
   });
 });
 
+const userId = Effect.fn("Authentication.userId")(function* (request: Request) {
+  const auth = yield* authFor(request);
+  const session = yield* Effect.tryPromise({
+    try: () => auth.api.getSession({ headers: request.headers }),
+    catch: () => AuthUnavailable.make(),
+  });
+  return session?.user.id ?? null;
+});
+
 const setup = Effect.fn("Authentication.setup")(function* (request: Request) {
+  const env = yield* bindings;
   const { RONDYR_SETUP_TOKEN: token } = yield* Schema.decodeUnknownEffect(SetupConfig)(env).pipe(
     Effect.mapError(() => SetupClosed.make()),
   );
@@ -137,4 +157,4 @@ const setup = Effect.fn("Authentication.setup")(function* (request: Request) {
   if (inserted?.meta.changes !== 1) return yield* SetupClosed.make();
 });
 
-export const authenticationLive = Layer.succeed(Authentication, { handle, setup });
+export const authenticationLive = Layer.succeed(Authentication, { handle, setup, userId });

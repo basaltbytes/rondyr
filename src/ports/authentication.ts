@@ -23,6 +23,9 @@ export class Authentication extends Context.Service<
     readonly handle: (
       request: Request,
     ) => Effect.Effect<Response, AuthUnavailable | AuthOriginRefused>;
+    readonly userId: (
+      request: Request,
+    ) => Effect.Effect<string | null, AuthUnavailable | AuthOriginRefused>;
     readonly setup: (
       request: Request,
     ) => Effect.Effect<void, AuthUnavailable | AuthOriginRefused | SetupClosed | InvalidSetup>;

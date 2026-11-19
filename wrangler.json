@@ -30,6 +30,66 @@
         "binding": "DELIVERY_QUEUE",
         "queue": "rondyr-delivery"
       }
+    ],
+    "consumers": [
+      {
+        "queue": "rondyr-classification",
+        "dead_letter_queue": "rondyr-classification-dead-letter",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_retries": 3
+      }
     ]
-  }
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "Submissions.DomainDirectory",
+        "class_name": "DomainDirectory"
+      },
+      {
+        "name": "Submissions.SubmissionAggregate",
+        "class_name": "SubmissionAggregate"
+      },
+      {
+        "name": "Submissions.ClassificationPolicy",
+        "class_name": "ClassificationPolicy"
+      },
+      {
+        "name": "Submissions.InboxProjection",
+        "class_name": "InboxProjection"
+      },
+      {
+        "name": "Submissions.InboxProjectionRun",
+        "class_name": "InboxProjectionRun"
+      },
+      {
+        "name": "Submissions.ClassifySubmissionWorkflow",
+        "class_name": "ClassifySubmissionWorkflow"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "submission-review",
+      "new_sqlite_classes": [
+        "DomainDirectory",
+        "SubmissionAggregate",
+        "ClassificationPolicy",
+        "InboxProjection",
+        "InboxProjectionRun",
+        "ClassifySubmissionWorkflow"
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "name": "rondyr-submissions-backfill",
+      "binding": "Submissions.DomainBackfill",
+      "class_name": "DomainBackfill"
+    }
+  ]
 }
