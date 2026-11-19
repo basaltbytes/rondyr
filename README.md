@@ -49,7 +49,7 @@ Activez un sous-domaine `workers.dev` pour le compte choisi. Connectez ce compte
 ```sh
 pnpm exec alchemy profile edit --config alchemy-run.ts --add Cloudflare
 pnpm deploy:plan --stage staging --env-file .env.staging
-pnpm deploy --stage staging --env-file .env.staging
+pnpm run deploy --stage staging --env-file .env.staging
 ```
 
 Alchemy peut proposer de créer son Worker d’état au premier plan ou déploiement. Les stages `staging` et `prod` utilisent des ressources applicatives distinctes. L’option `--profile` sélectionne un autre compte Cloudflare configuré dans Alchemy.

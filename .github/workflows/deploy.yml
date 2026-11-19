@@ -66,4 +66,4 @@ jobs:
           RONDYR_SETUP_TOKEN: ${{ secrets[format('RONDYR_SETUP_TOKEN_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
         run: |
           if [[ -z "$RONDYR_SETUP_TOKEN" ]]; then unset RONDYR_SETUP_TOKEN; fi
-          pnpm deploy --stage "$STAGE" --yes --no-input
+          pnpm run deploy --stage "$STAGE" --yes --no-input
