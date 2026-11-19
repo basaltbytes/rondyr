@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "alchemy-run.ts",
+    "drizzle-config.ts",
+    "scripts/*.mjs",
+    "tooling/oxlint/test/*.test.mjs"
+  ],
+  "project": ["**/*.{ts,tsx,mjs}"],
+  "rules": {
+    "exports": "off",
+    "types": "off"
+  },
+  "ignoreDependencies": ["@effect/language-service"]
+}

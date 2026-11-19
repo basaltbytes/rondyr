@@ -1,0 +1,16 @@
+allowBuilds:
+  esbuild: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - "@cloudflare/kv-asset-handler@0.5.1"
+  - "@cloudflare/vite-plugin@1.70.1"
+  - "@cloudflare/vitest-plugin@1.8.5"
+  - "@cloudflare/workers-utils@0.55.0"
+  - knip@6.46.1
+  - miniflare@5.20261118.0-beta
+  - wrangler@4.165.0
+strictPeerDependencies: true
+peerDependencyRules:
+  allowedVersions:
+    "capnp-es@0.0.16>typescript": "7.0.2"
+    "@cloudflare/unenv-preset@2.16.2>unenv": "2.0.0-rc.25"

@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "rondyr",
+  "main": "./src/worker.ts",
+  "compatibility_date": "2026-11-02",
+  "compatibility_flags": ["nodejs_compat", "new_module_registry"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/health", "/f", "/f/*", "/api", "/api/*"]
+  },
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rondyr-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "./database/migrations",
+      "migrations_pattern": "./database/migrations/*/migration.sql"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "CLASSIFICATION_QUEUE",
+        "queue": "rondyr-classification"
+      },
+      {
+        "binding": "DELIVERY_QUEUE",
+        "queue": "rondyr-delivery"
+      }
+    ]
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "import", "oxc", "react", "jsx-a11y"],
+  "jsPlugins": [
+    {
+      "name": "rondyr",
+      "specifier": "./tooling/oxlint/plugin.ts"
+    }
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "env": {
+    "es2024": true,
+    "browser": true,
+    "node": true
+  },
+  "rules": {
+    "import/no-cycle": "error",
+    "unicorn/filename-case": [
+      "error",
+      {
+        "case": "kebabCase",
+        "ignore": ["^__root\\.tsx$", "^\\$[a-z]+\\.tsx$"]
+      }
+    ],
+    "no-console": "warn",
+    "react/react-in-jsx-scope": "off",
+    "import/no-unassigned-import": "off",
+    "rondyr/no-chained-type-assertions": "error",
+    "rondyr/no-conditional-empty-object-spread": "error",
+    "rondyr/no-known-value-widening": "error",
+    "rondyr/no-module-mocking": "error",
+    "rondyr/no-object-parameters": "error",
+    "rondyr/no-reflect-apply": "error",
+    "rondyr/no-reflect-get": "error",
+    "rondyr/no-runtime-typeof": "error",
+    "rondyr/no-service-constructor-imports": "error",
+    "rondyr/no-shape-in-symbol-names": "error",
+    "rondyr/no-unknown-parameters": "error",
+    "rondyr/no-unknown-returns": "error",
+    "rondyr/no-unknown-type-aliases": "error",
+    "rondyr/no-unsafe-dictionary-type": "error",
+    "rondyr/no-widen-then-assert": "error",
+    "rondyr/require-safety-comment-for-type-assertion": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/domain/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "node:*",
+                  "cloudflare:*",
+                  "drizzle-orm",
+                  "drizzle-orm/*",
+                  "@alchemy.run/*",
+                  "alchemy",
+                  "alchemy/*"
+                ],
+                "message": "Platform dependencies belong to adapters and entrypoints."
+              },
+              {
+                "group": [
+                  "**/application/**",
+                  "**/ports/**",
+                  "**/adapters/**",
+                  "**/http/**",
+                  "**/jobs/**",
+                  "**/dashboard/**",
+                  "~/**",
+                  "**/worker*"
+                ],
+                "message": "The domain has no dependencies on application code or adapters."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/application/**", "src/ports/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "node:*",
+                  "cloudflare:*",
+                  "drizzle-orm",
+                  "drizzle-orm/*",
+                  "@alchemy.run/*",
+                  "alchemy",
+                  "alchemy/*"
+                ],
+                "message": "Platform dependencies belong to adapters and entrypoints."
+              },
+              {
+                "group": ["**/adapters/**", "**/http/**", "**/jobs/**", "**/worker*"],
+                "message": "Application code and ports depend on domain contracts."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["dashboard/src/**"],
+      "rules": {
+        "rondyr/web-import-direction": "error",
+        "rondyr/require-react-disable-reason": "error",
+        "rondyr/no-manual-memo": "error",
+        "rondyr/no-unreasoned-effect": "error",
+        "rondyr/no-em-dash-copy": "error",
+        "rondyr/no-native-title-tooltip": "error",
+        "rondyr/no-outset-state-indicators": "error",
+        "rondyr/no-raw-resize-observer": "error",
+        "import/no-default-export": "error",
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "node:*",
+                  "cloudflare:*",
+                  "drizzle-orm",
+                  "drizzle-orm/*",
+                  "@alchemy.run/*",
+                  "alchemy",
+                  "alchemy/*"
+                ],
+                "message": "Platform dependencies belong to adapters and entrypoints."
+              },
+              {
+                "group": [
+                  "**/src/adapters/*",
+                  "**/src/application/*",
+                  "**/src/http/*",
+                  "**/src/worker*"
+                ],
+                "message": "The dashboard talks to Rondyr through HTTP."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["vite.config.ts", "vitest.config.ts", "drizzle-config.ts", "tooling/oxlint/**"],
+      "rules": {
+        "unicorn/filename-case": "off"
+      }
+    },
+    {
+      "files": ["tooling/oxlint/**"],
+      "rules": {
+        "rondyr/no-chained-type-assertions": "off",
+        "rondyr/no-conditional-empty-object-spread": "off",
+        "rondyr/no-known-value-widening": "off",
+        "rondyr/no-module-mocking": "off",
+        "rondyr/no-object-parameters": "off",
+        "rondyr/no-reflect-apply": "off",
+        "rondyr/no-reflect-get": "off",
+        "rondyr/no-runtime-typeof": "off",
+        "rondyr/no-service-constructor-imports": "off",
+        "rondyr/no-shape-in-symbol-names": "off",
+        "rondyr/no-unknown-parameters": "off",
+        "rondyr/no-unknown-returns": "off",
+        "rondyr/no-unknown-type-aliases": "off",
+        "rondyr/no-unsafe-dictionary-type": "off",
+        "rondyr/no-widen-then-assert": "off",
+        "rondyr/require-safety-comment-for-type-assertion": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    ".agents/**",
+    ".alchemy/**",
+    ".wrangler/**",
+    ".agent-sources/**",
+    ".scratchpad/**",
+    "database/migrations/**",
+    "pnpm-lock.yaml",
+    "worker-configuration.d.ts"
+  ]
+}
