@@ -50,6 +50,7 @@ Form builder, CRM, pièces jointes, automatisations visuelles, moteur de templat
 | Contrats d'entrée/sortie | **Effect Schema** |
 | Infrastructure as Code | **Alchemy** |
 | Persistance | **Cloudflare D1** et **Drizzle ORM** |
+| Authentification du dashboard | **Better Auth**, sessions en D1 |
 | Asynchronisme | **Cloudflare Queues** et Cron Triggers |
 | Classification primaire | **Jev** via Workers AI / AI Gateway selon l'intégration retenue |
 | Escalade | Adaptateur configurable vers un LLM Cloudflare ou externe via AI Gateway |
@@ -345,7 +346,7 @@ La réduction des coûts passe par les protections **avant** l'IA, l'absence d'e
 ## 13. Décisions ouvertes à trancher avant implémentation
 
 - Fournisseur d'email initial : service Cloudflare lorsqu'adapté aux destinataires, ou adaptateur externe (ex. Resend).
-- Authentification du dashboard : bibliothèque compatible Workers/D1 et modèle d'invitations.
+- Invitations et rôles par organisation après la création du premier compte Better Auth.
 - Politique exacte de pertinence hors sujet : revue humaine ou livraison avec étiquette.
 - Liste et seuils des quotas par organisation, avec comportements en cas de dépassement.
 - Rétention par défaut, restrictions sur les champs, politique d'export et purge.

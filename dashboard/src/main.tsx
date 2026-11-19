@@ -1,12 +1,14 @@
 import { createRoot } from "react-dom/client";
 
+import { SessionPanel } from "~/features/authentication/session-panel";
+
 import "./dashboard.css";
 
 function Dashboard() {
   return (
     <main>
       <h1>Rondyr</h1>
-      <p>Le backend de vos formulaires.</p>
+      <SessionPanel />
     </main>
   );
 }
