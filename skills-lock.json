@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "skills": {
+    "alchemy-domain": {
+      "source": "alchemy-run/alchemy",
+      "commit": "f9edf0f289a2ed9e767b79e948f6b8c288972cd5",
+      "sourceType": "github",
+      "skillPath": "packages/domain/skills/alchemy-domain/SKILL.md",
+      "computedHash": "66e7f4f4eb657013ec26be321f738351b1e6be81396aa951da85e086d6441f72"
+    }
+  }
+}

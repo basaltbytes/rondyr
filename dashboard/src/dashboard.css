@@ -11,3 +11,29 @@ main {
   width: min(100% - 3rem, 64rem);
   margin: 4rem auto;
 }
+
+.auth-form {
+  display: grid;
+  gap: 1rem;
+  max-width: 24rem;
+}
+
+.auth-form h2,
+.auth-form p {
+  margin: 0;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.auth-form input,
+.auth-form button {
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+}
+
+.auth-form button {
+  justify-self: start;
+}

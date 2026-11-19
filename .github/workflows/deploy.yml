@@ -1,0 +1,69 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Cloudflare stage
+        type: choice
+        options: [staging, prod]
+        default: staging
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.stage }}
+    if: inputs.stage == 'staging' || (inputs.stage == 'prod' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: cloudflare-deploy-${{ inputs.stage }}
+      cancel-in-progress: false
+    steps:
+      - id: credentials
+        name: Check deployment configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_URL: ${{ vars[format('BETTER_AUTH_URL_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+          BETTER_AUTH_SECRET: ${{ secrets[format('BETTER_AUTH_SECRET_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+        run: |
+          if [[ -z "$CLOUDFLARE_API_TOKEN" ]]; then
+            echo "::notice::Cloudflare deployment skipped because CLOUDFLARE_API_TOKEN is unset."
+            exit 0
+          fi
+          if [[ -z "$CLOUDFLARE_ACCOUNT_ID" || "$BETTER_AUTH_URL" != https://* || ${#BETTER_AUTH_SECRET} -lt 32 ]]; then
+            echo "::error::Set CLOUDFLARE_ACCOUNT_ID, the stage HTTPS origin and a Better Auth secret of at least 32 characters."
+            exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/checkout@v6
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - if: steps.credentials.outputs.ready == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - if: steps.credentials.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.credentials.outputs.ready == 'true'
+        name: Deploy through Alchemy
+        env:
+          STAGE: ${{ inputs.stage }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          BETTER_AUTH_URL: ${{ vars[format('BETTER_AUTH_URL_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+          BETTER_AUTH_SECRET: ${{ secrets[format('BETTER_AUTH_SECRET_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+          RONDYR_SETUP_TOKEN: ${{ secrets[format('RONDYR_SETUP_TOKEN_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+        run: |
+          if [[ -z "$RONDYR_SETUP_TOKEN" ]]; then unset RONDYR_SETUP_TOKEN; fi
+          pnpm deploy --stage "$STAGE" --yes --no-input

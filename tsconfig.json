@@ -31,7 +31,12 @@
         "ignoreEffectWarningsInTscExitCode": false,
         "ignoreEffectErrorsInTscExitCode": false,
         "barrelImportPackages": ["effect"],
-        "allowedUnstableApis": ["effect/http", "effect/http-api", "@effect/vitest"],
+        "allowedUnstableApis": [
+          "effect/http",
+          "effect/http-api",
+          "effect/crypto",
+          "@effect/vitest"
+        ],
         "diagnosticSeverity": {
           "abortControllerInEffect": "error",
           "acquireReleaseDisposable": "error",
