@@ -35,6 +35,9 @@
           "effect/http",
           "effect/http-api",
           "effect/crypto",
+          "effect/ByteSize",
+          "effect/rpc",
+          "effect/workflow",
           "@effect/vitest"
         ],
         "diagnosticSeverity": {
@@ -211,7 +214,8 @@
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "paths": {
-      "~/*": ["./dashboard/src/*"]
+      "~/*": ["./dashboard/src/*"],
+      "@rondyr/contracts/*": ["./src/domain/submissions/*"]
     },
     "resolveJsonModule": true,
     "noEmit": true

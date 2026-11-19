@@ -12,8 +12,10 @@ for (const name of ["@effect/platform-node", "@effect/vitest"]) {
   }
 }
 
-if (dependencies["@alchemy.run/cloudflare"] !== dependencies.alchemy) {
-  errors.push("Pin @alchemy.run/cloudflare to the version of alchemy.");
+for (const name of ["@alchemy.run/cloudflare", "@alchemy.run/domain"]) {
+  if (dependencies[name] !== dependencies.alchemy) {
+    errors.push(`Pin ${name} to the version of alchemy.`);
+  }
 }
 
 const { d1_databases: databases, queues } = wrangler;
