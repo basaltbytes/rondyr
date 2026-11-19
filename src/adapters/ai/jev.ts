@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect";
+import { Effect, Schema, SchemaGetter } from "effect";
 
 import { Score } from "../../domain/submissions/classification.ts";
 import { ClassificationFailed, Classifier } from "../../domain/submissions/classifier.external.ts";
@@ -11,14 +11,22 @@ const StoredMessage = Schema.Struct({
 });
 
 const Answer = Schema.Struct({ type: Schema.Literal("noul"), noul: Score });
-const BaseResponse = Schema.Struct({
+const Result = Schema.Struct({
   model: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-  answers: Schema.Struct({ spam: Answer }),
+  answers: Schema.Struct({ spam: Answer, relevance: Schema.optionalKey(Answer) }),
 });
-const ContextualResponse = BaseResponse.mapFields((fields) => ({
-  ...fields,
-  answers: Schema.Struct({ spam: Answer, relevance: Answer }),
-}));
+const Completed = Schema.Struct({ state: Schema.Literal("Completed"), result: Result });
+
+export const decodeJevResponse = Schema.decodeUnknownEffect(
+  Schema.Union([Result, Completed]).pipe(
+    Schema.decodeTo(Result, {
+      decode: SchemaGetter.transform((response) =>
+        "result" in response ? response.result : response,
+      ),
+      encode: SchemaGetter.transform((value) => value),
+    }),
+  ),
+);
 const spam = {
   type: "noul",
   instructions:
@@ -66,20 +74,13 @@ export const jevLive = Classifier.toLayer(
           orElse: () => Effect.fail(ClassificationFailed.make({ retryable: true })),
         }),
       );
-      if (hasContext) {
-        const decoded = yield* Schema.decodeUnknownEffect(ContextualResponse)(response).pipe(
-          Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
-        );
-        return {
-          model: decoded.model,
-          spam: decoded.answers.spam.noul,
-          relevance: decoded.answers.relevance.noul,
-        };
-      }
-      const decoded = yield* Schema.decodeUnknownEffect(BaseResponse)(response).pipe(
+      const { model, answers } = yield* decodeJevResponse(response).pipe(
         Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
       );
-      return { model: decoded.model, spam: decoded.answers.spam.noul };
+      if (!hasContext) return { model, spam: answers.spam.noul };
+      if (answers.relevance === undefined)
+        return yield* ClassificationFailed.make({ retryable: false });
+      return { model, spam: answers.spam.noul, relevance: answers.relevance.noul };
     }),
   }),
 );
