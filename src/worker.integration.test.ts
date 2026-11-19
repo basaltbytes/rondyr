@@ -4,9 +4,8 @@ import { drizzle } from "drizzle-orm/d1";
 import { Effect, Exit, Schema } from "effect";
 import { assert, beforeAll, describe, it } from "@effect/vitest";
 
-import { forms, organizations } from "../../src/adapters/database/database-schema.ts";
-
-import { testOrigin as origin, testSetupToken } from "./auth-fixture.ts";
+import { testOrigin as origin, testSetupToken } from "../tests/integration/auth-fixture.ts";
+import { forms, organizations } from "./adapters/database/database-schema.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const SessionUser = Schema.Struct({ user: Schema.Struct({ email: Schema.String }) });

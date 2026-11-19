@@ -8,7 +8,9 @@ export const SetupInbox = Schema.Struct({
   formName: Name,
   businessContext: Schema.Trim.check(Schema.isMaxLength(2000)),
 });
+
 export const InboxForm = Schema.Struct({ name: Schema.String, publicId: Schema.String });
+
 export const InboxOrganizationWithForms = Schema.Struct({
   id: OrganizationId,
   name: Schema.String,

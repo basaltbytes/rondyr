@@ -51,5 +51,5 @@ export default defineConfig({
       };
     }),
   ],
-  test: { include: ["tests/**/*.test.ts", "src/**/*.test.ts"] },
+  test: { include: ["src/**/*.test.ts"] },
 });

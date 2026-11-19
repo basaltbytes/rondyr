@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 
-import { decodeJevResponse } from "../../src/adapters/ai/jev.ts";
+import { decodeJevResponse } from "./jev.ts";
 
 const spamOnly = { model: "jev-1.13.0", answers: { spam: { type: "noul", noul: 0.69 } } } as const;
 const contextual = {

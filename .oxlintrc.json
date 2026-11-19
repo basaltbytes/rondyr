@@ -5,7 +5,8 @@
     {
       "name": "rondyr",
       "specifier": "./tooling/oxlint/plugin.ts"
-    }
+    },
+    "@shadcn/lint"
   ],
   "categories": {
     "correctness": "error",
@@ -15,6 +16,9 @@
     "es2024": true,
     "browser": true,
     "node": true
+  },
+  "settings": {
+    "shadcn": { "ui": "~/components/ui" }
   },
   "rules": {
     "import/no-cycle": "error",
@@ -29,6 +33,7 @@
     "no-underscore-dangle": ["warn", { "allow": ["_tag", "__ALCHEMY_RUNTIME__"] }],
     "react/react-in-jsx-scope": "off",
     "import/no-unassigned-import": "off",
+    "rondyr/pad-exported-consts": "error",
     "rondyr/no-chained-type-assertions": "error",
     "rondyr/no-conditional-empty-object-spread": "error",
     "rondyr/no-known-value-widening": "error",
@@ -124,6 +129,24 @@
         "rondyr/no-native-title-tooltip": "error",
         "rondyr/no-outset-state-indicators": "error",
         "rondyr/no-raw-resize-observer": "error",
+        "shadcn/no-raw-colors": "error",
+        "shadcn/no-arbitrary-values": ["error", { "allow": ["layout", "*env(safe-area-inset-*"] }],
+        "shadcn/no-inline-styles": "error",
+        "shadcn/no-unknown-classes": [
+          "error",
+          {
+            "allow": [
+              "auth-form",
+              "inbox",
+              "inbox-actions",
+              "inbox-columns",
+              "submission-list",
+              "submission-reader"
+            ]
+          }
+        ],
+        "shadcn/require-static-classes": "error",
+        "shadcn/no-restyle": ["error", { "allow": ["layout"] }],
         "import/no-default-export": "error",
         "no-restricted-imports": [
           "error",

@@ -3,33 +3,23 @@ import { Story } from "@alchemy.run/domain/Story";
 import { assert, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
-import { ApproveSubmission } from "../../src/domain/submissions/approve-submission.command.ts";
-import { reviewReason, rulesVersion } from "../../src/domain/submissions/classification.ts";
-import {
-  ClassificationFailed,
-  Classifier,
-} from "../../src/domain/submissions/classifier.external.ts";
-import { DismissSubmission } from "../../src/domain/submissions/dismiss-submission.command.ts";
-import { InboxStore } from "../../src/domain/submissions/inbox-store.ts";
-import { ListSubmissions } from "../../src/domain/submissions/list-submissions.query.ts";
-import { SubmissionQuarantined } from "../../src/domain/submissions/record-classification.command.ts";
+import { ApproveSubmission } from "./approve-submission.command.ts";
+import { reviewReason, rulesVersion } from "./classification.ts";
+import { ClassificationFailed, Classifier } from "./classifier.external.ts";
+import { DismissSubmission } from "./dismiss-submission.command.ts";
+import { InboxStore } from "./inbox-store.ts";
+import { ListSubmissions } from "./list-submissions.query.ts";
+import { SubmissionQuarantined } from "./record-classification.command.ts";
 import {
   ClassificationRequested,
   RequestClassification,
-} from "../../src/domain/submissions/request-classification.command.ts";
-import { CurrentReviewer } from "../../src/domain/submissions/review-session.middleware.ts";
-import { SubmissionAccepted } from "../../src/domain/submissions/submission-accepted.event.ts";
-import { Submission } from "../../src/domain/submissions/submission.aggregate.ts";
-import {
-  OrganizationId,
-  SubmissionId,
-  UserId,
-} from "../../src/domain/submissions/submission.id.ts";
-import {
-  SubmissionNotFound,
-  SubmissionNotReviewable,
-} from "../../src/domain/submissions/submission.rejection.ts";
-import { Submissions, submissionHandlers } from "../../src/domain/submissions/submissions.model.ts";
+} from "./request-classification.command.ts";
+import { CurrentReviewer } from "./review-session.middleware.ts";
+import { SubmissionAccepted } from "./submission-accepted.event.ts";
+import { Submission } from "./submission.aggregate.ts";
+import { OrganizationId, SubmissionId, UserId } from "./submission.id.ts";
+import { SubmissionNotFound, SubmissionNotReviewable } from "./submission.rejection.ts";
+import { Submissions, submissionHandlers } from "./submissions.model.ts";
 
 const organizationId = OrganizationId.make("pottery");
 const userId = UserId.make("reviewer");

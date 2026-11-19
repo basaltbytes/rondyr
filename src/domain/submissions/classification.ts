@@ -1,17 +1,20 @@
 import { Schema } from "effect";
 
 export const Score = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
+
 export const ClassificationScores = Schema.Struct({
   model: Schema.String,
   spam: Score,
   relevance: Schema.optionalKey(Score),
 });
+
 export const ClassificationReason = Schema.Literals([
   "probable-spam",
   "ambiguous",
   "low-relevance",
   "classification-error",
 ]);
+
 export const ClassificationResult = Schema.Union([
   Schema.TaggedStruct("Scored", { scores: ClassificationScores }),
   Schema.TaggedStruct("ClassificationError", {}),

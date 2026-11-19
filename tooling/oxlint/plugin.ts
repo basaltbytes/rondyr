@@ -22,14 +22,15 @@ import { noUnknownReturnsRule } from "./rules/no-unknown-returns.ts";
 import { noUnknownTypeAliasesRule } from "./rules/no-unknown-type-aliases.ts";
 import { noUnsafeDictionaryTypeRule } from "./rules/no-unsafe-dictionary-type.ts";
 import { noWidenThenAssertRule } from "./rules/no-widen-then-assert.ts";
+import { padExportedConstsRule } from "./rules/pad-exported-consts.ts";
 import { requireSafetyCommentForTypeAssertionRule } from "./rules/require-safety-comment-for-type-assertion.ts";
 import { webImportDirectionRule } from "./rules/web-import-direction.ts";
 
 /**
  * Local Oxlint rules, vendored from https://github.com/dmmulroy/anti-slop at upstream commit
  * 6d53855 (2026-08-18), including upstream's opt-in Effect rule. Local changes: oxfmt formatting
- * and knip-driven trims in shared/dictionary-types.ts. The rondyr/* rules are disabled for this
- * directory in .oxlintrc.json because the rule code uses the patterns they reject.
+ * and knip-driven trims in shared/dictionary-types.ts. The vendored TypeScript rules are disabled
+ * for this directory because the rule code uses the patterns they reject.
  */
 const rondyrPlugin = eslintCompatPlugin({
   meta: { name: "rondyr" },
@@ -42,6 +43,7 @@ const rondyrPlugin = eslintCompatPlugin({
     "no-native-title-tooltip": noNativeTitleTooltipRule,
     "no-outset-state-indicators": noOutsetStateIndicatorsRule,
     "no-raw-resize-observer": noRawResizeObserverRule,
+    "pad-exported-consts": padExportedConstsRule,
     "no-chained-type-assertions": noChainedTypeAssertionsRule,
     "no-conditional-empty-object-spread": noConditionalEmptyObjectSpreadRule,
     "no-known-value-widening": noKnownValueWideningRule,

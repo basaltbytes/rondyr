@@ -8,6 +8,7 @@ import { OrganizationId, SubmissionId } from "../domain/submissions/submission.i
 const Message = Schema.Struct({ submissionId: SubmissionId });
 const Claim = Schema.Struct({ submission_id: SubmissionId });
 const Organization = Schema.Struct({ organization_id: OrganizationId });
+
 const decodeMessage = Schema.decodeUnknownEffect(Message);
 const encodeIds = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(SubmissionId)));
 const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(Claim));

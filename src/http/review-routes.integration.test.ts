@@ -3,12 +3,11 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
-import { InboxOrganizationWithForms } from "../../src/domain/submissions/inbox-setup.ts";
-import { InboxPage, SubmissionDetail } from "../../src/domain/submissions/inbox.ts";
-import { SubmissionId } from "../../src/domain/submissions/submission.id.ts";
-import { publishPendingSubmissions } from "../../src/jobs/submission-outbox.ts";
-
-import { testOrigin as origin, testSetupToken } from "./auth-fixture.ts";
+import { testOrigin as origin, testSetupToken } from "../../tests/integration/auth-fixture.ts";
+import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
+import { InboxPage, SubmissionDetail } from "../domain/submissions/inbox.ts";
+import { SubmissionId } from "../domain/submissions/submission.id.ts";
+import { publishPendingSubmissions } from "../jobs/submission-outbox.ts";
 
 const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));

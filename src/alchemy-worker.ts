@@ -19,7 +19,9 @@ const deployedOrigin = Config.schema(
 export const databaseResource = Cloudflare.D1.Database("Database", {
   migrations: "./database/migrations",
 });
+
 export const classificationQueue = Cloudflare.Queues.Queue("ClassificationQueue");
+
 export const deliveryQueue = Cloudflare.Queues.Queue("DeliveryQueue");
 
 const deploymentProps = Effect.gen(function* () {
