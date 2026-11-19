@@ -1,8 +1,4 @@
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { constantTimeEqual, hashPassword } from "better-auth/crypto";
-import { betterAuth } from "better-auth/minimal";
 import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
 import { Clock, Effect, Layer, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
@@ -13,7 +9,6 @@ import {
   InvalidSetup,
   SetupClosed,
 } from "../../ports/authentication.ts";
-import * as schema from "../database/auth-schema.ts";
 
 const Secret = Schema.RedactedFromValue(Schema.String.check(Schema.isMinLength(32)));
 const BindingConfig = Schema.Struct({
@@ -69,19 +64,13 @@ const readConfig = Effect.fn("Authentication.readConfig")(function* (request: Re
 
 const handle = Effect.fn("Authentication.handle")(function* (request: Request) {
   const { origin, settings } = yield* readConfig(request);
-  const auth = betterAuth({
-    appName: "Rondyr",
-    baseURL: origin,
-    secret: Redacted.value(settings.BETTER_AUTH_SECRET),
-    emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
-    database: drizzleAdapter(drizzle(env.DB), { provider: "sqlite", schema }),
-    advanced: { ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] } },
-    rateLimit: { enabled: true, storage: "database" },
-    telemetry: { enabled: false },
-    logger: { disabled: true },
+  // Keep the Better Auth dependencies out of the health and form request paths.
+  const { createBetterAuth } = yield* Effect.tryPromise({
+    try: () => import("./provider.ts"),
+    catch: () => AuthUnavailable.make(),
   });
   return yield* Effect.tryPromise({
-    try: () => auth.handler(request),
+    try: () => createBetterAuth(env.DB, origin, settings.BETTER_AUTH_SECRET).handler(request),
     catch: () => AuthUnavailable.make(),
   });
 });
@@ -90,12 +79,14 @@ const setup = Effect.fn("Authentication.setup")(function* (request: Request) {
   const { RONDYR_SETUP_TOKEN: token } = yield* Schema.decodeUnknownEffect(SetupConfig)(env).pipe(
     Effect.mapError(() => SetupClosed.make()),
   );
-  if (
-    !constantTimeEqual(
-      request.headers.get("authorization") ?? "",
-      `Bearer ${Redacted.value(token)}`,
-    )
-  ) {
+  const header = request.headers.get("authorization");
+  if (header === null) return yield* SetupClosed.make();
+
+  const { constantTimeEqual, hashPassword } = yield* Effect.tryPromise({
+    try: () => import("better-auth/crypto"),
+    catch: () => AuthUnavailable.make(),
+  });
+  if (!constantTimeEqual(header, `Bearer ${Redacted.value(token)}`)) {
     return yield* SetupClosed.make();
   }
   yield* readConfig(request);
