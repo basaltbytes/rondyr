@@ -113,7 +113,7 @@ Cloudflare Queues délivre les messages *at least once* ; D1 et la publication d
 - Exécuter périodiquement un **Cron** qui retrouve les événements non publiés et les republie.
 - Utiliser une **revendication atomique** des événements (lease/expiration ou transition conditionnelle) pour réduire les publications concurrentes.
 - Considérer malgré tout que deux publications identiques sont possibles ; les consumers doivent être **idempotents**.
-- Confirmer le traitement d'un événement seulement après persistance de la décision et des nouveaux événements de livraison.
+- Acquitter le message de classification après l’enregistrement durable de `ClassificationRequested` dans l’agrégat. La saga reprend l’analyse et enregistre son résultat. Le Cron republie les événements dont la remise au modèle reste en attente.
 - Mettre en place retry avec backoff, nombre maximum de tentatives, **dead-letter queue** et réexécution manuelle.
 
 Deux Queues principales :
@@ -122,6 +122,8 @@ Deux Queues principales :
 2. `delivery-queue` : email et webhooks ; une destination défaillante ne bloque pas les autres.
 
 **Limite assumée :** un webhook ou fournisseur email peut recevoir deux tentatives, notamment après une interruption réseau. Chaque livraison possède un identifiant stable, transmis au destinataire pour permettre la déduplication. On promet une **reprise fiable**, pas un *exactly once* de bout en bout.
+
+Le modèle de classification et de revue tourne dans les Durable Objects du Worker applicatif via Alchemy Domain. D1 conserve les champs soumis et la projection de statut pour la boîte de réception. Les événements du domaine contiennent les identifiants et les données de décision nécessaires à l’audit.
 
 ## 5. Classification intelligente
 

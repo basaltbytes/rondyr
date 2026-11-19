@@ -1,19 +1,38 @@
-import { Layer, Scheduler } from "effect";
-import { HttpRouter, HttpServer } from "effect/http";
+import {
+  makeDurableObjectBridge,
+  makeWorkerBridge,
+  makeWorkflowBridge,
+} from "@alchemy.run/cloudflare/Bridge";
+import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
+import { DurableObject, WorkerEntrypoint, WorkflowEntrypoint } from "cloudflare:workers";
 
-import { authenticationLive } from "./adapters/authentication/better-auth.ts";
-import { authenticationRoutes } from "./http/authentication.ts";
-import { publicRoutes } from "./http/public-routes.ts";
+import { workerImplementation } from "./worker-implementation.ts";
 
-const scheduler = Layer.succeed(Scheduler.Scheduler, new Scheduler.MixedScheduler("sync"));
-const routes = Layer.merge(publicRoutes, authenticationRoutes);
+const localWorker = Worker("App", { main: import.meta.url }, workerImplementation);
+const entry = { entrypoint: localWorker, stack: { name: "Rondyr", stage: "local" } };
+export default makeWorkerBridge(WorkerEntrypoint, entry);
 
-const app = HttpRouter.toWebHandler(
-  routes.pipe(
-    Layer.provide(HttpServer.layerServices),
-    Layer.provideMerge(Layer.merge(scheduler, authenticationLive)),
-  ),
-  { disableLogger: true },
-);
+// @effect-diagnostics missingEffectContext:off
+// @ts-expect-error The bridge supplies the Worker's construction services through its runtime layer.
+const durableObject = makeDurableObjectBridge(DurableObject, entry);
+// @ts-expect-error The bridge supplies construction services and forwards the native constructor arguments.
+const workflow = makeWorkflowBridge(WorkflowEntrypoint, entry);
 
-export default { fetch: (request: Request) => app.handler(request) } satisfies ExportedHandler;
+// Wrangler and workerd tests use the same classes as Alchemy's generated entry.
+const DomainDirectory = durableObject("Submissions.DomainDirectory");
+const SubmissionAggregate = durableObject("Submissions.SubmissionAggregate");
+const ClassificationPolicy = durableObject("Submissions.ClassificationPolicy");
+const InboxProjection = durableObject("Submissions.InboxProjection");
+const InboxProjectionRun = durableObject("Submissions.InboxProjectionRun");
+const ClassifySubmissionWorkflow = durableObject("Submissions.ClassifySubmissionWorkflow");
+const DomainBackfill = workflow("Submissions.DomainBackfill");
+
+export {
+  DomainDirectory,
+  SubmissionAggregate,
+  ClassificationPolicy,
+  InboxProjection,
+  InboxProjectionRun,
+  ClassifySubmissionWorkflow,
+  DomainBackfill,
+};

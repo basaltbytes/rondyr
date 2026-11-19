@@ -26,6 +26,7 @@
       }
     ],
     "no-console": "warn",
+    "no-underscore-dangle": ["warn", { "allow": ["_tag", "__ALCHEMY_RUNTIME__"] }],
     "react/react-in-jsx-scope": "off",
     "import/no-unassigned-import": "off",
     "rondyr/no-chained-type-assertions": "error",
@@ -60,6 +61,7 @@
                   "drizzle-orm",
                   "drizzle-orm/*",
                   "@alchemy.run/*",
+                  "!@alchemy.run/domain",
                   "alchemy",
                   "alchemy/*"
                 ],

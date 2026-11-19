@@ -37,3 +37,90 @@ main {
 .auth-form button {
   justify-self: start;
 }
+
+.inbox {
+  border-top: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  display: grid;
+  gap: 1.25rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+}
+
+.inbox h2,
+.inbox h3 {
+  margin: 0;
+}
+
+.inbox button,
+.inbox select,
+.inbox textarea {
+  font: inherit;
+  padding: 0.4rem 0.55rem;
+}
+
+.inbox code {
+  overflow-wrap: anywhere;
+}
+
+.inbox-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.inbox-actions:empty {
+  display: none;
+}
+
+.inbox-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 1.25rem;
+}
+
+.submission-list {
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.submission-list button {
+  display: grid;
+  gap: 0.25rem;
+  width: 100%;
+  text-align: start;
+}
+
+.submission-list button[aria-pressed="true"] {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+.submission-list span {
+  font-size: 0.85em;
+}
+
+.submission-reader {
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 0.25rem;
+}
+
+.submission-reader dt {
+  font-weight: 600;
+}
+
+.submission-reader dd {
+  margin: 0.25rem 0 1rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 42rem) {
+  .inbox-columns {
+    grid-template-columns: 1fr;
+  }
+}

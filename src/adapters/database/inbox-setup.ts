@@ -1,0 +1,54 @@
+import { Effect, Schema } from "effect";
+import { SecureRandom } from "effect/crypto";
+
+import { InboxForm, SetupInbox } from "../../domain/submissions/inbox-setup.ts";
+import { InboxUnavailable } from "../../domain/submissions/submission.rejection.ts";
+import type { OrganizationId, UserId } from "../../domain/submissions/submission.id.ts";
+import { d1, database } from "./d1.ts";
+
+const decodeForms = Schema.decodeUnknownEffect(Schema.Array(InboxForm));
+const unavailable = () => InboxUnavailable.make();
+
+export const listForms = Effect.fn("InboxSetup.listForms")(function* (
+  userId: typeof UserId.Type,
+  organizationId: OrganizationId,
+) {
+  const db = yield* database;
+  const results = yield* d1(() =>
+    db
+      .prepare(`
+    SELECT f.name, f.public_id AS publicId FROM forms f JOIN organization_members m
+      ON f.organization_id = m.organization_id WHERE m.user_id = ? AND f.organization_id = ?
+    ORDER BY f.name, f.id
+  `)
+      .bind(userId, organizationId)
+      .all(),
+  );
+  return yield* decodeForms(results.results);
+}, Effect.mapError(unavailable));
+
+export const setupInbox = Effect.fn("InboxSetup.create")(function* (
+  userId: typeof UserId.Type,
+  input: typeof SetupInbox.Type,
+) {
+  const db = yield* database;
+  const organizationId = SecureRandom.uuidV4Unsafe();
+  const formId = SecureRandom.uuidV4Unsafe();
+  const publicId = SecureRandom.uuidV4Unsafe();
+  yield* d1(() =>
+    db.batch([
+      db
+        .prepare("INSERT INTO organizations (id, name) VALUES (?, ?)")
+        .bind(organizationId, input.organizationName),
+      db
+        .prepare("INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)")
+        .bind(organizationId, userId),
+      db
+        .prepare(`
+      INSERT INTO forms (id, organization_id, public_id, name, business_context)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+        .bind(formId, organizationId, publicId, input.formName, input.businessContext || null),
+    ]),
+  );
+}, Effect.mapError(unavailable));

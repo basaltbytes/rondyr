@@ -1,6 +1,6 @@
 # Rondyr
 
-Rondyr est un backend de formulaires conçu pour tourner dans votre compte Cloudflare. Le Worker sert le dashboard React, son authentification Better Auth et l’endpoint `GET /health`. La [proposition d’architecture](architecture.md) décrit les étapes d’ingestion, de classification et de livraison à implémenter.
+Rondyr est un backend de formulaires conçu pour tourner dans votre compte Cloudflare. Le Worker reçoit les soumissions, les classe avec Jev et sert la boîte de réception React protégée par Better Auth. Les messages mis en quarantaine restent consultables et peuvent être acceptés ou archivés. La [proposition d’architecture](architecture.md) décrit le périmètre de la v0.1.
 
 ## Développement
 
@@ -31,6 +31,21 @@ curl --fail-with-body --json @- \
 
 Saisissez sur l’entrée standard un objet JSON avec les champs `name`, `email` et `password`, puis terminez avec `Ctrl+D`. Le mot de passe doit contenir de 12 à 128 caractères. Après la réponse `201`, connectez-vous sur `/`. Retirez le jeton d’installation de la configuration et redémarrez ou redéployez le Worker. D1 refuse toute deuxième création via ce point d’installation.
 
+## Recevoir un premier message
+
+Après connexion, créez une boîte de réception en indiquant le nom de l’organisation et du formulaire. Le contexte métier est facultatif. Ouvrez **Adresses des formulaires** pour copier l’URL publique.
+
+```sh
+curl --json '{"email":"visiteur@example.com","message":"Reste-t-il des places pour le cours ?"}' \
+  http://localhost:5173/f/IDENTIFIANT_PUBLIC
+```
+
+Un formulaire HTML peut utiliser la même URL dans son attribut `action`, avec `method="post"`. Le corps de la requête peut peser jusqu’à 16 Kio et contenir de 1 à 32 champs texte. Un formulaire accepte jusqu’à 30 soumissions par minute. D1 enregistre le message et l’événement d’envoi en file avant la réponse `202`. La réponse JSON inclut `submission-id`. Un navigateur qui demande du HTML affiche une page de confirmation.
+
+Le Cron vérifie la file d’attente D1 chaque minute. Les seuils initiaux envoient les scores de spam à partir de 0,30 en revue et distinguent le spam probable à partir de 0,70. Avec un contexte configuré, un score de pertinence inférieur à 0,35 peut aussi déclencher une revue. Utilisez **Actualiser** pour voir le résultat de l’analyse. En développement local, le classificateur sans binding Workers AI place les messages en quarantaine avec le motif **Analyse indisponible**. Vous pouvez les ouvrir, les accepter ou les archiver.
+
+Si vous avez déjà une organisation créée en SQL, ajoutez une ligne dans `organization_members` avec son `organization_id` et l’identifiant Better Auth `user_id` du compte autorisé.
+
 ## Qualité
 
 ```sh
@@ -54,7 +69,7 @@ pnpm run deploy --stage staging --env-file .env.staging
 
 Alchemy peut proposer de créer son Worker d’état au premier plan ou déploiement. Les stages `staging` et `prod` utilisent des ressources applicatives distinctes. L’option `--profile` sélectionne un autre compte Cloudflare configuré dans Alchemy.
 
-La pile déploie le Worker et ses assets Vite, applique les migrations D1 et crée les files de classification et de livraison. Le binding Workers AI est disponible dans le Worker déployé. `RONDYR_AI_GATEWAY=true` provisionne aussi un AI Gateway avec la collecte de logs désactivée. Les consumers, leurs files d’échec, le Cron de reprise et l’adaptateur IA font partie des étapes suivantes de l’architecture.
+La pile déploie le Worker avec ses assets Vite et les Durable Objects du modèle Alchemy Domain. Elle applique les migrations D1 et configure la file de classification, sa file d’échec et le Cron de reprise. Le Worker déployé utilise le binding Workers AI pour Jev. `RONDYR_AI_GATEWAY=true` provisionne aussi un AI Gateway avec la collecte de logs désactivée. La file de livraison est provisionnée pour l’étape de distribution.
 
 [Comptes et profils Alchemy](https://alchemy.run/cloudflare/accounts-and-tokens/) · [État partagé Alchemy](https://alchemy.run/state-store/)
 
