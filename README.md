@@ -75,6 +75,7 @@ Locally there is no Workers AI binding, so every message is quarantined with the
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
 - Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
 - Isolates organizations. Every admin query is scoped to the signed-in account's organizations, and another organization's submission answers `404`.
+- Creates one delivery per active destination of the form when a message is accepted, automatically or in review, and queues it through the same D1 outbox and cron. Each delivery has a stable ID that the recipient gets on every attempt. A retryable failure is attempted again after 1 minute, 5 minutes, 30 minutes, 2 hours, and 6 hours, then the delivery is marked as failed; a crash between the send and its record leads to a second send with the same ID. No destination type has a provider yet, so no destination can be configured.
 - Keeps message content in D1 only. The event history of a submission contains IDs, scores, and the reviewer, never the fields.
 - Deploys through [Alchemy](https://alchemy.run), with separate resources for the `staging` and `prod` stages.
 
@@ -84,7 +85,8 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 
 | Gap | Issue |
 | --- | --- |
-| Email and signed webhook delivery of accepted messages | [#5](https://github.com/basaltbytes/rondyr/issues/5), [#13](https://github.com/basaltbytes/rondyr/issues/13), [#14](https://github.com/basaltbytes/rondyr/issues/14) |
+| Email and signed webhook destinations, with their configuration | [#13](https://github.com/basaltbytes/rondyr/issues/13), [#14](https://github.com/basaltbytes/rondyr/issues/14) |
+| Delivery history and manual retry in the dashboard | [#16](https://github.com/basaltbytes/rondyr/issues/16) |
 | JSON submissions from a browser on another origin (CORS) | [#19](https://github.com/basaltbytes/rondyr/issues/19) |
 | Editing, suspending, and adding forms | [#8](https://github.com/basaltbytes/rondyr/issues/8) |
 | Per-IP rate limits, honeypot, Turnstile, and quotas | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
@@ -109,7 +111,7 @@ pnpm deploy:plan --stage staging --env-file .env.staging
 pnpm run deploy --stage staging --env-file .env.staging
 ```
 
-The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification queue with its dead-letter queue, the cron trigger, and the Durable Objects. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, and deployment from GitHub Actions.
+The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues, the cron trigger, and the Durable Objects. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, and deployment from GitHub Actions.
 
 ## Documentation
 
