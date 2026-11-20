@@ -1,4 +1,5 @@
 import { readdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 import { unstable_getMiniflareWorkerOptions } from "wrangler";
@@ -19,25 +20,23 @@ import wrangler from "./wrangler.json" with { type: "json" };
 // it does without an AI binding. It records the submission fields of every
 // call, which tests read back from GET /__calls.
 const workersAiFixture = `
-import { WorkerEntrypoint } from "cloudflare:workers";
 const calls = [];
-export class Ai extends WorkerEntrypoint {
-  run(model, input) {
+export default {
+  async fetch(request) {
+    const path = new URL(request.url).pathname;
+    if (path === "/__calls") return Response.json(calls);
+    if (path !== "/ai-gateway/run") return new Response(null, { status: 404 });
+    const model = request.headers.get("cf-consn-model-id");
+    const { inputs: input } = await request.json();
     calls.push(input?.state?.submission_fields ?? null);
     if (model !== "typesafe/jev" || input?.state?.submission_fields?.["fixture-verdict"] !== "accept") {
-      return {};
+      return Response.json({});
     }
     const answers = { spam: { type: "noul", noul: 0.02 } };
     const relevance = input.state.business_context.includes("fixture-relevance: low") ? 0.05 : 0.98;
     if (input.questions.relevance !== undefined) answers.relevance = { type: "noul", noul: relevance };
-    return { model: "workerd-fixture", answers };
-  }
-}
-export default {
-  fetch: (request) =>
-    new URL(request.url).pathname === "/__calls"
-      ? Response.json(calls)
-      : new Response(null, { status: 404 }),
+    return Response.json({ model: "workerd-fixture", answers });
+  },
 };
 `;
 
@@ -182,7 +181,22 @@ export default defineConfig({
               name: "rondyr-test-app",
               rootPath: "./dist/rondyr",
               modules,
-              serviceBindings: { AI: { name: "workers-ai-fixture", entrypoint: "Ai" } },
+              unsafeBindings: [
+                {
+                  name: "AI",
+                  type: "rondyr-ai-fixture",
+                  plugin: {
+                    name: "rondyr-ai-fixture",
+                    package: fileURLToPath(
+                      new URL(
+                        "./tests/integration/workers-ai-binding-fixture.mjs",
+                        import.meta.url,
+                      ),
+                    ),
+                  },
+                  options: {},
+                },
+              ],
               outboundService: "webhook-receiver-fixture",
               tails: ["worker-log-fixture"],
               bindings: {
