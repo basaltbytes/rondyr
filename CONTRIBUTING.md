@@ -14,6 +14,21 @@ Both commands must pass before you open a pull request; CI runs them again. The 
 
 After a schema change in `src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `database/migrations` with its snapshot.
 
+## Dashboard browser tests
+
+Install Chromium for Playwright after installing the project dependencies.
+
+```sh
+pnpm exec playwright install --only-shell chromium
+pnpm test:e2e
+```
+
+On Linux, add `--with-deps` to the install command if Chromium needs system libraries. For an interactive run, install Chromium without `--only-shell` and pass `--headed` to `pnpm test:e2e`.
+
+The suite builds the dashboard and Worker, applies the D1 migrations to a fresh local database for each test, and starts a second local site for cross-origin submissions. Workers AI, the webhook receiver, and Resend run as local fixtures. The suite needs no Cloudflare credentials, API keys, or running dev server.
+
+CI runs the suite in the **Dashboard browser tests** job. To inspect a failed test's trace, run `pnpm exec playwright show-trace <path-to-trace.zip>` with the trace from `test-results/`.
+
 ## Pull requests
 
 - Work on a branch. In the Basaltbytes repository, a push to `main` deploys production and applies the D1 migrations.
