@@ -69,6 +69,8 @@ Alchemy peut proposer de créer son Worker d’état au premier plan ou déploie
 
 La pile déploie le Worker avec ses assets Vite et les Durable Objects du modèle Alchemy Domain. Elle applique les migrations D1 et configure la file de classification, sa file d’échec et le Cron de reprise. Le Worker déployé utilise le binding Workers AI pour Jev. `RONDYR_AI_GATEWAY=true` provisionne aussi un AI Gateway avec la collecte de logs désactivée. La file de livraison est provisionnée pour l’étape de distribution.
 
+Jev est le classificateur par défaut. Pour utiliser OpenAI Decisions avec GPT-6 Luna, définissez `RONDYR_CLASSIFIER=openai` dans l’environnement du stage. Avec GitHub Actions, utilisez la variable `RONDYR_CLASSIFIER_STAGING` ou `RONDYR_CLASSIFIER_PROD`. Le choix s’applique à tous les formulaires du stage après redéploiement. Le Worker appelle `openai/decisions` via le binding `AI` et le gateway `default`. Avec la facturation unifiée de Cloudflare, le Worker utilise les crédits du compte, sans clé OpenAI dans Rondyr. [Modèle Decisions](https://developers.cloudflare.com/ai/models/openai/decisions/) · [Facturation unifiée](https://developers.cloudflare.com/ai-gateway/features/unified-billing/)
+
 [Comptes et profils Alchemy](https://alchemy.run/cloudflare/accounts-and-tokens/) · [État partagé Alchemy](https://alchemy.run/state-store/)
 
 ## Déploiement par GitHub Actions
