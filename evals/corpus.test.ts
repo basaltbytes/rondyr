@@ -74,6 +74,26 @@ layer(NodeServices.layer)((node) => {
       const corpus = yield* loadCorpus(corpusFile);
       assert.strictEqual(corpus.name, "forms");
       assert.strictEqual(corpus.context, "Pottery classes");
+      assert.deepEqual(corpus.domains, []);
+    }),
+  );
+
+  node.effect("reads lowercase domains from the optional sidecar and rejects invalid entries", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const corpusFile = path.join(directory, "forms.jsonl");
+      const domainsFile = path.join(directory, "forms.domains.txt");
+      yield* fs.writeFileString(corpusFile, valid);
+      yield* fs.writeFileString(path.join(directory, "forms.context.txt"), "");
+      yield* fs.writeFileString(domainsFile, "atelier.example\r\n\r\nshop.example\r\n");
+      const corpus = yield* loadCorpus(corpusFile);
+      assert.deepEqual(corpus.domains.map(String), ["atelier.example", "shop.example"]);
+
+      yield* fs.writeFileString(domainsFile, "https://atelier.example\n");
+      const invalid = yield* Effect.flip(loadCorpus(corpusFile));
+      assert.strictEqual(invalid.file, domainsFile);
     }),
   );
 });

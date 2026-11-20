@@ -30,7 +30,12 @@ export const classifierLive = Classifier.toLayer(
               ClassificationFailed.make({ retryable: error._tag === "StorageUnavailable" }),
             ),
           );
-        const input = classifierInput(message.fields, message.businessContext, message.repetition);
+        const input = classifierInput(
+          message.fields,
+          message.businessContext,
+          message.repetition,
+          message.organizationDomains,
+        );
         return yield* providers[provider](env.AI, input).pipe(
           Effect.timeoutOrElse({
             duration: "12 seconds",

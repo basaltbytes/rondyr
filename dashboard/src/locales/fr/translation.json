@@ -101,6 +101,7 @@
       "forms": "Formulaires",
       "destinations": "Destinations",
       "origins": "Origines autorisées",
+      "domains": "Domaines de l’organisation",
       "organization": "Nouvelle organisation"
     },
     "statuses": {
@@ -285,6 +286,21 @@
         "redirectNotSaved": "La redirection n’a pas pu être enregistrée. Réessayez.",
         "honeypotNotSaved": "Le champ piège n’a pas pu être enregistré. Vérifiez le nom et réessayez."
       }
+    },
+    "domains": {
+      "description": "Déclarez jusqu’à {{limit}} domaines pour cette organisation. Le classificateur vérifie si l’adresse e-mail saisie utilise l’un de ces domaines ou un sous-domaine.",
+      "empty": "Aucun domaine déclaré.",
+      "hostname": "Nom de domaine",
+      "placeholder": "example.com",
+      "add": "Ajouter le domaine",
+      "remove": "Retirer",
+      "removeLabel": "Retirer {{domain}}",
+      "invalid": "Saisissez un nom de domaine en minuscules, comme example.com, sans schéma ni chemin.",
+      "limit": "Cette organisation a déjà {{limit}} domaines. Retirez-en un avant d’en ajouter un autre.",
+      "loadFailed": "Impossible de charger les domaines de l’organisation.",
+      "retry": "Réessayer",
+      "addFailed": "Impossible d’ajouter le domaine. Réessayez.",
+      "removeFailed": "Impossible de retirer le domaine. Réessayez."
     },
     "origins": {
       "label": "Origines autorisées du formulaire {{name}}",

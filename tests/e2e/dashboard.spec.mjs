@@ -122,6 +122,31 @@ function figure(label, value) {
   return new RegExp(`${RegExp.escape(label)}\\s*${value}`, "u");
 }
 
+test("add a domain and remove it after reopening the settings in French", async ({
+  dashboard: page,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.domains"));
+  await expect(page.getByText(t("inbox.domains.empty"))).toBeVisible();
+  const domain = "studio.example";
+  const hostname = page.getByRole("textbox", { name: t("inbox.domains.hostname") });
+  await hostname.fill(`https://${domain}`);
+  await hostname.press("Enter");
+  await expect(page.getByRole("alert")).toHaveText(t("inbox.domains.invalid"));
+  await hostname.fill(domain);
+  await hostname.press("Enter");
+  await expect(page.getByText(domain, { exact: true })).toBeVisible();
+
+  await accountMenu(page).click();
+  await page.getByRole("menuitemradio", { name: t("languages.fr") }).click();
+  await page.reload();
+  await openSection(page, frenchT("inbox.sections.domains"), frenchT("inbox.navigation.settings"));
+  await page
+    .getByRole("button", { name: frenchT("inbox.domains.removeLabel", { domain }) })
+    .click();
+  await expect(page.getByText(frenchT("inbox.domains.empty"))).toBeVisible();
+});
+
 test("sign in, create an organization and manage its forms, then sign out", async ({
   dashboard: page,
   context,
