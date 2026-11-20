@@ -1,7 +1,7 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as DomainCloudflare from "@alchemy.run/domain/Cloudflare";
 import * as Alchemy from "alchemy";
-import { Config, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
 
 import RondyrWorker, {
   classificationQueue,
@@ -20,7 +20,6 @@ export default Alchemy.Stack(
     ),
   },
   Effect.gen(function* () {
-    const { dev } = yield* Alchemy.AlchemyContext;
     const database = yield* databaseResource;
     const classification = yield* classificationQueue;
     const delivery = yield* deliveryQueue;
@@ -34,17 +33,8 @@ export default Alchemy.Stack(
       settings: { batchSize: 10, maxRetries: 3 },
     });
 
-    const enableGateway = yield* Config.Boolean("RONDYR_AI_GATEWAY").pipe(
-      Config.withDefault(false),
-    );
-    const gateway =
-      enableGateway && !dev
-        ? yield* Cloudflare.AI.Gateway("AiGateway", { collectLogs: false })
-        : undefined;
-
     return {
       url: app.url,
-      aiGateway: gateway?.gatewayId,
       database: database.databaseName,
       classificationQueue: classification.queueName,
       deliveryQueue: delivery.queueName,

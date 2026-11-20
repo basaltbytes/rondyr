@@ -156,7 +156,7 @@ Chaque événement de décision enregistre les scores, l’identifiant du modèl
 - **Jev** reçoit les champs et le contexte dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
 - **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
 
-`RONDYR_AI_GATEWAY=true` crée un second gateway que le Worker n’utilise pas (#22). En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
+La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la première requête authentifiée du compte, avec la collecte de logs activée ; l’adaptateur OpenAI désactive donc la collecte et le cache à chaque appel, et un test vérifie ces options. Jev appelle Workers AI sans gateway. L’identifiant `default` est une constante de `src/adapters/ai/openai-decisions.ts`. En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
 
 ### Sécurité du pipeline IA
 
@@ -269,7 +269,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 
 ```text
 .
-├── alchemy-run.ts                  # pile Alchemy : D1, files, consumer, gateway
+├── alchemy-run.ts                  # pile Alchemy : D1, files, consumer
 ├── wrangler.json                   # développement local, tests et dry-run
 ├── drizzle-config.ts
 ├── database/migrations/            # migrations et snapshots Drizzle
@@ -346,15 +346,14 @@ Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épin
 
 ## 12. Ordre de réalisation
 
-Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La suite, dans l’ordre :
+Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). La suite, dans l’ordre :
 
-1. **Consolidation.** Ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). À faire avant d’ajouter des tables et une seconde file.
-2. **Distribution.** Livraisons (#5), puis e-mail (#14) et webhook signé (#13). C’est ce qui manque le plus pour remplacer un service de formulaires.
-3. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
-4. **Protection.** Anti-abus et quotas (#7), en-têtes de sécurité (#24).
-5. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
-6. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
-7. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12), licence (#21).
+1. **Distribution.** Livraisons (#5), puis e-mail (#14) et webhook signé (#13). C’est ce qui manque le plus pour remplacer un service de formulaires.
+2. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
+3. **Protection.** Anti-abus et quotas (#7), en-têtes de sécurité (#24).
+4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
+5. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
+6. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12), licence (#21).
 
 ## 13. Décisions ouvertes
 
@@ -366,7 +365,6 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 | Durées de conservation par défaut, export et purge | #9 |
 | Origines autorisées quand la liste d’un formulaire est vide | #19 |
 | Champs répétés et `multipart/form-data` sans fichiers | #8 |
-| Gateway IA : celui de la pile ou `default` | #22 |
 | Déploiement de `staging` avant `prod` dans la CI | #10 |
 | Licence : MIT, Apache-2.0 ou AGPL-3.0 | #21 |
 
@@ -375,6 +373,7 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 - Le statut d’une soumission est un flux d’événements dans un Durable Object, projeté dans D1 pour l’Inbox.
 - Les requêtes d’exécution restent du SQL préparé, dans les adaptateurs de `src/adapters/database`, et Effect Schema décode les lignes qu’elles renvoient. Drizzle sert au schéma, aux migrations et à Better Auth (#23).
 - Jev passe par le binding Workers AI ; OpenAI Decisions passe par AI Gateway avec la facturation unifiée. Le choix se fait par stage.
+- OpenAI Decisions utilise le gateway `default`, que AI Gateway crée lui-même, et la pile ne provisionne pas de gateway (#22).
 - Le premier compte se crée avec un jeton d’installation et `scripts/setup-owner.sh`.
 - Un envoi HTML reçoit une page de confirmation avec le statut `202`.
 
