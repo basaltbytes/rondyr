@@ -22,6 +22,7 @@ const workflow = makeWorkflowBridge(WorkflowEntrypoint, entry);
 const DomainDirectory = durableObject("Submissions.DomainDirectory");
 const SubmissionAggregate = durableObject("Submissions.SubmissionAggregate");
 const ClassificationPolicy = durableObject("Submissions.ClassificationPolicy");
+const DeliveryPolicy = durableObject("Submissions.DeliveryPolicy");
 const InboxProjection = durableObject("Submissions.InboxProjection");
 const InboxProjectionRun = durableObject("Submissions.InboxProjectionRun");
 const ClassifySubmissionWorkflow = durableObject("Submissions.ClassifySubmissionWorkflow");
@@ -31,6 +32,7 @@ export {
   DomainDirectory,
   SubmissionAggregate,
   ClassificationPolicy,
+  DeliveryPolicy,
   InboxProjection,
   InboxProjectionRun,
   ClassifySubmissionWorkflow,

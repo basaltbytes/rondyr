@@ -11,6 +11,10 @@
   "observability": {
     "enabled": true
   },
+  "vars": {
+    "CLASSIFICATION_QUEUE_NAME": "rondyr-classification",
+    "DELIVERY_QUEUE_NAME": "rondyr-delivery"
+  },
   "d1_databases": [
     {
       "binding": "DB",
@@ -38,6 +42,13 @@
         "max_batch_size": 10,
         "max_batch_timeout": 1,
         "max_retries": 3
+      },
+      {
+        "queue": "rondyr-delivery",
+        "dead_letter_queue": "rondyr-delivery-dead-letter",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_retries": 3
       }
     ]
   },
@@ -57,6 +68,10 @@
       {
         "name": "Submissions.ClassificationPolicy",
         "class_name": "ClassificationPolicy"
+      },
+      {
+        "name": "Submissions.DeliveryPolicy",
+        "class_name": "DeliveryPolicy"
       },
       {
         "name": "Submissions.InboxProjection",
@@ -83,6 +98,10 @@
         "InboxProjectionRun",
         "ClassifySubmissionWorkflow"
       ]
+    },
+    {
+      "tag": "deliveries",
+      "new_sqlite_classes": ["DeliveryPolicy"]
     }
   ],
   "workflows": [

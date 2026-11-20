@@ -35,7 +35,7 @@ pnpm run deploy --stage staging --env-file .env.staging
 
 On the first plan or deployment, Alchemy can offer to create its state Worker. Pass `--profile` to select another Cloudflare account configured in Alchemy. See [Alchemy accounts and profiles](https://alchemy.run/cloudflare/accounts-and-tokens/) and [shared state](https://alchemy.run/state-store/).
 
-The stack deploys the Worker with the Vite assets and the Durable Objects of the domain model. It applies the D1 migrations, and it configures the classification queue, its dead-letter queue, and the cron trigger that runs every minute. It also creates the delivery queue, which nothing uses until [#5](https://github.com/basaltbytes/rondyr/issues/5) is done.
+The stack deploys the Worker with the Vite assets and the Durable Objects of the domain model. It applies the D1 migrations, and it configures the classification and delivery queues, their dead-letter queues and consumers, and the cron trigger that runs every minute. The Worker receives the generated queue names as `CLASSIFICATION_QUEUE_NAME` and `DELIVERY_QUEUE_NAME` to tell the two queues apart.
 
 The dashboard assets get their security headers from `public/_headers`. After a deployment, check them on the stage origin:
 
