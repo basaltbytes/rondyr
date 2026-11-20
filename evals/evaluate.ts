@@ -130,8 +130,7 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
   if (Option.isSome(seen.requested) && seen.requested.value !== expected) {
     return yield* UnexpectedModel.make({ classifier, expected, requested: seen.requested.value });
   }
-  // The adapters turn any rejection of `run` into a retryable ClassificationFailed. These two
-  // failures would repeat on every call, so the run stops instead.
+  // Invalid gateway options and REST authentication failures would repeat on every call.
   if (Option.isSome(seen.failure) && seen.failure.value._tag === "UnsupportedGatewayOptions") {
     return yield* seen.failure.value;
   }
