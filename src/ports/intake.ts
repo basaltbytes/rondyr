@@ -36,6 +36,15 @@ export class FormSuspended extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("FormSuspended", { origins: OriginMatch }) {}
 
+/**
+ * The submission has no field once the form's empty honeypot field is removed:
+ * the honeypot field was its only field.
+ */
+export class EmptySubmission extends Schema.TaggedError<
+  EmptySubmission,
+  { readonly brand: unique symbol }
+>()("EmptySubmission", { origins: OriginMatch }) {}
+
 export interface ReceivedSubmission {
   readonly submissionId: SubmissionId;
   readonly origins: OriginMatch;
@@ -50,6 +59,11 @@ export class SubmissionIntake extends Context.Service<
      * Store a submission and its outbox event in one transaction. A returned ID
      * means that both rows exist. A request without an origin is not checked
      * against the form's allowed origins. A suspended form stores nothing.
+     *
+     * When the form has a honeypot field, an empty value of that field is
+     * removed before storage, and a filled one is stored with the intake reason
+     * `honeypot`, so that the submission is quarantined without a classifier.
+     * The result is the same in both cases.
      */
     readonly receive: (
       publicId: string,
@@ -57,7 +71,12 @@ export class SubmissionIntake extends Context.Service<
       origin: Option.Option<string>,
     ) => Effect.Effect<
       ReceivedSubmission,
-      FormNotFound | FormRateLimited | FormSuspended | OriginRefused | StorageUnavailable
+      | FormNotFound
+      | FormRateLimited
+      | FormSuspended
+      | OriginRefused
+      | EmptySubmission
+      | StorageUnavailable
     >;
     /**
      * Match an origin against the allowed origins of a form, without storing
