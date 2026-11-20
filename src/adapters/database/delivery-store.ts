@@ -6,6 +6,7 @@ import {
   DeliveryStatus,
   interruptedSummary,
   NotificationTarget,
+  summarize,
   TargetId,
   TargetType,
   type AttemptOutcome,
@@ -228,8 +229,14 @@ const start = Effect.fn("DeliveryStore.start")(function* (
 const recordedOutcome = Match.type<typeof AttemptOutcome.Type>().pipe(
   Match.tagsExhaustive({
     Delivered: () => ({ outcome: "delivered", error: null }),
-    RetryableFailure: ({ summary }) => ({ outcome: "retryable-failure", error: summary }),
-    PermanentFailure: ({ summary }) => ({ outcome: "permanent-failure", error: summary }),
+    RetryableFailure: ({ summary }) => ({
+      outcome: "retryable-failure",
+      error: summarize(summary),
+    }),
+    PermanentFailure: ({ summary }) => ({
+      outcome: "permanent-failure",
+      error: summarize(summary),
+    }),
   }),
 );
 

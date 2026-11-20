@@ -79,7 +79,7 @@ Identifiant de livraison : 0f6c1a62-6b8e-4c43-9f5e-2d3a9b7c4e11
 Rondyr peut envoyer deux fois la même livraison. Deux messages qui portent le même identifiant de livraison sont des doublons.
 ```
 
-The body lists every field in the order the form sent them, then the form name, the time of reception in UTC, and the delivery ID.
+The body lists every field, then the form name, the time of reception in UTC, and the delivery ID. Field names that are JavaScript array indices, such as `"1"` and `"2"`, appear first in numeric order. The other fields follow in the order received.
 
 Field names and values come from visitors, so none of them goes into a header, with one exception. When the submission has a field named exactly `email` whose value is a single valid address, with no display name, no space and no line break, it becomes the `Reply-To` address, and answering the email writes to the visitor. Any other value, such as `visitor@example.com` followed by a line break, leaves the email without `Reply-To`. The subject is built from the form name only. In the body, line breaks inside a field name become spaces, and line breaks inside a value become plain `\n`.
 
