@@ -20,8 +20,8 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | --- | --- | --- |
 | Déploiement Alchemy, stages `staging` et `prod`, CI | Fait | #12 pour un compte vierge |
 | Premier compte, sessions, inscriptions fermées | Fait | |
-| Organisations et formulaires | Création seulement | #8, #11 |
-| Réception JSON et `application/x-www-form-urlencoded` | Fait, sauf JSON depuis un navigateur | #19 |
+| Organisations et formulaires | Création, origines autorisées par formulaire | #8, #11 |
+| Réception JSON et `application/x-www-form-urlencoded` | Fait, y compris JSON depuis un navigateur sur une autre origine | |
 | Limites à l’entrée | Taille, schéma, 30 par minute et par formulaire | #7 |
 | Enregistrement durable et outbox | Fait | |
 | Classification et quarantaine | Fait, seuils fixes | #6, #15 |
@@ -32,6 +32,8 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Mesures et reprise après incident | À faire | #10 |
 
 Un formulaire peut avoir des destinations webhook, configurées depuis le dashboard ou l’API d’administration. L’e-mail arrive avec #14. Un formulaire sans destination garde ses messages acceptés dans l’Inbox seulement.
+
+Un formulaire peut aussi avoir une liste d’origines autorisées. Une page servie depuis une autre origine peut alors l’appeler avec `fetch`, et un navigateur d’un site absent de la liste reçoit `403`. Une liste vide autorise toutes les origines.
 
 ### Hors périmètre de la v0.1
 
@@ -68,8 +70,8 @@ Les fichiers et dossiers du projet sont en kebab-case, sauf les noms imposés pa
 
 ```mermaid
 flowchart TD
-  A["POST /f/:public-id"] --> B["Validation : type, taille, champs, plafond"]
-  B -->|refus| C["400, 404, 413, 415, 429"]
+  A["POST /f/:public-id"] --> B["Validation : type, taille, champs, origine, plafond"]
+  B -->|refus| C["400, 403, 404, 413, 415, 429"]
   B --> D["Lot D1 : submissions + outbox_events"]
   D --> E["202 et submission-id"]
   D --> T["Publication en arrière-plan de la requête"]
@@ -205,6 +207,7 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `organizations` | `id`, `name` |
 | `organization_members` | `(organization_id, user_id)`, sans rôle |
 | `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context` |
+| `form_origins` | `(form_id, origin)`, `created_at`. `origin` est normalisée : schéma, hôte et port éventuel, sans chemin ni barre oblique finale |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at` |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
 | `submission_inbox` | `submission_id`, `version`, `status`, `reason` ; écrite par la projection |
@@ -213,7 +216,7 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error` |
 | `auth_*` | Comptes, sessions, vérifications et limites de débit de Better Auth |
 
-Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire. Un index partiel sur `(next_attempt_at, lease_until)` sert la recherche des livraisons dues.
+Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire. La clé primaire `(form_id, origin)` de `form_origins` sert la vérification de l’origine à l’ingestion. Un index partiel sur `(next_attempt_at, lease_until)` sert la recherche des livraisons dues.
 
 Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. L’API d’administration crée les destinations webhook ; la table `notification_targets` existante suffit, sans migration.
 
@@ -234,7 +237,6 @@ Le contenu des messages n’existe que dans `submissions.fields`, et n’en sort
 
 ### Tables à venir
 
-- `form_origins` (#19).
 - Rôle dans `organization_members` et invitations (#11).
 - Statut des formulaires (#8), quotas (#7) et durées de conservation (#9).
 
@@ -249,14 +251,32 @@ Les tables `classification-attempts` et `audit-events` du document initial ne so
 | Statut | Cas |
 | --- | --- |
 | `202` | Soumission enregistrée ; le JSON contient `submission-id` et `status: "received"` |
+| `204` | Prérequête CORS (`OPTIONS`) acceptée |
 | `400` | Corps ou champs invalides |
-| `404` | Formulaire inconnu |
+| `403` | En-tête `Origin` absent de la liste des origines autorisées du formulaire ; rien n’est enregistré |
+| `404` | Formulaire inconnu, pour `POST` comme pour `OPTIONS` |
 | `413` | Corps de plus de 16 Kio |
 | `415` | Autre type de contenu |
 | `429` | Plus de 30 soumissions en une minute sur ce formulaire, avec `Retry-After: 60` |
 | `503` | D1 indisponible |
 
-Les réponses ne révèlent rien de la décision anti-spam. La route ne répond pas aux prérequêtes CORS : un `fetch` JSON depuis un navigateur sur une autre origine échoue (#19). `GET /health` renvoie `{"status":"ok"}`.
+Les réponses ne révèlent rien de la décision anti-spam. `GET /health` renvoie `{"status":"ok"}`.
+
+#### CORS et origines autorisées
+
+`OPTIONS /f/:public-id` répond aux prérequêtes, et chaque réponse de la route porte les en-têtes CORS, erreurs comprises. Les en-têtes dépendent de la liste des origines autorisées du formulaire :
+
+| Cas | En-têtes |
+| --- | --- |
+| Liste vide, formulaire inconnu, D1 indisponible | `Access-Control-Allow-Origin: *` |
+| `Origin` dans la liste | `Access-Control-Allow-Origin` égal à l’origine reçue, et `Vary: Origin` |
+| `Origin` absente de la liste, ou requête sans `Origin` | `Vary: Origin` seulement |
+
+La prérequête autorise `POST` et l’en-tête `Content-Type`, avec `Access-Control-Max-Age: 7200`. Aucune réponse ne porte `Access-Control-Allow-Credentials` : un appel avec cookies échoue dans le navigateur. Un `429` expose aussi `Retry-After` par `Access-Control-Expose-Headers`.
+
+Une requête sans en-tête `Origin` (curl, serveur) est traitée comme avant, quelle que soit la liste. Il en va de même pour `Origin: null`, qu’un navigateur envoie quand la page masque son origine (politique `no-referrer`, iframe isolée) : la refuser ferait perdre les messages d’un site pourtant autorisé. Une requête dont l’`Origin` est absente d’une liste non vide reçoit `403` avant tout enregistrement, qu’elle vienne de `fetch` ou d’un formulaire HTML posté depuis un autre site : un site absent de la liste ne peut pas remplir l’Inbox par le navigateur de ses visiteurs. La comparaison porte sur la valeur exacte de l’en-tête, que les navigateurs envoient déjà normalisée. Une requête invalide (`400`, `413`, `415`) garde son statut ; la liste ne décide alors que des en-têtes.
+
+L’instruction d’insertion vérifie l’origine, comme le plafond, et le même lot D1 lit l’état de la liste. Une soumission acceptée coûte donc toujours un aller-retour D1, et un refus (`403`, `404`, `429`) n’en demande plus de second. Une prérequête, ou une requête invalide qui porte un en-tête `Origin`, lit la liste en un aller-retour.
 
 ### API d’administration
 
@@ -275,10 +295,13 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `POST /api/organizations/:organizationId/forms/:publicId/targets` | Crée un webhook (`{"type":"webhook","url":…}`) et renvoie son secret, une seule fois |
 | `POST /api/organizations/:organizationId/targets/:targetId/rotate-secret` | Renvoie un nouveau secret |
 | `POST /api/organizations/:organizationId/targets/:targetId/activate` ou `/deactivate` | Active ou désactive le webhook |
+| `GET /api/organizations/:organizationId/forms/:publicId/origins` | Origines autorisées du formulaire, `[{"origin", "createdAt"}]` |
+| `POST /api/organizations/:organizationId/forms/:publicId/origins` | Ajoute une origine (`{"origin":…}`) : `201`, ou `200` si elle est déjà dans la liste |
+| `DELETE /api/organizations/:organizationId/forms/:publicId/origins?origin=…` | Retire une origine : `204`, ou `404` si elle n’est pas dans la liste |
 
-Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Les routes de destinations passent par le port `NotificationTargets`, dont l’adaptateur D1 joint `organization_members` à chaque requête. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`, comme deux rotations simultanées du même secret.
+Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Les routes de destinations passent par le port `NotificationTargets`, et celles des origines par le port `FormOrigins` ; leurs adaptateurs D1 joignent `organization_members` à chaque requête. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`, comme deux rotations simultanées du même secret.
 
-Une URL refusée répond `400` avec `{"error":"destination-refused","reason":…}`. Sans `RONDYR_SECRETS_KEY`, la création et la rotation répondent `503` avec `{"error":"secrets-key-missing"}` ; la liste et l’activation fonctionnent. Les réponses qui contiennent un secret portent `Cache-Control: no-store`, comme toutes celles de l’API d’administration. [docs/webhooks.md](docs/webhooks.md) documente le contrat pour les destinataires.
+Une URL refusée répond `400` avec `{"error":"destination-refused","reason":…}`. Une origine refusée répond `400` avec `{"error":"origin-refused","reason":…}` ; `parseAllowedOrigin`, dans `src/domain/forms/allowed-origin.ts`, accepte HTTPS, et HTTP seulement pour `localhost`, `127.0.0.0/8` et `[::1]`, puis normalise l’origine. Elle refuse un chemin, des paramètres, une ancre, des identifiants et les caractères génériques (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Sans `RONDYR_SECRETS_KEY`, la création et la rotation répondent `503` avec `{"error":"secrets-key-missing"}` ; la liste et l’activation fonctionnent. Les réponses qui contiennent un secret portent `Cache-Control: no-store`, comme toutes celles de l’API d’administration. [docs/webhooks.md](docs/webhooks.md) documente le contrat pour les destinataires.
 
 Restent à ajouter : l’administration des formulaires (#8), les membres et les rôles (#11), les destinations e-mail (#14), l’historique des livraisons et l’envoi d’essai (#16), la recherche et l’export (#9).
 
@@ -288,14 +311,16 @@ Restent à ajouter : l’administration des formulaires (#8), les membres et les
 
 En place : limite de taille, schéma des champs, refus des noms `__proto__`, `constructor` et `prototype`, et plafond de 30 soumissions par minute et par formulaire, calculé dans D1 par l’instruction d’insertion elle-même.
 
-Ce plafond est commun à tous les visiteurs d’un formulaire, donc un seul client peut le remplir et faire refuser les messages légitimes. #7 ajoute une limite par adresse IP, le honeypot, Turnstile et les plafonds par organisation. Le CORS (#19) sert l’intégration navigateur et ne protège pas contre l’abus, puisqu’un client hors navigateur l’ignore.
+Ce plafond est commun à tous les visiteurs d’un formulaire, donc un seul client peut le remplir et faire refuser les messages légitimes. #7 ajoute une limite par adresse IP, le honeypot, Turnstile et les plafonds par organisation.
+
+Les origines autorisées servent l’intégration navigateur et ne protègent pas contre l’abus : un client hors navigateur n’envoie pas d’en-tête `Origin`, ou en choisit la valeur. Elles empêchent seulement un autre site de faire envoyer des messages par le navigateur de ses visiteurs. Les plafonds de #7 s’appliquent quelle que soit l’origine.
 
 ### Authentification et isolation
 
 - Les inscriptions publiques sont fermées. `/api/setup` exige `RONDYR_SETUP_TOKEN`, comparé en temps constant, et D1 refuse la création d’un second compte par ce chemin. Le jeton se retire après l’installation.
 - Les routes d’authentification et d’administration refusent toute requête dont l’origine diffère de `BETTER_AUTH_URL`. Le cookie de session est `Secure`, `HttpOnly` et `SameSite=Lax`.
 - Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
-- Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages comme pour les destinations.
+- Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages, les destinations et les origines autorisées.
 
 Tout membre a aujourd’hui tous les droits sur son organisation, et tout compte connecté peut en créer une (#11).
 
@@ -307,6 +332,8 @@ Tout membre a aujourd’hui tous les droits sur son organisation, et tout compte
 - `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` et `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
 
 Ce fichier ne s’applique pas aux réponses du Worker (`/health`, `/f`, `/api`). Le Worker ajoute `X-Content-Type-Options: nosniff` à chacune d’elles, et un test workerd le vérifie. La connexion et la revue d’un message ont été vérifiées avec cette CSP dans Chrome, sur le build de production servi par `vite preview`.
+
+Les en-têtes CORS de `/f` sont décrits en section 7. `run_worker_first` couvre `/f/*` pour toutes les méthodes, donc une prérequête atteint le Worker et non les assets ; cela a été vérifié avec `wrangler dev` sur le build, pas par un test workerd, dont le Worker n’a pas d’assets. `vite preview` répond lui-même aux prérequêtes et ne permet pas cette vérification.
 
 ### Sorties et secrets
 
@@ -338,22 +365,23 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   │                               # projection, requêtes, ReviewApi, schémas partagés
 │   ├── domain/deliveries/          # identifiants, statuts, règles de reprise, règle des URL
 │   │                               # de webhook, charge utile et contrats de l’API des destinations
+│   ├── domain/forms/               # règle des origines autorisées et contrats de leur API
 │   ├── ports/                      # authentication, intake, outbox, classification-queue,
 │   │                               # background-tasks, organization-directory,
 │   │                               # stored-messages, storage, delivery-store,
 │   │                               # delivery-queue, notification-provider,
-│   │                               # notification-targets, secret-cipher
+│   │                               # notification-targets, secret-cipher, form-origins
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
 │   │   ├── crypto/                 # secret-cipher (AES-GCM, RONDYR_SECRETS_KEY)
 │   │   ├── database/               # schémas Drizzle, d1, intake, outbox, inbox,
 │   │   │                           # organization-directory, stored-messages, delivery-store,
-│   │   │                           # notification-targets
+│   │   │                           # notification-targets, form-origins
 │   │   ├── notifications/          # fournisseurs par type, webhook, adaptateur de test
 │   │   ├── queues/                 # classification-queue, delivery-queue
 │   │   └── workers/                # background-tasks (waitUntil d’Alchemy)
-│   ├── http/                       # public, submission, authentication, review, target
+│   ├── http/                       # public, submission, authentication, review, target, origin
 │   └── jobs/
 │       ├── submission-outbox.ts    # publication (ingestion et Cron), consumer de file
 │       └── delivery-outbox.ts      # DeliveryScheduler, publication (politique et Cron),
@@ -369,7 +397,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 └── tests/integration/              # fixtures partagées
 ```
 
-Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le dashboard importe les schémas du domaine par les alias `@rondyr/contracts` (soumissions) et `@rondyr/deliveries` (destinations), ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
+Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le dashboard importe les schémas du domaine par les alias `@rondyr/contracts` (soumissions), `@rondyr/deliveries` (destinations) et `@rondyr/forms` (origines autorisées), ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
 
 ## 10. Tests et critères de qualité
 
@@ -386,6 +414,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 - Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
 - Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
 - Règle des URL de webhook : chaque classe refusée, dont les écritures numériques d’IPv4 et les adresses IPv6 réservées.
+- Origines autorisées : normalisation et chaque motif de refus ; prérequête pour une liste vide, une origine de la liste, une origine refusée et un formulaire inconnu ; `fetch` JSON accepté depuis une origine de la liste, refusé en `403` sans enregistrement depuis une autre, accepté sans `Origin` ; formulaire HTML posté depuis une origine refusée ; en-têtes CORS sur `400`, `404`, `413`, `415`, `429` et `503` ; refus des origines invalides par l’API d’administration ; refus entre organisations pour la liste, l’ajout et le retrait.
 - Webhooks : signature vérifiée par l’exemple de `docs/examples/verify-webhook.ts`, refus d’une signature expirée, d’un autre secret ou d’un corps modifié ; `500` puis `200` avec le même identifiant de livraison ; `400` et redirection sans reprise, sans suivre `Location` ; URL privée et secret chiffré avec une autre clé refusés avant l’envoi ; deux signatures pendant la rotation, une seule après 24 heures ; création par l’API, envoi par la composition déployée et vérification de la requête reçue ; refus entre organisations pour la liste, la création, la rotation et la désactivation ; création et rotation refusées sans `RONDYR_SECRETS_KEY`. Un test vérifie que `docs/webhooks.md` contient l’exemple testé.
 - Livraisons : création après une acceptation automatique et après une acceptation manuelle, jusqu’au consumer ; une seule livraison par destination malgré une politique exécutée deux fois ou un message de file en double ; aucune livraison sans destination active, pour une destination créée après l’acceptation ou pour une destination d’une autre organisation ; nouvel envoi avec le même identifiant après une panne entre l’envoi et l’enregistrement ; une destination en échec à côté d’une destination livrée ; six échecs réessayables jusqu’à `failed`, avec les délais de reprise.
 
@@ -426,7 +455,7 @@ Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épin
 Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). Le mécanisme de livraison (#5) et le webhook signé (#13) sont faits. La suite, dans l’ordre :
 
 1. **Distribution.** E-mail (#14), avec la configuration de ses destinations. C’est ce qui manque le plus pour remplacer un service de formulaires.
-2. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
+2. **Intégration.** Administration des formulaires (#8). Le JSON depuis un navigateur (#19) est fait.
 3. **Protection.** Anti-abus et quotas (#7).
 4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
 5. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
@@ -440,7 +469,6 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 | Message hors sujet : revue humaine (comportement actuel) ou acceptation avec étiquette | #6 |
 | Plafonds par organisation et comportement à la limite | #7 |
 | Durées de conservation par défaut, export et purge | #9 |
-| Origines autorisées quand la liste d’un formulaire est vide | #19 |
 | Champs répétés et `multipart/form-data` sans fichiers | #8 |
 | Déploiement de `staging` avant `prod` dans la CI | #10 |
 
@@ -455,6 +483,7 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 - Un envoi HTML reçoit une page de confirmation avec le statut `202`.
 - Les webhooks signent `<horodatage>.<corps>` en HMAC-SHA-256 et envoient l’identifiant de livraison dans `Rondyr-Delivery-Id`. Après une rotation, l’ancien secret signe aussi pendant 24 heures (#13).
 - Les secrets des destinations sont chiffrés dans D1 avec `RONDYR_SECRETS_KEY`, facultative au déploiement (#13).
+- Un formulaire sans origine autorisée accepte toutes les origines (`Access-Control-Allow-Origin: *`). Avec une liste, un navigateur d’une autre origine reçoit `403` sans en-tête CORS, et une requête sans `Origin` reste acceptée. Aucune réponse n’autorise les cookies (#19).
 
 ---
 

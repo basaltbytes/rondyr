@@ -8,6 +8,7 @@ import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
 import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
 import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
+import { formOriginsLive } from "./adapters/database/form-origins.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
 import { submissionIntakeLive } from "./adapters/database/intake.ts";
 import { notificationTargetsLive } from "./adapters/database/notification-targets.ts";
@@ -20,6 +21,7 @@ import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
 import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
+import { originRoutes } from "./http/origin-routes.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
 import { submissionRoutes } from "./http/submission-routes.ts";
@@ -37,6 +39,7 @@ const services = Layer.mergeAll(
   authenticationLive,
   HttpServer.layerServices,
   submissionIntakeLive,
+  formOriginsLive,
   organizationDirectoryLive,
   outboxLive,
   classificationQueueLive,
@@ -61,6 +64,7 @@ const routes = Layer.mergeAll(
   submissionRoutes,
   reviewRoutes,
   targetRoutes,
+  originRoutes,
 );
 
 // One outbox failing does not keep the other from being published.

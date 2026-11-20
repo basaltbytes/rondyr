@@ -218,7 +218,8 @@
     "paths": {
       "~/*": ["./dashboard/src/*"],
       "@rondyr/contracts/*": ["./src/domain/submissions/*"],
-      "@rondyr/deliveries/*": ["./src/domain/deliveries/*"]
+      "@rondyr/deliveries/*": ["./src/domain/deliveries/*"],
+      "@rondyr/forms/*": ["./src/domain/forms/*"]
     },
     "resolveJsonModule": true,
     "noEmit": true
