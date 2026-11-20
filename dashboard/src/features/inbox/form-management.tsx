@@ -2,10 +2,12 @@ import { Option, Schema } from "effect";
 import { useActionState, useState } from "react";
 
 import {
+  clearHoneypotField,
   clearSuccessUrl,
   createForm,
   FormRequestFailed,
   setFormStatus,
+  setHoneypotField,
   setSuccessUrl,
   updateForm,
 } from "~/lib/forms-client";
@@ -76,6 +78,18 @@ function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
         else await setSuccessUrl(inboxId, form.publicId, text(data, "url"));
         await onChanged();
       }, "La redirection n’a pas pu être enregistrée. Réessayez.");
+    },
+    null,
+  );
+
+  const [honeypotProblem, changeHoneypot, trapping] = useActionState(
+    (_: string | null, data: FormData) => {
+      const clear = data.get("action") === "clear";
+      return attempt(async () => {
+        if (clear) await clearHoneypotField(inboxId, form.publicId);
+        else await setHoneypotField(inboxId, form.publicId, text(data, "field"));
+        await onChanged();
+      }, "Le champ piège n’a pas pu être enregistré. Vérifiez le nom et réessayez.");
     },
     null,
   );
@@ -192,6 +206,33 @@ function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
         )}
       </form>
       {redirectProblem !== null && <p role="alert">{redirectProblem}</p>}
+      <p>
+        Champ piège :{" "}
+        {form.honeypotField === null ? (
+          "aucun."
+        ) : (
+          <>
+            <code>{form.honeypotField}</code>.
+          </>
+        )}{" "}
+        Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec{" "}
+        <code>tabindex="-1"</code> et <code>autocomplete="off"</code> : les visiteurs le laissent
+        vide, et un message qui le remplit est mis à vérifier sans être analysé.
+      </p>
+      <form action={changeHoneypot} className="inbox-actions">
+        <label>
+          Nom du champ piège <input name="field" required maxLength={100} placeholder="_hp" />
+        </label>
+        <button type="submit" name="action" value="set" disabled={trapping}>
+          Enregistrer
+        </button>
+        {form.honeypotField !== null && (
+          <button type="submit" name="action" value="clear" formNoValidate disabled={trapping}>
+            Retirer le champ piège
+          </button>
+        )}
+      </form>
+      {honeypotProblem !== null && <p role="alert">{honeypotProblem}</p>}
     </section>
   );
 }
@@ -201,7 +242,7 @@ interface FormManagementProps {
   readonly onChanged: () => Promise<void>;
 }
 
-/** The forms of an organization: public URL, status, name, business context and redirect. */
+/** The forms of an organization: public URL, status, name, business context, redirect and honeypot field. */
 export function FormManagement({ inbox, onChanged }: FormManagementProps) {
   const [addProblem, add, adding] = useActionState(
     (_: string | null, data: FormData) =>

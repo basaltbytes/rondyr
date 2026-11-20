@@ -1,6 +1,12 @@
 import { Schema } from "effect";
 
-import { CreateForm, FormRequestError, ManagedForm, UpdateForm } from "@rondyr/forms/form";
+import {
+  CreateForm,
+  FormRequestError,
+  ManagedForm,
+  SetHoneypotField,
+  UpdateForm,
+} from "@rondyr/forms/form";
 
 import type { Inbox } from "./inbox-client.ts";
 
@@ -20,6 +26,7 @@ const decodeForm = Schema.decodeUnknownPromise(ManagedForm);
 const decodeProblem = Schema.decodeUnknownOption(FormRequestError);
 const parseCreate = Schema.decodeUnknownSync(CreateForm);
 const parseUpdate = Schema.decodeUnknownSync(UpdateForm);
+const parseHoneypot = Schema.decodeUnknownSync(SetHoneypotField);
 
 async function send(path: string, init: RequestInit) {
   const response = await fetch(path, init);
@@ -68,4 +75,17 @@ export async function setSuccessUrl(id: Inbox["id"], publicId: Form["publicId"],
 
 export async function clearSuccessUrl(id: Inbox["id"], publicId: Form["publicId"]) {
   return send(`${form(id, publicId)}/success-url`, { method: "DELETE" });
+}
+
+export async function setHoneypotField(id: Inbox["id"], publicId: Form["publicId"], field: string) {
+  const body = parseHoneypot({ field });
+  return send(`${form(id, publicId)}/honeypot`, {
+    method: "PUT",
+    headers: json,
+    body: JSON.stringify(body),
+  });
+}
+
+export async function clearHoneypotField(id: Inbox["id"], publicId: Form["publicId"]) {
+  return send(`${form(id, publicId)}/honeypot`, { method: "DELETE" });
 }
