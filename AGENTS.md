@@ -1,6 +1,6 @@
 # Rondyr
 
-Rondyr est un backend de formulaires auto-hébergé sur Cloudflare. Lire [architecture.md](architecture.md) avant de modifier les contrats publics, le modèle de données ou le traitement des soumissions. La section 12 décrit l’ordre des travaux. Le README décrit ce que le dépôt permet déjà d’exécuter.
+Rondyr est un backend de formulaires auto-hébergé sur Cloudflare. Lire [architecture.md](architecture.md) avant de modifier les contrats publics, le modèle de données ou le traitement des soumissions. La section 12 décrit l’ordre des travaux. Le README décrit ce que le dépôt permet déjà d’exécuter, et [docs/deployment.md](docs/deployment.md) décrit le déploiement.
 
 ## Code
 
@@ -8,7 +8,7 @@ Rondyr est un backend de formulaires auto-hébergé sur Cloudflare. Lire [archit
 - Utiliser Effect 4 et Effect Schema pour le métier, les erreurs et les frontières de données. Composer les layers à l’entrée du Worker. Garder les fichiers en kebab-case, sauf conventions des outils et fichiers générés.
 - Réserver les migrations à l’outillage de développement et au déploiement. Versionner les migrations et snapshots Drizzle dans `database/migrations`.
 - Pour l’ingestion, une réponse `202` implique la persistance atomique de la soumission et de son événement outbox. Les futurs consumers doivent tolérer les événements dupliqués.
-- Utiliser des noms et commentaires de code en anglais. Écrire la documentation produit en français.
+- Utiliser des noms et commentaires de code en anglais. Écrire le README et `docs/` en anglais. Écrire `architecture.md`, les issues et les textes de l’interface en français.
 
 ## Skills locaux
 
