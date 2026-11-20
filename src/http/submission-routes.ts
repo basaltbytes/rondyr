@@ -134,8 +134,11 @@ function refusal(
   });
 }
 
+// A browser sends `Origin: null` when the page hides its origin: a `no-referrer`
+// policy on a form post, a sandboxed frame. Such a request is handled like one
+// without the header, so a listed site that hides its origin keeps its messages.
 const requestOrigin = Effect.map(HttpServerRequest.HttpServerRequest, (request) =>
-  Option.fromNullishOr(request.headers.origin),
+  Option.filter(Option.fromNullishOr(request.headers.origin), (origin) => origin !== "null"),
 );
 
 const receive = Effect.gen(function* () {
