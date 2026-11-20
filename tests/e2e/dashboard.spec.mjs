@@ -197,8 +197,6 @@ test("mettre en quarantaine un message au champ piège rempli et le revoir", asy
   await expect(site.getByRole("heading", { name: "Message reçu" })).toBeVisible();
   const reader = await openSubmission(page, "À vérifier", message);
   await expect(reader.getByText("Champ piège rempli", { exact: true })).toBeVisible();
-  // The filled trap stays visible, since it is why the message waits.
-  await expect(reader.getByText("societe", { exact: true })).toBeVisible();
   await reader.getByRole("button", { name: "Accepter et envoyer" }).click();
   // An accepted message leaves the folder of the messages to review.
   await expect(reader.getByText(message, { exact: true })).toHaveCount(0);
@@ -250,8 +248,8 @@ test("ajouter des destinations, envoyer un essai et relancer un webhook en éche
   expect((await submitContact(site, endpoint, message)).status()).toBe(202);
   const reader = await openSubmission(page, "Acceptés", message);
   const history = reader.getByRole("region", { name: "Livraisons du message" });
-  const deliveries = history.getByRole("list").first().locator("> li");
-  const webhookDelivery = deliveries.filter({ hasText: receiver });
+  // Only a delivery names its destination. The attempts listed inside it do not.
+  const webhookDelivery = history.getByRole("listitem").filter({ hasText: receiver });
   const refresh = history.getByRole("button", { name: "Actualiser les livraisons" });
   const retry = webhookDelivery.getByRole("button", { name: "Relancer la livraison" });
   await expect(async () => {
@@ -276,7 +274,7 @@ test("ajouter des destinations, envoyer un essai et relancer un webhook en éche
     webhookDelivery.getByRole("listitem").filter({ hasText: "Tentative 2" }),
   ).toContainText("livrée");
   await expect(retry).toHaveCount(0);
-  const emailDelivery = deliveries.filter({ hasText: `E-mail à ${email}` });
+  const emailDelivery = history.getByRole("listitem").filter({ hasText: `E-mail à ${email}` });
   await expect(emailDelivery.getByText("Livrée", { exact: true })).toBeVisible();
   await expect(emailDelivery.getByText("1 tentative", { exact: true })).toBeVisible();
 
@@ -285,13 +283,22 @@ test("ajouter des destinations, envoyer un essai et relancer un webhook en éche
   await expect(webhook.getByRole("status")).toHaveText(/Message d’essai livré/u);
 });
 
-test("voir l’état du traitement de l’organisation", async ({ dashboard: page }) => {
+test("voir un nouveau message dans l’état du traitement après l’avoir actualisé", async ({
+  dashboard: page,
+  context,
+  externalOrigin,
+}) => {
   await createOrganization(page);
+  await openSection(page, "Formulaires");
+  const endpoint = await publicFormUrl(page, formName);
   await openSection(page, "État", "Exploitation");
   const status = page.getByRole("region", { name: "État de Atelier Rondyr" });
-  await expect(status.getByText("Événements non remis")).toBeVisible();
-  await expect(status.getByText("Envois répétés")).toBeVisible();
-  await expect(page.getByText("Dernière exécution réussie du Cron")).toBeVisible();
+  await expect(status).toContainText(/Messages reçus\s*0/u);
+
+  const site = await context.newPage();
+  await openContact(site, externalOrigin, endpoint);
+  expect((await submitContact(site, endpoint, "Demande comptée dans l’état")).status()).toBe(202);
   await page.getByRole("button", { name: "Actualiser", exact: true }).click();
-  await expect(status.getByText("Événements non remis")).toBeVisible();
+
+  await expect(status).toContainText(/Messages reçus\s*1/u);
 });

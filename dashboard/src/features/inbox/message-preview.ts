@@ -80,13 +80,15 @@ export function excerptOf(fields: Fields) {
 const timeOfDay = new Intl.DateTimeFormat("fr", { hour: "2-digit", minute: "2-digit" });
 const dayOfYear = new Intl.DateTimeFormat("fr", { day: "numeric", month: "short" });
 const dayAndTime = new Intl.DateTimeFormat("fr", { dateStyle: "long", timeStyle: "short" });
-const day = 86_400_000;
 
 /** When a message arrived, for a list read at `now`: the time today, then "hier", then the date. */
 export function listTime(receivedAt: number, now: number) {
-  const today = new Date(now).setHours(0, 0, 0, 0);
+  const midnight = new Date(now);
+  const today = midnight.setHours(0, 0, 0, 0);
   if (receivedAt >= today) return timeOfDay.format(receivedAt);
-  if (receivedAt >= today - day) return "hier";
+  // The calendar day before, which lasts 23 or 25 hours when the clocks change.
+  const yesterday = midnight.setDate(midnight.getDate() - 1);
+  if (receivedAt >= yesterday) return "hier";
   return dayOfYear.format(receivedAt);
 }
 
