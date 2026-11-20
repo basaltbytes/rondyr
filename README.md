@@ -84,7 +84,7 @@ The body can be `application/json` or `application/x-www-form-urlencoded`, up to
 
 By default a form accepts submissions from a page on any origin. To restrict it, open **Origines autorisées** in the dashboard and add the origins of your site, such as `https://www.example.com`. An origin is a scheme, a host, and an optional port, with no path. It must use HTTPS, except `http://localhost` and loopback addresses such as `http://127.0.0.1:8080` during development.
 
-Once a form has at least one allowed origin, Rondyr answers `403` to a browser that sends any other `Origin` header, whether it posts with `fetch` or with an HTML form, and stores nothing. A request without an `Origin` header, from curl or a server, is still accepted. This list keeps another site from sending messages to your form through its visitors' browsers; it doesn't stop spam from scripts, which can send any header.
+Once a form has at least one allowed origin, Rondyr answers `403` to a browser that sends any other `Origin` header, whether it posts with `fetch` or with an HTML form, and stores nothing. A request without an `Origin` header, from curl or a server, is still accepted, and so is one with `Origin: null`, which a browser sends when the page hides its origin (a `no-referrer` policy, a sandboxed frame). This list keeps another site from sending messages to your form through its visitors' browsers; it doesn't stop spam from scripts, which can send any header.
 
 Locally there is no Workers AI binding, so every message is quarantined with the reason **Analyse indisponible**. Click **Actualiser** a few seconds after posting to see it; you can then open, accept, or archive it.
 

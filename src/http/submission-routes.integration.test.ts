@@ -282,9 +282,18 @@ it.live("accepts a JSON fetch from an allowed origin and refuses another origin"
       vary: "Origin",
       credentials: null,
     });
-    const opaque = yield* fetchJson("cors-fetch", "null");
-    assert.strictEqual(opaque.status, 403);
     yield* expectStored("cors-fetch", 1);
+
+    // A page that hides its origin sends `Origin: null`. Its message is stored like
+    // one from a client without the header, and it gets no Access-Control-Allow-Origin.
+    const opaque = yield* fetchJson("cors-fetch", "null");
+    assert.deepEqual(cors(opaque), {
+      status: 202,
+      allowOrigin: null,
+      vary: "Origin",
+      credentials: null,
+    });
+    yield* expectStored("cors-fetch", 2);
 
     // A client without Origin, such as curl or a server, is accepted whatever the list.
     const server = yield* fetchJson("cors-fetch", null);
@@ -294,7 +303,7 @@ it.live("accepts a JSON fetch from an allowed origin and refuses another origin"
       vary: "Origin",
       credentials: null,
     });
-    yield* expectStored("cors-fetch", 2);
+    yield* expectStored("cors-fetch", 3);
 
     // A form without allowed origins accepts every origin.
     yield* seedForm("cors-anywhere");
