@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 
+import { classifierContext } from "../../domain/submissions/classification.ts";
 import { ClassificationFailed, Classifier } from "../../domain/submissions/classifier.external.ts";
 import { StoredMessages } from "../../ports/stored-messages.ts";
 import { scoreWithJev } from "./jev.ts";
@@ -29,7 +30,7 @@ export const classifierLive = Classifier.toLayer(
               ClassificationFailed.make({ retryable: error._tag === "StorageUnavailable" }),
             ),
           );
-        const context = message.businessContext?.trim().slice(0, 2000) ?? "";
+        const context = classifierContext(message.businessContext ?? "");
         return yield* providers[provider](env.AI, message.fields, context).pipe(
           Effect.timeoutOrElse({
             duration: "12 seconds",

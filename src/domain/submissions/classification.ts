@@ -36,7 +36,18 @@ export const ClassificationResult = Schema.Union([
   Schema.TaggedStruct("ClassificationError", {}),
 ]);
 
-export const rulesVersion = 1;
+export const rulesVersion = 2;
+
+const contextLimit = 2000;
+const contextSegments = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Trim the context and keep whole characters within the UTF-16 length limit. */
+export function classifierContext(raw: string) {
+  const trimmed = raw.trim();
+  if (trimmed.length <= contextLimit) return trimmed;
+  const boundary = contextSegments.segment(trimmed).containing(contextLimit);
+  return trimmed.slice(0, boundary?.index ?? contextLimit);
+}
 
 export function reviewReason(scores: typeof ClassificationScores.Type) {
   if (scores.spam >= 0.7) return "probable-spam";
