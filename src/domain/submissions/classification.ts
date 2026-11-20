@@ -8,11 +8,27 @@ export const ClassificationScores = Schema.Struct({
   relevance: Schema.optionalKey(Score),
 });
 
+/** Why the classification rules quarantine a submission. */
 export const ClassificationReason = Schema.Literals([
   "probable-spam",
   "ambiguous",
   "low-relevance",
   "classification-error",
+]);
+
+/**
+ * Why intake quarantines a submission before any classifier runs. Intake
+ * records the reason with the submission, in the same transaction, so every
+ * hand-off of the submission carries the same reason.
+ * `honeypot`: the form's honeypot field has a value.
+ */
+export const IntakeReason = Schema.Literals(["honeypot"]);
+export type IntakeReason = typeof IntakeReason.Type;
+
+/** Why a submission is quarantined: a classification rule or an intake check. */
+export const QuarantineReason = Schema.Literals([
+  ...ClassificationReason.literals,
+  ...IntakeReason.literals,
 ]);
 
 export const ClassificationResult = Schema.Union([

@@ -13,6 +13,7 @@ export const reviewReasons = {
   ambiguous: "Classement incertain",
   "low-relevance": "Peu lié à votre activité",
   "classification-error": "Analyse indisponible",
+  honeypot: "Champ piège rempli",
 } as const;
 
 export const destinationRefusals = {

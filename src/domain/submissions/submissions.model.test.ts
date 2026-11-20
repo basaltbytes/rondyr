@@ -7,16 +7,17 @@ import { ApproveSubmission } from "./approve-submission.command.ts";
 import { reviewReason, rulesVersion } from "./classification.ts";
 import { ClassificationFailed, Classifier } from "./classifier.external.ts";
 import { DeliveryScheduler } from "./delivery-scheduler.external.ts";
-import { DismissSubmission } from "./dismiss-submission.command.ts";
+import { DismissSubmission, SubmissionDismissed } from "./dismiss-submission.command.ts";
 import { InboxStore } from "./inbox-store.ts";
 import { ListSubmissions } from "./list-submissions.query.ts";
-import { SubmissionQuarantined } from "./record-classification.command.ts";
+import { QuarantineAtIntake } from "./quarantine-at-intake.command.ts";
 import {
   ClassificationRequested,
   RequestClassification,
 } from "./request-classification.command.ts";
 import { CurrentReviewer } from "./review-session.middleware.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
+import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import { Submission } from "./submission.aggregate.ts";
 import { OrganizationId, SubmissionId, UserId } from "./submission.id.ts";
 import { SubmissionNotFound, SubmissionNotReviewable } from "./submission.rejection.ts";
@@ -123,3 +124,80 @@ it.effect("quarantines exhausted failures and accepts only one authorized review
     Story.state(submission, { _tag: "Accepted" }),
   ),
 );
+
+it.effect("quarantines a submission at intake without the classifier, once", () =>
+  story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" }), {
+      commandId: "ingestion-1",
+    }),
+    // No classifier call: a story fails on any external call it does not expect.
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    // A redelivered hand-off, with the same command ID or another one, records nothing.
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" }), {
+      commandId: "ingestion-1",
+    }),
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission),
+    Story.state(submission, { _tag: "Quarantined" }),
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Manual", reviewerId: userId },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
+  ),
+);
+
+it.effect("lets a reviewer dismiss a submission quarantined at intake", () =>
+  story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, DismissSubmission.make()),
+    Story.then(submission, SubmissionDismissed.make({ organizationId, reviewerId: userId })),
+    Story.state(submission, { _tag: "Archived" }),
+  ),
+);
+
+it.effect("ignores a quarantine at intake once classification has started", () => {
+  const scores = { model: "jev-fixture", spam: 0.1 };
+  return story(
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    Story.call(Classifier.score, { submissionId, organizationId }),
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(submission),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Automatic", scores, rulesVersion },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
+  );
+});

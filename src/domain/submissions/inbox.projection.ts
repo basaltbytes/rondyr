@@ -3,7 +3,7 @@ import { Effect } from "effect";
 
 import { SubmissionDismissed } from "./dismiss-submission.command.ts";
 import { InboxStore } from "./inbox-store.ts";
-import { SubmissionQuarantined } from "./record-classification.command.ts";
+import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import { ClassificationRequested } from "./request-classification.command.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
 import { Submission } from "./submission.aggregate.ts";
