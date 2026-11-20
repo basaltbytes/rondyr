@@ -217,7 +217,8 @@
     "jsx": "react-jsx",
     "paths": {
       "~/*": ["./dashboard/src/*"],
-      "@rondyr/contracts/*": ["./src/domain/submissions/*"]
+      "@rondyr/contracts/*": ["./src/domain/submissions/*"],
+      "@rondyr/deliveries/*": ["./src/domain/deliveries/*"]
     },
     "resolveJsonModule": true,
     "noEmit": true
