@@ -15,6 +15,10 @@ const decision = {
     { type: "predicate", name: "spam", probability: 0.03 },
   ],
 };
+const complete = {
+  ...decision,
+  answers: [...decision.answers, { type: "predicate", name: "solicitation", probability: 0.05 }],
+};
 
 it.effect("rejects a response with spam and relevance but no solicitation score", () =>
   Effect.gen(function* () {
@@ -114,7 +118,7 @@ it.effect("sends Decisions a same-domain fact without the matching email address
             request.questions.find(({ name }) => name === "spam")?.instructions,
             "sender_matches_organization_domain",
           );
-          return Promise.resolve(decision);
+          return Promise.resolve(complete);
         },
       },
       classifierInput({ ...fields, email: "team@sub.studio.example" }, "Pottery classes", counts, [
@@ -134,7 +138,7 @@ it.effect("omits the domain fact and its instruction for an address outside the 
           assert.include(request.input, '"email":"team@notstudio.example"');
           for (const { instructions } of request.questions)
             assert.notInclude(instructions, "sender_matches_organization_domain");
-          return Promise.resolve(decision);
+          return Promise.resolve(complete);
         },
       },
       classifierInput({ ...fields, email: "team@notstudio.example" }, "Pottery classes", counts, [
