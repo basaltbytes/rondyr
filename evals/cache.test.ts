@@ -3,6 +3,7 @@ import { assert, layer } from "@effect/vitest";
 import { Effect, FileSystem, Layer, Option, Path } from "effect";
 import { Digest } from "effect/crypto";
 
+import { classifierInput } from "../src/domain/submissions/classifier-input.ts";
 import { ResultCache, cacheKey, fileCache, inputDigest } from "./cache.ts";
 import { EntryId } from "./corpus.ts";
 
@@ -31,13 +32,22 @@ layer(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))((it) => {
       assert.strictEqual(cacheKey({ ...parts }), cacheKey(parts));
 
       const fields = { name: "R", content: "Salve" };
-      const digest = yield* inputDigest(fields, "Pottery classes");
-      const sameInput = yield* inputDigest({ ...fields }, "Pottery classes");
-      const otherField = yield* inputDigest({ ...fields, content: "Salve!" }, "Pottery classes");
-      const otherContext = yield* inputDigest(fields, "");
+      const counts = { prior_same_sender: 0, prior_same_content: 0 };
+      const digest = yield* inputDigest(classifierInput(fields, "Pottery classes", counts));
+      const sameInput = yield* inputDigest(
+        classifierInput({ ...fields }, "Pottery classes", counts),
+      );
+      const otherField = yield* inputDigest(
+        classifierInput({ ...fields, content: "Salve!" }, "Pottery classes", counts),
+      );
+      const otherContext = yield* inputDigest(classifierInput(fields, "", counts));
+      const otherHistory = yield* inputDigest(
+        classifierInput(fields, "Pottery classes", { ...counts, prior_same_content: 1 }),
+      );
       assert.strictEqual(sameInput, digest);
       assert.notStrictEqual(otherField, digest);
       assert.notStrictEqual(otherContext, digest);
+      assert.notStrictEqual(otherHistory, digest);
     }),
   );
 

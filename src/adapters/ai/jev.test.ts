@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 
+import { classifierInput } from "../../domain/submissions/classifier-input.ts";
 import { decodeJevResponse, scoreWithJev } from "./jev.ts";
 
 const spamOnly = { model: "jev-1.13.0", answers: { spam: { type: "noul", noul: 0.69 } } } as const;
@@ -47,13 +48,20 @@ it.effect("asks the gateway to keep the submission out of its logs and cache", (
           assert.deepEqual(request.state, {
             submission_fields: { message: "Do you offer pottery classes?" },
             business_context: "",
+            facts: {
+              prior_same_sender: 1,
+              prior_same_content: 0,
+              url_or_html_outside_longest_field: false,
+            },
           });
           assert.deepEqual(Object.keys(request.questions), ["spam"]);
           return Promise.resolve(spamOnly);
         },
       },
-      { message: "Do you offer pottery classes?" },
-      "",
+      classifierInput({ message: "Do you offer pottery classes?" }, "", {
+        prior_same_sender: 1,
+        prior_same_content: 0,
+      }),
     );
 
     assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.69 });

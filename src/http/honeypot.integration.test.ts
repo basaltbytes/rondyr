@@ -1,10 +1,11 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
-import { Effect, Schema } from "effect";
+import { Clock, Effect, Schema } from "effect";
 
 import { testOrigin as origin, testSetupToken } from "../../tests/integration/auth-fixture.ts";
 import { ManagedForm } from "../domain/forms/form.ts";
+import { ClassifierInput, RepetitionCounts } from "../domain/submissions/classifier-input.ts";
 import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
 import { SubmissionDetail } from "../domain/submissions/inbox.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
@@ -25,6 +26,12 @@ const StoredRow = Schema.Struct({
   intake_reason: Schema.NullOr(Schema.String),
 });
 const readStored = Schema.decodeUnknownEffect(StoredRow);
+const readRepetition = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    ...RepetitionCounts.fields,
+    intake_reason: Schema.NullOr(Schema.String),
+  }),
+);
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
@@ -51,23 +58,27 @@ const json = (response: Response) => Effect.promise(() => response.json());
 
 const credentials = { email: "honeypot@example.test", password: "honeypot-test-password" };
 
-/** The cookie of the file's account. The first call creates the account. */
-const signIn = Effect.gen(function* () {
-  const setup = yield* call(
-    "POST",
-    "/api/setup",
-    { name: "Honeypot", ...credentials },
-    { authorization: `Bearer ${testSetupToken}` },
-  );
-  assert.oneOf(setup.status, [201, 404]);
-  const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
-  assert.strictEqual(session.status, 200);
-  const cookie = session.headers
-    .getSetCookie()
-    .map((value) => value.split(";", 1)[0])
-    .join("; ");
-  return { cookie, origin };
-});
+/** Reuse the session so the tests share one sign-in within the rate limit window. */
+const signIn = Effect.runSync(
+  Effect.cached(
+    Effect.gen(function* () {
+      const setup = yield* call(
+        "POST",
+        "/api/setup",
+        { name: "Honeypot", ...credentials },
+        { authorization: `Bearer ${testSetupToken}` },
+      );
+      assert.oneOf(setup.status, [201, 404]);
+      const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
+      assert.strictEqual(session.status, 200);
+      const cookie = session.headers
+        .getSetCookie()
+        .map((value) => value.split(";", 1)[0])
+        .join("; ");
+      return { cookie, origin };
+    }),
+  ),
+);
 
 /** An organization of the account and its first form, with the honeypot field `field`. */
 const createForm = Effect.fnUntraced(function* (
@@ -170,6 +181,17 @@ const callsWith = (marker: string) =>
   Effect.map(classifierCalls, (calls) =>
     calls.filter((fields) => fields !== null && Object.values(fields).includes(marker)),
   );
+
+const repetitionFor = Effect.fnUntraced(function* (submissionId: SubmissionId) {
+  const row = yield* Effect.promise(() =>
+    env.DB.prepare(
+      "SELECT prior_same_sender, prior_same_content, intake_reason FROM submissions WHERE id = ?",
+    )
+      .bind(submissionId)
+      .first(),
+  );
+  return yield* readRepetition(row);
+});
 
 it.live(
   "answers a filled honeypot like any submission and quarantines it without the classifier",
@@ -336,6 +358,163 @@ it.live(
       yield* inboxReaches(submissionId, { status: "accepted", version: 2, reason: null });
       const classified = yield* callsWith(marker);
       assert.deepEqual(classified, [fields]);
+    }),
+  60_000,
+);
+
+it.live(
+  "counts content across forms of the organization, bypasses the model at the threshold and allows approval",
+  () =>
+    Effect.gen(function* () {
+      const headers = yield* signIn;
+      const { inboxId, publicId } = yield* createForm(headers, "Content repetition studio", "_hp");
+      const other = yield* createForm(headers, "Other repetition studio", null);
+      const sibling = "repeat-sibling";
+      yield* Effect.promise(() =>
+        env.DB.prepare(
+          "INSERT INTO forms (id, organization_id, public_id, name) VALUES (?, ?, ?, 'Sibling')",
+        )
+          .bind(sibling, inboxId, sibling)
+          .run(),
+      );
+
+      const marker = "Repetition content review message";
+      const fields = { message: marker, "fixture-verdict": "accept" };
+      yield* submitJson(other.publicId, { ...fields, email: "first@example.test" });
+      yield* submitJson(other.publicId, { ...fields, email: "second@example.test" });
+      const first = yield* submitJson(publicId, {
+        ...fields,
+        email: "first@example.test",
+        _hp: "",
+      });
+      const second = yield* submitJson(sibling, {
+        "fixture-verdict": "accept",
+        name: "Second",
+        email: "second@example.test",
+        message: " repetition  content review message ",
+      });
+      const last = yield* submitJson(publicId, { ...fields, email: "third@example.test" });
+      const counts = yield* Effect.forEach([first, second, last], repetitionFor);
+      assert.deepEqual(counts, [
+        { prior_same_sender: 0, prior_same_content: 0, intake_reason: null },
+        { prior_same_sender: 0, prior_same_content: 1, intake_reason: null },
+        { prior_same_sender: 0, prior_same_content: 2, intake_reason: "repetition" },
+      ]);
+      yield* inboxReaches(first, { status: "accepted", version: 2, reason: null });
+      yield* inboxReaches(second, { status: "accepted", version: 2, reason: null });
+      yield* inboxReaches(last, { status: "quarantined", version: 1, reason: "repetition" });
+
+      const path = `/api/organizations/${inboxId}/submissions/${last}`;
+      const detail = yield* request(path, { headers }).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readSubmission),
+      );
+      assert.deepEqual([detail.status, detail.reason], ["quarantined", "repetition"]);
+
+      const waitForHandoff = () =>
+        vi.waitFor(
+          () =>
+            env.DB.prepare("SELECT handed_off_at FROM outbox_events WHERE submission_id = ?")
+              .bind(last)
+              .first("handed_off_at")
+              .then((handedOff) => assert.isNumber(handedOff)),
+          { timeout: 15_000, interval: 100 },
+        );
+      yield* Effect.promise(waitForHandoff);
+      yield* Effect.promise(() =>
+        env.DB.prepare("UPDATE outbox_events SET handed_off_at = NULL WHERE submission_id = ?")
+          .bind(last)
+          .run(),
+      );
+      yield* Effect.promise(() => env.CLASSIFICATION_QUEUE.send({ submissionId: last }));
+      yield* Effect.promise(waitForHandoff);
+      yield* inboxReaches(last, { status: "quarantined", version: 1, reason: "repetition" });
+
+      yield* Effect.promise(() =>
+        env.DB.prepare(`
+      INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, created_at)
+      SELECT 'repeat-webhook', organization_id, id, 'webhook', '{}', 0 FROM forms WHERE public_id = ?
+    `)
+          .bind(publicId)
+          .run(),
+      );
+      const approval = yield* request(`${path}/approve`, { method: "POST", headers });
+      assert.strictEqual(approval.status, 200);
+      yield* inboxReaches(last, { status: "accepted", version: 2, reason: null });
+      yield* Effect.promise(() =>
+        vi.waitFor(
+          () =>
+            env.DB.prepare("SELECT target_id FROM deliveries WHERE submission_id = ?")
+              .bind(last)
+              .all()
+              .then(({ results }) => assert.deepEqual(results, [{ target_id: "repeat-webhook" }])),
+          { timeout: 20_000, interval: 100 },
+        ),
+      );
+      const calls = yield* callsWith(marker);
+      assert.isFalse(calls.some((submitted) => submitted?.email === "third@example.test"));
+    }),
+  60_000,
+);
+
+it.live(
+  "counts the sender independently, ignores expired submissions and sends below-threshold facts to Jev",
+  () =>
+    Effect.gen(function* () {
+      const headers = yield* signIn;
+      const { publicId } = yield* createForm(headers, "Sender repetition studio", null);
+      const send = (message: string, email = "repeat@example.test") =>
+        submitJson(publicId, {
+          email,
+          name: "<b>Jean</b>",
+          message,
+          "fixture-verdict": "accept",
+        });
+      const old = yield* send("Old inquiry from this sender");
+      const now = yield* Clock.currentTimeMillis;
+      yield* Effect.promise(() =>
+        env.DB.prepare("UPDATE submissions SET received_at = ? WHERE id = ?")
+          .bind(now - 31 * 86_400_000, old)
+          .run(),
+      );
+      const markers = [
+        "Sender repetition message one",
+        "Sender repetition message two",
+        "Sender repetition message three",
+        "Sender repetition message four",
+      ] as const;
+      const [first, second, third, last] = yield* Effect.all([
+        send(markers[0], " Repeat@Example.test "),
+        send(markers[1]),
+        send(markers[2]),
+        send(markers[3]),
+      ]);
+      const counts = yield* Effect.forEach([first, second, third, last], repetitionFor);
+      assert.deepEqual(counts, [
+        { prior_same_sender: 0, prior_same_content: 0, intake_reason: null },
+        { prior_same_sender: 1, prior_same_content: 0, intake_reason: null },
+        { prior_same_sender: 2, prior_same_content: 0, intake_reason: null },
+        { prior_same_sender: 3, prior_same_content: 0, intake_reason: "repetition" },
+      ]);
+      yield* inboxReaches(third, { status: "accepted", version: 2, reason: null });
+      yield* inboxReaches(last, { status: "quarantined", version: 1, reason: "repetition" });
+      const response = yield* Effect.promise(() =>
+        env.WORKERS_AI_FIXTURE.fetch("https://workers-ai.test/__states"),
+      );
+      const states = yield* json(response).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Array(ClassifierInput))),
+      );
+      const scored = states.find(
+        ({ submission_fields }) => submission_fields.message === markers[2],
+      );
+      assert.deepEqual(scored?.facts, {
+        prior_same_sender: 2,
+        prior_same_content: 0,
+        url_or_html_outside_longest_field: true,
+      });
+      assert.isFalse(
+        states.some(({ submission_fields }) => submission_fields.message === markers[3]),
+      );
     }),
   60_000,
 );

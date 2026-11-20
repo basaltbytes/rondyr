@@ -4,18 +4,19 @@ import { fileURLToPath } from "node:url";
 // spam and high relevance scores from Jev, or a low relevance score when the
 // business context contains `fixture-relevance: low`; any other answer does
 // not decode, so the classifier quarantines it with `classification-error`, as
-// it does without an AI binding. It records the submission fields of every
-// call, which tests read back from GET /__calls.
+// it does without an AI binding. Tests can read the fields or the complete
+// classifier inputs from GET /__calls or GET /__states.
 const workersAiFixture = `
 const calls = [];
 export default {
   async fetch(request) {
     const path = new URL(request.url).pathname;
-    if (path === "/__calls") return Response.json(calls);
+    if (path === "/__calls") return Response.json(calls.map((state) => state?.submission_fields ?? null));
+    if (path === "/__states") return Response.json(calls);
     if (path !== "/ai-gateway/run") return new Response(null, { status: 404 });
     const model = request.headers.get("cf-consn-model-id");
     const { inputs: input } = await request.json();
-    calls.push(input?.state?.submission_fields ?? null);
+    calls.push(input?.state ?? null);
     if (model !== "typesafe/jev" || input?.state?.submission_fields?.["fixture-verdict"] !== "accept") {
       return Response.json({});
     }

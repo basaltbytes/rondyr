@@ -2,7 +2,7 @@ import { Context, Effect, FileSystem, Layer, Option, Path, Schema, Semaphore } f
 import { Digest } from "effect/crypto";
 
 import { ClassificationScores } from "../src/domain/submissions/classification.ts";
-import { SubmissionFields } from "../src/domain/submissions/submission-fields.ts";
+import { ClassifierInput } from "../src/domain/submissions/classifier-input.ts";
 import type { ClassifierName } from "./classifiers.ts";
 import type { EntryId } from "./corpus.ts";
 import type { Transport } from "./workers-ai.ts";
@@ -32,7 +32,7 @@ export interface CacheKeyParts {
   readonly model: string;
   readonly rulesVersion: number;
   readonly entryId: EntryId;
-  /** SHA-256 of the fields and the business context, so an edited line is scored again. */
+  /** SHA-256 of the complete classifier input, including facts from earlier lines. */
   readonly inputDigest: string;
 }
 
@@ -47,16 +47,11 @@ export function cacheKey(parts: CacheKeyParts) {
   ].join("|");
 }
 
-const encodeInput = Schema.encodeEffect(
-  Schema.fromJsonString(Schema.Struct({ fields: SubmissionFields, context: Schema.String })),
-);
+const encodeInput = Schema.encodeEffect(Schema.fromJsonString(ClassifierInput));
 
-export const inputDigest = Effect.fn("Cache.inputDigest")(function* (
-  fields: typeof SubmissionFields.Type,
-  context: string,
-) {
+export const inputDigest = Effect.fn("Cache.inputDigest")(function* (input: ClassifierInput) {
   const digest = yield* Digest.Digest;
-  const json = yield* encodeInput({ fields, context }).pipe(Effect.orDie);
+  const json = yield* encodeInput(input).pipe(Effect.orDie);
   return yield* digest.digestHex(Digest.sha256, new TextEncoder().encode(json));
 });
 

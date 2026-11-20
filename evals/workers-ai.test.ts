@@ -4,6 +4,7 @@ import { HttpClient, HttpClientResponse } from "effect/http";
 
 import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
 import { scoreWithJev } from "../src/adapters/ai/jev.ts";
+import { classifierInput } from "../src/domain/submissions/classifier-input.ts";
 import {
   type UnsupportedGatewayOptions,
   WorkersAi,
@@ -14,6 +15,7 @@ import {
 
 const accountId = "0123456789abcdef0123456789abcdef";
 const fields = { content: "Is there room on Saturday?" };
+const modelInput = classifierInput(fields, "", { prior_same_sender: 0, prior_same_content: 1 });
 
 const Sent = Schema.Struct({
   model: Schema.String,
@@ -70,8 +72,7 @@ const workersAiAnswering = Effect.fn(function* (status: number, body: string) {
           signal === undefined ? undefined : { signal },
         ),
     },
-    fields,
-    "",
+    modelInput,
   );
   return { score, requests, failures };
 });
@@ -115,7 +116,7 @@ it.effect("posts the adapter's model and input to /ai/run and unwraps the API en
     });
     const sent = yield* decodeSent(request.body);
     assert.strictEqual(sent.model, "typesafe/jev");
-    assert.deepEqual(sent.input.state, { submission_fields: fields, business_context: "" });
+    assert.deepEqual(sent.input.state, modelInput);
     assert.deepEqual(Object.keys(sent.input.questions), ["spam"]);
   }),
 );

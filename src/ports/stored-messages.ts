@@ -1,5 +1,6 @@
 import { Context, Effect, Schema } from "effect";
 
+import type { RepetitionCounts } from "../domain/submissions/classifier-input.ts";
 import type { SubmissionFields } from "../domain/submissions/submission-fields.ts";
 import type { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import type { StorageUnavailable } from "./storage.ts";
@@ -13,6 +14,7 @@ export class UnreadableMessage extends Schema.TaggedError<
 export interface StoredMessage {
   readonly fields: typeof SubmissionFields.Type;
   readonly businessContext: string | null;
+  readonly repetition: RepetitionCounts;
 }
 
 export class StoredMessages extends Context.Service<

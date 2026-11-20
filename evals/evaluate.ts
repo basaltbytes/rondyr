@@ -3,11 +3,13 @@ import { Duration, Effect, Option, Ref, Schema } from "effect";
 import { ClassificationFailed } from "../src/domain/submissions/classifier.external.ts";
 import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
 import { rulesVersion } from "../src/domain/submissions/classification.ts";
+import type { ClassifierInput } from "../src/domain/submissions/classifier-input.ts";
 import { ResultCache, ScoredCall, Usage, cacheKey, inputDigest } from "./cache.ts";
 import { type ClassifierName, classifiers } from "./classifiers.ts";
 import type { Corpus, CorpusEntry } from "./corpus.ts";
+import { replay } from "./replay.ts";
 import {
-  type ClassifierInput,
+  type ModelInput,
   type ClassifierModel,
   type ModelBinding,
   type UnsupportedGatewayOptions,
@@ -17,6 +19,7 @@ import {
 
 export const Outcome = Schema.Union([
   Schema.TaggedStruct("Scored", { call: ScoredCall, cached: Schema.Boolean }),
+  Schema.TaggedStruct("Repetition", {}),
   Schema.TaggedStruct("Failed", {
     attempts: Schema.Int,
     retryable: Schema.Boolean,
@@ -31,6 +34,7 @@ export type Outcome = typeof Outcome.Type;
 export interface EntryResult {
   readonly entry: CorpusEntry;
   readonly outcome: Outcome;
+  readonly firstOccurrence?: number;
 }
 
 export interface ClassifierRun {
@@ -85,18 +89,17 @@ const nothingObserved: Observed = {
 /** One adapter call through a binding that records the model, the usage and the HTTP failure. */
 const attempt = Effect.fn("Evaluation.attempt")(function* (
   classifier: ClassifierName,
-  entry: CorpusEntry,
-  context: string,
+  input: ClassifierInput,
 ) {
   const ai = yield* WorkersAi;
   const services = yield* Effect.context<never>();
   const runPromise = Effect.runPromiseWith(services);
   const observed = yield* Ref.make(nothingObserved);
   const binding: ModelBinding = {
-    run: (model: ClassifierModel, input: ClassifierInput, { signal, ...options }: AiOptions) =>
+    run: (model: ClassifierModel, request: ModelInput, { signal, ...options }: AiOptions) =>
       runPromise(
         Ref.update(observed, (seen) => ({ ...seen, requested: Option.some(model) })).pipe(
-          Effect.andThen(ai.run(model, input, options)),
+          Effect.andThen(ai.run(model, request, options)),
           Effect.tap((body) =>
             decodeUsage(body).pipe(
               Effect.flatMap(({ usage }) =>
@@ -112,7 +115,7 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
         signal === undefined ? undefined : { signal },
       ),
   };
-  const result = yield* classifiers[classifier].score(binding, entry.fields, context).pipe(
+  const result = yield* classifiers[classifier].score(binding, input).pipe(
     Effect.timeoutOrElse({
       duration: callTimeout,
       orElse: () =>
@@ -161,14 +164,13 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
 
 const scoreEntry = Effect.fn("Evaluation.scoreEntry")(function* (
   classifier: ClassifierName,
-  entry: CorpusEntry,
-  context: string,
+  input: ClassifierInput,
   retryDelays: EvaluationOptions["retryDelays"],
 ) {
   let attempts = 0;
   while (true) {
     attempts += 1;
-    const outcome = yield* attempt(classifier, entry, context);
+    const outcome = yield* attempt(classifier, input);
     if (outcome._tag === "Scored")
       return { _tag: "Scored", call: outcome.call, cached: false } as const;
     if (!outcome.retryable || attempts >= attemptBudget) {
@@ -186,7 +188,7 @@ const scoreEntry = Effect.fn("Evaluation.scoreEntry")(function* (
 });
 
 const evaluateClassifier = Effect.fn("Evaluation.classifier")(function* (
-  corpus: Corpus,
+  inputs: ReturnType<typeof replay>,
   classifier: ClassifierName,
   options: EvaluationOptions,
 ) {
@@ -194,10 +196,12 @@ const evaluateClassifier = Effect.fn("Evaluation.classifier")(function* (
   const cache = yield* ResultCache;
   const { model } = classifiers[classifier];
   const results = yield* Effect.forEach(
-    corpus.entries,
-    (entry) =>
+    inputs,
+    ({ entry, firstOccurrence, input }) =>
       Effect.gen(function* () {
-        const digest = yield* inputDigest(entry.fields, corpus.context);
+        if (input === null)
+          return { entry, firstOccurrence, outcome: { _tag: "Repetition" } } as const;
+        const digest = yield* inputDigest(input);
         const key = cacheKey({
           transport: ai.transport,
           classifier,
@@ -208,11 +212,15 @@ const evaluateClassifier = Effect.fn("Evaluation.classifier")(function* (
         });
         const cached = options.cache === "reuse" ? yield* cache.get(key) : Option.none();
         if (Option.isSome(cached)) {
-          return { entry, outcome: { _tag: "Scored", call: cached.value, cached: true } } as const;
+          return {
+            entry,
+            firstOccurrence,
+            outcome: { _tag: "Scored", call: cached.value, cached: true },
+          } as const;
         }
-        const outcome = yield* scoreEntry(classifier, entry, corpus.context, options.retryDelays);
+        const outcome = yield* scoreEntry(classifier, input, options.retryDelays);
         if (outcome._tag === "Scored") yield* cache.put(key, outcome.call);
-        return { entry, outcome } satisfies EntryResult;
+        return { entry, firstOccurrence, outcome } satisfies EntryResult;
       }),
     { concurrency: options.concurrency },
   );
@@ -228,9 +236,10 @@ export const evaluate = Effect.fn("Evaluation.run")(function* (
   options: EvaluationOptions,
 ) {
   yield* Effect.annotateCurrentSpan({ corpus: corpus.name, gateway: aiGatewayOptions.gateway.id });
+  const inputs = replay(corpus);
   const runs: ClassifierRun[] = [];
   for (const classifier of options.classifiers) {
-    const run = yield* evaluateClassifier(corpus, classifier, options);
+    const run = yield* evaluateClassifier(inputs, classifier, options);
     runs.push(run);
   }
   return runs;

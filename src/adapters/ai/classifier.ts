@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect";
 
-import { classifierContext } from "../../domain/submissions/classification.ts";
 import { ClassificationFailed, Classifier } from "../../domain/submissions/classifier.external.ts";
+import { classifierInput } from "../../domain/submissions/classifier-input.ts";
 import { StoredMessages } from "../../ports/stored-messages.ts";
 import { scoreWithJev } from "./jev.ts";
 import { scoreWithOpenAi } from "./openai-decisions.ts";
@@ -30,8 +30,8 @@ export const classifierLive = Classifier.toLayer(
               ClassificationFailed.make({ retryable: error._tag === "StorageUnavailable" }),
             ),
           );
-        const context = classifierContext(message.businessContext ?? "");
-        return yield* providers[provider](env.AI, message.fields, context).pipe(
+        const input = classifierInput(message.fields, message.businessContext, message.repetition);
+        return yield* providers[provider](env.AI, input).pipe(
           Effect.timeoutOrElse({
             duration: "12 seconds",
             orElse: () => Effect.fail(ClassificationFailed.make({ retryable: true })),

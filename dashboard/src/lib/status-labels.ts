@@ -4,6 +4,7 @@ export const reviewReasons = {
   "low-relevance": "Peu lié à votre activité",
   "classification-error": "Analyse indisponible",
   honeypot: "Champ piège rempli",
+  repetition: "Envois répétés",
 } as const;
 
 export const deliveryStatusLabels = {
