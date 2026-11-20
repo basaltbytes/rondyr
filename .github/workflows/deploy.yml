@@ -66,8 +66,14 @@ jobs:
           RONDYR_SETUP_TOKEN: ${{ secrets[format('RONDYR_SETUP_TOKEN_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
           RONDYR_SECRETS_KEY: ${{ secrets[format('RONDYR_SECRETS_KEY_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
           RONDYR_CLASSIFIER: ${{ vars[format('RONDYR_CLASSIFIER_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+          RONDYR_EMAIL_PROVIDER: ${{ vars[format('RONDYR_EMAIL_PROVIDER_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+          RONDYR_EMAIL_FROM: ${{ vars[format('RONDYR_EMAIL_FROM_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+          RESEND_API_KEY: ${{ secrets[format('RESEND_API_KEY_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
         run: |
           if [[ -z "$RONDYR_SETUP_TOKEN" ]]; then unset RONDYR_SETUP_TOKEN; fi
           if [[ -z "$RONDYR_SECRETS_KEY" ]]; then unset RONDYR_SECRETS_KEY; fi
           if [[ -z "$RONDYR_CLASSIFIER" ]]; then unset RONDYR_CLASSIFIER; fi
+          if [[ -z "$RONDYR_EMAIL_PROVIDER" ]]; then unset RONDYR_EMAIL_PROVIDER; fi
+          if [[ -z "$RONDYR_EMAIL_FROM" ]]; then unset RONDYR_EMAIL_FROM; fi
+          if [[ -z "$RESEND_API_KEY" ]]; then unset RESEND_API_KEY; fi
           pnpm run deploy --stage "$STAGE" --yes --no-input
