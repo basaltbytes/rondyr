@@ -46,6 +46,7 @@
       "probable-spam": "Indésirable probable",
       "ambiguous": "Classement incertain",
       "low-relevance": "Peu lié à votre activité",
+      "solicitation": "Démarchage commercial non sollicité",
       "classification-error": "Analyse indisponible",
       "honeypot": "Champ piège rempli",
       "repetition": "Envois répétés"

@@ -46,6 +46,7 @@
       "probable-spam": "Probable spam",
       "ambiguous": "Uncertain classification",
       "low-relevance": "Unrelated to your business",
+      "solicitation": "Unsolicited sales outreach",
       "classification-error": "Analysis unavailable",
       "honeypot": "Honeypot field filled",
       "repetition": "Repeated submissions"

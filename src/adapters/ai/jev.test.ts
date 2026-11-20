@@ -4,37 +4,78 @@ import { Effect } from "effect";
 import { classifierInput } from "../../domain/submissions/classifier-input.ts";
 import { decodeJevResponse, scoreWithJev } from "./jev.ts";
 
-const spamOnly = { model: "jev-1.13.0", answers: { spam: { type: "noul", noul: 0.69 } } } as const;
-const contextual = {
-  ...spamOnly,
-  answers: { ...spamOnly.answers, relevance: { type: "noul", noul: 0.14 } },
+const withoutContext = {
+  model: "jev-1.13.0",
+  answers: {
+    spam: { type: "noul", noul: 0.69 },
+    solicitation: { type: "noul", noul: 0 },
+  },
 } as const;
+const contextual = {
+  ...withoutContext,
+  answers: { ...withoutContext.answers, relevance: { type: "noul", noul: 0.14 } },
+} as const;
+
+it.effect("rejects a response with spam and relevance but no solicitation score", () =>
+  Effect.gen(function* () {
+    const failure = yield* Effect.flip(
+      scoreWithJev(
+        {
+          run: () =>
+            Promise.resolve({
+              ...contextual,
+              answers: { spam: contextual.answers.spam, relevance: contextual.answers.relevance },
+            }),
+        },
+        classifierInput({ message: "Do you offer pottery classes?" }, "Pottery classes", {
+          prior_same_sender: 0,
+          prior_same_content: 0,
+        }),
+      ),
+    );
+
+    assert.strictEqual(failure._tag, "ClassificationFailed");
+    assert.isFalse(failure.retryable);
+  }),
+);
 
 it.effect("decodes raw Jev responses and the completed Workers AI envelope", () =>
   Effect.gen(function* () {
-    const raw = yield* decodeJevResponse(spamOnly);
-    const wrapped = yield* decodeJevResponse({ state: "Completed", result: spamOnly });
+    const raw = yield* decodeJevResponse(withoutContext);
+    const wrapped = yield* decodeJevResponse({ state: "Completed", result: withoutContext });
     const withContext = yield* decodeJevResponse({
       state: "Completed",
       result: contextual,
     });
-    assert.deepEqual(raw, spamOnly);
-    assert.deepEqual(wrapped, spamOnly);
+    assert.deepEqual(raw, withoutContext);
+    assert.deepEqual(wrapped, withoutContext);
     assert.deepEqual(withContext, contextual);
   }),
 );
 
-it.effect("requires a completed run and a valid spam score", () =>
+it.effect("requires a completed run and valid spam and solicitation scores", () =>
   Effect.gen(function* () {
-    const pending = yield* Effect.flip(decodeJevResponse({ state: "Running", result: spamOnly }));
+    const pending = yield* Effect.flip(
+      decodeJevResponse({ state: "Running", result: withoutContext }),
+    );
     const invalidScore = yield* Effect.flip(
       decodeJevResponse({
         state: "Completed",
-        result: { ...spamOnly, answers: { spam: { type: "noul", noul: 2 } } },
+        result: {
+          ...withoutContext,
+          answers: { ...withoutContext.answers, spam: { type: "noul", noul: 2 } },
+        },
+      }),
+    );
+    const invalidSolicitation = yield* Effect.flip(
+      decodeJevResponse({
+        ...withoutContext,
+        answers: { ...withoutContext.answers, solicitation: { type: "noul", noul: -0.1 } },
       }),
     );
     assert.strictEqual(pending._tag, "SchemaError");
     assert.strictEqual(invalidScore._tag, "SchemaError");
+    assert.strictEqual(invalidSolicitation._tag, "SchemaError");
   }),
 );
 
@@ -54,8 +95,9 @@ it.effect("asks the gateway to keep the submission out of its logs and cache", (
               url_or_html_outside_longest_field: false,
             },
           });
-          assert.deepEqual(Object.keys(request.questions), ["spam"]);
-          return Promise.resolve(spamOnly);
+          assert.deepEqual(Object.keys(request.questions), ["spam", "solicitation"]);
+          assert.strictEqual(request.questions.solicitation.type, "noul");
+          return Promise.resolve(withoutContext);
         },
       },
       classifierInput({ message: "Do you offer pottery classes?" }, "", {
@@ -64,6 +106,6 @@ it.effect("asks the gateway to keep the submission out of its logs and cache", (
       }),
     );
 
-    assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.69 });
+    assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.69, solicitation: 0 });
   }),
 );

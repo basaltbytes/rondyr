@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 // Workers AI for the tests. A submission with `fixture-verdict: accept` gets low
-// spam and high relevance scores from Jev, or a low relevance score when the
+// spam and solicitation scores and a high relevance score from Jev, or a low relevance score when the
 // business context contains `fixture-relevance: low`; any other answer does
 // not decode, so the classifier quarantines it with `classification-error`, as
 // it does without an AI binding. Tests can read the fields or the complete
@@ -17,10 +17,14 @@ export default {
     const model = request.headers.get("cf-consn-model-id");
     const { inputs: input } = await request.json();
     calls.push(input?.state ?? null);
-    if (model !== "typesafe/jev" || input?.state?.submission_fields?.["fixture-verdict"] !== "accept") {
+    const verdict = input?.state?.submission_fields?.["fixture-verdict"];
+    if (model !== "typesafe/jev" || (verdict !== "accept" && verdict !== "missing-solicitation")) {
       return Response.json({});
     }
     const answers = { spam: { type: "noul", noul: 0.02 } };
+    if (verdict === "accept" && input.questions.solicitation !== undefined) {
+      answers.solicitation = { type: "noul", noul: 0.03 };
+    }
     const relevance = input.state.business_context.includes("fixture-relevance: low") ? 0.05 : 0.98;
     if (input.questions.relevance !== undefined) answers.relevance = { type: "noul", noul: relevance };
     return Response.json({ model: "workerd-fixture", answers });

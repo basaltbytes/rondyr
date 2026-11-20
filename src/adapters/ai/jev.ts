@@ -6,6 +6,7 @@ import {
   type ClassifierInput,
   classifierDataInstruction,
   classifierSpamInstructions,
+  solicitationInstruction,
 } from "../../domain/submissions/classifier-input.ts";
 import { mapBindingError } from "./binding-error.ts";
 import { aiGatewayOptions } from "./gateway.ts";
@@ -13,7 +14,11 @@ import { aiGatewayOptions } from "./gateway.ts";
 const Answer = Schema.Struct({ type: Schema.Literal("noul"), noul: Score });
 const Result = Schema.Struct({
   model: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-  answers: Schema.Struct({ spam: Answer, relevance: Schema.optionalKey(Answer) }),
+  answers: Schema.Struct({
+    spam: Answer,
+    solicitation: Answer,
+    relevance: Schema.optionalKey(Answer),
+  }),
 });
 const Completed = Schema.Struct({ state: Schema.Literal("Completed"), result: Result });
 
@@ -31,11 +36,13 @@ const relevance = {
   type: "noul",
   instructions: `Is the submission relevant to the supplied business context? ${classifierDataInstruction}`,
 } as const;
+const solicitation = { type: "noul", instructions: solicitationInstruction } as const;
 
 interface JevInput {
   readonly state: ClassifierInput;
   readonly questions: {
     readonly spam: { readonly type: "noul"; readonly instructions: string };
+    readonly solicitation: typeof solicitation;
     readonly relevance?: typeof relevance;
   };
 }
@@ -60,7 +67,7 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
         "typesafe/jev",
         {
           state,
-          questions: hasContext ? { spam, relevance } : { spam },
+          questions: hasContext ? { spam, solicitation, relevance } : { spam, solicitation },
         },
         { ...aiGatewayOptions, signal },
       ),
@@ -69,8 +76,9 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
   const { model, answers } = yield* decodeJevResponse(response).pipe(
     Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
   );
-  if (!hasContext) return { model, spam: answers.spam.noul };
+  const scores = { model, spam: answers.spam.noul, solicitation: answers.solicitation.noul };
+  if (!hasContext) return scores;
   if (answers.relevance === undefined)
     return yield* ClassificationFailed.make({ retryable: false });
-  return { model, spam: answers.spam.noul, relevance: answers.relevance.noul };
+  return { ...scores, relevance: answers.relevance.noul };
 });

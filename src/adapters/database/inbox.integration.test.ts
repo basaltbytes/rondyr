@@ -4,7 +4,7 @@ import { assert, beforeAll, it } from "@effect/vitest";
 import { Context, Effect, Layer } from "effect";
 
 import { InboxStore } from "../../domain/submissions/inbox-store.ts";
-import { OrganizationId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
 import { inboxStoreLive } from "./inbox.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
@@ -94,21 +94,31 @@ it.live("leaves the submissions of another organization out of the counts", () =
   }),
 );
 
-it.live("lists a submission with a preview of the fields that the visitor sent", () =>
-  Effect.gen(function* () {
-    yield* seedOrganization("list-fields");
-    yield* receive(
-      "list-fields",
-      "44444444-4444-4444-8444-444444444441",
-      '{"email":"ada@example.test","message":"Bonjour."}',
-    );
-    const inbox = yield* store;
+it.live(
+  "lists a quarantined submission with its reason and a preview of the visitor's fields",
+  () =>
+    Effect.gen(function* () {
+      const submissionId = SubmissionId.make("44444444-4444-4444-8444-444444444441");
+      yield* seedOrganization("list-fields");
+      yield* receive(
+        "list-fields",
+        submissionId,
+        '{"email":"ada@example.test","message":"Bonjour."}',
+      );
+      const inbox = yield* store;
+      yield* inbox.project({
+        submissionId,
+        version: 2,
+        status: "quarantined",
+        reason: "solicitation",
+      });
 
-    const page = yield* inbox.list(OrganizationId.make("list-fields"), undefined, 25, undefined);
+      const page = yield* inbox.list(OrganizationId.make("list-fields"), undefined, 25, undefined);
 
-    assert.deepEqual(page.entries[0]?.preview, {
-      email: "ada@example.test",
-      message: "Bonjour.",
-    });
-  }),
+      assert.strictEqual(page.entries[0]?.reason, "solicitation");
+      assert.deepEqual(page.entries[0]?.preview, {
+        email: "ada@example.test",
+        message: "Bonjour.",
+      });
+    }),
 );
