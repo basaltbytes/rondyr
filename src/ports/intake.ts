@@ -1,5 +1,6 @@
 import { Context, Effect, Option, Schema } from "effect";
 
+import type { SuccessUrl } from "../domain/forms/form.ts";
 import type { SubmissionFields } from "../domain/submissions/submission-fields.ts";
 import type { SubmissionId } from "../domain/submissions/submission.id.ts";
 import type { StorageUnavailable } from "./storage.ts";
@@ -29,9 +30,17 @@ export class OriginRefused extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("OriginRefused", {}) {}
 
+/** The form is suspended: it stores nothing until it is active again. */
+export class FormSuspended extends Schema.TaggedError<
+  FormSuspended,
+  { readonly brand: unique symbol }
+>()("FormSuspended", { origins: OriginMatch }) {}
+
 export interface ReceivedSubmission {
   readonly submissionId: SubmissionId;
   readonly origins: OriginMatch;
+  /** Where to redirect an HTML form post. Its origin is one of the form's allowed origins. */
+  readonly successUrl: Option.Option<SuccessUrl>;
 }
 
 export class SubmissionIntake extends Context.Service<
@@ -40,7 +49,7 @@ export class SubmissionIntake extends Context.Service<
     /**
      * Store a submission and its outbox event in one transaction. A returned ID
      * means that both rows exist. A request without an origin is not checked
-     * against the form's allowed origins.
+     * against the form's allowed origins. A suspended form stores nothing.
      */
     readonly receive: (
       publicId: string,
@@ -48,9 +57,12 @@ export class SubmissionIntake extends Context.Service<
       origin: Option.Option<string>,
     ) => Effect.Effect<
       ReceivedSubmission,
-      FormNotFound | FormRateLimited | OriginRefused | StorageUnavailable
+      FormNotFound | FormRateLimited | FormSuspended | OriginRefused | StorageUnavailable
     >;
-    /** Match an origin against the allowed origins of a form, without storing anything. */
+    /**
+     * Match an origin against the allowed origins of a form, without storing
+     * anything. A suspended form answers as an active one.
+     */
     readonly matchOrigin: (
       publicId: string,
       origin: Option.Option<string>,

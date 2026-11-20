@@ -5,6 +5,7 @@ import {
   NotificationFailed,
   NotificationProvider,
   type Notification,
+  type TestNotification,
 } from "../../ports/notification-provider.ts";
 import { emailProvider } from "./email-provider.ts";
 import { webhookProvider } from "./webhook-provider.ts";
@@ -12,18 +13,24 @@ import { webhookProvider } from "./webhook-provider.ts";
 type Provider = NotificationProvider["Service"];
 
 function dispatch(providers: ReadonlyMap<string, Provider>): Provider {
+  const providerFor = (type: string) => {
+    const provider = providers.get(type);
+    return provider === undefined
+      ? Effect.fail(
+          NotificationFailed.make({
+            retryable: false,
+            summary: `No notification provider for target type "${type}".`,
+          }),
+        )
+      : Effect.succeed(provider);
+  };
   return {
-    send: (notification: Notification) => {
-      const provider = providers.get(notification.target.type);
-      return provider === undefined
-        ? Effect.fail(
-            NotificationFailed.make({
-              retryable: false,
-              summary: `No notification provider for target type "${notification.target.type}".`,
-            }),
-          )
-        : provider.send(notification);
-    },
+    send: (notification: Notification) =>
+      Effect.flatMap(providerFor(notification.target.type), (provider) =>
+        provider.send(notification),
+      ),
+    sendTest: (test: TestNotification) =>
+      Effect.flatMap(providerFor(test.target.type), (provider) => provider.sendTest(test)),
   };
 }
 

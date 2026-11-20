@@ -1,6 +1,7 @@
 import { Context, Effect } from "effect";
 
-import type { InboxForm, SetupInbox } from "../domain/submissions/inbox-setup.ts";
+import type { ManagedForm } from "../domain/forms/form.ts";
+import type { SetupInbox } from "../domain/submissions/inbox-setup.ts";
 import type { InboxOrganization } from "../domain/submissions/inbox.ts";
 import type { InboxUnavailable } from "../domain/submissions/submission.rejection.ts";
 import type { OrganizationId, UserId } from "../domain/submissions/submission.id.ts";
@@ -16,7 +17,7 @@ export class OrganizationDirectory extends Context.Service<
     readonly formsOf: (
       userId: typeof UserId.Type,
       organizationId: OrganizationId,
-    ) => Effect.Effect<ReadonlyArray<typeof InboxForm.Type>, InboxUnavailable>;
+    ) => Effect.Effect<ReadonlyArray<typeof ManagedForm.Type>, InboxUnavailable>;
     /** Create an organization, its first form, and the account's membership. */
     readonly create: (
       userId: typeof UserId.Type,
