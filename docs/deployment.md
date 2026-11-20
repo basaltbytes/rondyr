@@ -95,7 +95,7 @@ Use a separate API key per stage, so you can revoke one without stopping the oth
 
 ## GitHub Actions
 
-Pull requests run `pnpm check` and `pnpm deploy:dry`. A push to `main`, including a merge, runs the same checks and then deploys. What it deploys depends on the [staging gate](#staging-gate):
+Pull requests run `pnpm check` and `pnpm deploy:dry` in one job and the dashboard browser tests (`pnpm test:e2e`) in another. A push to `main`, including a merge, runs the same two jobs and deploys only if both pass. What it deploys depends on the [staging gate](#staging-gate):
 
 - **Gate not configured** (the default): the workflow deploys `prod` and leaves `staging` alone. The run shows the notice `The staging gate is not configured`.
 - **Gate configured**: the workflow deploys `staging`, checks `/health` and a submission through the authenticated inbox, and deploys `prod` only if that check passes.

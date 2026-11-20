@@ -81,12 +81,18 @@ function InboxView({ inbox, onFormsChanged }: InboxViewProps) {
 
   return (
     <>
-      <details onToggle={(event) => setFormsOpen(event.currentTarget.open)}>
+      <details
+        aria-label="Formulaires"
+        onToggle={(event) => setFormsOpen(event.currentTarget.open)}
+      >
         <summary>Formulaires</summary>
         {formsOpen && <FormManagement inbox={inbox} onChanged={onFormsChanged} />}
       </details>
       {inbox.forms.length > 0 && (
-        <details onToggle={(event) => setWebhooksOpen(event.currentTarget.open)}>
+        <details
+          aria-label="Webhooks"
+          onToggle={(event) => setWebhooksOpen(event.currentTarget.open)}
+        >
           <summary>Webhooks</summary>
           {webhooksOpen &&
             inbox.forms.map((form) => (
@@ -95,7 +101,7 @@ function InboxView({ inbox, onFormsChanged }: InboxViewProps) {
         </details>
       )}
       {inbox.forms.length > 0 && (
-        <details onToggle={(event) => setEmailsOpen(event.currentTarget.open)}>
+        <details aria-label="E-mails" onToggle={(event) => setEmailsOpen(event.currentTarget.open)}>
           <summary>E-mails</summary>
           {emailsOpen &&
             inbox.forms.map((form) => (
@@ -104,7 +110,10 @@ function InboxView({ inbox, onFormsChanged }: InboxViewProps) {
         </details>
       )}
       {inbox.forms.length > 0 && (
-        <details onToggle={(event) => setOriginsOpen(event.currentTarget.open)}>
+        <details
+          aria-label="Origines autorisées"
+          onToggle={(event) => setOriginsOpen(event.currentTarget.open)}
+        >
           <summary>Origines autorisées</summary>
           {originsOpen &&
             inbox.forms.map((form) => (
