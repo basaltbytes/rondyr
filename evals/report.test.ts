@@ -18,11 +18,11 @@ const lines = [
 
 const scoresById = new Map([
   ["legit-1", { spam: 0.1, solicitation: 0.4, relevance: 0.9 }],
-  ["legit-2", { spam: 0.5, solicitation: 0.7, relevance: 0.9 }],
+  ["legit-2", { spam: 0.5, solicitation: 0.2, relevance: 0.9 }],
   ["legit-0", { spam: 0.8, solicitation: 0.7, relevance: 0.9 }],
   ["off-1", { spam: 0.1, solicitation: 0, relevance: 0.1 }],
   ["spam-1", { spam: 0.9, solicitation: 0.8, relevance: 0.2 }],
-  ["spam-2", { spam: 0.2, solicitation: 0.8, relevance: 0.8 }],
+  ["spam-2", { spam: 0.2, solicitation: 0.45, relevance: 0.8 }],
   ["amb-1", { spam: 0.4, solicitation: 0, relevance: 0.5 }],
 ]);
 

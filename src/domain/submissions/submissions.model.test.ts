@@ -4,7 +4,7 @@ import { assert, it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
 
 import { ApproveSubmission } from "./approve-submission.command.ts";
-import { classificationThresholds, reviewReason, rulesVersion } from "./classification.ts";
+import { reviewReason, rulesVersion } from "./classification.ts";
 import { ClassificationFailed, Classifier } from "./classifier.external.ts";
 import { DeliveryScheduler } from "./delivery-scheduler.external.ts";
 import { DismissSubmission, SubmissionDismissed } from "./dismiss-submission.command.ts";
@@ -52,14 +52,45 @@ it("defines a valid Domain model and distinct classification thresholds", () => 
   assert.isNull(reviewReason(scores));
 });
 
-it("quarantines for solicitation above the threshold after spam and before relevance", () => {
-  const thresholds = { ...classificationThresholds, solicitation: 0.8 };
-  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.81, relevance: 0.1 };
+it("quarantines for solicitation above 0.5, after the spam rules and before relevance", () => {
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.51, relevance: 0.1 };
 
-  assert.strictEqual(reviewReason(scores, thresholds), "solicitation");
-  assert.strictEqual(reviewReason({ ...scores, solicitation: 0.8 }, thresholds), "low-relevance");
-  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }, thresholds), "ambiguous");
-  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }, thresholds), "probable-spam");
+  assert.strictEqual(reviewReason(scores), "solicitation");
+  assert.strictEqual(reviewReason({ ...scores, solicitation: 0.5 }), "low-relevance");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }), "ambiguous");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }), "probable-spam");
+  assert.isNull(reviewReason({ model: "jev-fixture", spam: 0.1, solicitation: 0.5 }));
+});
+
+it.effect("quarantines a sales pitch with its scores and lets a reviewer accept it", () => {
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.93, relevance: 0.8 };
+  return story(
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    Story.call(Classifier.score, { submissionId, organizationId }),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "solicitation", scores, rulesVersion }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Manual", reviewerId: userId },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
+  );
 });
 
 it.effect("classifies one logical submission after duplicate intake", () => {

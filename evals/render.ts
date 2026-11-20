@@ -153,7 +153,7 @@ function classifierSweep(report: ClassifierReport) {
           pair(point.spamAsProbableSpam),
         ]),
     ),
-    `### Low relevance threshold, spam thresholds ${threshold(classificationThresholds.probableSpam)} and ${threshold(classificationThresholds.ambiguous)}`,
+    `### Low relevance threshold, spam thresholds ${threshold(classificationThresholds.probableSpam)} and ${threshold(classificationThresholds.ambiguous)}, solicitation threshold ${threshold(classificationThresholds.solicitation)}`,
     table(
       ["low relevance", "legitimate quarantined", "off-topic quarantined", "spam accepted"],
       relevance.map((point) => [
@@ -174,7 +174,7 @@ function classifierSweep(report: ClassifierReport) {
         "spam accepted",
       ],
       solicitation.map((point) => [
-        score(point.thresholds.solicitation ?? undefined),
+        threshold(point.thresholds.solicitation),
         pair(point.falsePositives),
         pair(point.legitimateAsSolicitation),
         pair(point.spamAsSolicitation),
@@ -187,13 +187,12 @@ function classifierSweep(report: ClassifierReport) {
 /** The report without the threshold sweep, for the terminal. */
 export function renderSummary(report: Report) {
   const { corpus } = report;
-  const solicitation = report.thresholds.solicitation;
   const header = [
     `# Classifier evaluation: ${corpus.name}`,
     report.transport === "dry"
       ? "**Dry run: the scores are fake and measure nothing.**"
       : "Scores from Workers AI.",
-    `${pair(corpus.size)} entries, business context ${corpus.businessContext}. Rules version ${report.rulesVersion}: probable spam from ${report.thresholds.probableSpam}, ambiguous from ${report.thresholds.ambiguous}, solicitation ${solicitation === null ? "disabled" : `over ${solicitation}`}, low relevance under ${report.thresholds.lowRelevance}. Gateway \`${report.gateway.id}\`, collectLog ${report.gateway.collectLog}, skipCache ${report.gateway.skipCache}. Generated ${report.generatedAt}.`,
+    `${pair(corpus.size)} entries, business context ${corpus.businessContext}. Rules version ${report.rulesVersion}: probable spam from ${report.thresholds.probableSpam}, ambiguous from ${report.thresholds.ambiguous}, solicitation over ${report.thresholds.solicitation}, low relevance under ${report.thresholds.lowRelevance}. Gateway \`${report.gateway.id}\`, collectLog ${report.gateway.collectLog}, skipCache ${report.gateway.skipCache}. Generated ${report.generatedAt}.`,
   ];
   return [...header, ...report.classifiers.map(classifierSummary)].join("\n\n");
 }
