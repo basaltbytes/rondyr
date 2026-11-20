@@ -5,6 +5,7 @@ import type { Inbox, Page, Status, Submission } from "~/lib/inbox-client";
 
 import { AllowedOrigins } from "./allowed-origins.tsx";
 import { EmailTargets } from "./email-targets.tsx";
+import { FormManagement } from "./form-management.tsx";
 import { statusLabels } from "./strings.ts";
 import { SubmissionReader } from "./submission-reader.tsx";
 import { WebhookTargets } from "./webhook-targets.tsx";
@@ -47,15 +48,18 @@ function InboxSetup({ onCreated }: InboxSetupProps) {
 
 interface InboxViewProps {
   readonly inbox: Inbox;
+  /** Reload the organizations after a change to their forms. */
+  readonly onFormsChanged: () => Promise<void>;
 }
 
-function InboxView({ inbox }: InboxViewProps) {
+function InboxView({ inbox, onFormsChanged }: InboxViewProps) {
   const [status, setStatus] = useState<Status | "">("");
   const [cursor, setCursor] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [page, setPage] = useState<Page | null>(null);
   const [selected, setSelected] = useState<Submission["submissionId"] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [formsOpen, setFormsOpen] = useState(false);
   const [webhooksOpen, setWebhooksOpen] = useState(false);
   const [emailsOpen, setEmailsOpen] = useState(false);
   const [originsOpen, setOriginsOpen] = useState(false);
@@ -77,19 +81,10 @@ function InboxView({ inbox }: InboxViewProps) {
 
   return (
     <>
-      {inbox.forms.length > 0 && (
-        <details>
-          <summary>Adresses des formulaires</summary>
-          <ul>
-            {inbox.forms.map((form) => (
-              <li key={form.publicId}>
-                {form.name}{" "}
-                <code>{`${window.location.origin}/f/${encodeURIComponent(form.publicId)}`}</code>
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <details onToggle={(event) => setFormsOpen(event.currentTarget.open)}>
+        <summary>Formulaires</summary>
+        {formsOpen && <FormManagement inbox={inbox} onChanged={onFormsChanged} />}
+      </details>
       {inbox.forms.length > 0 && (
         <details onToggle={(event) => setWebhooksOpen(event.currentTarget.open)}>
           <summary>Webhooks</summary>
@@ -224,6 +219,14 @@ export function InboxPanel() {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Creating a new inbox initiates a new API request.
   }, [revision]);
 
+  async function reload() {
+    try {
+      setInboxes(await listInboxes());
+    } catch {
+      setFailed(true);
+    }
+  }
+
   const inbox = inboxes?.find(({ id }) => id === active) ?? inboxes?.[0];
   return (
     <section className="inbox">
@@ -260,7 +263,9 @@ export function InboxPanel() {
               }}
             />
           )}
-          {inbox !== undefined && <InboxView key={inbox.id} inbox={inbox} />}
+          {inbox !== undefined && (
+            <InboxView key={inbox.id} inbox={inbox} onFormsChanged={reload} />
+          )}
         </>
       )}
     </section>
