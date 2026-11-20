@@ -24,6 +24,19 @@ it.effect("accepts the corpus format and normalizes the context as the Worker do
   }),
 );
 
+it.effect("truncates the context without splitting Unicode characters", () =>
+  Effect.gen(function* () {
+    const prefix = "x".repeat(1999);
+    for (const character of ["🎨", "e\u0301"]) {
+      const split = yield* parseCorpus("valid.jsonl", valid, ` ${prefix}${character}tail `);
+      assert.strictEqual(split.context, prefix);
+
+      const fits = yield* parseCorpus("valid.jsonl", valid, ` ${prefix.slice(1)}${character}tail `);
+      assert.strictEqual(fits.context, `${prefix.slice(1)}${character}`);
+    }
+  }),
+);
+
 it.effect("reports each bad line by number without repeating field values", () =>
   Effect.gen(function* () {
     const text = [
