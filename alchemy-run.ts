@@ -24,12 +24,20 @@ export default Alchemy.Stack(
     const classification = yield* classificationQueue;
     const delivery = yield* deliveryQueue;
     const deadLetter = yield* Cloudflare.Queues.Queue("ClassificationDeadLetterQueue");
+    const deliveryDeadLetter = yield* Cloudflare.Queues.Queue("DeliveryDeadLetterQueue");
     const app = yield* RondyrWorker;
 
     yield* Cloudflare.Queues.Consumer("ClassificationConsumer", {
       queueId: classification.queueId,
       scriptName: app.workerName,
       deadLetterQueue: deadLetter.queueName,
+      settings: { batchSize: 10, maxRetries: 3 },
+    });
+
+    yield* Cloudflare.Queues.Consumer("DeliveryConsumer", {
+      queueId: delivery.queueId,
+      scriptName: app.workerName,
+      deadLetterQueue: deliveryDeadLetter.queueName,
       settings: { batchSize: 10, maxRetries: 3 },
     });
 
