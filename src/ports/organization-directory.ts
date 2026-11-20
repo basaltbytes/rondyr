@@ -1,10 +1,32 @@
-import { Context, Effect } from "effect";
+import { Context, Effect, Schema } from "effect";
 
 import type { ManagedForm } from "../domain/forms/form.ts";
+import type {
+  OrganizationDomain,
+  OrganizationDomainList,
+} from "../domain/organizations/organization-domain.ts";
 import type { SetupInbox } from "../domain/submissions/inbox-setup.ts";
 import type { InboxOrganization } from "../domain/submissions/inbox.ts";
 import type { InboxUnavailable } from "../domain/submissions/submission.rejection.ts";
 import type { OrganizationId, UserId } from "../domain/submissions/submission.id.ts";
+import type { StorageUnavailable } from "./storage.ts";
+
+export class OrganizationDomainNotFound extends Schema.TaggedError<
+  OrganizationDomainNotFound,
+  { readonly brand: unique symbol }
+>()("OrganizationDomainNotFound", {}) {}
+
+export class OrganizationDomainLimit extends Schema.TaggedError<
+  OrganizationDomainLimit,
+  { readonly brand: unique symbol }
+>()("OrganizationDomainLimit", {}) {}
+
+export interface OrganizationScope {
+  readonly userId: typeof UserId.Type;
+  readonly organizationId: OrganizationId;
+}
+
+type DomainStorageError = OrganizationDomainNotFound | StorageUnavailable;
 
 export class OrganizationDirectory extends Context.Service<
   OrganizationDirectory,
@@ -23,5 +45,17 @@ export class OrganizationDirectory extends Context.Service<
       userId: typeof UserId.Type,
       input: typeof SetupInbox.Type,
     ) => Effect.Effect<void, InboxUnavailable>;
+    readonly listDomains: (
+      scope: OrganizationScope,
+    ) => Effect.Effect<OrganizationDomainList, DomainStorageError>;
+    /** True if a new row was added, false if the domain was already declared. */
+    readonly addDomain: (
+      scope: OrganizationScope,
+      domain: OrganizationDomain,
+    ) => Effect.Effect<boolean, DomainStorageError | OrganizationDomainLimit>;
+    readonly removeDomain: (
+      scope: OrganizationScope,
+      domain: OrganizationDomain,
+    ) => Effect.Effect<void, DomainStorageError>;
   }
 >()("rondyr/ports/organization-directory/OrganizationDirectory") {}

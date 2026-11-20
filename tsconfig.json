@@ -225,7 +225,8 @@
       "~/*": ["./dashboard/src/*"],
       "@rondyr/contracts/*": ["./src/domain/submissions/*"],
       "@rondyr/deliveries/*": ["./src/domain/deliveries/*"],
-      "@rondyr/forms/*": ["./src/domain/forms/*"]
+      "@rondyr/forms/*": ["./src/domain/forms/*"],
+      "@rondyr/organizations/*": ["./src/domain/organizations/*"]
     },
     "resolveJsonModule": true,
     "noEmit": true

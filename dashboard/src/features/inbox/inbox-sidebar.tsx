@@ -6,6 +6,7 @@ import {
   Globe,
   Inbox as InboxIcon,
   Mails,
+  Network,
   Send,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -32,7 +33,13 @@ import { OrganizationSwitcher } from "./organization-switcher.tsx";
 import { totalOf } from "./folder-counts.ts";
 import type { Folder } from "./folder-counts.ts";
 
-export type Section = "forms" | "destinations" | "origins" | "organization" | "operations";
+export type Section =
+  | "forms"
+  | "destinations"
+  | "origins"
+  | "domains"
+  | "organization"
+  | "operations";
 
 const folders = [
   ["quarantined", InboxIcon],
@@ -44,6 +51,7 @@ const settings = [
   ["forms", FileText],
   ["destinations", Send],
   ["origins", Globe],
+  ["domains", Network],
 ] as const;
 
 interface InboxSidebarProps {

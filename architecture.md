@@ -190,7 +190,7 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 
 ### Règles de décision
 
-`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 3`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur.
+`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 4`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur.
 
 | Condition | Résultat |
 | --- | --- |
@@ -228,6 +228,8 @@ Le champ `email` sert à comparer les expéditeurs. Le contenu regroupe les pair
 
 Le Worker et le corpus construisent la même entrée dans `src/domain/submissions/classifier-input.ts`, avec le contexte métier, les faits calculés et les champs du visiteur dans cet ordre. Les faits comprennent les deux compteurs enregistrés à l’ingestion et un indicateur de lien ou de balise HTML dans un champ autre que le plus long. En cas d’égalité, le premier champ le plus long sert de référence. Aucun condensat n’est envoyé au modèle.
 
+Une organisation peut déclarer jusqu’à dix noms d’hôte ASCII en minuscules. Lorsque le domaine du champ `email` correspond à un domaine déclaré ou à l’un de ses sous-domaines, les deux modèles reçoivent le fait `sender_matches_organization_domain: true` et un champ `email` vide ; D1 conserve l’adresse soumise. Dans tous les autres cas (adresse d’un autre domaine, adresse absente ou invalide, organisation sans domaine déclaré), le fait est omis et l’entrée du modèle est celle de la version 3. Un `false` envoyé à chaque message déplaçait les scores de messages légitimes sans rapport avec le domaine : sur le corpus synthétique, Jev mettait un message légitime en quarantaine et OpenAI Decisions deux. La comparaison porte sur une adresse déclarée par le visiteur et ne déclenche aucune règle de quarantaine.
+
 - **Jev** reçoit l’entrée dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
 - **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
 
@@ -247,6 +249,7 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | --- | --- |
 | `organizations` | `id`, `name` |
 | `organization_members` | `(organization_id, user_id)`, sans rôle |
+| `organization_domains` | `(organization_id, domain)`, jusqu’à dix par organisation |
 | `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context`, `status` (`active` par défaut, ou `suspended`), `success_url` (facultative, normalisée par `parseSuccessUrl`), `honeypot_field` (facultatif, nom du champ piège) |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` est normalisée : schéma, hôte et port éventuel, sans chemin ni barre oblique finale |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (facultatif), `sender_fingerprint` et `content_fingerprint` (facultatifs), `prior_same_sender` et `prior_same_content` |
@@ -354,6 +357,9 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Session Better Auth |
 | `GET /api/organizations` | Organisations du compte et leurs formulaires |
 | `POST /api/organizations` | Crée une organisation et son premier formulaire |
+| `GET /api/organizations/:organizationId/domains` | Liste les domaines déclarés par ordre alphabétique |
+| `POST /api/organizations/:organizationId/domains` | Ajoute un domaine (`{"domain":…}`). Répond `201` pour une création, `200` pour un doublon, `400` pour un nom invalide ou `409` si la liste est pleine |
+| `DELETE /api/organizations/:organizationId/domains?domain=…` | Retire un domaine et répond `204`, ou `404` si le domaine n’est pas déclaré |
 | `POST /api/organizations/:organizationId/forms` | Ajoute un formulaire actif (`{"name":…,"businessContext":…}`, contexte facultatif) : `201` et le formulaire |
 | `PATCH /api/organizations/:organizationId/forms/:publicId` | Renomme le formulaire, modifie son contexte métier, ou les deux (`{"name":…}`, `{"businessContext":…}`) ; un contexte vide l’efface |
 | `POST /api/organizations/:organizationId/forms/:publicId/suspend` ou `/reactivate` | Suspend ou réactive le formulaire |

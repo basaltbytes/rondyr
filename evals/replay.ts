@@ -73,7 +73,9 @@ export function replay(corpus: Corpus): readonly EvaluationInput[] {
       inputs.push({
         entry: groupSize === size ? entry : { ...entry, duplicates: groupSize },
         firstOccurrence: offset + 1,
-        input: repeated ? null : classifierInput(entry.fields, corpus.context, counts),
+        input: repeated
+          ? null
+          : classifierInput(entry.fields, corpus.context, counts, corpus.domains),
       });
       offset += groupSize;
     }
