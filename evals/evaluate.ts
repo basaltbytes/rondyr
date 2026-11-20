@@ -93,7 +93,7 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
   const runPromise = Effect.runPromiseWith(services);
   const observed = yield* Ref.make(nothingObserved);
   const binding: ModelBinding = {
-    run: (model: ClassifierModel, input: ClassifierInput, options: AiOptions) =>
+    run: (model: ClassifierModel, input: ClassifierInput, { signal, ...options }: AiOptions) =>
       runPromise(
         Ref.update(observed, (seen) => ({ ...seen, requested: Option.some(model) })).pipe(
           Effect.andThen(ai.run(model, input, options)),
@@ -109,6 +109,7 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
             Ref.update(observed, (seen) => ({ ...seen, failure: Option.some(failure) })),
           ),
         ),
+        signal === undefined ? undefined : { signal },
       ),
   };
   const result = yield* classifiers[classifier].score(binding, entry.fields, context).pipe(
