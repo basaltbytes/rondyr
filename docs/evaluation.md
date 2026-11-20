@@ -33,7 +33,7 @@ Dated lines are replayed by `received`, with ties resolved by file order. Undate
 
 ### Business context
 
-The business context of the form is in a second file next to the corpus. For `evals/corpus/synthetic.jsonl`, use `evals/corpus/synthetic.context.txt`. The harness and the Worker both trim the context and keep as many whole characters as fit within 2,000 UTF-16 code units. An empty file means the form has no business context. The classifiers then score spam only, and no message can be quarantined for low relevance.
+The business context of the form is in a second file next to the corpus. For `evals/corpus/synthetic.jsonl`, use `evals/corpus/synthetic.context.txt`. The harness and the Worker both trim the context and keep as many whole characters as fit within 2,000 UTF-16 code units. An empty file means the form has no business context. Both classifiers ask about spam and unsolicited sales outreach on every call. They ask about business relevance only when the context is present.
 
 A separate file keeps the corpus lines in the shape the issue describes, so an existing corpus works once the context file is next to it. A command-line option would let two runs of the same corpus use different contexts, and the results would no longer be comparable; the file is versioned, or kept local, together with its corpus. The context is part of the cache key, so changing it scores every entry again.
 
@@ -45,7 +45,7 @@ The replay checks the submission's `email` field against the declared domains an
 
 ### Synthetic corpus
 
-`evals/corpus/synthetic.jsonl` contains 51 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. People appear by first name only, and every address and link uses the reserved `.example` domain.
+`evals/corpus/synthetic.jsonl` contains 57 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. Unsolicited SEO, lead generation, and subcontracting offers use the `spam` label. A quote request, a delivery question from an existing supplier, and a proposal from a peer use the `legitimate` label. People appear by first name only, and every address and link uses the reserved `.example` domain.
 
 It's small: a result on it says whether the pipeline works and gives a first idea, not a measure of the classifiers.
 
@@ -115,10 +115,10 @@ The terminal shows the summary. The full report, with the threshold sweep, is wr
 
 For each classifier, in this order:
 
-- **Legitimate messages quarantined.** The false positives, by id, with the reason and the scores. A real message in quarantine waits for someone to find it, which is the failure that matters most.
+- **Legitimate messages quarantined.** The total includes intake rules and failed calls. The table lists the rule decisions by id and score, and the failed calls appear below.
 - **Off-topic messages quarantined.** Genuine messages that a person has to read and archive. Today's rules quarantine them for low relevance on purpose; a spam reason is the worse outcome.
 - **Spam accepted**, by id and family.
-- **Expected label and decision.** The table includes `repetition` for submissions in quarantine before a model call. Each cell counts distinct corpus lines and the submissions those lines represent. A line can appear in more than one cell when its occurrences get different decisions. The decision list identifies the first occurrence and number of submissions in each result.
+- **Expected label and decision.** The table includes `solicitation` and `repetition`. Each cell counts distinct corpus lines and the submissions those lines represent. A line can appear in more than one cell when its occurrences get different decisions. The decision list identifies the first occurrence and number of submissions in each result.
 - **Quarantine of spam.** Spam is the positive class; legitimate and off-topic lines are the negatives; ambiguous lines and failed calls are left out. Precision is the share of quarantined lines that are spam, and recall the share of spam that is quarantined, for any reason. Both are given for lines and for submissions.
 - **Latency**: p50, p90, p95, p99 and max of the scored calls, in milliseconds, from the client. Results from the cache keep the latency of the run that recorded them.
 - **Cost**: the token usage of the answers times the per-million prices of the model pages, checked on 2026-11-20 and kept in `evals/classifiers.ts`. If an answer has no usage, the cost is reported as unavailable. Calls that failed may also be billed and aren't counted.
@@ -130,7 +130,9 @@ The report also gives the returned model ids and their counts, `rulesVersion`, t
 
 The sweep recomputes decisions from the recorded scores without new calls. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
 
-The Markdown shows the same grid as three tables. Whether a message is accepted depends only on the lower spam threshold, called `ambiguous`; the `probable-spam` reason depends only on the upper one.
+The solicitation sweep tests thresholds from 0 to 1 in steps of 0.05 while holding the spam and relevance thresholds fixed. A solicitation score must exceed the threshold. The report counts all legitimate lines quarantined among scored calls and shows how many legitimate and spam lines get the `solicitation` reason. The Markdown has one table for each threshold.
+
+Run both classifiers on the same corpus before and after adding the question. Compare the solicitation sweep for both classifiers, then use the full report to confirm that the chosen threshold leaves every `legitimate` entry out of quarantine, including entries quarantined at intake or after a failed call. The Worker keeps the solicitation threshold disabled until there is a live measurement.
 
 ## Privacy
 

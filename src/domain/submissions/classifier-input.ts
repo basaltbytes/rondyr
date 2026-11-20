@@ -124,3 +124,5 @@ export function classifierSpamInstructions(facts: ClassifierInput["facts"]) {
       : "";
   return `${question}${domain} ${classifierDataInstruction}`;
 }
+
+export const solicitationInstruction = `Is the sender offering the organization a product or service it did not ask for? Count an offer made indirectly, such as opening a sales conversation about a service. Exclude requests for a quote from the organization, job applications, partnership proposals from peers, and messages about an existing order or engagement. ${classifierDataInstruction}`;

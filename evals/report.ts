@@ -3,13 +3,15 @@ import { Schema } from "effect";
 import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
 import {
   ClassificationScores,
+  ClassificationThresholds,
+  classificationThresholds,
   reviewReason,
   rulesVersion,
 } from "../src/domain/submissions/classification.ts";
 import { ClassifierName, classifiers } from "./classifiers.ts";
 import { type Corpus, type CorpusEntry, EntryId, Family, Label, weight } from "./corpus.ts";
 import type { ClassifierRun, EntryResult, Outcome } from "./evaluate.ts";
-import { Decision, Thresholds, currentThresholds, reasonAt, thresholdGrid } from "./thresholds.ts";
+import { Decision, reasonAt, thresholdGrid } from "./thresholds.ts";
 import { Transport } from "./workers-ai.ts";
 
 /** A count of corpus lines, and of the submissions they stand for once `duplicates` is applied. */
@@ -67,12 +69,14 @@ const Cost = Schema.Union([
 type Cost = typeof Cost.Type;
 
 const SweepPoint = Schema.Struct({
-  thresholds: Thresholds,
+  thresholds: ClassificationThresholds,
   falsePositives: Count,
   spamAccepted: Count,
   offTopicQuarantined: Count,
   legitimateAsProbableSpam: Count,
   spamAsProbableSpam: Count,
+  legitimateAsSolicitation: Count,
+  spamAsSolicitation: Count,
 });
 
 type SweepPoint = typeof SweepPoint.Type;
@@ -83,6 +87,7 @@ const ClassifierReport = Schema.Struct({
   returnedModels: Schema.Array(Schema.Struct({ model: Schema.String, entries: Schema.Int })),
   calls: Schema.Struct({ scored: Schema.Int, fromCache: Schema.Int, failed: Schema.Int }),
   falsePositives: Schema.Array(EntryDecision),
+  legitimateQuarantined: Count,
   offTopicQuarantined: Schema.Array(EntryDecision),
   spamAccepted: Schema.Array(EntryDecision),
   failures: Schema.Array(Failure),
@@ -100,6 +105,7 @@ const ClassifierReport = Schema.Struct({
   sweep: Schema.Struct({
     spam: Schema.Array(SweepPoint),
     relevance: Schema.Array(SweepPoint),
+    solicitation: Schema.Array(SweepPoint),
   }),
   decisions: Schema.Array(EntryDecision),
 });
@@ -108,7 +114,7 @@ export type ClassifierReport = typeof ClassifierReport.Type;
 
 /** The JSON report. It contains ids, labels, families, scores and decisions, never field values. */
 export const Report = Schema.Struct({
-  format: Schema.Literal("rondyr-classifier-evaluation/2"),
+  format: Schema.Literal("rondyr-classifier-evaluation/3"),
   generatedAt: Schema.String,
   transport: Transport,
   corpus: Schema.Struct({
@@ -118,7 +124,7 @@ export const Report = Schema.Struct({
     businessContext: Schema.Literals(["provided", "empty"]),
   }),
   rulesVersion: Schema.Int,
-  thresholds: Thresholds,
+  thresholds: ClassificationThresholds,
   gateway: Schema.Struct({
     id: Schema.String,
     collectLog: Schema.Boolean,
@@ -143,6 +149,7 @@ function byDecision<A>(value: (decision: Decision) => A) {
     accepted: value("accepted"),
     "probable-spam": value("probable-spam"),
     ambiguous: value("ambiguous"),
+    solicitation: value("solicitation"),
     "low-relevance": value("low-relevance"),
     "classification-error": value("classification-error"),
     repetition: value("repetition"),
@@ -249,7 +256,7 @@ function cost(run: ClassifierRun): Cost {
 }
 
 function sweepPoint(
-  thresholds: Thresholds,
+  thresholds: typeof ClassificationThresholds.Type,
   scored: readonly {
     readonly entry: CorpusEntry;
     readonly scores: typeof ClassificationScores.Type;
@@ -271,6 +278,8 @@ function sweepPoint(
     offTopicQuarantined: pick("off-topic", (reason) => reason !== null),
     legitimateAsProbableSpam: pick("legitimate", (reason) => reason === "probable-spam"),
     spamAsProbableSpam: pick("spam", (reason) => reason === "probable-spam"),
+    legitimateAsSolicitation: pick("legitimate", (reason) => reason === "solicitation"),
+    spamAsSolicitation: pick("spam", (reason) => reason === "solicitation"),
   };
 }
 
@@ -281,12 +290,17 @@ function sweep(results: readonly EntryResult[]) {
   const spam = thresholdGrid.flatMap((probableSpam) =>
     thresholdGrid
       .filter((ambiguous) => ambiguous <= probableSpam)
-      .map((ambiguous) => sweepPoint({ ...currentThresholds, probableSpam, ambiguous }, scored)),
+      .map((ambiguous) =>
+        sweepPoint({ ...classificationThresholds, probableSpam, ambiguous }, scored),
+      ),
   );
   const relevance = thresholdGrid.map((lowRelevance) =>
-    sweepPoint({ ...currentThresholds, lowRelevance }, scored),
+    sweepPoint({ ...classificationThresholds, lowRelevance }, scored),
   );
-  return { spam, relevance };
+  const solicitation = [0, ...thresholdGrid, 1].map((threshold) =>
+    sweepPoint({ ...classificationThresholds, solicitation: threshold }, scored),
+  );
+  return { spam, relevance, solicitation };
 }
 
 /** Quarantined by a rule. Failed model calls are excluded from these metrics. */
@@ -343,6 +357,9 @@ export function classifierReport(run: ClassifierRun): ClassifierReport {
     falsePositives: decisions
       .filter(({ label, decision }) => label === "legitimate" && quarantinedByRule(decision))
       .toSorted(byId),
+    legitimateQuarantined: count(
+      entriesWith("legitimate", (decision) => decision !== "accepted").map(({ entry }) => entry),
+    ),
     offTopicQuarantined: decisions
       .filter(({ label, decision }) => label === "off-topic" && quarantinedByRule(decision))
       .toSorted(byId),
@@ -377,7 +394,7 @@ export function buildReport(
   generatedAt: string,
 ): Report {
   return {
-    format: "rondyr-classifier-evaluation/2",
+    format: "rondyr-classifier-evaluation/3",
     generatedAt,
     transport,
     corpus: {
@@ -387,7 +404,7 @@ export function buildReport(
       businessContext: corpus.context === "" ? "empty" : "provided",
     },
     rulesVersion,
-    thresholds: currentThresholds,
+    thresholds: classificationThresholds,
     gateway: aiGatewayOptions.gateway,
     classifiers: runs.map(classifierReport),
   };

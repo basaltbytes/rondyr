@@ -1,6 +1,7 @@
+import { classificationThresholds } from "../src/domain/submissions/classification.ts";
 import { Label } from "./corpus.ts";
 import type { ClassifierReport, Report } from "./report.ts";
-import { Decision, currentThresholds } from "./thresholds.ts";
+import { Decision } from "./thresholds.ts";
 
 type EntryDecision = ClassifierReport["decisions"][number];
 type Count = ClassifierReport["confusion"]["spam"]["accepted"];
@@ -28,7 +29,16 @@ function table(header: readonly string[], rows: readonly (readonly string[])[]) 
 function decisionTable(decisions: readonly EntryDecision[]) {
   if (decisions.length === 0) return "None.";
   return table(
-    ["id", "family", "first occurrence", "submissions", "decision", "spam", "relevance"],
+    [
+      "id",
+      "family",
+      "first occurrence",
+      "submissions",
+      "decision",
+      "spam",
+      "solicitation",
+      "relevance",
+    ],
     decisions.map((entry) => [
       entry.id,
       entry.family ?? "",
@@ -36,6 +46,7 @@ function decisionTable(decisions: readonly EntryDecision[]) {
       `${entry.duplicates}`,
       entry.decision,
       score(entry.scores?.spam),
+      score(entry.scores?.solicitation),
       score(entry.scores?.relevance),
     ]),
   );
@@ -56,7 +67,8 @@ function classifierSummary(report: ClassifierReport) {
   return [
     `## ${report.classifier} (${report.requestedModel})`,
     `Returned model: ${models.length === 0 ? "none" : models.join(", ")}. Scored ${report.calls.scored} inputs, ${report.calls.fromCache} of them from the cache. ${report.calls.failed} failed.`,
-    `### Legitimate messages quarantined: ${report.falsePositives.length}`,
+    `### Legitimate messages quarantined: ${pair(report.legitimateQuarantined)}`,
+    "Rule decisions are listed below. Classification errors are listed with failed calls.",
     decisionTable(report.falsePositives),
     `### Off-topic messages quarantined: ${report.offTopicQuarantined.length}`,
     decisionTable(report.offTopicQuarantined),
@@ -64,6 +76,8 @@ function classifierSummary(report: ClassifierReport) {
     decisionTable(report.spamAccepted),
     "### Quarantined for repetition",
     decisionTable(report.decisions.filter(({ decision }) => decision === "repetition")),
+    "### Quarantined for solicitation",
+    decisionTable(report.decisions.filter(({ decision }) => decision === "solicitation")),
     "### Expected label and decision",
     "Distinct corpus lines, then submissions. A line can appear in several decisions when its occurrences differ.",
     table(
@@ -110,13 +124,13 @@ function threshold(value: number) {
 // The full grid is in the JSON report. Accepting or quarantining depends only on the lower of the
 // two spam thresholds, and the probable-spam reason only on the upper one, so two tables show it.
 function classifierSweep(report: ClassifierReport) {
-  const { spam, relevance } = report.sweep;
+  const { spam, relevance, solicitation } = report.sweep;
   const highest = Math.max(...spam.map(({ thresholds }) => thresholds.probableSpam));
   const lowest = Math.min(...spam.map(({ thresholds }) => thresholds.ambiguous));
   return [
     `## Threshold sweep: ${report.classifier}`,
     "Recomputed from the recorded scores without new calls. The sweep excludes failed calls and intake quarantines. Entries, then submissions in parentheses.",
-    "### Ambiguous threshold: below it, a message with enough relevance is accepted",
+    "### Ambiguous threshold",
     table(
       ["ambiguous", "legitimate quarantined", "off-topic quarantined", "spam accepted"],
       spam
@@ -139,7 +153,7 @@ function classifierSweep(report: ClassifierReport) {
           pair(point.spamAsProbableSpam),
         ]),
     ),
-    `### Low relevance threshold, spam thresholds ${threshold(currentThresholds.probableSpam)} and ${threshold(currentThresholds.ambiguous)}`,
+    `### Low relevance threshold, spam thresholds ${threshold(classificationThresholds.probableSpam)} and ${threshold(classificationThresholds.ambiguous)}`,
     table(
       ["low relevance", "legitimate quarantined", "off-topic quarantined", "spam accepted"],
       relevance.map((point) => [
@@ -149,18 +163,37 @@ function classifierSweep(report: ClassifierReport) {
         pair(point.spamAccepted),
       ]),
     ),
+    "### Solicitation threshold",
+    "A score must be above the threshold. Spam and relevance thresholds stay fixed.",
+    table(
+      [
+        "solicitation",
+        "legitimate quarantined",
+        "legitimate as solicitation",
+        "spam as solicitation",
+        "spam accepted",
+      ],
+      solicitation.map((point) => [
+        score(point.thresholds.solicitation ?? undefined),
+        pair(point.falsePositives),
+        pair(point.legitimateAsSolicitation),
+        pair(point.spamAsSolicitation),
+        pair(point.spamAccepted),
+      ]),
+    ),
   ].join("\n\n");
 }
 
 /** The report without the threshold sweep, for the terminal. */
 export function renderSummary(report: Report) {
   const { corpus } = report;
+  const solicitation = report.thresholds.solicitation;
   const header = [
     `# Classifier evaluation: ${corpus.name}`,
     report.transport === "dry"
       ? "**Dry run: the scores are fake and measure nothing.**"
       : "Scores from Workers AI.",
-    `${pair(corpus.size)} entries, business context ${corpus.businessContext}. Rules version ${report.rulesVersion}: probable spam from ${report.thresholds.probableSpam}, ambiguous from ${report.thresholds.ambiguous}, low relevance under ${report.thresholds.lowRelevance}. Gateway \`${report.gateway.id}\`, collectLog ${report.gateway.collectLog}, skipCache ${report.gateway.skipCache}. Generated ${report.generatedAt}.`,
+    `${pair(corpus.size)} entries, business context ${corpus.businessContext}. Rules version ${report.rulesVersion}: probable spam from ${report.thresholds.probableSpam}, ambiguous from ${report.thresholds.ambiguous}, solicitation ${solicitation === null ? "disabled" : `over ${solicitation}`}, low relevance under ${report.thresholds.lowRelevance}. Gateway \`${report.gateway.id}\`, collectLog ${report.gateway.collectLog}, skipCache ${report.gateway.skipCache}. Generated ${report.generatedAt}.`,
   ];
   return [...header, ...report.classifiers.map(classifierSummary)].join("\n\n");
 }

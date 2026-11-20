@@ -184,21 +184,22 @@ Le fournisseur `email` construit le message et appelle le port `EmailSender`, qu
 
 ## 5. Classification intelligente
 
-Le classificateur évalue deux dimensions indépendantes. Le **spam** couvre le marketing non sollicité, le hameçonnage, les sollicitations de masse et les envois automatisés. La **pertinence** mesure le lien entre le message et l’activité décrite par l’organisation ; sans contexte métier, la question n’est pas posée.
+Le classificateur évalue le **spam**, le **démarchage commercial non sollicité** et la **pertinence**. La question sur le spam couvre le marketing non sollicité, le hameçonnage, les sollicitations de masse et les envois automatisés. La question sur le démarchage vise les offres de produits ou services que l’organisation n’a pas demandés. Une demande de devis, une candidature ou une proposition de partenariat d’un pair en est exclue. La pertinence mesure le lien entre le message et l’activité décrite par l’organisation. Sans contexte métier, le classificateur omet cette question.
 
 Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant votre atelier » est authentique même s’il ne parle pas de poterie.
 
 ### Règles de décision
 
-`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 4`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur.
+`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 5`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur. La version 5 demande le score de démarchage. Son seuil reste désactivé en attendant la mesure sur les deux modèles.
 
 | Condition | Résultat |
 | --- | --- |
+| Échec du classificateur ou score de démarchage manquant | Quarantaine, motif `classification-error` |
 | Spam ≥ 0,70 | Quarantaine, motif `probable-spam` |
 | Spam ≥ 0,30 | Quarantaine, motif `ambiguous` |
+| Seuil de démarchage défini et score supérieur à ce seuil | Quarantaine, motif `solicitation` |
 | Contexte configuré et pertinence < 0,35 | Quarantaine, motif `low-relevance` |
 | Aucun motif | Acceptation automatique |
-| Classificateur en échec | Quarantaine, motif `classification-error` |
 
 Les deux classificateurs partagent ces seuils. La mesure du 20 novembre (#31) montre que les scores des messages légitimes et ceux des indésirables manqués se recouvrent. `pnpm evaluate` rejoue les soumissions d’un corpus dans l’ordre de réception, applique la règle de répétition et appelle les deux adaptateurs pour les occurrences qui doivent être scorées. Le rapport compte les occurrences représentées par `duplicates`. #6 prévoit des seuils par classificateur et une politique par organisation. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
 
@@ -230,7 +231,7 @@ Le Worker et le corpus construisent la même entrée dans `src/domain/submission
 
 Une organisation peut déclarer jusqu’à dix noms d’hôte ASCII en minuscules. Lorsque le domaine du champ `email` correspond à un domaine déclaré ou à l’un de ses sous-domaines, les deux modèles reçoivent le fait `sender_matches_organization_domain: true` et un champ `email` vide ; D1 conserve l’adresse soumise. Dans tous les autres cas (adresse d’un autre domaine, adresse absente ou invalide, organisation sans domaine déclaré), le fait est omis et l’entrée du modèle est celle de la version 3. Un `false` envoyé à chaque message déplaçait les scores de messages légitimes sans rapport avec le domaine : sur le corpus synthétique, Jev mettait un message légitime en quarantaine et OpenAI Decisions deux. La comparaison porte sur une adresse déclarée par le visiteur et ne déclenche aucune règle de quarantaine.
 
-- **Jev** reçoit l’entrée dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
+- **Jev** reçoit l’entrée dans un objet `state`, avec deux ou trois questions nommées de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
 - **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
 
 La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la première requête authentifiée du compte, avec la collecte de logs activée ; les appels Jev faits par le binding y passent aussi, et leurs journaux contenaient les champs des soumissions tant que l’adaptateur ne s’y opposait pas. Les deux adaptateurs désactivent donc la collecte et le cache à chaque appel, avec les options de `src/adapters/ai/gateway.ts`, et un test par adaptateur vérifie ces options. En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.

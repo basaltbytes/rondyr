@@ -17,13 +17,13 @@ const lines = [
 ] as const;
 
 const scoresById = new Map([
-  ["legit-1", { spam: 0.1, relevance: 0.9 }],
-  ["legit-2", { spam: 0.5, relevance: 0.9 }],
-  ["legit-0", { spam: 0.8, relevance: 0.9 }],
-  ["off-1", { spam: 0.1, relevance: 0.1 }],
-  ["spam-1", { spam: 0.9, relevance: 0.2 }],
-  ["spam-2", { spam: 0.2, relevance: 0.8 }],
-  ["amb-1", { spam: 0.4, relevance: 0.5 }],
+  ["legit-1", { spam: 0.1, solicitation: 0.4, relevance: 0.9 }],
+  ["legit-2", { spam: 0.5, solicitation: 0.7, relevance: 0.9 }],
+  ["legit-0", { spam: 0.8, solicitation: 0.7, relevance: 0.9 }],
+  ["off-1", { spam: 0.1, solicitation: 0, relevance: 0.1 }],
+  ["spam-1", { spam: 0.9, solicitation: 0.8, relevance: 0.2 }],
+  ["spam-2", { spam: 0.2, solicitation: 0.8, relevance: 0.8 }],
+  ["amb-1", { spam: 0.4, solicitation: 0, relevance: 0.5 }],
 ]);
 
 const corpusText = lines
@@ -134,5 +134,29 @@ it.effect("recomputes the counts for other thresholds from the recorded scores",
       ({ thresholds }) => thresholds.lowRelevance === 0.05,
     );
     assert.deepInclude(lowRelevance, { offTopicQuarantined: { entries: 0, submissions: 0 } });
+  }),
+);
+
+it.effect("counts extra solicitation quarantines without attributing spam quarantines to it", () =>
+  Effect.gen(function* () {
+    const evaluated = yield* run;
+    const { solicitation } = classifierReport(evaluated).sweep;
+    const at = (threshold: number) =>
+      solicitation.find((point) => point.thresholds.solicitation === threshold);
+
+    assert.deepInclude(at(0.35), {
+      falsePositives: { entries: 3, submissions: 4 },
+      legitimateAsSolicitation: { entries: 1, submissions: 1 },
+    });
+    assert.deepInclude(at(0.4), {
+      falsePositives: { entries: 2, submissions: 3 },
+      legitimateAsSolicitation: { entries: 0, submissions: 0 },
+      spamAsSolicitation: { entries: 1, submissions: 3 },
+      spamAccepted: { entries: 0, submissions: 0 },
+    });
+    assert.deepInclude(at(0.8), {
+      spamAsSolicitation: { entries: 0, submissions: 0 },
+      spamAccepted: { entries: 1, submissions: 3 },
+    });
   }),
 );
