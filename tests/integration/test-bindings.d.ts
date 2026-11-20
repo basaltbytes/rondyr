@@ -6,6 +6,7 @@ declare global {
       TEST_WORKER: Fetcher;
       WEBHOOK_RECEIVER: Fetcher;
       RESEND_FIXTURE: Fetcher;
+      WORKERS_AI_FIXTURE: Fetcher;
       TEST_MIGRATIONS: D1Migration[];
     }
   }
