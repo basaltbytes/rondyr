@@ -25,4 +25,5 @@ worker-configuration.d.ts
 evals/corpus/*
 !evals/corpus/synthetic.jsonl
 !evals/corpus/synthetic.context.txt
+!evals/corpus/synthetic.domains.txt
 evals/out/

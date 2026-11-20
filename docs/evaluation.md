@@ -37,22 +37,29 @@ The business context of the form is in a second file next to the corpus. For `ev
 
 A separate file keeps the corpus lines in the shape the issue describes, so an existing corpus works once the context file is next to it. A command-line option would let two runs of the same corpus use different contexts, and the results would no longer be comparable; the file is versioned, or kept local, together with its corpus. The context is part of the cache key, so changing it scores every entry again.
 
+### Organization domains
+
+Declare domains in an optional `<name>.domains.txt` next to the corpus. Use one lowercase ASCII hostname per line, up to ten distinct domains. Blank lines are ignored. A missing or empty file means the organization has no declared domains.
+
+The replay checks the submission's `email` field against the declared domains and their subdomains. With at least one declared domain, both classifiers receive `sender_matches_organization_domain` as a boolean. A matching email field is blank in the model input.
+
 ### Synthetic corpus
 
-`evals/corpus/synthetic.jsonl` contains 47 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The corpus includes terse questions, links in the `name` field and promotions sent from the workshop's own domain. People appear by first name only, and every address and link uses the reserved `.example` domain.
+`evals/corpus/synthetic.jsonl` contains 51 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. People appear by first name only, and every address and link uses the reserved `.example` domain.
 
 It's small: a result on it says whether the pipeline works and gives a first idea, not a measure of the classifiers.
 
 ### Local corpora
 
-Real submissions stay out of git. Put a real corpus and its context file in `evals/corpus/local/`:
+Real submissions stay out of git. Put a real corpus and its sidecars in `evals/corpus/local/`:
 
 ```text
 evals/corpus/local/basaltbytes.jsonl
 evals/corpus/local/basaltbytes.context.txt
+evals/corpus/local/basaltbytes.domains.txt
 ```
 
-`.gitignore` ignores everything in `evals/corpus/` except the two synthetic files, so a file left directly in `evals/corpus/` is ignored too. Check with `git status` before a commit anyway.
+`.gitignore` excludes everything in `evals/corpus/` except the three synthetic files. Check `git status` before committing.
 
 ## Running
 

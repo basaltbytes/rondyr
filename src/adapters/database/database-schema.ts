@@ -74,6 +74,17 @@ export const organizationMembers = sqliteTable(
   ],
 );
 
+export const organizationDomains = sqliteTable(
+  "organization_domains",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    domain: text().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.domain] })],
+);
+
 export const submissions = sqliteTable(
   "submissions",
   {

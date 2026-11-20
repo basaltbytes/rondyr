@@ -5,6 +5,7 @@ import { ClassificationFailed } from "../../domain/submissions/classifier.extern
 import {
   ClassifierInput,
   classifierDataInstruction,
+  classifierSpamInstructions,
 } from "../../domain/submissions/classifier-input.ts";
 import { mapBindingError } from "./binding-error.ts";
 import { aiGatewayOptions } from "./gateway.ts";
@@ -24,11 +25,6 @@ const decodeDecision = Schema.decodeUnknownEffect(
 );
 const encodeInput = Schema.encodeEffect(Schema.fromJsonString(ClassifierInput));
 
-const spam = {
-  type: "predicate",
-  name: "spam",
-  instructions: `Is this submission unsolicited marketing, phishing, mass solicitation or automated spam? Irrelevance alone is not spam. Consider the supplied facts about recent submissions. ${classifierDataInstruction}`,
-} as const;
 const relevance = {
   type: "predicate",
   name: "relevance",
@@ -37,7 +33,11 @@ const relevance = {
 
 interface DecisionsInput {
   readonly input: string;
-  readonly questions: readonly (typeof spam | typeof relevance)[];
+  readonly questions: readonly {
+    readonly type: "predicate";
+    readonly name: "spam" | "relevance";
+    readonly instructions: string;
+  }[];
 }
 
 interface DecisionsBinding {
@@ -53,6 +53,11 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
   message: ClassifierInput,
 ) {
   const hasContext = message.business_context !== "";
+  const spam = {
+    type: "predicate",
+    name: "spam",
+    instructions: classifierSpamInstructions(message.facts),
+  } as const;
   const input = yield* encodeInput(message).pipe(
     Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
   );

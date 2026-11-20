@@ -37,7 +37,7 @@ export const ClassificationResult = Schema.Union([
   Schema.TaggedStruct("ClassificationError", {}),
 ]);
 
-export const rulesVersion = 3;
+export const rulesVersion = 4;
 
 export function reviewReason(scores: typeof ClassificationScores.Type) {
   if (scores.spam >= 0.7) return "probable-spam";
