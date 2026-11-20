@@ -116,7 +116,7 @@ D1 et Queues ne partagent pas de transaction, et Queues remet les messages au mo
 
 ### Ingestion
 
-L’adaptateur D1 du port `SubmissionIntake` exécute un `db.batch` de deux instructions : l’insertion dans `submissions`, conditionnée à l’existence du formulaire, à son statut `active` et au plafond de 30 messages par minute, puis l’insertion dans `outbox_events`. L’insertion applique aussi le champ piège du formulaire : elle retire des champs enregistrés un champ piège vide, en gardant l’ordre des autres, et écrit `intake_reason = 'honeypot'` quand il a une valeur. D1 exécute le lot comme une transaction. Un test force l’échec de la seconde insertion avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
+L’adaptateur D1 du port `SubmissionIntake` exécute un seul `db.batch`. Il lit les conditions d’accès du formulaire, insère la soumission si elles le permettent et si le plafond de 30 messages par minute est respecté, puis insère l’événement dans `outbox_events`. L’insertion retire un champ piège vide, en gardant l’ordre des autres champs, et calcule les compteurs de répétition et le motif d’entrée (section 5). D1 exécute le lot dans une transaction. Un test force l’échec de l’insertion dans l’outbox avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
 
 ### Publication
 
@@ -190,7 +190,7 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 
 ### Règles de décision
 
-`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 1`.
+`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 2`.
 
 | Condition | Résultat |
 | --- | --- |
@@ -200,19 +200,24 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 | Aucun motif | Acceptation automatique |
 | Classificateur en échec | Quarantaine, motif `classification-error` |
 
-Ces seuils viennent d’une première estimation, pas d’une mesure. Les deux classificateurs les partagent alors que rien ne montre que leurs scores sont comparables. Le harnais d’évaluation de #6 existe : `pnpm evaluate` soumet un corpus étiqueté aux deux adaptateurs, hors du Worker, et calcule les décisions avec `reviewReason`. Aucune mesure n’est encore enregistrée ; les seuils par classificateur et la politique par organisation viendront de ses rapports. #15 ajoute l’escalade facultative des cas `ambiguous` vers un second modèle.
+Les deux classificateurs partagent ces seuils. La mesure du 20 novembre (#31) montre que les scores des messages légitimes et ceux des indésirables manqués se recouvrent. `pnpm evaluate` rejoue les soumissions d’un corpus dans l’ordre de réception, applique la règle de répétition et appelle les deux adaptateurs pour les occurrences qui doivent être scorées. Le rapport compte les occurrences représentées par `duplicates`. #6 prévoit des seuils par classificateur et une politique par organisation. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
 
 Chaque événement de décision enregistre la version des règles et, quand le classificateur a répondu, les scores et l’identifiant du modèle.
 
 ### Quarantaine sans appel au modèle
 
-Certains motifs sont connus avant toute classification : ce sont les motifs d’entrée, `IntakeReason` dans `classification.ts`. Le seul aujourd’hui est `honeypot`, pour un champ piège rempli. L’ingestion enregistre le motif dans `submissions.intake_reason`, dans la même instruction que la soumission. La commande `QuarantineAtIntake` porte l’organisation et le motif ; depuis l’état `Unrecorded`, l’agrégat enregistre `SubmissionQuarantined` avec ce motif et `rulesVersion`, sans scores. Il ne passe pas par `Classifying` et n’émet pas `ClassificationRequested`, donc la politique `Classification` ne démarre pas la saga. La projection `Inbox`, l’acceptation, l’archivage et la politique `Delivery` traitent ensuite le message comme toute autre quarantaine. Le motif d’entrée ne change pas `rulesVersion`, qui reste celle des seuils du tableau ci-dessus.
+L’ingestion enregistre un motif d’entrée dans `submissions.intake_reason` quand l’une de ces conditions s’applique. `QuarantineAtIntake` transmet l’organisation et le motif à l’agrégat. Depuis l’état `Unrecorded`, l’agrégat émet directement `SubmissionQuarantined` avec le motif et la version des règles, sans scores. Un relecteur peut accepter le message et déclencher ses livraisons, ou l’archiver.
 
 | Condition | Résultat |
 | --- | --- |
 | Champ piège du formulaire rempli | Quarantaine, motif `honeypot`, sans appel au classificateur |
+| Au moins 2 soumissions antérieures au même contenu ou 3 du même expéditeur | Quarantaine, motif `repetition`, sans appel au classificateur |
 
-`QuarantineReason`, l’union des motifs de classification et des motifs d’entrée, type l’événement, la projection et l’API. Les deux motifs prévus par #7 s’ajoutent sans autre conception :
+Le comptage porte sur les soumissions déjà enregistrées dans la même organisation, tous formulaires et statuts confondus, avec une fenêtre de 30 jours dont la borne basse est incluse. Un double envoi isolé reste sous les deux seuils. Le champ piège rempli est prioritaire lorsque les deux règles s’appliquent.
+
+Le champ `email` sert à comparer les expéditeurs. Le contenu regroupe les paires nom–valeur des autres champs, hors `name`, triées par nom. La normalisation des valeurs retire les espaces aux extrémités, réduit les suites d’espaces, passe en minuscules et applique Unicode NFC. Une valeur vide ne produit pas d’empreinte d’expéditeur et ne contribue pas au contenu. D1 préfixe les index des condensats SHA-256 par l’identifiant de l’organisation fourni par le formulaire. Les lignes antérieures à la migration restent lisibles avec des compteurs à zéro et ne contribuent pas à l’historique de répétition.
+
+`QuarantineReason` type l’événement, la projection et l’API. #7 prévoit deux autres motifs d’entrée.
 
 - `turnstile-failed` : la route vérifie le jeton Turnstile avant le lot D1, puis l’insertion écrit ce motif dans `intake_reason`. Il suffit d’ajouter la valeur à `IntakeReason` et un libellé au dashboard.
 - `quota` : si le plafond d’appels au modèle se compte à l’ingestion, il s’écrit dans `intake_reason` comme le champ piège. S’il se compte à la remise au modèle, le consumer envoie `QuarantineAtIntake` avec `quota` ; une seconde remise trouve l’agrégat hors de `Unrecorded` et ne change rien, donc la première décision reste la seule.
@@ -221,14 +226,16 @@ Certains motifs sont connus avant toute classification : ce sont les motifs d’
 
 `RONDYR_CLASSIFIER` choisit le classificateur pour tout un stage : `jev` par défaut, ou `openai`. Les deux sont des adaptateurs du système externe `Classifier` déclaré dans le domaine.
 
-- **Jev** reçoit les champs et le contexte dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
+Le Worker et le corpus construisent la même entrée dans `src/domain/submissions/classifier-input.ts`, avec le contexte métier, les faits calculés et les champs du visiteur dans cet ordre. Les faits comprennent les deux compteurs enregistrés à l’ingestion et un indicateur de lien ou de balise HTML dans un champ autre que le plus long. En cas d’égalité, le premier champ le plus long sert de référence. Aucun condensat n’est envoyé au modèle.
+
+- **Jev** reçoit l’entrée dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
 - **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
 
 La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la première requête authentifiée du compte, avec la collecte de logs activée ; les appels Jev faits par le binding y passent aussi, et leurs journaux contenaient les champs des soumissions tant que l’adaptateur ne s’y opposait pas. Les deux adaptateurs désactivent donc la collecte et le cache à chaque appel, avec les options de `src/adapters/ai/gateway.ts`, et un test par adaptateur vérifie ces options. En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
 
 ### Sécurité du pipeline IA
 
-Le texte d’un visiteur est transmis comme donnée à évaluer, dans un champ distinct des instructions, et il n’a aucun moyen de modifier les seuils. La taille du corps (16 Kio) borne l’entrée du modèle et le contexte métier est tronqué à 2 000 caractères. L’adaptateur OpenAI désactive la collecte de logs et le cache du gateway à chaque appel. Un message au champ piège rempli n’est jamais transmis au modèle, et un champ piège vide est retiré avant l’enregistrement. Les plafonds d’appels par organisation restent à faire (#7).
+Les deux adaptateurs indiquent au modèle que l’entrée est à lire comme des données. Les champs du visiteur figurent dans un objet distinct des instructions. Le corps est limité à 16 Kio et le contexte métier à 2 000 caractères. Les plafonds d’appels par organisation restent à faire (#7).
 
 ## 6. Modèle de données
 
@@ -242,7 +249,7 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `organization_members` | `(organization_id, user_id)`, sans rôle |
 | `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context`, `status` (`active` par défaut, ou `suspended`), `success_url` (facultative, normalisée par `parseSuccessUrl`), `honeypot_field` (facultatif, nom du champ piège) |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` est normalisée : schéma, hôte et port éventuel, sans chemin ni barre oblique finale |
-| `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (motif d’entrée, `NULL` le plus souvent) |
+| `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (facultatif), `sender_fingerprint` et `content_fingerprint` (facultatifs), `prior_same_sender` et `prior_same_content` |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
 | `submission_inbox` | `submission_id`, `version`, `status`, `reason` ; écrite par la projection |
 | `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON lu par le fournisseur du type), `active`, `created_at`. Pour un webhook, `configuration` contient `url`, `secret` (chiffré) et `previousSecret` (`null`, ou le secret chiffré précédent et la fin de sa validité). Pour un e-mail, elle contient `recipients`, la liste des destinataires |
@@ -255,6 +262,8 @@ La migration `form-administration` ajoute `status` et `success_url` par `ALTER T
 La migration `form-honeypot` ajoute `forms.honeypot_field` et `submissions.intake_reason` de la même façon, sans valeur par défaut : un formulaire existant n’a pas de champ piège, et une soumission existante n’a pas de motif d’entrée. `intake_reason` n’a pas de contrainte `CHECK` non plus ; seule l’instruction d’insertion l’écrit, et le consumer le relit avec Effect Schema.
 
 Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire. La clé primaire `(form_id, origin)` de `form_origins` sert la vérification de l’origine à l’ingestion. Un index partiel sur `(next_attempt_at, lease_until)` sert la recherche des livraisons dues.
+
+La migration `submission-repetition` ajoute quatre colonnes avec `ALTER TABLE` et deux index partiels pour le comptage. Chaque index commence par `organization_id`, suivi de l’empreinte de l’expéditeur ou du contenu, puis de `received_at`. Supprimer une soumission supprime ses empreintes et ses compteurs.
 
 Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. Une relance manuelle ouvre une nouvelle série sur la même livraison sans effacer ses tentatives ; l’historique et la relance n’ont demandé aucune migration. L’API d’administration crée les destinations webhook et e-mail ; la table `notification_targets` existante suffit, sans migration. L’adaptateur relit la liste des destinataires avec le même schéma qu’à la création : une ligne modifiée à la main qui ne respecte plus la règle fait échouer la livraison sans reprise.
 
@@ -269,7 +278,7 @@ Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retryi
 
 L’agrégat passe de `Unrecorded` à `Classifying`, puis à `Quarantined` ou `Accepted`. Avec un motif d’entrée, il passe directement de `Unrecorded` à `Quarantined`. Seul un message `Quarantined` peut être accepté ou archivé à la main. La projection `Inbox` écrit le dernier statut dans `submission_inbox`, protégée par le numéro de séquence de l’événement. Une soumission sans ligne de projection a le statut `received`.
 
-Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. `classification-error` et `honeypot` sont des motifs de quarantaine, pas des statuts.
+Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. Le champ `reason` de l’Inbox contient le motif de quarantaine, par exemple `classification-error`, `honeypot` ou `repetition`.
 
 Le contenu des messages n’existe que dans `submissions.fields`, et n’en sort que dans le corps des requêtes webhook et dans le texte des e-mails. Les événements ne contiennent que des identifiants, des scores et l’identifiant du relecteur, et les livraisons que des identifiants, des états et des résumés d’erreur, ce qui limite une purge aux lignes D1 (#9). Supprimer une soumission supprime ses livraisons et leurs tentatives.
 

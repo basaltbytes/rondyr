@@ -64,15 +64,42 @@ layer(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))((it) => {
       assert.strictEqual(report.classifiers.length, 2);
       for (const classifier of report.classifiers) {
         const cells = Object.values(classifier.confusion).flatMap((row) => Object.values(row));
-        assert.strictEqual(
-          cells.reduce((total, { entries }) => total + entries, 0),
-          corpus.entries.length,
+        assert.deepEqual(
+          [...new Set(classifier.decisions.map(({ id }) => id))].toSorted(),
+          corpus.entries.map(({ id }) => id).toSorted(),
         );
         assert.strictEqual(
           cells.reduce((total, cell) => total + cell.submissions, 0),
           submissions,
         );
-        assert.strictEqual(classifier.calls.scored, corpus.entries.length);
+        assert.strictEqual(
+          classifier.calls.scored,
+          classifier.decisions.filter(({ decision }) => decision !== "repetition").length,
+        );
+        assert.strictEqual(classifier.calls.failed, 0);
+        assert.deepEqual(classifier.confusion.legitimate.repetition, {
+          entries: 0,
+          submissions: 0,
+        });
+        const repeated = classifier.decisions.filter(({ decision }) => decision === "repetition");
+        assert.deepEqual(
+          repeated
+            .filter(({ family }) => family === "repeat-sender" || family === "repeat-content")
+            .map(({ id, firstOccurrence, duplicates }) => [id, firstOccurrence, duplicates]),
+          [
+            ["syn-repeat-content-002", 2, 3],
+            ["syn-repeat-sender-004", 1, 1],
+          ],
+        );
+        assert.deepEqual(
+          classifier.decisions
+            .filter(({ family }) => family === "double-submit")
+            .map(({ firstOccurrence, duplicates }) => [firstOccurrence, duplicates]),
+          [
+            [1, 1],
+            [2, 1],
+          ],
+        );
         assert.strictEqual(classifier.cost._tag, "Estimated");
       }
 
@@ -89,7 +116,12 @@ layer(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))((it) => {
 
       const rerun = yield* evaluateWith(workersAiDry, directory, corpus, options);
       for (const { results } of rerun) {
-        assert.isTrue(results.every(({ outcome }) => outcome._tag === "Scored" && outcome.cached));
+        assert.isTrue(
+          results.every(
+            ({ outcome }) =>
+              outcome._tag === "Repetition" || (outcome._tag === "Scored" && outcome.cached),
+          ),
+        );
       }
     }),
   );
