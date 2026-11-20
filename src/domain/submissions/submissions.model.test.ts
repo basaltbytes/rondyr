@@ -6,6 +6,7 @@ import { Effect, Layer } from "effect";
 import { ApproveSubmission } from "./approve-submission.command.ts";
 import { reviewReason, rulesVersion } from "./classification.ts";
 import { ClassificationFailed, Classifier } from "./classifier.external.ts";
+import { DeliveryScheduler } from "./delivery-scheduler.external.ts";
 import { DismissSubmission } from "./dismiss-submission.command.ts";
 import { InboxStore } from "./inbox-store.ts";
 import { ListSubmissions } from "./list-submissions.query.ts";
@@ -25,6 +26,8 @@ const organizationId = OrganizationId.make("pottery");
 const userId = UserId.make("reviewer");
 const submissionId = SubmissionId.make("73123ee4-40bf-4c5f-b8ff-1d56cdaa7640");
 const submission = Submission.ref(submissionId);
+// A story's clock starts on 1 January 2026.
+const storyStart = 1_767_225_600_000;
 
 const store = Layer.succeed(InboxStore, {
   project: () => Effect.void,
@@ -34,7 +37,7 @@ const store = Layer.succeed(InboxStore, {
 
 const story = Story.make(Submissions, {
   layer: submissionHandlers.pipe(Layer.provide(store)),
-  stub: [Classifier],
+  stub: [Classifier, DeliveryScheduler],
 });
 
 it("defines a valid Domain model and distinct classification thresholds", () => {
@@ -64,6 +67,12 @@ it.effect("classifies one logical submission after duplicate intake", () => {
         acceptance: { _tag: "Automatic", scores, rulesVersion },
       }),
     ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
     Story.when(submission, RequestClassification.make({ organizationId }), {
       commandId: "ingestion-1",
     }),
@@ -103,6 +112,12 @@ it.effect("quarantines exhausted failures and accepts only one authorized review
         acceptance: { _tag: "Manual", reviewerId: userId },
       }),
     ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart + 40_000,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
     Story.when(submission, DismissSubmission.make()),
     Story.rejected(SubmissionNotReviewable.make()),
     Story.state(submission, { _tag: "Accepted" }),
