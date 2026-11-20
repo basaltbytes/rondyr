@@ -2,6 +2,7 @@ import { Context, Effect, Option } from "effect";
 
 import type {
   AttemptOutcome,
+  DeliveredSubmission,
   DeliveryId,
   DeliveryTransition,
   NotificationTarget,
@@ -31,6 +32,7 @@ export interface StartedAttempt {
   readonly deliveryId: DeliveryId;
   readonly attempt: number;
   readonly target: typeof NotificationTarget.Type;
+  readonly submission: typeof DeliveredSubmission.Type;
   readonly fields: typeof SubmissionFields.Type;
 }
 

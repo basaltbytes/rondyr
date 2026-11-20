@@ -23,7 +23,7 @@ const DeliveryRow = Schema.Struct({
 });
 const readDeliveries = Schema.decodeUnknownEffect(Schema.Array(DeliveryRow));
 const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
-const noProvider = 'No notification provider for target type "webhook".';
+const invalidConfiguration = "The webhook target configuration is invalid.";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
@@ -60,8 +60,9 @@ const deliveriesOf = Effect.fnUntraced(function* (submissionId: SubmissionId) {
   return yield* readDeliveries(rows.results);
 });
 
-// The deployed composition has no provider yet, so a webhook target fails on
-// its first attempt: the end of the path from acceptance to the consumer.
+// The webhook targets below have an empty configuration, so the deployed
+// webhook provider fails them on their first attempt without sending anything:
+// the end of the path from acceptance to the consumer.
 const waitForFailedWebhook = (submissionId: SubmissionId) =>
   Effect.promise(() =>
     vi.waitFor(
@@ -75,7 +76,7 @@ const waitForFailedWebhook = (submissionId: SubmissionId) =>
                 target_id: "studio-webhook",
                 status: "failed",
                 attempt_count: 1,
-                last_error: noProvider,
+                last_error: invalidConfiguration,
                 outcomes: "permanent-failure",
               },
             ]);

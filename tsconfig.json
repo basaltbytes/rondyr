@@ -5,6 +5,7 @@
     "dashboard/src/**/*.tsx",
     "tests/**/*.ts",
     "tooling/oxlint/**/*.ts",
+    "docs/examples/**/*.ts",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {
@@ -186,6 +187,7 @@
           {
             "include": [
               "dashboard/src/**/*",
+              "docs/examples/**/*",
               "vite.config.ts",
               "vitest.config.ts",
               "tooling/oxlint/**/*"
@@ -215,7 +217,8 @@
     "jsx": "react-jsx",
     "paths": {
       "~/*": ["./dashboard/src/*"],
-      "@rondyr/contracts/*": ["./src/domain/submissions/*"]
+      "@rondyr/contracts/*": ["./src/domain/submissions/*"],
+      "@rondyr/deliveries/*": ["./src/domain/deliveries/*"]
     },
     "resolveJsonModule": true,
     "noEmit": true

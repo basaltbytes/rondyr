@@ -6,9 +6,11 @@ import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
+import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
 import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
 import { submissionIntakeLive } from "./adapters/database/intake.ts";
+import { notificationTargetsLive } from "./adapters/database/notification-targets.ts";
 import { organizationDirectoryLive } from "./adapters/database/organization-directory.ts";
 import { outboxLive } from "./adapters/database/outbox.ts";
 import { storedMessagesLive } from "./adapters/database/stored-messages.ts";
@@ -21,6 +23,7 @@ import { authenticationRoutes } from "./http/authentication.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
 import { submissionRoutes } from "./http/submission-routes.ts";
+import { targetRoutes } from "./http/target-routes.ts";
 import {
   consumeDeliveries,
   deliverySchedulerLive,
@@ -38,7 +41,9 @@ const services = Layer.mergeAll(
   outboxLive,
   classificationQueueLive,
   deliveries,
-  notificationProvidersLive,
+  Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
+    Layer.provide(secretCipherLive),
+  ),
   Submissions.layer(submissionHandlers, { legacyData: false }).pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -50,7 +55,13 @@ const services = Layer.mergeAll(
     ),
   ),
 );
-const routes = Layer.mergeAll(publicRoutes, authenticationRoutes, submissionRoutes, reviewRoutes);
+const routes = Layer.mergeAll(
+  publicRoutes,
+  authenticationRoutes,
+  submissionRoutes,
+  reviewRoutes,
+  targetRoutes,
+);
 
 // One outbox failing does not keep the other from being published.
 const publishOutboxes = Effect.gen(function* () {

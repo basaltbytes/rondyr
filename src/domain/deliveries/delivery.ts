@@ -1,5 +1,7 @@
 import { Schema } from "effect";
 
+import { SubmissionId } from "../submissions/submission.id.ts";
+
 /** Stable identifier of one delivery, sent to the recipient on every attempt. */
 export const DeliveryId = Schema.String.check(Schema.isUUID(4)).pipe(Schema.brand("DeliveryId"));
 export type DeliveryId = typeof DeliveryId.Type;
@@ -16,6 +18,15 @@ export const NotificationTarget = Schema.Struct({
   id: TargetId,
   type: TargetType,
   configuration: Schema.Json,
+});
+
+/** The accepted submission that a delivery sends, without its fields. */
+export const DeliveredSubmission = Schema.Struct({
+  id: SubmissionId,
+  /** Milliseconds since the epoch. */
+  receivedAt: Schema.Int,
+  formPublicId: Schema.String,
+  formName: Schema.String,
 });
 
 export const DeliveryStatus = Schema.Literals([

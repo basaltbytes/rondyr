@@ -111,7 +111,12 @@ const attemptDelivery = Effect.fnUntraced(function* (message: Message) {
 
   const attempt = started.value;
   const outcome = yield* provider
-    .send({ deliveryId, target: attempt.target, fields: attempt.fields })
+    .send({
+      deliveryId,
+      target: attempt.target,
+      submission: attempt.submission,
+      fields: attempt.fields,
+    })
     .pipe(
       Effect.timeoutOrElse({
         duration: providerTimeout,

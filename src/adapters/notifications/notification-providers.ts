@@ -1,16 +1,17 @@
 import { Effect, Layer } from "effect";
+import { FetchHttpClient } from "effect/http";
 
 import {
   NotificationFailed,
   NotificationProvider,
   type Notification,
 } from "../../ports/notification-provider.ts";
+import { webhookProvider } from "./webhook-provider.ts";
 
 type Provider = NotificationProvider["Service"];
 
-/** One provider per target type. A target of another type fails without a retry. */
-export function notificationProviders(providers: ReadonlyMap<string, Provider>) {
-  return Layer.succeed(NotificationProvider, {
+function dispatch(providers: ReadonlyMap<string, Provider>): Provider {
+  return {
     send: (notification: Notification) => {
       const provider = providers.get(notification.target.type);
       return provider === undefined
@@ -22,8 +23,16 @@ export function notificationProviders(providers: ReadonlyMap<string, Provider>) 
           )
         : provider.send(notification);
     },
-  });
+  };
 }
 
-/** Webhook (#13) and email (#14) providers are not built yet. */
-export const notificationProvidersLive = notificationProviders(new Map());
+/** One provider per target type. A target of another type fails without a retry. */
+export function notificationProviders(providers: ReadonlyMap<string, Provider>) {
+  return Layer.succeed(NotificationProvider, dispatch(providers));
+}
+
+/** Webhooks over `fetch`. The email provider (#14) is not built yet. */
+export const notificationProvidersLive = Layer.effect(
+  NotificationProvider,
+  Effect.map(webhookProvider, (webhook) => dispatch(new Map([["webhook", webhook]]))),
+).pipe(Layer.provide(FetchHttpClient.layer));
