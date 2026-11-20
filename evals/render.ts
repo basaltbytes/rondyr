@@ -28,10 +28,11 @@ function table(header: readonly string[], rows: readonly (readonly string[])[]) 
 function decisionTable(decisions: readonly EntryDecision[]) {
   if (decisions.length === 0) return "None.";
   return table(
-    ["id", "family", "duplicates", "decision", "spam", "relevance"],
+    ["id", "family", "first occurrence", "submissions", "decision", "spam", "relevance"],
     decisions.map((entry) => [
       entry.id,
       entry.family ?? "",
+      `${entry.firstOccurrence}`,
       `${entry.duplicates}`,
       entry.decision,
       score(entry.scores?.spam),
@@ -54,15 +55,17 @@ function classifierSummary(report: ClassifierReport) {
   const { quarantineSpam: metrics } = report;
   return [
     `## ${report.classifier} (${report.requestedModel})`,
-    `Returned model: ${models.length === 0 ? "none" : models.join(", ")}. Scored ${report.calls.scored} entries, ${report.calls.fromCache} of them from the cache; ${report.calls.failed} failed.`,
+    `Returned model: ${models.length === 0 ? "none" : models.join(", ")}. Scored ${report.calls.scored} inputs, ${report.calls.fromCache} of them from the cache. ${report.calls.failed} failed.`,
     `### Legitimate messages quarantined: ${report.falsePositives.length}`,
     decisionTable(report.falsePositives),
     `### Off-topic messages quarantined: ${report.offTopicQuarantined.length}`,
     decisionTable(report.offTopicQuarantined),
     `### Spam accepted: ${report.spamAccepted.length}`,
     decisionTable(report.spamAccepted),
+    "### Quarantined for repetition",
+    decisionTable(report.decisions.filter(({ decision }) => decision === "repetition")),
     "### Expected label and decision",
-    "Entries, then submissions in parentheses when `duplicates` changes the count.",
+    "Distinct corpus lines, then submissions. A line can appear in several decisions when its occurrences differ.",
     table(
       ["label", ...Decision.literals],
       Label.literals.map((label) => [
@@ -87,10 +90,11 @@ function classifierSummary(report: ClassifierReport) {
     report.failures.length === 0
       ? "None."
       : table(
-          ["id", "label", "attempts", "retryable", "last error"],
+          ["id", "label", "first occurrence", "attempts", "retryable", "last error"],
           report.failures.map((failure) => [
             failure.id,
             failure.label,
+            `${failure.firstOccurrence ?? 1}`,
             `${failure.attempts}`,
             failure.retryable ? "yes" : "no",
             failure.summary ?? "",
@@ -111,7 +115,7 @@ function classifierSweep(report: ClassifierReport) {
   const lowest = Math.min(...spam.map(({ thresholds }) => thresholds.ambiguous));
   return [
     `## Threshold sweep: ${report.classifier}`,
-    "Recomputed from the recorded scores, without new calls. Failed calls are left out. Entries, then submissions in parentheses.",
+    "Recomputed from the recorded scores without new calls. The sweep excludes failed calls and intake quarantines. Entries, then submissions in parentheses.",
     "### Ambiguous threshold: below it, a message with enough relevance is accepted",
     table(
       ["ambiguous", "legitimate quarantined", "off-topic quarantined", "spam accepted"],

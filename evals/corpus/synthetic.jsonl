@@ -38,3 +38,10 @@
 {"id":"syn-spam-013","label":"spam","family":"gibberish","fields":{"name":"dfgdfg","email":"dfg@dfg.example","content":"sdkjf qwpoe zxmcn"}}
 {"id":"syn-spam-014","label":"spam","family":"empty-request","fields":{"name":"","email":"","content":""}}
 {"id":"syn-spam-015","label":"spam","family":"phishing","fields":{"name":"Domain Services","email":"billing@domain-renewal.example","content":"FINAL NOTICE: your domain atelier-terre.example expires today. Renew now at https://renew.example to keep your website and your email."}}
+{"id":"syn-repeat-sender-004","label":"spam","family":"repeat-sender","received":"2026-11-10","fields":{"email":"repeat@probe.example","content":"How much are your pieces?"}}
+{"id":"syn-repeat-sender-001","label":"spam","family":"repeat-sender","received":"2026-10-15","fields":{"email":"Repeat@probe.example","content":"What is your rate?"}}
+{"id":"syn-repeat-sender-002","label":"spam","family":"repeat-sender","received":"2026-10-25","fields":{"email":"repeat@probe.example","content":"Can you share the price list?"}}
+{"id":"syn-repeat-sender-003","label":"spam","family":"repeat-sender","received":"2026-11-05","fields":{"email":" repeat@probe.example ","content":"What does a private session cost?"}}
+{"id":"syn-repeat-content-001","label":"spam","family":"repeat-content","received":"2026-11-02","fields":{"name":"Mika","email":"mika@offers.example","content":"Register your workshop in our partner directory today."}}
+{"id":"syn-repeat-content-002","label":"spam","family":"repeat-content","received":"2026-11-08","duplicates":4,"fields":{"content":" Register your workshop in our partner directory today. ","email":"lea@offers.example","name":"Lea"}}
+{"id":"syn-double-legit-001","label":"legitimate","family":"double-submit","received":"2026-11-11","duplicates":2,"fields":{"name":"Lou","email":"lou@visitor.example","content":"J’ai réservé deux places samedi. Est-ce que je peux en ajouter une pour mon frère ?"}}

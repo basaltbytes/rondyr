@@ -2,8 +2,14 @@ import { assert, it } from "@effect/vitest";
 import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 
+import { classifierInput } from "../../domain/submissions/classifier-input.ts";
 import { scoreWithJev } from "./jev.ts";
 import { scoreWithOpenAi } from "./openai-decisions.ts";
+
+const input = classifierInput({ message: "Hello" }, "", {
+  prior_same_sender: 0,
+  prior_same_content: 0,
+});
 
 it.effect("distinguishes known permanent binding errors from retryable failures", () =>
   Effect.gen(function* () {
@@ -18,7 +24,7 @@ it.effect("distinguishes known permanent binding errors from retryable failures"
     for (const score of [scoreWithJev, scoreWithOpenAi]) {
       for (const { message, retryable } of cases) {
         const failure = yield* Effect.flip(
-          score({ run: () => Promise.reject(new Error(message)) }, { message: "Hello" }, ""),
+          score({ run: () => Promise.reject(new Error(message)) }, input),
         );
         assert.strictEqual(failure.retryable, retryable, message);
       }
@@ -48,8 +54,7 @@ it.effect("aborts a binding call when the classifier times out", () =>
               }),
             ),
         },
-        { message: "Hello" },
-        "",
+        input,
       );
       const fiber = yield* call.pipe(Effect.timeout("12 seconds"), Effect.forkChild);
       yield* TestClock.adjust("12 seconds");

@@ -1,9 +1,12 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 
+import { classifierInput } from "../../domain/submissions/classifier-input.ts";
 import { scoreWithOpenAi } from "./openai-decisions.ts";
 
 const fields = { message: "Do you offer pottery classes?" };
+const counts = { prior_same_sender: 2, prior_same_content: 1 };
+const withoutContext = classifierInput(fields, "", counts);
 const decision = {
   model: "gpt-6-luna",
   answers: [
@@ -24,6 +27,10 @@ it.effect("routes Decisions through the default gateway and reads answers by nam
             '"submission_fields":{"message":"Do you offer pottery classes?"}',
           );
           assert.include(request.input, '"business_context":"Pottery classes"');
+          assert.include(
+            request.input,
+            '"facts":{"prior_same_sender":2,"prior_same_content":1,"url_or_html_outside_longest_field":false}',
+          );
           assert.deepEqual(
             request.questions.map(({ name, type }) => ({ name, type })),
             [
@@ -34,8 +41,7 @@ it.effect("routes Decisions through the default gateway and reads answers by nam
           return Promise.resolve(decision);
         },
       },
-      fields,
-      "Pottery classes",
+      classifierInput(fields, "Pottery classes", counts),
     );
 
     assert.deepEqual(scores, { model: "gpt-6-luna", spam: 0.03, relevance: 0.9 });
@@ -60,8 +66,7 @@ it.effect("omits relevance without context and unwraps a completed Gateway respo
           });
         },
       },
-      fields,
-      "",
+      withoutContext,
     );
 
     assert.deepEqual(scores, { model: "gpt-6-luna", spam: 0.03 });
@@ -76,12 +81,11 @@ it.effect("treats model refusals as permanent and binding failures as retryable"
           run: () =>
             Promise.resolve({ model: "gpt-6-luna", answers: [{ type: "refusal", name: "spam" }] }),
         },
-        fields,
-        "",
+        withoutContext,
       ),
     );
     const unavailable = yield* Effect.flip(
-      scoreWithOpenAi({ run: () => Promise.reject(new Error("Unavailable")) }, fields, ""),
+      scoreWithOpenAi({ run: () => Promise.reject(new Error("Unavailable")) }, withoutContext),
     );
 
     assert.isFalse(refused.retryable);

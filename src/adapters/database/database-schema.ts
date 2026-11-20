@@ -89,10 +89,20 @@ export const submissions = sqliteTable(
     // Why intake quarantined the submission before any classifier ran, or NULL.
     // Written with the submission, so every hand-off reads the same value.
     intakeReason: text("intake_reason"),
+    senderFingerprint: text("sender_fingerprint"),
+    contentFingerprint: text("content_fingerprint"),
+    priorSameSender: integer("prior_same_sender").notNull().default(0),
+    priorSameContent: integer("prior_same_content").notNull().default(0),
   },
   (table) => [
     index("submissions_inbox_idx").on(table.organizationId, table.receivedAt, table.id),
     index("submissions_form_received_idx").on(table.formId, table.receivedAt),
+    index("submissions_sender_repetition_idx")
+      .on(table.organizationId, table.senderFingerprint, table.receivedAt)
+      .where(sql`${table.senderFingerprint} is not null`),
+    index("submissions_content_repetition_idx")
+      .on(table.organizationId, table.contentFingerprint, table.receivedAt)
+      .where(sql`${table.contentFingerprint} is not null`),
   ],
 );
 

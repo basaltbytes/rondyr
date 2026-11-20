@@ -74,6 +74,7 @@ it.live(
         ('recent-1', 'studio', 'studio-form', ?1, ?3),
         ('recent-2', 'studio', 'studio-form', ?1, ?3),
         ('recent-3', 'studio', 'studio-form', ?1, ?3),
+        ('recent-4', 'studio', 'studio-form', ?1, ?3),
         ('reviewed', 'studio', 'studio-form', ?1, ?3),
         ('other-event', 'hidden', 'hidden-form', ?1, ?2)
       `).bind(fields, now - 25 * 60 * 60 * 1000, now - 10 * 60 * 1000),
@@ -84,6 +85,7 @@ it.live(
             .prepare(`INSERT INTO submission_inbox (submission_id, version, status, reason) VALUES
         ('old-event', 2, 'quarantined', 'ambiguous'), ('recent-1', 2, 'quarantined', 'honeypot'),
         ('recent-2', 2, 'quarantined', 'ambiguous'), ('recent-3', 2, 'quarantined', 'ambiguous'),
+        ('recent-4', 2, 'quarantined', 'repetition'),
         ('reviewed', 3, 'archived', NULL), ('other-event', 2, 'quarantined', 'honeypot')`),
           env.DB
             .prepare(`INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, created_at) VALUES
@@ -113,7 +115,7 @@ it.live(
       assert.strictEqual(studio.id, "studio");
       assert.strictEqual(studio.outbox.count, 2);
       assert.isAtLeast(studio.outbox.oldestAgeMs ?? 0, 25 * 60 * 60 * 1000);
-      assert.strictEqual(studio.receivedLast24h, 4);
+      assert.strictEqual(studio.receivedLast24h, 5);
       assert.sameDeepMembers(
         [...studio.deliveries],
         [
@@ -126,6 +128,7 @@ it.live(
         [
           { reason: "ambiguous", count: 2 },
           { reason: "honeypot", count: 1 },
+          { reason: "repetition", count: 1 },
         ],
       );
       assert.deepEqual(empty, {

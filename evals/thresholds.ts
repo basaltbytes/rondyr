@@ -5,7 +5,11 @@ import {
   type ClassificationScores,
 } from "../src/domain/submissions/classification.ts";
 
-export const Decision = Schema.Literals(["accepted", ...ClassificationReason.literals]);
+export const Decision = Schema.Literals([
+  "accepted",
+  ...ClassificationReason.literals,
+  "repetition",
+]);
 
 export type Decision = typeof Decision.Type;
 
