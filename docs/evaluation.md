@@ -21,6 +21,8 @@ A corpus is a JSON Lines file: one submission per line, blank lines ignored.
 | `family` | No | A kebab-case group, such as `price-probe` or `lead-gen-callback`, to read the misses by kind. |
 | `duplicates` | No | How many identical submissions the line stands for. Defaults to 1. |
 | `note` | No | Free text for whoever edits the corpus. Reports never include it. |
+| `source` | No | Where the submission came from. Reports never include it. |
+| `received` | No | The day it was received, as `YYYY-MM-DD`. |
 | `fields` | Yes | The fields a form would send, with the limits of the Worker: 1 to 32 text fields of at most 4,000 characters. |
 
 `off-topic` is a genuine message that has nothing to do with the business, such as "I found your keys outside your workshop". `ambiguous` is a message where a person could go either way, such as a supplier offering samples to a pottery workshop; the report shows how these are decided, and leaves them out of precision and recall.
