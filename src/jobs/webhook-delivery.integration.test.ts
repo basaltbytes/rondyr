@@ -11,6 +11,7 @@ import { testSecretsKey } from "../../tests/integration/auth-fixture.ts";
 import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";
 import { deliveryStoreLive } from "../adapters/database/delivery-store.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
+import { emailSenderLayer } from "../adapters/email/email-sender.ts";
 import { notificationProvidersLive } from "../adapters/notifications/notification-providers.ts";
 import { DeliveryId, DeliveryStatus } from "../domain/deliveries/delivery.ts";
 import { parseWebhookUrl, type WebhookUrl } from "../domain/deliveries/webhook-destination.ts";
@@ -54,6 +55,7 @@ const keyOf = (key: string) => Effect.succeedSome(Redacted.make(key));
 const cipher = secretCipherLayer(keyOf(testSecretsKey));
 // Another valid key: a secret sealed with it does not open with the test key.
 const otherCipher = secretCipherLayer(keyOf("b3RoZXItd29ya2VyZC10ZXN0LW9ubHkta2V5LTMyYnk="));
+const noEmail = emailSenderLayer(Effect.succeed({})).pipe(Layer.provide(FetchHttpClient.layer));
 
 /** Every request goes to the receiver fixture through its service binding, whatever the host. */
 const receiverFetch: typeof globalThis.fetch = (input, init) =>
@@ -71,7 +73,9 @@ function services() {
   const layer = Layer.mergeAll(
     stored,
     deliverySchedulerLive.pipe(Layer.provide(stored)),
-    Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(Layer.provide(cipher)),
+    Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
+      Layer.provide(Layer.mergeAll(cipher, noEmail)),
+    ),
     Layer.succeed(FetchHttpClient.Fetch, receiverFetch),
   );
   return { sent, layer };
@@ -339,7 +343,9 @@ it.effect("checks the stored URL and secret again before each send", () => {
     );
     // A secret sealed under another RONDYR_SECRETS_KEY.
     // Fresh, because the services of this test already built the layer with the test key.
-    const foreign = Layer.fresh(notificationTargetsLive.pipe(Layer.provide(otherCipher)));
+    const foreign = Layer.fresh(
+      notificationTargetsLive.pipe(Layer.provide(Layer.mergeAll(otherCipher, noEmail))),
+    );
     const foreignTargets = yield* Effect.scoped(
       Effect.map(Layer.build(foreign), (built) => Context.get(built, NotificationTargets)),
     );
