@@ -64,8 +64,10 @@ jobs:
           BETTER_AUTH_URL: ${{ vars[format('BETTER_AUTH_URL_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
           BETTER_AUTH_SECRET: ${{ secrets[format('BETTER_AUTH_SECRET_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
           RONDYR_SETUP_TOKEN: ${{ secrets[format('RONDYR_SETUP_TOKEN_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
+          RONDYR_SECRETS_KEY: ${{ secrets[format('RONDYR_SECRETS_KEY_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
           RONDYR_CLASSIFIER: ${{ vars[format('RONDYR_CLASSIFIER_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
         run: |
           if [[ -z "$RONDYR_SETUP_TOKEN" ]]; then unset RONDYR_SETUP_TOKEN; fi
+          if [[ -z "$RONDYR_SECRETS_KEY" ]]; then unset RONDYR_SECRETS_KEY; fi
           if [[ -z "$RONDYR_CLASSIFIER" ]]; then unset RONDYR_CLASSIFIER; fi
           pnpm run deploy --stage "$STAGE" --yes --no-input
