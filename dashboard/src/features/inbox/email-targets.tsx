@@ -1,12 +1,16 @@
 import { useActionState, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
-import { FormProblem, TextAreaField } from "~/components/text-field";
+import { FormProblem, SelectField, TextAreaField } from "~/components/text-field";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { useLanguage } from "~/lib/i18n";
 import type { Inbox } from "~/lib/inbox-client";
 import {
   createEmailTarget,
+  destinationLanguages,
+  isDestinationLanguage,
   isEmailDestination,
   listTargets,
   replaceRecipients,
@@ -14,7 +18,8 @@ import {
 } from "~/lib/targets-client";
 import type { EmailDestination } from "~/lib/targets-client";
 
-import { attempt } from "./target-problems.ts";
+import { attempt, TargetFailureNote } from "./target-problems.tsx";
+import type { TargetFailure } from "./target-problems.tsx";
 import { TargetTest } from "./target-test.tsx";
 
 /** One address per line, or separated by commas or semicolons. */
@@ -23,12 +28,44 @@ function addressesIn(data: FormData) {
   return text.split(/[\s,;]+/u).filter((address) => address !== "");
 }
 
+/** The language picked in a form, if the form has a valid one. */
+function languageIn(data: FormData) {
+  const language = data.get("language");
+  return isDestinationLanguage(language) ? language : undefined;
+}
+
+interface LanguageFieldProps {
+  /** The language that the field shows first. */
+  readonly initial: EmailDestination["language"];
+}
+
+/** The language in which Rondyr writes the emails of a destination. */
+function LanguageField({ initial }: LanguageFieldProps) {
+  const { t } = useTranslation();
+  return (
+    <SelectField
+      label={t("inbox.emails.language")}
+      className="max-w-xs"
+      name="language"
+      defaultValue={initial}
+    >
+      {destinationLanguages.map((language) => (
+        <option key={language} value={language}>
+          {t(`languages.${language}`)}
+        </option>
+      ))}
+    </SelectField>
+  );
+}
+
 interface EmailTargetsProps {
   readonly inboxId: Inbox["id"];
   readonly form: Inbox["forms"][number];
 }
 
 export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
+  const { t } = useTranslation();
+  const dashboardLanguage = useLanguage();
   const [targets, setTargets] = useState<readonly EmailDestination[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [editing, setEditing] = useState<EmailDestination["id"] | null>(null);
@@ -51,48 +88,43 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
     );
   }
 
-  const [addProblem, add, adding] = useActionState((_: string | null, data: FormData) => {
+  const [addFailure, add, adding] = useActionState((_: TargetFailure | null, data: FormData) => {
     const recipients = addressesIn(data);
+    const language = languageIn(data);
     return attempt(async () => {
-      const created = await createEmailTarget(inboxId, form.publicId, recipients);
+      const created = await createEmailTarget(inboxId, form.publicId, recipients, language);
       setTargets((current) => [...(current ?? []), created]);
-    }, "La destination e-mail n’a pas pu être ajoutée. Réessayez.");
+    });
   }, null);
 
-  const [actionProblem, act, acting] = useActionState((_: string | null, data: FormData) => {
+  const [actionFailure, act, acting] = useActionState((_: TargetFailure | null, data: FormData) => {
     const target = targets?.find(({ id }) => id === data.get("target"));
     const action = data.get("action");
     if (target === undefined) return null;
     return attempt(async () => {
       if (action === "save") {
-        replace(await replaceRecipients(inboxId, target.id, addressesIn(data)));
+        replace(await replaceRecipients(inboxId, target.id, addressesIn(data), languageIn(data)));
         setEditing(null);
       } else if (action === "activate" || action === "deactivate") {
         const next = await setTargetActive(inboxId, target.id, action);
         if (isEmailDestination(next)) replace(next);
       }
-    }, "La modification n’a pas pu être enregistrée. Réessayez.");
+    });
   }, null);
 
   return (
-    <Card aria-label={`Destinations e-mail du formulaire ${form.name}`}>
+    <Card aria-label={t("inbox.emails.label", { name: form.name })}>
       <CardHeader>
-        <CardTitle>E-mails</CardTitle>
-        <CardDescription>
-          Chaque message accepté est envoyé en texte brut aux destinataires de chaque destination.
-        </CardDescription>
+        <CardTitle>{t("inbox.emails.title")}</CardTitle>
+        <CardDescription>{t("inbox.emails.description")}</CardDescription>
       </CardHeader>
       <CardContent>
-        {failed && <FormProblem>Impossible de charger les destinations e-mail.</FormProblem>}
+        {failed && <FormProblem>{t("inbox.emails.loadFailed")}</FormProblem>}
         {targets === null && !failed && (
-          <output className="text-sm text-muted-foreground">
-            Chargement des destinations e-mail…
-          </output>
+          <output className="text-sm text-muted-foreground">{t("inbox.emails.loading")}</output>
         )}
         {targets?.length === 0 && (
-          <p className="text-sm text-muted-foreground">
-            Aucune destination e-mail pour ce formulaire.
-          </p>
+          <p className="text-sm text-muted-foreground">{t("inbox.emails.empty")}</p>
         )}
         {targets !== null && targets.length > 0 && (
           <ul className="grid gap-px overflow-hidden rounded-md bg-border shadow-raised">
@@ -103,14 +135,17 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
                     {target.recipients.join(", ")}
                   </p>
                   <Badge variant={target.active ? "success" : "neutral"}>
-                    {target.active ? "Active" : "Désactivée"}
+                    {target.active ? t("inbox.emails.active") : t("inbox.emails.inactive")}
                   </Badge>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  {t("inbox.emails.languageValue", { language: t(`languages.${target.language}`) })}
+                </p>
                 {editing === target.id ? (
                   <form action={act} className="grid gap-3">
                     <input type="hidden" name="target" value={target.id} />
                     <TextAreaField
-                      label="Destinataires, un par ligne"
+                      label={t("inbox.emails.recipients")}
                       name="recipients"
                       required
                       rows={3}
@@ -118,6 +153,7 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
                       autoComplete="off"
                       spellCheck={false}
                     />
+                    <LanguageField initial={target.language} />
                     <div className="flex flex-wrap gap-2">
                       <Button
                         type="submit"
@@ -127,10 +163,10 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
                         value="save"
                         disabled={acting}
                       >
-                        Enregistrer
+                        {t("common.save")}
                       </Button>
                       <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                        Annuler
+                        {t("common.cancel")}
                       </Button>
                     </div>
                   </form>
@@ -138,7 +174,7 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
                   <div className="flex flex-wrap items-center gap-2">
                     <TargetTest inboxId={inboxId} targetId={target.id} />
                     <Button size="sm" onClick={() => setEditing(target.id)}>
-                      Modifier les destinataires
+                      {t("inbox.emails.editRecipients")}
                     </Button>
                     <form action={act} className="contents">
                       <input type="hidden" name="target" value={target.id} />
@@ -150,7 +186,9 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
                         value={target.active ? "deactivate" : "activate"}
                         disabled={acting}
                       >
-                        {target.active ? "Désactiver" : "Réactiver"}
+                        {target.active
+                          ? t("inbox.destinations.deactivate")
+                          : t("inbox.destinations.reactivate")}
                       </Button>
                     </form>
                   </div>
@@ -159,20 +197,22 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
             ))}
           </ul>
         )}
-        <FormProblem>{actionProblem}</FormProblem>
+        <TargetFailureNote failure={actionFailure} fallback={t("inbox.destinations.notSaved")} />
         <form action={add} className="grid gap-3">
           <TextAreaField
-            label="Destinataires, un par ligne"
+            label={t("inbox.emails.recipients")}
             name="recipients"
             required
             rows={3}
-            placeholder="equipe@example.com"
+            placeholder={t("inbox.emails.placeholder")}
             autoComplete="off"
             spellCheck={false}
           />
-          <FormProblem>{addProblem}</FormProblem>
+          {/* A new destination starts in the language of the dashboard. */}
+          <LanguageField key={dashboardLanguage} initial={dashboardLanguage} />
+          <TargetFailureNote failure={addFailure} fallback={t("inbox.emails.notAdded")} />
           <Button type="submit" className="justify-self-start" disabled={adding}>
-            Ajouter la destination
+            {t("inbox.emails.add")}
           </Button>
         </form>
       </CardContent>

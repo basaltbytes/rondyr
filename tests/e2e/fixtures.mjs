@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { readD1Migrations } from "@cloudflare/vitest-plugin";
 import { expect, test as base } from "@playwright/test";
+import { createInstance } from "i18next";
 import { convertV4MiniflareOptions, Miniflare } from "miniflare";
 import { unstable_getMiniflareWorkerOptions } from "wrangler";
 
@@ -11,32 +12,66 @@ import {
   testSetupToken,
 } from "../integration/auth-fixture.ts";
 import { externalWorkers, workersAiBinding } from "../integration/external-workers.ts";
+import en from "../../dashboard/src/locales/en/translation.json" with { type: "json" };
+import fr from "../../dashboard/src/locales/fr/translation.json" with { type: "json" };
 
-const owner = {
-  name: "Responsable des formulaires",
-  email: "responsable@example.test",
+// The texts of the dashboard, from the files that the dashboard ships and with
+// the options of dashboard/src/lib/i18n.ts, so a test names an element and
+// states an expected text as the page renders them.
+const i18n = createInstance();
+await i18n.init({
+  lng: "en",
+  fallbackLng: "en",
+  resources: { en: { translation: en }, fr: { translation: fr } },
+  initAsync: false,
+  interpolation: { escapeValue: false },
+});
+
+/** The English text of the dashboard for a key. The tests run in an English browser. */
+export const t = i18n.getFixedT("en");
+
+/** The French text of the dashboard for a key. */
+export const frenchT = i18n.getFixedT("fr");
+
+/** The account that the `dashboard` fixture signs in with. */
+export const owner = {
+  name: "Forms manager",
+  email: "owner@example.test",
   password: "playwright-local-password-42",
 };
 
-const externalSite = `
+/** The texts and the names of the external website that hosts a contact form. */
+export const externalSite = {
+  contactHeading: "Contact us",
+  messageField: "Your message",
+  submitButton: "Send message",
+  thanksPath: "/thanks",
+  thanksHeading: "Thank you for your message",
+  /** The hidden field of the contact form. */
+  honeypotField: "company",
+  /** The query parameter of the contact page that fills the hidden field. */
+  honeypotParameter: "honeypot",
+};
+
+const externalSiteWorker = `
 export default {
   fetch(request, env) {
     const url = new URL(request.url);
     const formId = url.searchParams.get("form");
-    if (url.pathname === "/merci") {
-      return new Response('<!doctype html><html lang="fr"><meta charset="utf-8"><h1>Merci de votre message</h1></html>', {
+    if (url.pathname === "${externalSite.thanksPath}") {
+      return new Response('<!doctype html><html lang="en"><meta charset="utf-8"><h1>${externalSite.thanksHeading}</h1></html>', {
         headers: { "content-type": "text/html; charset=utf-8" },
       });
     }
     if (url.pathname !== "/contact" || !formId) return new Response(null, { status: 404 });
     const action = env.DASHBOARD_ORIGIN + "/f/" + encodeURIComponent(formId);
-    const company = url.searchParams.has("piege") ? "robot" : "";
-    return new Response(\`<!doctype html><html lang="fr"><meta charset="utf-8"><h1>Nous contacter</h1>
+    const company = url.searchParams.has("${externalSite.honeypotParameter}") ? "robot" : "";
+    return new Response(\`<!doctype html><html lang="en"><meta charset="utf-8"><h1>${externalSite.contactHeading}</h1>
       <form method="post" action="\${action}">
-        <label>Votre message <textarea name="message" required></textarea></label>
+        <label>${externalSite.messageField} <textarea name="message" required></textarea></label>
         <input type="hidden" name="fixture-verdict" value="accept">
-        <input name="societe" value="\${company}" hidden tabindex="-1" autocomplete="off">
-        <button>Envoyer le message</button>
+        <input name="${externalSite.honeypotField}" value="\${company}" hidden tabindex="-1" autocomplete="off">
+        <button>${externalSite.submitButton}</button>
       </form></html>\`, { headers: { "content-type": "text/html; charset=utf-8" } });
   },
 };
@@ -101,7 +136,7 @@ export const test = base.extend({
         port: 0,
         https: true,
         modules: true,
-        script: externalSite,
+        script: externalSiteWorker,
         bindings: { DASHBOARD_ORIGIN: dashboardOrigin },
       }),
     );
@@ -123,12 +158,16 @@ export const test = base.extend({
     expect(policy, "CSP in public/_headers").toBeTruthy();
     const response = await page.goto(dashboardOrigin);
     expect(await response?.headerValue("content-security-policy")).toBe(policy);
-    await page.getByRole("textbox", { name: "Adresse e-mail" }).fill(owner.email);
+    await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
     // Password inputs have no implicit ARIA role.
-    await page.getByLabel("Mot de passe").fill(owner.password);
-    await page.getByRole("button", { name: "Se connecter", exact: true }).click();
+    await page.getByLabel(t("authentication.signIn.password")).fill(owner.password);
+    await page
+      .getByRole("button", { name: t("authentication.signIn.submit"), exact: true })
+      .click();
     // The account has no organization yet, so the dashboard opens on its first run.
-    await expect(page.getByRole("heading", { name: "Nouvelle organisation" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: t("inbox.sections.organization") }),
+    ).toBeVisible();
     await use(page);
     expect(violations).toEqual([]);
   },

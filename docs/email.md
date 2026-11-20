@@ -37,17 +37,17 @@ A message over quota or over the rate limit gets `429`, which Rondyr retries. A 
 
 ## Destinations
 
-In the dashboard, open **E-mails** under the inbox, enter the recipients next to the form, one per line, and click **Ajouter**. **Modifier les destinataires** replaces the list, **Désactiver** stops deliveries for messages accepted from then on, and **Envoyer un essai** sends a [test email](#test-email) and shows the answer.
+In the dashboard, open **Destinations**, pick the form, enter the recipients under **Emails**, one per line, choose the language of the emails, and click **Add destination**. **Edit recipients** replaces the list and the language, **Deactivate** stops deliveries for messages accepted from then on, and **Send a test** sends a [test email](#test-email) and shows the answer.
 
-A destination has 1 to 10 recipients. Each one is a bare ASCII address such as `team@example.com`. Rondyr refuses a display name (`Team <team@example.com>`), several addresses in one entry, spaces, line breaks, an internationalized address, and the same address twice, ignoring case.
+A destination has a language, English or French, in which Rondyr writes its emails. A destination created before this setting has no language and keeps getting its emails in French. A destination also has 1 to 10 recipients. Each one is a bare ASCII address such as `team@example.com`. Rondyr refuses a display name (`Team <team@example.com>`), several addresses in one entry, spaces, line breaks, an internationalized address, and the same address twice, ignoring case.
 
 The dashboard calls these routes, which need a session cookie and the `Origin` of the Worker:
 
 | Route | Effect |
 | --- | --- |
 | `GET /api/organizations/:organizationId/forms/:publicId/targets` | Lists the form's webhooks and email destinations, each with its `type` |
-| `POST /api/organizations/:organizationId/forms/:publicId/targets` | Creates an email destination from `{"type":"email","recipients":["team@example.com"]}` (`201`) |
-| `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Replaces the recipients from `{"recipients":[…]}` |
+| `POST /api/organizations/:organizationId/forms/:publicId/targets` | Creates an email destination from `{"type":"email","recipients":["team@example.com"],"language":"en"}` (`201`). `language` is `en` or `fr`, and `en` when absent |
+| `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Replaces the recipients from `{"recipients":[…]}`, and the language when the body also has `"language"` |
 | `POST /api/organizations/:organizationId/targets/:targetId/deactivate` or `/activate` | Returns the destination with its new state |
 | `POST /api/organizations/:organizationId/targets/:targetId/test` | Sends a test email and returns its result |
 
@@ -55,28 +55,28 @@ A refused list answers `400` with `{"error":"recipients-refused","reason":…}`,
 
 ## Message
 
-The email is plain text, with no HTML, and its text is in French for now. For a form named `Classes`:
+The email is plain text, with no HTML, in the language of its destination. In English, for a form named `Classes`:
 
 ```text
 From: forms@notifications.example.com
 To: team@example.com
 Reply-To: customer@example.com
-Subject: Nouveau message : Classes
+Subject: New message: Classes
 
-Nouveau message reçu par le formulaire « Classes ».
+New message received through the form “Classes”.
 
-email :
+email:
 customer@example.com
 
-message :
+message:
 Is there room in the pottery class?
 
 -- 
-Formulaire : Classes
-Reçu le : 20 novembre 2026 à 14:03:00 UTC
-Identifiant de livraison : 0f6c1a62-6b8e-4c43-9f5e-2d3a9b7c4e11
+Form: Classes
+Received: 20 November 2026 at 14:03:00 UTC
+Delivery ID: 0f6c1a62-6b8e-4c43-9f5e-2d3a9b7c4e11
 
-Rondyr peut envoyer deux fois la même livraison. Deux messages qui portent le même identifiant de livraison sont des doublons.
+Rondyr may send the same delivery twice. Two messages with the same delivery ID are duplicates.
 ```
 
 The body lists every field, then the form name, the time of reception in UTC, and the delivery ID. Field names that are JavaScript array indices, such as `"1"` and `"2"`, appear first in numeric order. The other fields follow in the order received.
@@ -85,21 +85,21 @@ Field names and values come from visitors, so none of them goes into a header, w
 
 ## Test email
 
-**Envoyer un essai** in the dashboard, or the `test` route, sends one email to the recipients of the destination, through the same provider and with the same checks as a delivery. For a form named `Classes`:
+**Send a test** in the dashboard, or the `test` route, sends one email to the recipients of the destination, through the same provider and with the same checks as a delivery. For a form named `Classes`:
 
 ```text
 From: forms@notifications.example.com
 To: team@example.com
-Subject: Message d’essai : Classes
+Subject: Test message: Classes
 
-Message d’essai envoyé depuis le dashboard Rondyr pour le formulaire « Classes ».
+Test message sent from the Rondyr dashboard for the form “Classes”.
 
-Aucun visiteur n’a envoyé ce message. Il vérifie que les e-mails de ce formulaire arrivent à ces destinataires.
+No visitor sent this message. It checks that the emails of this form reach these recipients.
 
 -- 
-Formulaire : Classes
-Envoyé le : 20 novembre 2026 à 15:42:07 UTC
-Identifiant d’essai : 4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60
+Form: Classes
+Sent: 20 November 2026 at 15:42:07 UTC
+Test ID: 4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60
 ```
 
 The test ID is new for each test and is the idempotency key of the request, so every test sends an email and counts in the Resend quota, once per recipient. Rondyr sends it once, without a retry, waits up to 30 seconds, and stores nothing: no submission, no delivery, no attempt. The route answers `{"testId", "outcome", "summary"}`, where `outcome` is `delivered`, `retryable-failure` or `permanent-failure` and `summary`, absent after a success, is the status and error code described below, such as `Resend answered HTTP 403 (validation_error).` While a test of a destination runs, a second test of the same destination answers `409`; the check is per Worker instance.
@@ -136,5 +136,5 @@ The content of a message leaves Rondyr in the email. Resend processes it and kee
 ## Not built yet
 
 - An adapter for Cloudflare's email service, chosen with `RONDYR_EMAIL_PROVIDER`, is planned in a separate issue.
-- The message text can't be changed, and it is only in French.
+- The message text can't be changed. It exists in English and in French.
 - Every member of an organization can manage its destinations, retry a failed delivery and send a test email; roles come with [#11](https://github.com/basaltbytes/rondyr/issues/11).

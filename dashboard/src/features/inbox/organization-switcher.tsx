@@ -1,4 +1,5 @@
 import { ChevronsUpDown, Plus } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import {
   DropdownMenu,
@@ -20,17 +21,7 @@ import {
 } from "~/components/ui/sidebar";
 import type { Inbox } from "~/lib/inbox-client";
 
-/** The first letters of the first two words, such as "AT" for "Atelier Terre & Feu". */
-function initialsOf(name: string) {
-  const words = name.split(/[^\p{L}\p{N}]+/u).filter((word) => word !== "");
-  const letters = `${words[0]?.[0] ?? ""}${words[1]?.[0] ?? ""}`;
-  return letters === "" ? "?" : letters.toUpperCase();
-}
-
-function formsLabel(count: number) {
-  if (count === 0) return "Aucun formulaire";
-  return count === 1 ? "1 formulaire" : `${count} formulaires`;
-}
+import { initialsOf } from "./initials.ts";
 
 interface OrganizationMarkProps {
   readonly name: string;
@@ -61,6 +52,7 @@ export function OrganizationSwitcher({
   onInbox,
   onNew,
 }: OrganizationSwitcherProps) {
+  const { t } = useTranslation();
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -70,7 +62,7 @@ export function OrganizationSwitcher({
               <SidebarMenuButton
                 size="lg"
                 tooltip={inbox.name}
-                aria-label={`Organisation : ${inbox.name}. Changer d’organisation`}
+                aria-label={t("inbox.organizations.switcher", { name: inbox.name })}
               />
             }
           >
@@ -78,7 +70,7 @@ export function OrganizationSwitcher({
             <SidebarMenuLabel>
               <span className="block truncate text-foreground">{inbox.name}</span>
               <span className="block truncate text-xs font-normal text-muted-foreground tabular-nums">
-                {formsLabel(inbox.forms.length)}
+                {t("inbox.organizations.forms", { count: inbox.forms.length })}
               </span>
             </SidebarMenuLabel>
             <SidebarMenuBadge>
@@ -87,7 +79,7 @@ export function OrganizationSwitcher({
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuGroup>
-              <DropdownMenuLabel>Organisations</DropdownMenuLabel>
+              <DropdownMenuLabel>{t("inbox.organizations.title")}</DropdownMenuLabel>
               <DropdownMenuRadioGroup value={inbox.id} onValueChange={onInbox}>
                 {inboxes.map(({ id, name }) => (
                   <DropdownMenuRadioItem key={id} value={id}>
@@ -102,7 +94,7 @@ export function OrganizationSwitcher({
               <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
                 <Plus aria-hidden="true" className="size-4" />
               </span>
-              Nouvelle organisation
+              {t("inbox.sections.organization")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

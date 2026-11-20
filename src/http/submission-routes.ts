@@ -7,6 +7,10 @@ import {
   MultipartParser,
 } from "effect/http";
 
+import {
+  confirmationLanguage,
+  confirmationPages,
+} from "../domain/submissions/confirmation-page.ts";
 import { joinRepeatedFields, SubmittedFields } from "../domain/submissions/submission-fields.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { publishSubmission } from "../jobs/submission-outbox.ts";
@@ -255,9 +259,15 @@ const receive = Effect.gen(function* () {
     return HttpServerResponse.redirect(successUrl.value, { status: 303, headers });
   }
   if (!json && browser) {
+    const language = confirmationLanguage(request.headers["accept-language"]);
+    const page = confirmationPages[language];
     return HttpServerResponse.text(
-      '<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Message reçu</title><main><h1>Message reçu</h1><p>Votre message a été enregistré.</p></main></html>',
-      { status: 202, contentType: "text/html; charset=utf-8", headers },
+      `<!doctype html><html lang="${language}"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${page.title}</title><main><h1>${page.title}</h1><p>${page.body}</p></main></html>`,
+      {
+        status: 202,
+        contentType: "text/html; charset=utf-8",
+        headers: { ...headers, "content-language": language },
+      },
     );
   }
   return yield* accepted(

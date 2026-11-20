@@ -29,7 +29,7 @@ export const WebhookTestPayload = WebhookPayload.mapFields((fields) => ({
 
 /** The fields of a test request. No visitor sent them. */
 export const testWebhookFields = {
-  message: "Message d’essai envoyé depuis le dashboard Rondyr. Aucun visiteur ne l’a envoyé.",
+  message: "Test message sent from the Rondyr dashboard. No visitor sent it.",
 };
 
 export const webhookHeaders = {

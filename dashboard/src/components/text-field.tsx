@@ -4,6 +4,7 @@ import type { ComponentProps, ReactNode } from "react";
 
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
+import { NativeSelect } from "~/components/ui/native-select";
 import { Textarea } from "~/components/ui/textarea";
 
 interface FieldFrameProps {
@@ -54,6 +55,25 @@ export function TextAreaField({ label, hint, className, ...props }: TextAreaFiel
   return (
     <FieldFrame id={id} label={label} hint={hint} className={className}>
       <Textarea
+        id={id}
+        aria-describedby={hint === undefined ? undefined : `${id}-hint`}
+        {...props}
+      />
+    </FieldFrame>
+  );
+}
+
+interface SelectFieldProps extends ComponentProps<"select"> {
+  readonly label: string;
+  readonly hint?: ReactNode;
+}
+
+/** A labelled select. Its options are its children. */
+export function SelectField({ label, hint, className, ...props }: SelectFieldProps) {
+  const id = useId();
+  return (
+    <FieldFrame id={id} label={label} hint={hint} className={className}>
+      <NativeSelect
         id={id}
         aria-describedby={hint === undefined ? undefined : `${id}-hint`}
         {...props}

@@ -1,7 +1,7 @@
 import { Context, Effect, Schema } from "effect";
 
 import type { NotificationTarget, TargetId } from "../domain/deliveries/delivery.ts";
-import type { EmailRecipients, EmailTarget } from "../domain/deliveries/email.ts";
+import type { EmailLanguage, EmailRecipients, EmailTarget } from "../domain/deliveries/email.ts";
 import type { DestinationTarget } from "../domain/deliveries/targets.ts";
 import type { WebhookUrl } from "../domain/deliveries/webhook-destination.ts";
 import type { IssuedWebhookSecret } from "../domain/deliveries/webhook.ts";
@@ -72,14 +72,16 @@ export class NotificationTargets extends Context.Service<
     readonly createEmail: (
       form: FormScope,
       recipients: EmailRecipients,
+      language: EmailLanguage,
     ) => Effect.Effect<
       typeof EmailTarget.Type,
       TargetNotFound | EmailProviderMissing | StorageUnavailable
     >;
-    /** Replace the recipients of an email target. */
+    /** Replace the recipients of an email target, and its language when one is given. */
     readonly replaceRecipients: (
       target: TargetScope,
       recipients: EmailRecipients,
+      language: EmailLanguage | undefined,
     ) => Effect.Effect<typeof EmailTarget.Type, TargetNotFound | StorageUnavailable>;
     /** A webhook or email target, active or not, to send a test message to. */
     readonly testable: (

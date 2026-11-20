@@ -168,8 +168,8 @@ it.live(
         page.entries.map((entry) => entry.submissionId),
         [submissionId],
       );
-      // A list entry has the fields of its message, so the inbox shows who wrote and what.
-      assert.deepEqual(page.entries[0]?.fields, contact);
+      // A list entry has a preview of its message, so the inbox shows who wrote and what.
+      assert.deepEqual(page.entries[0]?.preview, contact);
       const counted = yield* request(`/api/organizations/${inbox.id}/submission-counts`, {
         headers,
       });

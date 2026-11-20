@@ -424,6 +424,24 @@ it.live("applies the allowed origins to an HTML form posted from another site", 
   }),
 );
 
+it.live("answers an HTML form posted from a French browser with the French page", () =>
+  Effect.gen(function* () {
+    yield* seedForm("confirmation-french");
+
+    const answer = yield* send("confirmation-french", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "text/html",
+        "accept-language": "fr-FR,fr;q=0.9,en;q=0.8",
+      },
+      body: "message=Bonjour",
+    });
+
+    assert.strictEqual(answer.headers.get("content-language"), "fr");
+  }),
+);
+
 it.live("sends the CORS headers with each error status of the intake", () =>
   Effect.gen(function* () {
     yield* seedForm("cors-errors");

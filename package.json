@@ -25,8 +25,10 @@
     "knip": "knip",
     "doctor": "node scripts/doctor.mjs",
     "evaluate": "node evals/cli.ts",
-    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm test:lint && pnpm knip && pnpm db:check && pnpm run doctor",
-    "test:lint": "node --test \"tooling/oxlint/**/*.test.mjs\""
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm test:lint && pnpm knip && pnpm i18n:check && pnpm db:check && pnpm run doctor",
+    "test:lint": "node --test \"tooling/oxlint/**/*.test.mjs\"",
+    "i18n:check": "i18next-cli lint && i18next-cli extract --ci --dry-run",
+    "i18n:extract": "i18next-cli extract"
   },
   "dependencies": {
     "@alchemy.run/domain": "2.0.0-beta.87",
@@ -36,9 +38,11 @@
     "cn": "0.5.2",
     "drizzle-orm": "1.0.0-rc.5",
     "effect": "4.1.4",
+    "i18next": "27.2.2",
     "lucide-react": "1.76.0",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "react-i18next": "18.0.3"
   },
   "devDependencies": {
     "@alchemy.run/cloudflare": "2.0.0-beta.87",
@@ -60,6 +64,7 @@
     "alchemy": "2.0.0-beta.87",
     "babel-plugin-react-compiler": "1.0.0",
     "drizzle-kit": "1.0.0-rc.5",
+    "i18next-cli": "1.91.3",
     "knip": "6.46.1",
     "miniflare": "5.20261118.0-beta",
     "oxfmt": "0.79.0",

@@ -9,6 +9,7 @@ import {
   Send,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   Sidebar,
@@ -28,10 +29,10 @@ import type { Counts, Inbox } from "~/lib/inbox-client";
 import { cn } from "cn";
 
 import { OrganizationSwitcher } from "./organization-switcher.tsx";
-import { folderLabels, sectionLabels } from "./strings.ts";
+import { totalOf } from "./folder-counts.ts";
+import type { Folder } from "./folder-counts.ts";
 
-export type Folder = keyof typeof folderLabels;
-export type Section = keyof typeof sectionLabels;
+export type Section = "forms" | "destinations" | "origins" | "organization" | "operations";
 
 const folders = [
   ["quarantined", InboxIcon],
@@ -44,13 +45,6 @@ const settings = [
   ["destinations", Send],
   ["origins", Globe],
 ] as const;
-
-function totalOf(counts: Counts, folder: Folder) {
-  if (folder !== "all") return counts[folder];
-  return (
-    counts.received + counts.classifying + counts.accepted + counts.quarantined + counts.archived
-  );
-}
 
 interface InboxSidebarProps {
   readonly inboxes: readonly Inbox[];
@@ -77,10 +71,11 @@ export function InboxSidebar({
   onFolder,
   onSection,
 }: InboxSidebarProps) {
+  const { t } = useTranslation();
   const { setOpenMobile } = useSidebar();
 
   return (
-    <Sidebar label="Navigation">
+    <Sidebar label={t("inbox.navigation.label")}>
       <SidebarHeader>
         <OrganizationSwitcher
           inboxes={inboxes}
@@ -93,23 +88,26 @@ export function InboxSidebar({
         />
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup aria-label="Messages">
-          <SidebarGroupLabel>Messages</SidebarGroupLabel>
+        <SidebarGroup aria-label={t("inbox.navigation.messages")}>
+          <SidebarGroupLabel>{t("inbox.navigation.messages")}</SidebarGroupLabel>
           <SidebarMenu>
             {folders.map(([key, Icon]) => {
               const total = counts === null ? null : totalOf(counts, key);
+              const label = t(`inbox.folders.${key}`);
               return (
                 <SidebarMenuItem key={key}>
                   <SidebarMenuButton
                     active={section === null && folder === key}
-                    tooltip={total === null ? folderLabels[key] : `${folderLabels[key]} · ${total}`}
+                    tooltip={
+                      total === null ? label : t("inbox.folderTotal", { folder: label, total })
+                    }
                     onClick={() => {
                       onFolder(key);
                       setOpenMobile(false);
                     }}
                   >
                     <Icon aria-hidden="true" className="size-4 shrink-0" />
-                    <SidebarMenuLabel>{folderLabels[key]}</SidebarMenuLabel>
+                    <SidebarMenuLabel>{label}</SidebarMenuLabel>
                     {total !== null && (
                       <SidebarMenuBadge>
                         <span className={cn(key === "quarantined" && total > 0 && "text-warning")}>
@@ -123,40 +121,40 @@ export function InboxSidebar({
             })}
           </SidebarMenu>
         </SidebarGroup>
-        <SidebarGroup aria-label="Réglages">
-          <SidebarGroupLabel>Réglages</SidebarGroupLabel>
+        <SidebarGroup aria-label={t("inbox.navigation.settings")}>
+          <SidebarGroupLabel>{t("inbox.navigation.settings")}</SidebarGroupLabel>
           <SidebarMenu>
             {settings.map(([key, Icon]) => (
               <SidebarMenuItem key={key}>
                 <SidebarMenuButton
                   active={section === key}
-                  tooltip={sectionLabels[key]}
+                  tooltip={t(`inbox.sections.${key}`)}
                   onClick={() => {
                     onSection(key);
                     setOpenMobile(false);
                   }}
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
-                  <SidebarMenuLabel>{sectionLabels[key]}</SidebarMenuLabel>
+                  <SidebarMenuLabel>{t(`inbox.sections.${key}`)}</SidebarMenuLabel>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
           </SidebarMenu>
         </SidebarGroup>
-        <SidebarGroup aria-label="Exploitation">
-          <SidebarGroupLabel>Exploitation</SidebarGroupLabel>
+        <SidebarGroup aria-label={t("inbox.navigation.operations")}>
+          <SidebarGroupLabel>{t("inbox.navigation.operations")}</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
                 active={section === "operations"}
-                tooltip={sectionLabels.operations}
+                tooltip={t("operations.title")}
                 onClick={() => {
                   onSection("operations");
                   setOpenMobile(false);
                 }}
               >
                 <Activity aria-hidden="true" className="size-4 shrink-0" />
-                <SidebarMenuLabel>{sectionLabels.operations}</SidebarMenuLabel>
+                <SidebarMenuLabel>{t("operations.title")}</SidebarMenuLabel>
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>

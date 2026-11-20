@@ -2,7 +2,7 @@ import { assert, it } from "@effect/vitest";
 
 import {
   excerptOf,
-  listTime,
+  listDay,
   readMessage,
   senderOf,
   splitFields,
@@ -130,32 +130,32 @@ it("keeps every field as a detail when none is a sender, a subject or a body", (
   ]);
 });
 
-it("shows the time of a message received today", () => {
-  assert.strictEqual(listTime(at(2026, 11, 20, 9, 5), at(2026, 11, 20, 17, 30)), "09:05");
+it("counts a message received today as today", () => {
+  assert.strictEqual(listDay(at(2026, 11, 20, 9, 5), at(2026, 11, 20, 17, 30)), "today");
 });
 
-it("shows the time of a message received at midnight today", () => {
-  assert.strictEqual(listTime(at(2026, 11, 20, 0, 0), at(2026, 11, 20, 17, 30)), "00:00");
+it("counts a message received at midnight today as today", () => {
+  assert.strictEqual(listDay(at(2026, 11, 20, 0, 0), at(2026, 11, 20, 17, 30)), "today");
 });
 
-it("shows “hier” for a message received in the last minute of yesterday", () => {
-  assert.strictEqual(listTime(at(2026, 11, 19, 23, 59), at(2026, 11, 20, 17, 30)), "hier");
+it("counts a message received in the last minute of yesterday as yesterday", () => {
+  assert.strictEqual(listDay(at(2026, 11, 19, 23, 59), at(2026, 11, 20, 17, 30)), "yesterday");
 });
 
-it("shows “hier” for a message received at midnight yesterday", () => {
-  assert.strictEqual(listTime(at(2026, 11, 19, 0, 0), at(2026, 11, 20, 17, 30)), "hier");
+it("counts a message received at midnight yesterday as yesterday", () => {
+  assert.strictEqual(listDay(at(2026, 11, 19, 0, 0), at(2026, 11, 20, 17, 30)), "yesterday");
 });
 
-it("shows the date of a message received in the last minute of the day before yesterday", () => {
-  assert.strictEqual(listTime(at(2026, 11, 18, 23, 59), at(2026, 11, 20, 17, 30)), "18 nov.");
+it("counts a message received in the last minute of the day before yesterday as earlier", () => {
+  assert.strictEqual(listDay(at(2026, 11, 18, 23, 59), at(2026, 11, 20, 17, 30)), "earlier");
 });
 
-it("shows the date of a message from two days ago when yesterday had 23 hours", () => {
+it("counts a message from two days ago as earlier when yesterday had 23 hours", () => {
   // Clocks went forward on 29 March 2026, so that day was an hour short.
-  assert.strictEqual(listTime(at(2026, 3, 28, 23, 30), at(2026, 3, 30, 10, 0)), "28 mars");
+  assert.strictEqual(listDay(at(2026, 3, 28, 23, 30), at(2026, 3, 30, 10, 0)), "earlier");
 });
 
-it("shows “hier” for a message at midnight yesterday when yesterday had 25 hours", () => {
+it("counts a message at midnight yesterday as yesterday when yesterday had 25 hours", () => {
   // Clocks went back on 25 October 2026, so that day was an hour long.
-  assert.strictEqual(listTime(at(2026, 10, 25, 0, 0), at(2026, 10, 26, 10, 0)), "hier");
+  assert.strictEqual(listDay(at(2026, 10, 25, 0, 0), at(2026, 10, 26, 10, 0)), "yesterday");
 });

@@ -1,10 +1,12 @@
 import { cn } from "cn";
 import { ChevronLeft, Plus } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { SidebarTrigger } from "~/components/ui/sidebar";
+import { useIsMobile } from "~/hooks/use-mobile";
 import type { Inbox } from "~/lib/inbox-client";
 
 import { AllowedOrigins } from "./allowed-origins.tsx";
@@ -12,7 +14,6 @@ import { EmailTargets } from "./email-targets.tsx";
 import { FormSettings, NewForm } from "./form-management.tsx";
 import { InboxSetup } from "./inbox-setup.tsx";
 import type { Section } from "./inbox-sidebar.tsx";
-import { formStatusLabels, sectionLabels } from "./strings.ts";
 import { WebhookTargets } from "./webhook-targets.tsx";
 
 type Form = Inbox["forms"][number];
@@ -34,29 +35,30 @@ interface FormListProps {
 }
 
 function FormList({ section, forms, shown, adding, collapsed, onPick }: FormListProps) {
+  const { t } = useTranslation();
   return (
     <section
-      aria-label="Formulaires de l’organisation"
+      aria-label={t("inbox.forms.label")}
       className={cn("flex min-h-0 flex-col bg-card lg:hairline-r", collapsed && "max-lg:hidden")}
     >
       <header className="flex h-14 shrink-0 items-center gap-1 hairline-b pr-2 pl-1">
         <SidebarTrigger />
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold">
-          {sectionLabels[section]}
+          {t(`inbox.sections.${section}`)}
         </h1>
         {section === "forms" && (
           <Button variant="ghost" size="sm" onClick={() => onPick(newForm)}>
             <Plus aria-hidden="true" className="size-4" />
-            Nouveau
+            {t("inbox.forms.new")}
           </Button>
         )}
       </header>
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         {forms.length === 0 ? (
           <div className="grid justify-items-start gap-2 px-4 py-10">
-            <h2 className="text-base font-semibold text-balance">Aucun formulaire</h2>
+            <h2 className="text-base font-semibold text-balance">{t("inbox.forms.empty.title")}</h2>
             <p className="max-w-prose text-sm text-pretty text-muted-foreground">
-              Un formulaire donne une adresse d’envoi à mettre sur votre site.
+              {t("inbox.forms.empty.note")}
             </p>
           </div>
         ) : (
@@ -79,7 +81,7 @@ function FormList({ section, forms, shown, adding, collapsed, onPick }: FormList
                     </span>
                     <span className="flex items-center gap-2 text-xs text-muted-foreground">
                       {form.status === "suspended" && (
-                        <Badge variant="neutral">{formStatusLabels.suspended}</Badge>
+                        <Badge variant="neutral">{t("inbox.forms.statuses.suspended")}</Badge>
                       )}
                       <span className="truncate font-mono">{form.publicId}</span>
                     </span>
@@ -110,6 +112,8 @@ export function InboxSettings({
   onFormsChanged,
   onOrganizationCreated,
 }: InboxSettingsProps) {
+  const { t } = useTranslation();
+  const isMobile = useIsMobile();
   const [picked, setPicked] = useState<Picked>(null);
 
   if (section === "organization") {
@@ -125,9 +129,11 @@ export function InboxSettings({
     );
   }
 
-  // A wide screen shows the first form until one is picked. A narrow one shows the list.
+  // A wide screen shows the first form until one is picked. A narrow one shows the
+  // list alone, so no form is shown or marked there until the user picks one.
   const adding = section === "forms" && (picked === newForm || inbox.forms.length === 0);
-  const shown = inbox.forms.find((form) => form.publicId === picked) ?? inbox.forms[0];
+  const pickedForm = inbox.forms.find((form) => form.publicId === picked);
+  const shown = pickedForm ?? (isMobile ? undefined : inbox.forms[0]);
   const open = picked !== null;
 
   return (
@@ -146,23 +152,21 @@ export function InboxSettings({
             <Button
               variant="ghost"
               size="icon"
-              aria-label="Retour aux formulaires"
+              aria-label={t("inbox.forms.back")}
               className="-ml-2 lg:hidden"
               onClick={() => setPicked(null)}
             >
               <ChevronLeft aria-hidden="true" className="size-4" />
             </Button>
             <h2 className="min-w-0 text-lg/snug font-semibold wrap-anywhere">
-              {adding ? "Nouveau formulaire" : (shown?.name ?? sectionLabels[section])}
+              {adding ? t("inbox.forms.newTitle") : (shown?.name ?? t(`inbox.sections.${section}`))}
             </h2>
           </header>
           {adding && (
             <NewForm inboxId={inbox.id} onChanged={onFormsChanged} onCreated={setPicked} />
           )}
           {!adding && shown === undefined && (
-            <p className="text-sm text-pretty text-muted-foreground">
-              Cette organisation n’a pas encore de formulaire. Créez-en un dans Formulaires.
-            </p>
+            <p className="text-sm text-pretty text-muted-foreground">{t("inbox.forms.none")}</p>
           )}
           {!adding && shown !== undefined && section === "forms" && (
             <FormSettings

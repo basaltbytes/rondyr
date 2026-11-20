@@ -1,6 +1,7 @@
 import { Clock, Effect, Schema } from "effect";
 
 import type { DeliveryId, NotificationTarget } from "../../domain/deliveries/delivery.ts";
+import { legacyEmailLanguage, type EmailLanguage } from "../../domain/deliveries/email.ts";
 import {
   emailContent,
   testEmailContent,
@@ -31,17 +32,20 @@ const notConfigured =
 export const emailProvider = Effect.gen(function* () {
   const email = yield* EmailSender;
 
-  /** Send `content` to the recipients of `target`, with `key` as the idempotency key. */
+  /**
+   * Send an email to the recipients of `target`, written in the language of the
+   * target by `write`, with `key` as the idempotency key.
+   */
   const mail = Effect.fnUntraced(function* (
     target: typeof NotificationTarget.Type,
     key: DeliveryId,
-    content: Effect.Effect<EmailContent>,
+    write: (language: EmailLanguage) => Effect.Effect<EmailContent>,
   ) {
     const configuration = yield* decodeConfiguration(target.configuration).pipe(
       Effect.mapError(() => permanent("The email target configuration is invalid.")),
     );
     const from = yield* email.sender.pipe(Effect.mapError(() => permanent(notConfigured)));
-    const { replyTo, subject, text } = yield* content;
+    const { replyTo, subject, text } = yield* write(configuration.language ?? legacyEmailLanguage);
     yield* email
       .send({ from, to: configuration.recipients, replyTo, subject, text, idempotencyKey: key })
       .pipe(
@@ -59,20 +63,16 @@ export const emailProvider = Effect.gen(function* () {
       deliveryId: notification.deliveryId,
       targetId: notification.target.id,
     });
-    yield* mail(
-      notification.target,
-      notification.deliveryId,
-      Effect.sync(() => emailContent(notification)),
+    yield* mail(notification.target, notification.deliveryId, (language) =>
+      Effect.sync(() => emailContent(notification, language)),
     );
   });
 
   const sendTest = Effect.fn("EmailProvider.sendTest")(function* (test: TestNotification) {
     yield* Effect.annotateCurrentSpan({ testId: test.testId, targetId: test.target.id });
-    yield* mail(
-      test.target,
-      test.testId,
+    yield* mail(test.target, test.testId, (language) =>
       Effect.map(Clock.currentTimeMillis, (sentAt) =>
-        testEmailContent({ testId: test.testId, formName: test.form.name, sentAt }),
+        testEmailContent({ testId: test.testId, formName: test.form.name, sentAt }, language),
       ),
     );
   });

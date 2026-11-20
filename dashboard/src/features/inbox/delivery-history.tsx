@@ -2,20 +2,19 @@ import { cn } from "cn";
 import { Schema } from "effect";
 import { RefreshCw } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
 import { listDeliveries, retryDelivery } from "~/lib/deliveries-client";
 import type { Delivery } from "~/lib/deliveries-client";
+import { useFormats } from "~/lib/i18n";
 import { InboxRequestError } from "~/lib/inbox-client";
 import type { Inbox, Submission } from "~/lib/inbox-client";
 
-import { deliveryStatusLabels } from "~/lib/status-labels";
-
-import { attemptOutcomeLabels } from "./strings.ts";
-
-const date = new Intl.DateTimeFormat("fr", { dateStyle: "short", timeStyle: "medium" });
-
 const isRequestError = Schema.is(InboxRequestError);
+
+/** Why a retry was not applied. Each one names a message of `inbox.deliveries.problems`. */
+type RetryProblem = "noLongerFailed" | "retryNotSaved";
 
 const statusTones = {
   pending: "text-muted-foreground",
@@ -25,18 +24,17 @@ const statusTones = {
   failed: "text-destructive",
 } as const;
 
-function attemptsLabel(count: number) {
-  return count === 1 ? "1 tentative" : `${count} tentatives`;
-}
-
 function Destination({ delivery }: { readonly delivery: Delivery }) {
+  const { t } = useTranslation();
   const { destination } = delivery;
   return destination.type === "webhook" ? (
-    <>
-      Webhook <code className="font-mono text-xs">{destination.url}</code>
-    </>
+    <Trans
+      i18nKey="inbox.deliveries.webhook"
+      values={{ url: destination.url }}
+      components={{ code: <code className="font-mono text-xs" /> }}
+    />
   ) : (
-    <>E-mail à {destination.recipients.join(", ")}</>
+    <>{t("inbox.deliveries.email", { recipients: destination.recipients.join(", ") })}</>
   );
 }
 
@@ -47,6 +45,8 @@ interface DeliveryHistoryProps {
 }
 
 export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHistoryProps) {
+  const { t } = useTranslation();
+  const format = useFormats();
   const [deliveries, setDeliveries] = useState<readonly Delivery[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [reload, setReload] = useState(0);
@@ -66,29 +66,32 @@ export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHis
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh of the inbox or of this list initiates a new API request.
   }, [inboxId, submissionId, revision, reload]);
 
-  const [problem, retry, retrying] = useActionState(async (_: string | null, form: FormData) => {
-    const delivery = deliveries?.find(({ id }) => id === form.get("delivery"));
-    if (delivery === undefined) return null;
-    try {
-      setDeliveries(await retryDelivery(inboxId, submissionId, delivery.id));
-      return null;
-    } catch (error) {
-      if (isRequestError(error) && error.status === 409) {
-        refresh();
-        return "Cette livraison n’est plus en échec : la liste est actualisée.";
+  const [problem, retry, retrying] = useActionState(
+    async (_: RetryProblem | null, form: FormData): Promise<RetryProblem | null> => {
+      const delivery = deliveries?.find(({ id }) => id === form.get("delivery"));
+      if (delivery === undefined) return null;
+      try {
+        setDeliveries(await retryDelivery(inboxId, submissionId, delivery.id));
+        return null;
+      } catch (error) {
+        if (isRequestError(error) && error.status === 409) {
+          refresh();
+          return "noLongerFailed";
+        }
+        return "retryNotSaved";
       }
-      return "La relance n’a pas pu être enregistrée. Réessayez.";
-    }
-  }, null);
+    },
+    null,
+  );
 
   return (
-    <section aria-label="Livraisons du message" className="grid gap-2">
+    <section aria-label={t("inbox.deliveries.label")} className="grid gap-2">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Livraisons</h3>
+        <h3 className="text-sm font-semibold">{t("inbox.deliveries.title")}</h3>
         <Button
           variant="ghost"
           size="icon"
-          aria-label="Actualiser les livraisons"
+          aria-label={t("inbox.deliveries.refresh")}
           onClick={refresh}
         >
           <RefreshCw aria-hidden="true" className="size-4" />
@@ -96,14 +99,14 @@ export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHis
       </div>
       {failed && (
         <p role="alert" className="text-sm text-destructive">
-          Impossible de charger les livraisons.
+          {t("inbox.deliveries.loadFailed")}
         </p>
       )}
       {deliveries === null && !failed && (
-        <output className="text-sm text-muted-foreground">Chargement des livraisons…</output>
+        <output className="text-sm text-muted-foreground">{t("inbox.deliveries.loading")}</output>
       )}
       {deliveries?.length === 0 && (
-        <p className="text-sm text-muted-foreground">Aucune livraison pour ce message.</p>
+        <p className="text-sm text-muted-foreground">{t("inbox.deliveries.empty")}</p>
       )}
       {deliveries !== null && deliveries.length > 0 && (
         <ul className="grid gap-px overflow-hidden rounded-md bg-border shadow-raised">
@@ -114,7 +117,7 @@ export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHis
                   <Destination delivery={delivery} />
                 </p>
                 <p className={cn("text-xs font-medium", statusTones[delivery.status])}>
-                  {deliveryStatusLabels[delivery.status]}
+                  {t(`status.deliveries.${delivery.status}`)}
                 </p>
               </div>
               {delivery.status === "failed" && delivery.lastError !== null && (
@@ -122,22 +125,31 @@ export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHis
               )}
               {delivery.nextAttemptAt !== null && (
                 <p className="text-xs text-muted-foreground tabular-nums">
-                  Prochaine tentative après le {date.format(delivery.nextAttemptAt)}
+                  {t("inbox.deliveries.nextAttempt", {
+                    date: format.timestamp(delivery.nextAttemptAt),
+                  })}
                 </p>
               )}
               {delivery.attempts.length > 0 && (
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer py-1 tabular-nums">
-                    {attemptsLabel(delivery.attemptCount)}
+                    {t("inbox.deliveries.attempts", { count: delivery.attemptCount })}
                   </summary>
                   <ol className="grid gap-1 pt-1 tabular-nums">
                     {delivery.attempts.map((attempt) => (
                       <li key={attempt.attempt} className="wrap-anywhere">
-                        Tentative {attempt.attempt} : {date.format(attempt.startedAt)}
                         {attempt.finishedAt === null
-                          ? " · en cours"
-                          : ` → ${date.format(attempt.finishedAt)}`}
-                        {attempt.outcome !== null && ` · ${attemptOutcomeLabels[attempt.outcome]}`}
+                          ? t("inbox.deliveries.attemptRunning", {
+                              attempt: t("inbox.deliveries.attempt", { number: attempt.attempt }),
+                              startedAt: format.timestamp(attempt.startedAt),
+                            })
+                          : t("inbox.deliveries.attemptFinished", {
+                              attempt: t("inbox.deliveries.attempt", { number: attempt.attempt }),
+                              startedAt: format.timestamp(attempt.startedAt),
+                              finishedAt: format.timestamp(attempt.finishedAt),
+                            })}
+                        {attempt.outcome !== null &&
+                          ` · ${t(`inbox.deliveries.outcomes.${attempt.outcome}`)}`}
                         {attempt.error !== null && ` · ${attempt.error}`}
                       </li>
                     ))}
@@ -148,7 +160,7 @@ export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHis
                 <form action={retry}>
                   <input type="hidden" name="delivery" value={delivery.id} />
                   <Button type="submit" disabled={retrying}>
-                    Relancer la livraison
+                    {t("inbox.deliveries.retry")}
                   </Button>
                 </form>
               )}
@@ -158,7 +170,7 @@ export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHis
       )}
       {problem !== null && (
         <p role="alert" className="text-sm text-destructive">
-          {problem}
+          {t(`inbox.deliveries.problems.${problem}`)}
         </p>
       )}
     </section>
