@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 // Workers AI for the tests. A submission with `fixture-verdict: accept` gets low
 // spam and high relevance scores from Jev, or a low relevance score when the
 // business context contains `fixture-relevance: low`; any other answer does
@@ -5,25 +7,23 @@
 // it does without an AI binding. It records the submission fields of every
 // call, which tests read back from GET /__calls.
 const workersAiFixture = `
-import { WorkerEntrypoint } from "cloudflare:workers";
 const calls = [];
-export class Ai extends WorkerEntrypoint {
-  run(model, input) {
+export default {
+  async fetch(request) {
+    const path = new URL(request.url).pathname;
+    if (path === "/__calls") return Response.json(calls);
+    if (path !== "/ai-gateway/run") return new Response(null, { status: 404 });
+    const model = request.headers.get("cf-consn-model-id");
+    const { inputs: input } = await request.json();
     calls.push(input?.state?.submission_fields ?? null);
     if (model !== "typesafe/jev" || input?.state?.submission_fields?.["fixture-verdict"] !== "accept") {
-      return {};
+      return Response.json({});
     }
     const answers = { spam: { type: "noul", noul: 0.02 } };
     const relevance = input.state.business_context.includes("fixture-relevance: low") ? 0.05 : 0.98;
     if (input.questions.relevance !== undefined) answers.relevance = { type: "noul", noul: relevance };
-    return { model: "workerd-fixture", answers };
-  }
-}
-export default {
-  fetch: (request) =>
-    new URL(request.url).pathname === "/__calls"
-      ? Response.json(calls)
-      : new Response(null, { status: 404 }),
+    return Response.json({ model: "workerd-fixture", answers });
+  },
 };
 `;
 
@@ -119,6 +119,18 @@ export default {
   },
 };
 `;
+
+// The AI binding of the test Worker: workerd's AI API in front of the Workers AI
+// fixture above, so that Ai.run receives its AbortSignal.
+export const workersAiBinding = {
+  name: "AI",
+  type: "rondyr-ai-fixture",
+  plugin: {
+    name: "rondyr-ai-fixture",
+    package: fileURLToPath(new URL("./workers-ai-binding-fixture.mjs", import.meta.url)),
+  },
+  options: {},
+};
 
 export function externalWorkers(compatibilityDate: string) {
   return [

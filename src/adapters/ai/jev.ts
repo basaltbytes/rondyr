@@ -3,6 +3,7 @@ import { Effect, Schema, SchemaGetter } from "effect";
 import { Score } from "../../domain/submissions/classification.ts";
 import { ClassificationFailed } from "../../domain/submissions/classifier.external.ts";
 import type { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
+import { mapBindingError } from "./binding-error.ts";
 import { aiGatewayOptions } from "./gateway.ts";
 
 const Answer = Schema.Struct({ type: Schema.Literal("noul"), noul: Score });
@@ -56,16 +57,16 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
 ) {
   const hasContext = context !== "";
   const response = yield* Effect.tryPromise({
-    try: () =>
+    try: (signal) =>
       ai.run(
         "typesafe/jev",
         {
           state: { submission_fields: fields, business_context: context },
           questions: hasContext ? { spam, relevance } : { spam },
         },
-        aiGatewayOptions,
+        { ...aiGatewayOptions, signal },
       ),
-    catch: () => ClassificationFailed.make({ retryable: true }),
+    catch: mapBindingError,
   });
   const { model, answers } = yield* decodeJevResponse(response).pipe(
     Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
