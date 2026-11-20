@@ -1,0 +1,70 @@
+diff --git a/lib/Cloudflare/Backfill.js b/lib/Cloudflare/Backfill.js
+index 8545d00c7fc6aec7d7f81fe4cf8f88cf6ef50309..c674e22ff387f975cfa94cc29193548bbcb1e078 100644
+--- a/lib/Cloudflare/Backfill.js
++++ b/lib/Cloudflare/Backfill.js
+@@ -34,7 +34,7 @@ const RESTART_DELAY = "2 seconds";
+  * its entrypoint, or the consumer's class) stays on the code it started with:
+  * a new instance runs the deployed code.
+  */
+-const startedTooSoon = (message) => /entrypoint name .* was not found|^Worker not found|isn't in the code this runs yet/.test(message);
++const startedTooSoon = (message) => /entrypoint name .* was not found|^Worker not found|isn't in the code this runs yet|^The RPC receiver does not implement the method "run"\.?$/.test(message);
+ /**
+  * Workflows answers instance calls for a Workflow uploaded moments before with
+  * an internal error (code 10001) for a while: call again.
+diff --git a/lib/Cloudflare/index.js b/lib/Cloudflare/index.js
+index 8883225225f72c70bd253ad4d63225416788733b..f3915ae1861fd9636f662c8bfe01056fdd3cf3b4 100644
+--- a/lib/Cloudflare/index.js
++++ b/lib/Cloudflare/index.js
+@@ -6,6 +6,7 @@ import { upgrade } from "@alchemy.run/cloudflare/Workers/WebSocket";
+ import { Worker as CloudflareWorker } from "@alchemy.run/cloudflare/Workers/Worker";
+ import { WorkerEnvironment } from "@alchemy.run/cloudflare/Workers/WorkerRuntime";
+ import { sleep, task, Workflow, } from "@alchemy.run/cloudflare/Workflows/Workflow";
++import * as Output from "alchemy/Output";
+ import { RuntimeContext } from "alchemy/RuntimeContext";
+ import { makeDurableObjectEngine } from "alchemy/Workers/DurableObjectEngine";
+ import { StorageName } from "alchemy/Workflows";
+@@ -193,7 +194,8 @@ sagaRenames) => Layer.unwrap(Effect.gen(function* () {
+             return (targets) => Effect.gen(function* () {
+                 const worker = yield* CloudflareWorker;
+                 yield* BackfillRun(named(modelName, "DomainBackfillRun"), {
+-                    scriptName: worker.workerName,
++                    // A stable workerName can resolve before reconciliation publishes the script.
++                    scriptName: Output.of(worker).pipe(Output.map(({ workerName }) => workerName)),
+                     workflowName: backfill.workflowName,
+                     targets: [...targets],
+                     plans: plansOf(targets),
+diff --git a/src/Cloudflare/Backfill.ts b/src/Cloudflare/Backfill.ts
+index 5159604e681bf4c8904f24374d5299f889e8ded3..f33ec562a346bbdcc17f5c7373cbc1acf8bc179a 100644
+--- a/src/Cloudflare/Backfill.ts
++++ b/src/Cloudflare/Backfill.ts
+@@ -137,7 +137,7 @@ const RESTART_DELAY = "2 seconds";
+  * a new instance runs the deployed code.
+  */
+ const startedTooSoon = (message: string) =>
+-  /entrypoint name .* was not found|^Worker not found|isn't in the code this runs yet/.test(
++  /entrypoint name .* was not found|^Worker not found|isn't in the code this runs yet|^The RPC receiver does not implement the method "run"\.?$/.test(
+     message,
+   );
+ 
+diff --git a/src/Cloudflare/index.ts b/src/Cloudflare/index.ts
+index 0713944e540d7e812abcb43082d9855f816bf685..7bdc12bbd475b7898ee445c210b5ddbcd28184c5 100644
+--- a/src/Cloudflare/index.ts
++++ b/src/Cloudflare/index.ts
+@@ -17,6 +17,7 @@ import {
+   Workflow,
+   type WorkflowImpl,
+ } from "@alchemy.run/cloudflare/Workflows/Workflow";
++import * as Output from "alchemy/Output";
+ import { RuntimeContext } from "alchemy/RuntimeContext";
+ import { makeDurableObjectEngine } from "alchemy/Workers/DurableObjectEngine";
+ import { StorageName } from "alchemy/Workflows";
+@@ -383,7 +384,8 @@ const cloudflareHost = (
+               Effect.gen(function* () {
+                 const worker = yield* CloudflareWorker;
+                 yield* BackfillRun(named(modelName, "DomainBackfillRun"), {
+-                  scriptName: worker.workerName as unknown as string,
++                  // A stable workerName can resolve before reconciliation publishes the script.
++                  scriptName: Output.of(worker).pipe(Output.map(({ workerName }) => workerName)),
+                   workflowName: backfill.workflowName as string,
+                   targets: [...targets],
+                   plans: plansOf(targets) as Record<
