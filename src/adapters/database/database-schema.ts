@@ -38,6 +38,20 @@ export const forms = sqliteTable(
   ],
 );
 
+// The browser origins that may submit to a form. A form without a row accepts every origin.
+export const formOrigins = sqliteTable(
+  "form_origins",
+  {
+    formId: text("form_id")
+      .notNull()
+      .references(() => forms.id, { onDelete: "cascade" }),
+    // Normalized by parseAllowedOrigin: scheme, host and optional port.
+    origin: text().notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.formId, table.origin] })],
+);
+
 export const organizationMembers = sqliteTable(
   "organization_members",
   {
