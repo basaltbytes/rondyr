@@ -1,18 +1,16 @@
 import { Schema } from "effect";
 
+import { BusinessContext, FormName, ManagedForm } from "../forms/form.ts";
 import { OrganizationId } from "./submission.id.ts";
 
-const Name = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(100));
 export const SetupInbox = Schema.Struct({
-  organizationName: Name,
-  formName: Name,
-  businessContext: Schema.Trim.check(Schema.isMaxLength(2000)),
+  organizationName: FormName,
+  formName: FormName,
+  businessContext: BusinessContext,
 });
-
-export const InboxForm = Schema.Struct({ name: Schema.String, publicId: Schema.String });
 
 export const InboxOrganizationWithForms = Schema.Struct({
   id: OrganizationId,
   name: Schema.String,
-  forms: Schema.Array(InboxForm),
+  forms: Schema.Array(ManagedForm),
 });

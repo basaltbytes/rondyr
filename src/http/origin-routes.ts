@@ -11,6 +11,7 @@ import {
   FormOrigin,
   OriginRequestError,
   parseAllowedOrigin,
+  type OriginRefusalReason,
 } from "../domain/forms/allowed-origin.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
 import { FormOrigins } from "../ports/form-origins.ts";
@@ -39,6 +40,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
         FormOriginNotFound: () => empty(404),
+        OriginInUse: () => errorJson({ error: "origin-in-use" }, { status: 409, ...jsonOptions }),
         SchemaError: () => empty(400),
       }).pipe(Effect.catch(() => empty(503)));
     }),
@@ -51,7 +53,7 @@ const scope = Effect.gen(function* () {
   return { userId, organizationId, formPublicId: publicId };
 });
 
-const refused = (reason: typeof OriginRequestError.Type.reason) =>
+const refused = (reason: OriginRefusalReason) =>
   errorJson({ error: "origin-refused", reason }, { status: 400, ...jsonOptions });
 
 const list = Effect.gen(function* () {
