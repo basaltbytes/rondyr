@@ -103,6 +103,7 @@ describe("Rondyr Worker", () => {
           businessContext: null,
           status: "active",
           successUrl: null,
+          honeypotField: null,
         },
       ]);
 

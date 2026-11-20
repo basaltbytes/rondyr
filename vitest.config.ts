@@ -16,11 +16,14 @@ import wrangler from "./wrangler.json" with { type: "json" };
 // spam and high relevance scores from Jev, or a low relevance score when the
 // business context contains `fixture-relevance: low`; any other answer does
 // not decode, so the classifier quarantines it with `classification-error`, as
-// it does without an AI binding.
+// it does without an AI binding. It records the submission fields of every
+// call, which tests read back from GET /__calls.
 const workersAiFixture = `
 import { WorkerEntrypoint } from "cloudflare:workers";
+const calls = [];
 export class Ai extends WorkerEntrypoint {
   run(model, input) {
+    calls.push(input?.state?.submission_fields ?? null);
     if (model !== "typesafe/jev" || input?.state?.submission_fields?.["fixture-verdict"] !== "accept") {
       return {};
     }
@@ -30,7 +33,12 @@ export class Ai extends WorkerEntrypoint {
     return { model: "workerd-fixture", answers };
   }
 }
-export default { fetch: () => new Response(null, { status: 404 }) };
+export default {
+  fetch: (request) =>
+    new URL(request.url).pathname === "/__calls"
+      ? Response.json(calls)
+      : new Response(null, { status: 404 }),
+};
 `;
 
 // A webhook recipient for the tests. It records every request, which tests read
@@ -147,6 +155,7 @@ export default defineConfig({
             TEST_WORKER: "rondyr-test-app",
             WEBHOOK_RECEIVER: "webhook-receiver-fixture",
             RESEND_FIXTURE: "resend-fixture",
+            WORKERS_AI_FIXTURE: "workers-ai-fixture",
           },
           bindings: {
             TEST_MIGRATIONS: await readD1Migrations({

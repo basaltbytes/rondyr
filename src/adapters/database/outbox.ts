@@ -1,12 +1,18 @@
 import { Effect, Layer, Option, Schema } from "effect";
 
+import { IntakeReason } from "../../domain/submissions/classification.ts";
 import { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
 import { Outbox, type OutboxLease } from "../../ports/outbox.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
 
 const Claim = Schema.Struct({ submission_id: SubmissionId });
-const Pending = Schema.Struct({ organization_id: OrganizationId });
+// An intake reason this Worker does not know fails the decoding, and the queue
+// message is retried, then dead-lettered, rather than classified.
+const Pending = Schema.Struct({
+  organization_id: OrganizationId,
+  intake_reason: Schema.NullOr(IntakeReason),
+});
 
 const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(Claim));
 const decodePending = Schema.decodeUnknownEffect(Schema.NullOr(Pending));
@@ -70,21 +76,23 @@ const markPublished = Effect.fn("Outbox.markPublished")(function* (
   );
 });
 
-const pendingOrganization = Effect.fn("Outbox.pendingOrganization")(function* (
-  submissionId: SubmissionId,
-) {
+const pendingHandoff = Effect.fn("Outbox.pendingHandoff")(function* (submissionId: SubmissionId) {
   const db = yield* database;
   const row = yield* d1(() =>
     db
       .prepare(`
-    SELECT organization_id FROM outbox_events JOIN submissions ON submissions.id = outbox_events.submission_id
+    SELECT organization_id, intake_reason
+    FROM outbox_events JOIN submissions ON submissions.id = outbox_events.submission_id
     WHERE submission_id = ? AND handed_off_at IS NULL
   `)
       .bind(submissionId)
       .first(),
   );
   const pending = yield* decodePending(row).pipe(Effect.mapError(unreadable));
-  return Option.map(Option.fromNullOr(pending), ({ organization_id }) => organization_id);
+  return Option.map(Option.fromNullOr(pending), (found) => ({
+    organizationId: found.organization_id,
+    intakeReason: Option.fromNullOr(found.intake_reason),
+  }));
 });
 
 const markHandedOff = Effect.fn("Outbox.markHandedOff")(function* (
@@ -107,6 +115,6 @@ export const outboxLive = Layer.succeed(Outbox, {
   claimDue,
   claim,
   markPublished,
-  pendingOrganization,
+  pendingHandoff,
   markHandedOff,
 });

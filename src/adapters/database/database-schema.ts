@@ -35,6 +35,8 @@ export const forms = sqliteTable(
     status: text().notNull().default("active"),
     // Normalized by parseSuccessUrl. Its origin is one of the form's allowed origins.
     successUrl: text("success_url"),
+    // The name of a field that people leave empty and bots fill in, or NULL.
+    honeypotField: text("honeypot_field"),
   },
   (table) => [
     check("forms_id_not_null", sql`${table.id} is not null`),
@@ -84,6 +86,9 @@ export const submissions = sqliteTable(
       .references(() => forms.id),
     fields: text().notNull(),
     receivedAt: integer("received_at").notNull(),
+    // Why intake quarantined the submission before any classifier ran, or NULL.
+    // Written with the submission, so every hand-off reads the same value.
+    intakeReason: text("intake_reason"),
   },
   (table) => [
     index("submissions_inbox_idx").on(table.organizationId, table.receivedAt, table.id),

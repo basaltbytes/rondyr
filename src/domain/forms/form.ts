@@ -1,5 +1,6 @@
 import { Result, Schema } from "effect";
 
+import { isSubmittedFieldName } from "../submissions/submission-fields.ts";
 import { AllowedOrigin } from "./allowed-origin.ts";
 
 /** A suspended form refuses submissions and keeps its messages, destinations and public URL. */
@@ -11,6 +12,22 @@ export const FormName = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLen
 /** What the organization does, given to the classifier. An empty context is stored as none. */
 export const BusinessContext = Schema.Trim.check(Schema.isMaxLength(2000));
 
+/**
+ * The name of a form field that people leave empty and bots fill in. It follows
+ * the rule of the field names that intake accepts, without surrounding spaces.
+ */
+export const HoneypotField = Schema.Trim.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(100),
+  Schema.makeFilter(
+    (name) =>
+      isSubmittedFieldName(name) ||
+      "Expected a field name without control characters, line breaks or reserved names",
+  ),
+);
+
+export const SetHoneypotField = Schema.Struct({ field: HoneypotField });
+
 /** A form of one of the account's organizations, as the admin API returns it. */
 export const ManagedForm = Schema.Struct({
   name: Schema.String,
@@ -18,6 +35,7 @@ export const ManagedForm = Schema.Struct({
   status: FormStatus,
   businessContext: Schema.NullOr(Schema.String),
   successUrl: Schema.NullOr(Schema.String),
+  honeypotField: Schema.NullOr(Schema.String),
 });
 
 export const CreateForm = Schema.Struct({

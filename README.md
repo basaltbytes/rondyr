@@ -78,18 +78,18 @@ Don't send cookies: `credentials: "include"` makes the browser refuse the respon
 
 A `202` means D1 has stored the submission and the event that queues it for classification, in one transaction. It doesn't mean the classifier has run.
 
-The body can be `application/json`, `application/x-www-form-urlencoded`, or `multipart/form-data`, up to 16 KiB, with 1 to 32 text fields of at most 4,000 characters each. A field name has 1 to 100 characters, with no control character or line break. A form accepts 30 submissions per minute.
+The body can be `application/json`, `application/x-www-form-urlencoded`, or `multipart/form-data`, up to 16 KiB, with 1 to 32 text fields of at most 4,000 characters each. A field name has 1 to 100 characters, with no control character or line break. One client can send 5 submissions per minute to a form, and a form accepts 30 per minute from all its clients together; see [Rate limits](#rate-limits).
 
 | Status | Meaning |
 | --- | --- |
 | `202` | Stored. The JSON body has `submission-id` and `status: "received"` |
 | `303` | Stored, and the browser is sent to the form's success URL (see below) |
-| `400` | Invalid body or fields, or a file in a multipart body |
+| `400` | Invalid body or fields, a file in a multipart body, or a body whose only field is the empty honeypot field |
 | `403` | The form is suspended, or a browser on an origin that the form doesn't allow sent it. Nothing is stored |
 | `404` | Unknown form |
 | `413` | Body larger than 16 KiB |
 | `415` | Another content type |
-| `429` | More than 30 submissions in a minute on this form, with `Retry-After: 60` |
+| `429` | More than 5 submissions in a minute from this client, or more than 30 on this form, with `Retry-After: 60`. Nothing is stored |
 | `503` | D1 unavailable |
 
 ### HTML forms
@@ -99,6 +99,23 @@ A browser that posts an HTML form sends `Accept: text/html`. Rondyr answers it w
 A group of checkboxes or a multiple `<select>` sends the same field name several times. Rondyr joins the values with `, ` in the order received, so `topic=glaze&topic=kiln` is stored as `topic: "glaze, kiln"`. The joined value must still fit in 4,000 characters. JSON bodies take string values only.
 
 `multipart/form-data` (`enctype="multipart/form-data"`) works for text fields only. A part with a filename, including a file input left empty, makes Rondyr answer `400` and store nothing.
+
+### Honeypot field
+
+A honeypot is a field that people don't see and leave empty, while many bots fill in every field they find. Name it for each form in **Formulaires**, for example `_hp`, then add it to your form, hidden with CSS rather than with `type="hidden"`, out of the tab order and of autofill:
+
+```html
+<form action="https://rondyr.example.com/f/YOUR_PUBLIC_ID" method="post">
+  <input type="email" name="email" required />
+  <textarea name="message" required></textarea>
+  <div aria-hidden="true" style="position: absolute; left: -10000px">
+    <label>Leave this field empty <input type="text" name="_hp" tabindex="-1" autocomplete="off" /></label>
+  </div>
+  <button type="submit">Send</button>
+</form>
+```
+
+When the field arrives empty, Rondyr removes it before storing the message, so it never reaches the classifier, a webhook, or an email. When it has a value, Rondyr gives the usual answer (the same `202`, confirmation page, or redirect), stores the message with the field, and quarantines it with the reason **Champ piège rempli** without calling the classifier. You can still accept it in the dashboard, for example when a browser's autofill filled the field, and its deliveries then go out as for any accepted message. A body with the empty honeypot field as its only field gets `400`. Without a honeypot field, a field named `_hp` is an ordinary field.
 
 ### Suspended forms
 
@@ -112,11 +129,18 @@ Once a form has at least one allowed origin, Rondyr answers `403` to a browser t
 
 Locally there is no Workers AI binding, so every message is quarantined with the reason **Analyse indisponible**. Click **Actualiser** a few seconds after posting to see it; you can then open, accept, or archive it.
 
+### Rate limits
+
+Rondyr limits each client to 5 submissions per minute on each form, before it stores anything, so a single client can't use up the form's own cap of 30 per minute and get other visitors' messages refused. A client is the IP address that Cloudflare sends in `CF-Connecting-IP`, or the `/64` network of an IPv6 address. The counters are in Cloudflare's [Workers Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) binding, not in D1, so Rondyr stores no IP address. Cloudflare counts per data center and approximately: a client can get a few more submissions through, and the form's cap still applies to everyone. When the counter doesn't answer, the submission is accepted. A request without `CF-Connecting-IP`, as in local development, isn't counted.
+
+Both limits answer `429` with `Retry-After: 60` and store nothing. A page on an allowed origin can read the response and the `Retry-After` header.
+
 ## Features
 
 - Stores each submission and its outbox event atomically before answering, then publishes the event to the classification queue in the background of the same request. A cron job runs every minute as the recovery path: it publishes the events whose first publication failed, and republishes any event that wasn't handed to the classifier within 5 minutes. A duplicate queue message produces one decision.
 - Scores spam and business relevance with Jev or with OpenAI Decisions, both through Workers AI and the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment.
 - Quarantines instead of deleting. Probable spam, ambiguous scores, off-topic messages, and classifier failures all go to human review, each with its reason.
+- Limits each client per form with Cloudflare's Rate Limiting binding before anything is stored, without keeping IP addresses. A form can have a honeypot field: a filled one sends the message to quarantine without a classifier call, and the visitor gets the usual answer.
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
 - Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
 - Answers CORS preflights on the form URL, so a page on another origin can post JSON with `fetch`. Each form can restrict the origins that browsers may submit from.
@@ -136,7 +160,7 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 | Gap | Issue |
 | --- | --- |
 | Email through Cloudflare's email service, as an alternative to Resend | Follow-up of [#14](https://github.com/basaltbytes/rondyr/issues/14) |
-| Per-IP rate limits, honeypot, Turnstile, and quotas | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
+| Turnstile, and per-organization quotas for intake and classifier calls | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
 | Thresholds measured on a test corpus, per-organization policy | [#6](https://github.com/basaltbytes/rondyr/issues/6) |
 | Roles and invitations | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
 | Search, export, retention, and purge | [#9](https://github.com/basaltbytes/rondyr/issues/9) |
@@ -147,7 +171,7 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 - A **form** has a public URL, `/f/<public-id>`, and an optional **business context** that describes what the organization does. A form is **active** or **suspended**; a suspended form refuses new submissions and keeps the ones it has.
 - A **submission** is one message: a set of text fields sent to a form.
 - The **classifier** returns a spam score and, when the form has a business context, a relevance score. Both are between 0 and 1.
-- A submission is **accepted** when its spam score is under 0.30 and its relevance score, if it has one, is at least 0.35. Otherwise it is **quarantined** with a reason: probable spam (0.70 and above), ambiguous, low relevance, or classifier error.
+- A submission is **accepted** when its spam score is under 0.30 and its relevance score, if it has one, is at least 0.35. Otherwise it is **quarantined** with a reason: probable spam (0.70 and above), ambiguous, low relevance, or classifier error. A submission with a filled honeypot field is quarantined with the reason honeypot, and the classifier doesn't score it.
 - A **review** is a person's decision on a quarantined submission: accept it, or archive it.
 - A **destination** receives the accepted submissions of a form: a **webhook**, or an **email** destination with a list of recipients. Each accepted submission creates one **delivery** per active destination.
 
@@ -159,7 +183,7 @@ pnpm deploy:plan --stage staging --env-file .env.staging
 pnpm run deploy --stage staging --env-file .env.staging
 ```
 
-The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues, the cron trigger, and the Durable Objects. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, the email settings, and deployment from GitHub Actions.
+The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues, the cron trigger, the Durable Objects, and the client rate limit. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, the email settings, and deployment from GitHub Actions.
 
 ## Documentation
 

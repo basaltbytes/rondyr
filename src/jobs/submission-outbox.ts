@@ -1,5 +1,6 @@
 import { Clock, Effect, Option, Schema } from "effect";
 
+import { QuarantineAtIntake } from "../domain/submissions/quarantine-at-intake.command.ts";
 import { RequestClassification } from "../domain/submissions/request-classification.command.ts";
 import { Submission } from "../domain/submissions/submission.aggregate.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
@@ -59,14 +60,23 @@ export const consumeSubmissions = Effect.fn("Outbox.consume")(function* (batch: 
     const result = yield* Effect.result(
       Effect.gen(function* () {
         const { submissionId } = yield* decodeMessage(message.body);
-        const pending = yield* outbox.pendingOrganization(submissionId);
+        const pending = yield* outbox.pendingHandoff(submissionId);
         if (Option.isNone(pending)) return;
 
-        yield* submissions.send(
-          submissionId,
-          RequestClassification.make({ organizationId: pending.value }),
-          { commandId: `submission-received:${submissionId}` },
-        );
+        // Intake stored the reason with the submission, so a redelivered message or a
+        // republished event sends the same command, which the command ID deduplicates.
+        const { organizationId, intakeReason } = pending.value;
+        const commandId = `submission-received:${submissionId}`;
+        yield* Option.match(intakeReason, {
+          onNone: () =>
+            submissions.send(submissionId, RequestClassification.make({ organizationId }), {
+              commandId,
+            }),
+          onSome: (reason) =>
+            submissions.send(submissionId, QuarantineAtIntake.make({ organizationId, reason }), {
+              commandId,
+            }),
+        });
         const now = yield* Clock.currentTimeMillis;
         yield* outbox.markHandedOff(submissionId, now);
       }),
