@@ -30,7 +30,7 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Historique des livraisons, relance manuelle, envoi d’essai | Fait, dans le dashboard | #11 pour les rôles |
 | Livraison par webhook signé | Fait | |
 | Livraison par e-mail | Fait, par Resend | Adaptateur Cloudflare dans une issue à ouvrir |
-| Mesures et reprise après incident | À faire | #10 |
+| État du traitement et procédures de reprise | Compteurs par organisation, dernier Cron réussi et runbook | #43 pour le passage en staging, #10 pour les traitements bloqués |
 
 Un formulaire peut avoir des destinations webhook et des destinations e-mail, configurées depuis le dashboard ou l’API d’administration. Une destination e-mail a de 1 à 10 destinataires ; le message part en texte brut par le fournisseur d’e-mail du stage, Resend pour l’instant. Un formulaire sans destination garde ses messages acceptés dans l’Inbox seulement. Sous les champs d’un message accepté, le dashboard affiche ses livraisons et leurs tentatives, et permet de relancer une livraison en échec ; chaque destination peut recevoir un message d’essai.
 
@@ -539,7 +539,9 @@ Le corpus synthétique `evals/corpus/synthetic.jsonl`, versionné, couvre les qu
 
 Alchemy crée et relie le Worker, D1, les deux files et leurs DLQ, les deux consumers, le Cron, les Durable Objects et le Workflow de backfill d’Alchemy Domain. Le binding Rate Limiting `CLIENT_RATE_LIMIT` n’a pas de ressource à créer : la pile lit sa déclaration dans `wrangler.json` (espace de noms `7001`, 5 requêtes par 60 secondes) et l’ajoute au Worker. L’espace de noms est commun au compte Cloudflare ; les stages ne partagent pas de compteur, puisque chaque clé commence par l’identifiant public d’un formulaire. Les noms des files sont générés par stage ; la pile les transmet au Worker (`CLASSIFICATION_QUEUE_NAME`, `DELIVERY_QUEUE_NAME`), et le handler `queue` choisit le consumer d’après le nom de la file du lot. Un lot dont la file n’est pas celle des livraisons va au consumer de classification ; si son nom n’est pas non plus celui de la file de classification, le Worker l’écrit dans les journaux comme une erreur. Les migrations D1 sont versionnées dans `database/migrations` et appliquées au déploiement.
 
-Chaque stage a ses propres ressources. `prod` utilise un domaine personnalisé dérivé de `BETTER_AUTH_URL` ; les autres stages utilisent `workers.dev`. Un push sur `main` lance `pnpm check` et `pnpm deploy:dry`, puis déploie `prod`. `staging` se déploie à la main depuis le workflow **Deploy**, ce qui laisse la production sans étape de validation préalable (#10).
+Chaque stage a ses propres ressources. `prod` utilise un domaine personnalisé dérivé de `BETTER_AUTH_URL` et les autres stages utilisent `workers.dev`. Un push sur `main` lance `pnpm check` et `pnpm deploy:dry`, puis déploie `staging`. La CI vérifie `/health` et le classement d’une soumission dans la boîte de réception de staging avant de déployer `prod`. Le workflow **Deploy** permet aussi de déployer staging à la main.
+
+La route authentifiée `GET /api/operations` alimente la section « État » du dashboard. Elle renvoie pour chaque organisation du compte le nombre d’événements outbox non remis et l’âge du plus ancien, les livraisons par statut et les messages reçus au cours des dernières 24 heures, dont ceux encore en quarantaine par motif. Un Durable Object par stage conserve l’heure de la dernière exécution réussie du Cron, après les deux publications. Les procédures de diagnostic, de reprise et de rotation des secrets sont dans [docs/operations.md](docs/operations.md).
 
 `RONDYR_SECRETS_KEY` est facultative, comme `RONDYR_SETUP_TOKEN` : la pile ne la transmet au Worker que si l’environnement du stage la définit. Sans elle, seuls la création et la rotation des webhooks sont refusées. `RESEND_API_KEY` et `RONDYR_EMAIL_FROM` le sont aussi : sans l’une d’elles, seule la création d’une destination e-mail est refusée, et une livraison vers une destination e-mail existante échoue sans reprise. Un `RONDYR_EMAIL_FROM` qui n’est pas une adresse nue fait échouer le déploiement. `RONDYR_EMAIL_PROVIDER` vaut `resend` par défaut et la pile le transmet toujours, comme `RONDYR_CLASSIFIER`.
 
@@ -551,8 +553,8 @@ Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épin
 
 ### À faire
 
-- Sauvegarde et restauration. Une restauration D1 ne ramène ni les Durable Objects ni l’état Alchemy au même instant ; la procédure reste à écrire et à exercer (#10).
-- Rollback du Worker et mesures d’exploitation (#10).
+- Faire un exercice de restauration D1 et de rollback du Worker sur Cloudflare (#43).
+- Alertes et reprise des traitements bloqués (#10).
 - Guide d’installation vérifié sur un compte Cloudflare vierge, avec les coûts et les limites, sans promettre un coût nul (#12).
 
 ## 12. Ordre de réalisation
@@ -585,7 +587,6 @@ Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la rel
 | Message hors sujet : revue humaine (comportement actuel) ou acceptation avec étiquette | #6 |
 | Plafonds par organisation et comportement à la limite | #7 |
 | Durées de conservation par défaut, export et purge | #9 |
-| Déploiement de `staging` avant `prod` dans la CI | #10 |
 
 ### Décisions prises
 

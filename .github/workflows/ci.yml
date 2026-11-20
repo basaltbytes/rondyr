@@ -28,9 +28,18 @@ jobs:
       - run: pnpm check
       - run: pnpm deploy:dry
 
-  deploy:
+  staging:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check
+    uses: ./.github/workflows/deploy.yml
+    with:
+      stage: staging
+      verify: true
+    secrets: inherit
+
+  production:
+    if: needs.staging.outputs.verified == 'true'
+    needs: staging
     uses: ./.github/workflows/deploy.yml
     with:
       stage: prod

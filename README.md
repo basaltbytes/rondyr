@@ -191,6 +191,7 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 | --- | --- |
 | What is built, what is planned, and why | [architecture.md](./architecture.md) (French) |
 | Stages, secrets, API token permissions, CI deployment | [docs/deployment.md](./docs/deployment.md) |
+| Queue diagnosis, D1 recovery, Worker rollback, secret rotation | [docs/operations.md](./docs/operations.md) |
 | Webhook payload, signature, verification, retries | [docs/webhooks.md](./docs/webhooks.md) |
 | Email setup with Resend, limits, message format, retries | [docs/email.md](./docs/email.md) |
 | Evaluating the classifiers on a labeled corpus | [docs/evaluation.md](./docs/evaluation.md) |

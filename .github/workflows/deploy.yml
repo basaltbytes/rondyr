@@ -6,26 +6,28 @@ on:
       stage:
         type: string
         required: true
+      verify:
+        type: boolean
+        default: false
+    outputs:
+      verified:
+        value: ${{ jobs.deploy.outputs.verified }}
   workflow_dispatch:
-    inputs:
-      stage:
-        description: Cloudflare stage
-        type: choice
-        options: [staging, prod]
-        default: staging
 
 permissions:
   contents: read
 
 jobs:
   deploy:
-    name: Deploy ${{ inputs.stage }}
-    if: inputs.stage == 'staging' || (inputs.stage == 'prod' && github.ref == 'refs/heads/main')
+    name: Deploy ${{ inputs.stage || 'staging' }}
+    if: github.event_name == 'workflow_dispatch' || inputs.stage == 'staging' || (inputs.stage == 'prod' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     concurrency:
-      group: cloudflare-deploy-${{ inputs.stage }}
+      group: cloudflare-deploy-${{ inputs.stage || 'staging' }}
       cancel-in-progress: false
+    outputs:
+      verified: ${{ steps.smoke.outputs.verified }}
     steps:
       - id: credentials
         name: Check deployment configuration
@@ -58,7 +60,7 @@ jobs:
       - if: steps.credentials.outputs.ready == 'true'
         name: Deploy through Alchemy
         env:
-          STAGE: ${{ inputs.stage }}
+          STAGE: ${{ inputs.stage || 'staging' }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           BETTER_AUTH_URL: ${{ vars[format('BETTER_AUTH_URL_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
@@ -77,3 +79,15 @@ jobs:
           if [[ -z "$RONDYR_EMAIL_FROM" ]]; then unset RONDYR_EMAIL_FROM; fi
           if [[ -z "$RESEND_API_KEY" ]]; then unset RESEND_API_KEY; fi
           pnpm run deploy --stage "$STAGE" --yes --no-input
+      - id: smoke
+        if: steps.credentials.outputs.ready == 'true' && inputs.stage == 'staging' && inputs.verify
+        name: Verify staging health and submission processing
+        env:
+          BETTER_AUTH_URL_STAGING: ${{ vars.BETTER_AUTH_URL_STAGING }}
+          RONDYR_SMOKE_ORGANIZATION_ID_STAGING: ${{ vars.RONDYR_SMOKE_ORGANIZATION_ID_STAGING }}
+          RONDYR_SMOKE_FORM_ID_STAGING: ${{ vars.RONDYR_SMOKE_FORM_ID_STAGING }}
+          RONDYR_SMOKE_EMAIL_STAGING: ${{ secrets.RONDYR_SMOKE_EMAIL_STAGING }}
+          RONDYR_SMOKE_PASSWORD_STAGING: ${{ secrets.RONDYR_SMOKE_PASSWORD_STAGING }}
+        run: |
+          node scripts/smoke-staging.mjs
+          echo "verified=true" >> "$GITHUB_OUTPUT"

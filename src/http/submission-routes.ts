@@ -240,7 +240,7 @@ const receive = Effect.gen(function* () {
   yield* tasks.run(
     publishSubmission(submissionId).pipe(
       Effect.tapError((error) =>
-        Effect.logWarning("Direct outbox publication failed", { tag: error._tag }),
+        Effect.logWarning("Direct outbox publication failed", { submissionId, tag: error._tag }),
       ),
       Effect.ignore,
     ),
