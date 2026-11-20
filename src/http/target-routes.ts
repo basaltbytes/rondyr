@@ -7,15 +7,26 @@ import {
 } from "effect/http";
 
 import { TargetId } from "../domain/deliveries/delivery.ts";
-import { parseWebhookUrl } from "../domain/deliveries/webhook-destination.ts";
 import {
-  CreateWebhookTarget,
-  IssuedWebhookSecret,
+  EmailTarget,
+  parseEmailRecipients,
+  ReplaceEmailRecipients,
+  type CreateEmailTarget,
+  type RecipientsRefusalReason,
+} from "../domain/deliveries/email.ts";
+import {
+  CreateTarget,
+  DestinationTarget,
   TargetRequestError,
-  WebhookTarget,
-} from "../domain/deliveries/webhook.ts";
+} from "../domain/deliveries/targets.ts";
+import { parseWebhookUrl } from "../domain/deliveries/webhook-destination.ts";
+import { IssuedWebhookSecret, type CreateWebhookTarget } from "../domain/deliveries/webhook.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
-import { NotificationTargets, TargetStatus } from "../ports/notification-targets.ts";
+import {
+  NotificationTargets,
+  TargetStatus,
+  type FormScope,
+} from "../ports/notification-targets.ts";
 import { reviewer } from "./review-routes.ts";
 
 const FormPath = Schema.Struct({
@@ -30,7 +41,8 @@ const StatusPath = TargetPath.mapFields((fields) => ({
 
 // A response that contains a secret must never be cached.
 const jsonOptions = { headers: { "cache-control": "no-store" } };
-const targetJson = HttpServerResponse.schemaJson(WebhookTarget);
+const targetJson = HttpServerResponse.schemaJson(DestinationTarget);
+const emailTargetJson = HttpServerResponse.schemaJson(EmailTarget);
 const issuedJson = HttpServerResponse.schemaJson(IssuedWebhookSecret);
 const errorJson = HttpServerResponse.schemaJson(TargetRequestError);
 
@@ -51,6 +63,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         SchemaError: () => empty(400),
         SecretsKeyMissing: () =>
           errorJson({ error: "secrets-key-missing" }, { status: 503, ...jsonOptions }),
+        EmailProviderMissing: () =>
+          errorJson({ error: "email-provider-missing" }, { status: 503, ...jsonOptions }),
       }).pipe(Effect.catch(() => empty(503)));
     }),
   );
@@ -62,13 +76,13 @@ const list = Effect.gen(function* () {
   const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
   const targets = yield* NotificationTargets;
   const found = yield* targets.list({ userId, organizationId, formPublicId: publicId });
-  return yield* HttpServerResponse.schemaJson(Schema.Array(WebhookTarget))(found, jsonOptions);
+  return yield* HttpServerResponse.schemaJson(Schema.Array(DestinationTarget))(found, jsonOptions);
 });
 
-const create = Effect.gen(function* () {
-  const userId = yield* account;
-  const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
-  const input = yield* HttpServerRequest.schemaBodyJson(CreateWebhookTarget);
+const createWebhook = Effect.fnUntraced(function* (
+  form: FormScope,
+  input: typeof CreateWebhookTarget.Type,
+) {
   // Authentication refuses a request whose origin is not the Worker's, so this is the Worker's origin.
   const incoming = yield* HttpServerRequest.HttpServerRequest;
   const request = yield* HttpServerRequest.toWeb(incoming);
@@ -80,11 +94,45 @@ const create = Effect.gen(function* () {
     );
   }
   const targets = yield* NotificationTargets;
-  const issued = yield* targets.createWebhook(
-    { userId, organizationId, formPublicId: publicId },
-    url.success,
-  );
+  const issued = yield* targets.createWebhook(form, url.success);
   return yield* issuedJson(issued, { status: 201, ...jsonOptions });
+});
+
+function recipientsRefused(reason: RecipientsRefusalReason) {
+  return errorJson({ error: "recipients-refused", reason }, { status: 400, ...jsonOptions });
+}
+
+const createEmail = Effect.fnUntraced(function* (
+  form: FormScope,
+  input: typeof CreateEmailTarget.Type,
+) {
+  const recipients = parseEmailRecipients(input.recipients);
+  if (Result.isFailure(recipients)) return yield* recipientsRefused(recipients.failure);
+  const targets = yield* NotificationTargets;
+  const created = yield* targets.createEmail(form, recipients.success);
+  return yield* emailTargetJson(created, { status: 201, ...jsonOptions });
+});
+
+const create = Effect.gen(function* () {
+  const userId = yield* account;
+  const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
+  const input = yield* HttpServerRequest.schemaBodyJson(CreateTarget);
+  const form: FormScope = { userId, organizationId, formPublicId: publicId };
+  return yield* input.type === "webhook" ? createWebhook(form, input) : createEmail(form, input);
+}).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
+
+const replaceRecipients = Effect.gen(function* () {
+  const userId = yield* account;
+  const { organizationId, targetId } = yield* HttpRouter.schemaPathParams(TargetPath);
+  const input = yield* HttpServerRequest.schemaBodyJson(ReplaceEmailRecipients);
+  const recipients = parseEmailRecipients(input.recipients);
+  if (Result.isFailure(recipients)) return yield* recipientsRefused(recipients.failure);
+  const targets = yield* NotificationTargets;
+  const target = yield* targets.replaceRecipients(
+    { userId, organizationId, targetId },
+    recipients.success,
+  );
+  return yield* emailTargetJson(target, jsonOptions);
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
 
 const rotate = Effect.gen(function* () {
@@ -111,5 +159,6 @@ export const targetRoutes = Layer.mergeAll(
   HttpRouter.add("GET", formTargets, withErrors(list)),
   HttpRouter.add("POST", formTargets, withErrors(create)),
   HttpRouter.add("POST", `${target}/rotate-secret`, withErrors(rotate)),
+  HttpRouter.add("PUT", `${target}/recipients`, withErrors(replaceRecipients)),
   HttpRouter.add("POST", `${target}/:action`, withErrors(setStatus)),
 );

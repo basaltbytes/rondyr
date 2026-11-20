@@ -3,8 +3,11 @@ import { SecureRandom } from "effect/crypto";
 import { Base64Url } from "effect/encoding";
 
 import { TargetId } from "../../domain/deliveries/delivery.ts";
+import { EmailTarget, type EmailRecipients } from "../../domain/deliveries/email.ts";
+import type { DestinationTarget } from "../../domain/deliveries/targets.ts";
 import type { WebhookUrl } from "../../domain/deliveries/webhook-destination.ts";
 import { secretRotationWindowMillis, WebhookTarget } from "../../domain/deliveries/webhook.ts";
+import { EmailSender } from "../../ports/email-sender.ts";
 import {
   NotificationTargets,
   TargetChanged,
@@ -15,12 +18,15 @@ import {
 } from "../../ports/notification-targets.ts";
 import { SecretCipher } from "../../ports/secret-cipher.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
+import { EmailConfiguration } from "../notifications/email-configuration.ts";
 import { WebhookConfiguration } from "../notifications/webhook-configuration.ts";
 import { d1, database } from "./d1.ts";
 
 const StoredConfiguration = Schema.fromJsonString(WebhookConfiguration);
+const StoredEmailConfiguration = Schema.fromJsonString(EmailConfiguration);
 const TargetRow = Schema.Struct({
   id: TargetId,
+  type: Schema.Literals(["webhook", "email"]),
   configuration: Schema.String,
   active: Schema.Literals([0, 1]),
   created_at: Schema.Int,
@@ -31,6 +37,8 @@ const decodeTargets = Schema.decodeUnknownEffect(Schema.Array(TargetRow));
 const decodeForms = Schema.decodeUnknownEffect(Schema.Array(FormRow));
 const decodeConfiguration = Schema.decodeUnknownEffect(StoredConfiguration);
 const encodeConfiguration = Schema.encodeEffect(StoredConfiguration);
+const decodeEmailConfiguration = Schema.decodeUnknownEffect(StoredEmailConfiguration);
+const encodeEmailConfiguration = Schema.encodeEffect(StoredEmailConfiguration);
 
 const unreadable = () => StorageUnavailable.make();
 
@@ -39,7 +47,7 @@ function newSecret() {
   return Redacted.make(`whsec_${Base64Url.encode(SecureRandom.randomBytesUnsafe(32))}`);
 }
 
-const summary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
+const webhookSummary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
   const configuration = yield* decodeConfiguration(row.configuration).pipe(
     Effect.mapError(unreadable),
   );
@@ -53,7 +61,28 @@ const summary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
   });
 });
 
-const targetColumns = "t.id, t.configuration, t.active, t.created_at";
+const emailSummary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
+  const configuration = yield* decodeEmailConfiguration(row.configuration).pipe(
+    Effect.mapError(unreadable),
+  );
+  return EmailTarget.make({
+    id: row.id,
+    type: "email",
+    recipients: configuration.recipients,
+    active: row.active === 1,
+    createdAt: row.created_at,
+  });
+});
+
+function summary(
+  row: typeof TargetRow.Type,
+): Effect.Effect<typeof DestinationTarget.Type, StorageUnavailable> {
+  return row.type === "webhook" ? webhookSummary(row) : emailSummary(row);
+}
+
+const targetColumns = "t.id, t.type, t.configuration, t.active, t.created_at";
+const returnedColumns = "id, type, configuration, active, created_at";
+const listedTypes = "t.type IN ('webhook', 'email')";
 
 const list = Effect.fn("NotificationTargets.list")(function* (form: FormScope) {
   const db = yield* database;
@@ -70,7 +99,7 @@ const list = Effect.fn("NotificationTargets.list")(function* (form: FormScope) {
       SELECT ${targetColumns} FROM notification_targets t
         JOIN forms f ON f.id = t.form_id AND f.organization_id = t.organization_id
         JOIN organization_members m ON m.organization_id = t.organization_id
-      WHERE m.user_id = ?1 AND t.organization_id = ?2 AND f.public_id = ?3 AND t.type = 'webhook'
+      WHERE m.user_id = ?1 AND t.organization_id = ?2 AND f.public_id = ?3 AND ${listedTypes}
       ORDER BY t.created_at, t.id
     `)
         .bind(form.userId, form.organizationId, form.formPublicId),
@@ -104,18 +133,18 @@ const createWebhook = Effect.fn("NotificationTargets.createWebhook")(function* (
     SELECT ?1, f.organization_id, f.id, 'webhook', ?2, 1, ?3
     FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
     WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6
-    RETURNING id, configuration, active, created_at
+    RETURNING ${returnedColumns}
   `)
       .bind(id, configuration, now, form.userId, form.organizationId, form.formPublicId)
       .all(),
   );
   const [row] = yield* decodeTargets(inserted.results).pipe(Effect.mapError(unreadable));
   if (row === undefined) return yield* TargetNotFound.make();
-  return { target: yield* summary(row), secret: Redacted.value(secret) };
+  return { target: yield* webhookSummary(row), secret: Redacted.value(secret) };
 });
 
 const scopedTarget = `
-  t.id = ?1 AND t.organization_id = ?2 AND t.type = 'webhook'
+  t.id = ?1 AND t.organization_id = ?2
   AND EXISTS (
     SELECT 1 FROM organization_members m WHERE m.organization_id = t.organization_id AND m.user_id = ?3
   )
@@ -126,7 +155,9 @@ const rotateSecret = Effect.fn("NotificationTargets.rotateSecret")(function* (ta
   const db = yield* database;
   const found = yield* d1(() =>
     db
-      .prepare(`SELECT ${targetColumns} FROM notification_targets t WHERE ${scopedTarget}`)
+      .prepare(
+        `SELECT ${targetColumns} FROM notification_targets t WHERE ${scopedTarget} AND t.type = 'webhook'`,
+      )
       .bind(target.targetId, target.organizationId, target.userId)
       .all(),
   );
@@ -146,15 +177,64 @@ const rotateSecret = Effect.fn("NotificationTargets.rotateSecret")(function* (ta
     db
       .prepare(`
     UPDATE notification_targets AS t SET configuration = ?4
-    WHERE ${scopedTarget} AND t.configuration = ?5
-    RETURNING id, configuration, active, created_at
+    WHERE ${scopedTarget} AND t.type = 'webhook' AND t.configuration = ?5
+    RETURNING ${returnedColumns}
   `)
       .bind(target.targetId, target.organizationId, target.userId, configuration, row.configuration)
       .all(),
   );
   const [rotated] = yield* decodeTargets(updated.results).pipe(Effect.mapError(unreadable));
   if (rotated === undefined) return yield* TargetChanged.make();
-  return { target: yield* summary(rotated), secret: Redacted.value(secret) };
+  return { target: yield* webhookSummary(rotated), secret: Redacted.value(secret) };
+});
+
+const createEmail = Effect.fn("NotificationTargets.createEmail")(function* (
+  form: FormScope,
+  recipients: EmailRecipients,
+) {
+  const email = yield* EmailSender;
+  // A target that no provider can send to is refused, as a webhook without a secrets key is.
+  yield* email.sender;
+  const db = yield* database;
+  const id = TargetId.make(SecureRandom.uuidV4Unsafe());
+  const configuration = yield* encodeEmailConfiguration({ recipients }).pipe(Effect.orDie);
+  const now = yield* Clock.currentTimeMillis;
+  const inserted = yield* d1(() =>
+    db
+      .prepare(`
+    INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, active, created_at)
+    SELECT ?1, f.organization_id, f.id, 'email', ?2, 1, ?3
+    FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
+    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6
+    RETURNING ${returnedColumns}
+  `)
+      .bind(id, configuration, now, form.userId, form.organizationId, form.formPublicId)
+      .all(),
+  );
+  const [row] = yield* decodeTargets(inserted.results).pipe(Effect.mapError(unreadable));
+  if (row === undefined) return yield* TargetNotFound.make();
+  return yield* emailSummary(row);
+});
+
+const replaceRecipients = Effect.fn("NotificationTargets.replaceRecipients")(function* (
+  target: TargetScope,
+  recipients: EmailRecipients,
+) {
+  const db = yield* database;
+  const configuration = yield* encodeEmailConfiguration({ recipients }).pipe(Effect.orDie);
+  const updated = yield* d1(() =>
+    db
+      .prepare(`
+    UPDATE notification_targets AS t SET configuration = ?4
+    WHERE ${scopedTarget} AND t.type = 'email'
+    RETURNING ${returnedColumns}
+  `)
+      .bind(target.targetId, target.organizationId, target.userId, configuration)
+      .all(),
+  );
+  const [row] = yield* decodeTargets(updated.results).pipe(Effect.mapError(unreadable));
+  if (row === undefined) return yield* TargetNotFound.make();
+  return yield* emailSummary(row);
 });
 
 const setStatus = Effect.fn("NotificationTargets.setStatus")(function* (
@@ -165,8 +245,8 @@ const setStatus = Effect.fn("NotificationTargets.setStatus")(function* (
   const updated = yield* d1(() =>
     db
       .prepare(`
-    UPDATE notification_targets AS t SET active = ?4 WHERE ${scopedTarget}
-    RETURNING id, configuration, active, created_at
+    UPDATE notification_targets AS t SET active = ?4 WHERE ${scopedTarget} AND ${listedTypes}
+    RETURNING ${returnedColumns}
   `)
       .bind(target.targetId, target.organizationId, target.userId, status === "active" ? 1 : 0)
       .all(),
@@ -180,11 +260,15 @@ export const notificationTargetsLive = Layer.effect(
   NotificationTargets,
   Effect.gen(function* () {
     const cipher = yield* SecretCipher;
+    const email = yield* EmailSender;
     const provideCipher = Effect.provideService(SecretCipher, cipher);
     return {
       list,
       createWebhook: (form: FormScope, url: WebhookUrl) => provideCipher(createWebhook(form, url)),
       rotateSecret: (target: TargetScope) => provideCipher(rotateSecret(target)),
+      createEmail: (form: FormScope, recipients: EmailRecipients) =>
+        createEmail(form, recipients).pipe(Effect.provideService(EmailSender, email)),
+      replaceRecipients,
       setStatus,
     };
   }),
