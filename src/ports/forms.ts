@@ -3,6 +3,7 @@ import { Context, Effect, Schema } from "effect";
 import type {
   CreateForm,
   FormStatus,
+  HoneypotField,
   ManagedForm,
   SuccessUrl,
   UpdateForm,
@@ -53,5 +54,14 @@ export class Forms extends Context.Service<
       url: SuccessUrl,
     ) => Effect.Effect<Managed, Failure | SuccessOriginNotListed>;
     readonly clearSuccessUrl: (form: FormScope) => Effect.Effect<Managed, Failure>;
+    /**
+     * Name the form's honeypot field. Intake removes the field when it is empty
+     * and quarantines the submission when it has a value.
+     */
+    readonly setHoneypotField: (
+      form: FormScope,
+      field: typeof HoneypotField.Type,
+    ) => Effect.Effect<Managed, Failure>;
+    readonly clearHoneypotField: (form: FormScope) => Effect.Effect<Managed, Failure>;
   }
 >()("rondyr/ports/forms") {}

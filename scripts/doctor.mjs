@@ -42,6 +42,22 @@ for (const binding of expectedBindings) {
   }
 }
 
+// The intake limits each client through a Rate Limiting binding. Its namespace is
+// account-wide, and a period other than 10 or 60 seconds is refused at deploy.
+const rateLimit = (wrangler.ratelimits ?? []).find(({ name }) => name === "CLIENT_RATE_LIMIT");
+if (
+  rateLimit === undefined ||
+  !/^[1-9][0-9]*$/u.test(rateLimit.namespace_id) ||
+  ![10, 60].includes(rateLimit.simple?.period)
+) {
+  errors.push(
+    "Wrangler must declare the CLIENT_RATE_LIMIT rate limit with a namespace and a period of 10 or 60.",
+  );
+}
+if (!alchemyWorker.includes("CLIENT_RATE_LIMIT:")) {
+  errors.push("src/alchemy-worker.ts must pass CLIENT_RATE_LIMIT to the Worker.");
+}
+
 // A Durable Object class needs a migration tag that creates it.
 const migrated = new Set(
   (wrangler.migrations ?? []).flatMap((migration) => migration.new_sqlite_classes ?? []),

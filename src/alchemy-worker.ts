@@ -27,6 +27,23 @@ export const classificationQueue = Cloudflare.Queues.Queue("ClassificationQueue"
 
 export const deliveryQueue = Cloudflare.Queues.Queue("DeliveryQueue");
 
+// wrangler.json declares the client rate limit for local runs and tests; the
+// deployed Worker gets the same namespace and limit.
+const ClientRateLimitConfig = Schema.Struct({
+  name: Schema.Literal("CLIENT_RATE_LIMIT"),
+  namespace_id: Schema.String,
+  simple: Schema.Struct({ limit: Schema.Int, period: Schema.Literals([10, 60]) }),
+});
+const clientRateLimit = Schema.decodeUnknownEffect(Schema.Tuple([ClientRateLimitConfig]))(
+  wrangler.ratelimits,
+).pipe(
+  Effect.map(([{ name, namespace_id: namespaceId, simple }]) =>
+    Cloudflare.Workers.RateLimit(name, { namespaceId, simple }),
+  ),
+  // scripts/doctor.mjs checks the same declaration in CI.
+  Effect.orDie,
+);
+
 const deploymentProps = Effect.gen(function* () {
   const { dev } = yield* Alchemy.AlchemyContext;
   const { stage } = yield* Alchemy.Stack;
@@ -50,6 +67,7 @@ const deploymentProps = Effect.gen(function* () {
   );
   const emailFrom = yield* Config.option(Config.schema(EmailAddress, "RONDYR_EMAIL_FROM"));
   const resendKey = yield* Config.option(Config.Redacted("RESEND_API_KEY"));
+  const rateLimit = yield* clientRateLimit;
   return {
     main: import.meta.url,
     name: `rondyr-${stage}`,
@@ -71,6 +89,7 @@ const deploymentProps = Effect.gen(function* () {
       DB: database,
       CLASSIFICATION_QUEUE: classification,
       DELIVERY_QUEUE: delivery,
+      CLIENT_RATE_LIMIT: rateLimit,
       // The queue handler tells the two queues apart by name.
       CLASSIFICATION_QUEUE_NAME: classification.queueName,
       DELIVERY_QUEUE_NAME: delivery.queueName,

@@ -1,5 +1,6 @@
 import { Context, Effect, Option } from "effect";
 
+import type { IntakeReason } from "../domain/submissions/classification.ts";
 import type { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import type { StorageUnavailable } from "./storage.ts";
 
@@ -10,6 +11,16 @@ export interface OutboxLease {
   readonly until: number;
   /** An event published at or before this time is due again until it is handed off. */
   readonly republishBefore: number;
+}
+
+/**
+ * A received submission as intake stored it. `intakeReason` is set when intake
+ * found a reason to quarantine it without a classifier; intake wrote it with the
+ * submission, so every delivery of the same event reads the same value.
+ */
+export interface PendingHandoff {
+  readonly organizationId: OrganizationId;
+  readonly intakeReason: Option.Option<IntakeReason>;
 }
 
 export class Outbox extends Context.Service<
@@ -33,10 +44,10 @@ export class Outbox extends Context.Service<
       lease: OutboxLease,
       submissionIds: ReadonlyArray<SubmissionId>,
     ) => Effect.Effect<void, StorageUnavailable>;
-    /** The organization of a submission whose event is not handed off yet. */
-    readonly pendingOrganization: (
+    /** What the model needs about a submission whose event is not handed off yet. */
+    readonly pendingHandoff: (
       submissionId: SubmissionId,
-    ) => Effect.Effect<Option.Option<OrganizationId>, StorageUnavailable>;
+    ) => Effect.Effect<Option.Option<PendingHandoff>, StorageUnavailable>;
     readonly markHandedOff: (
       submissionId: SubmissionId,
       handedOffAt: number,

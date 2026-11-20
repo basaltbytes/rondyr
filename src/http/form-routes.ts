@@ -11,6 +11,7 @@ import {
   FormRequestError,
   ManagedForm,
   parseSuccessUrl,
+  SetHoneypotField,
   SetSuccessUrl,
   UpdateForm,
   type FormStatus,
@@ -101,6 +102,21 @@ const clearSuccessUrl = Effect.gen(function* () {
   return yield* formJson(updated, jsonOptions);
 });
 
+const setHoneypotField = Effect.gen(function* () {
+  const form = yield* scope;
+  const input = yield* HttpServerRequest.schemaBodyJson(SetHoneypotField);
+  const forms = yield* Forms;
+  const updated = yield* forms.setHoneypotField(form, input.field);
+  return yield* formJson(updated, jsonOptions);
+}).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
+
+const clearHoneypotField = Effect.gen(function* () {
+  const form = yield* scope;
+  const forms = yield* Forms;
+  const updated = yield* forms.clearHoneypotField(form);
+  return yield* formJson(updated, jsonOptions);
+});
+
 const organizationForms = "/api/organizations/:organizationId/forms";
 const form = `${organizationForms}/:publicId`;
 
@@ -111,4 +127,6 @@ export const formRoutes = Layer.mergeAll(
   HttpRouter.add("POST", `${form}/reactivate`, withErrors(setStatus("active"))),
   HttpRouter.add("PUT", `${form}/success-url`, withErrors(setSuccessUrl)),
   HttpRouter.add("DELETE", `${form}/success-url`, withErrors(clearSuccessUrl)),
+  HttpRouter.add("PUT", `${form}/honeypot`, withErrors(setHoneypotField)),
+  HttpRouter.add("DELETE", `${form}/honeypot`, withErrors(clearHoneypotField)),
 );

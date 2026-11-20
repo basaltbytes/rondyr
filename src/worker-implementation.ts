@@ -22,6 +22,7 @@ import { notificationProvidersLive } from "./adapters/notifications/notification
 import { classificationQueueLive } from "./adapters/queues/classification-queue.ts";
 import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
 import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
+import { clientRateLimitLive } from "./adapters/workers/client-rate-limit.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
 import { deliveryRoutes } from "./http/delivery-routes.ts";
@@ -44,6 +45,7 @@ const services = Layer.mergeAll(
   authenticationLive,
   HttpServer.layerServices,
   submissionIntakeLive,
+  clientRateLimitLive,
   formOriginsLive,
   formsLive,
   organizationDirectoryLive,

@@ -11,8 +11,10 @@ import { joinRepeatedFields, SubmittedFields } from "../domain/submissions/submi
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { publishSubmission } from "../jobs/submission-outbox.ts";
 import { BackgroundTasks } from "../ports/background-tasks.ts";
+import { ClientRateLimit } from "../ports/client-rate-limit.ts";
 import {
   SubmissionIntake,
+  type EmptySubmission,
   type FormNotFound,
   type FormRateLimited,
   type FormSuspended,
@@ -152,8 +154,23 @@ const refuseBody = Effect.fnUntraced(function* (
   return empty(status, corsHeaders(origins, origin));
 });
 
+/** A 429, from the form's cap or from the client's limit. */
+function rateLimited(cors: CorsHeaders) {
+  return empty(429, {
+    "retry-after": "60",
+    "access-control-expose-headers": "retry-after",
+    ...cors,
+  });
+}
+
 function refusal(
-  error: FormNotFound | FormRateLimited | FormSuspended | OriginRefused | StorageUnavailable,
+  error:
+    | FormNotFound
+    | FormRateLimited
+    | FormSuspended
+    | OriginRefused
+    | EmptySubmission
+    | StorageUnavailable,
   origin: Option.Option<string>,
 ) {
   return Match.valueTags(error, {
@@ -162,15 +179,39 @@ function refusal(
     FormSuspended: ({ origins }) => empty(403, corsHeaders(origins, origin)),
     // A browser cannot read this response: it has no Access-Control-Allow-Origin.
     OriginRefused: () => empty(403, corsHeaders("unlisted", origin)),
-    FormRateLimited: ({ origins }) =>
-      empty(429, {
-        "retry-after": "60",
-        "access-control-expose-headers": "retry-after",
-        ...corsHeaders(origins, origin),
-      }),
+    // The honeypot field was the only field: there is no message.
+    EmptySubmission: ({ origins }) => empty(400, corsHeaders(origins, origin)),
+    FormRateLimited: ({ origins }) => rateLimited(corsHeaders(origins, origin)),
     StorageUnavailable: () => empty(503, corsHeaders("unrestricted", origin)),
   });
 }
+
+/**
+ * Count the request against its client's limit on this form. A request without
+ * `CF-Connecting-IP`, which Cloudflare sets on every request it receives, is not
+ * counted: local development and tests have no client address. A limited client
+ * gets the CORS headers of an invalid request: the form's list decides them, and
+ * is read only for a request with an `Origin` header.
+ */
+const limitClient = Effect.fnUntraced(function* (
+  request: HttpServerRequest.HttpServerRequest,
+  publicId: string,
+  origin: Option.Option<string>,
+) {
+  const address = request.headers["cf-connecting-ip"];
+  if (address === undefined || address === "") return Option.none();
+  const limit = yield* ClientRateLimit;
+  if (yield* limit.admit(publicId, address)) return Option.none();
+  if (Option.isNone(origin)) return Option.some(rateLimited({}));
+  const intake = yield* SubmissionIntake;
+  const origins = yield* intake.matchOrigin(publicId, origin).pipe(
+    Effect.catchTags({
+      FormNotFound: () => Effect.succeed("unrestricted" as const),
+      StorageUnavailable: () => Effect.succeed("unrestricted" as const),
+    }),
+  );
+  return Option.some(rateLimited(corsHeaders(origins, origin)));
+});
 
 // A browser sends `Origin: null` when the page hides its origin: a `no-referrer`
 // policy on a form post, a sandboxed frame. Such a request is handled like one
@@ -188,6 +229,8 @@ const receive = Effect.gen(function* () {
   const read = yield* Effect.result(readFields(request));
   if (Result.isFailure(read)) return yield* refuseBody(formId, origin, read.failure.status);
   const { json, fields } = read.success;
+  const limited = yield* limitClient(request, formId, origin);
+  if (Option.isSome(limited)) return limited.value;
   const intake = yield* SubmissionIntake;
   const received = yield* Effect.result(intake.receive(formId, fields, origin));
   if (Result.isFailure(received)) return refusal(received.failure, origin);

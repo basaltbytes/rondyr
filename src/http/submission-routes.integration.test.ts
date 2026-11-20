@@ -5,9 +5,11 @@ import { Clock, Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
+import wrangler from "../../wrangler.json" with { type: "json" };
 import { outboxLive } from "../adapters/database/outbox.ts";
 import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { BackgroundTasks } from "../ports/background-tasks.ts";
+import { ClientRateLimit } from "../ports/client-rate-limit.ts";
 import { SubmissionIntake } from "../ports/intake.ts";
 import { StorageUnavailable } from "../ports/storage.ts";
 import { submissionRoutes } from "./submission-routes.ts";
@@ -708,6 +710,8 @@ it.live("sends the CORS headers with a 503 when D1 is unavailable", () =>
         matchOrigin: () => Effect.fail(StorageUnavailable.make()),
       }),
       Layer.succeed(BackgroundTasks, { run: () => Effect.void }),
+      // Never called: the requests have no client address.
+      Layer.succeed(ClientRateLimit, { admit: () => Effect.succeed(true) }),
       // Never called: nothing is stored, so nothing is published.
       outboxLive,
       classificationQueueLive,
@@ -735,4 +739,95 @@ it.live("sends the CORS headers with a 503 when D1 is unavailable", () =>
     ]);
     yield* Effect.promise(dispose);
   }).pipe(Effect.scoped),
+);
+
+const [clientLimit] = wrangler.ratelimits;
+
+/** A JSON submission from a client that Cloudflare identifies by `address`. */
+const fromClient = (name: string, address: string, extra: Record<string, string> = {}) =>
+  Effect.promise(() =>
+    env.TEST_WORKER.fetch(new URL(`/f/${name}`, origin), {
+      method: "POST",
+      headers: { "content-type": "application/json", "cf-connecting-ip": address, ...extra },
+      body: '{"message":"hello"}',
+    }),
+  );
+
+it.live("limits one client on a form while another client is still accepted", () =>
+  Effect.gen(function* () {
+    if (clientLimit === undefined) return assert.fail("wrangler.json declares no rate limit");
+    const { limit } = clientLimit.simple;
+    yield* seedForm("intake-client");
+    yield* seedOrigins("intake-client", [shop]);
+
+    // The binding counts in fixed windows of the wall clock. Twice the limit plus
+    // one request fill at least one window past the limit, even if a window ends
+    // during the test, and the first `limit` requests are always under it.
+    const statuses: Array<number> = [];
+    const limited: Array<Response> = [];
+    for (let index = 0; index < 2 * limit + 1; index += 1) {
+      const response = yield* fromClient("intake-client", "203.0.113.7", { origin: shop });
+      statuses.push(response.status);
+      if (response.status === 429) limited.push(response);
+    }
+    assert.deepEqual(
+      statuses.slice(0, limit),
+      Array.from({ length: limit }, () => 202),
+    );
+    assert.isNotEmpty(limited);
+    assert.deepEqual(
+      statuses.filter((status) => status !== 202 && status !== 429),
+      [],
+    );
+    for (const response of limited) {
+      assert.deepEqual(cors(response), {
+        status: 429,
+        allowOrigin: shop,
+        vary: "Origin",
+        credentials: null,
+      });
+      assert.strictEqual(response.headers.get("retry-after"), "60");
+      assert.strictEqual(response.headers.get("access-control-expose-headers"), "retry-after");
+      assert.strictEqual(response.headers.get("cache-control"), "no-store");
+    }
+    const accepted = statuses.filter((status) => status === 202).length;
+    // Nothing is stored for a refused request.
+    yield* expectStored("intake-client", accepted);
+
+    // Another client, and a client without an address, still reach the form.
+    const other = yield* fromClient("intake-client", "198.51.100.4");
+    assert.strictEqual(other.status, 202);
+    const unidentified = yield* fetchJson("intake-client", shop);
+    assert.strictEqual(unidentified.status, 202);
+    yield* expectStored("intake-client", accepted + 2);
+  }),
+);
+
+it.live("keeps the form's cap behind the per-client limit", () =>
+  Effect.gen(function* () {
+    yield* seedForm("intake-backstop");
+    const now = yield* Clock.currentTimeMillis;
+    yield* Effect.promise(() =>
+      env.DB.batch(
+        Array.from({ length: 29 }, (_, index) =>
+          env.DB.prepare(
+            "INSERT INTO submissions (id, organization_id, form_id, fields, received_at) VALUES (?, ?, ?, ?, ?)",
+          ).bind(
+            `00000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
+            "intake-backstop-org",
+            "intake-backstop-form",
+            '{"message":"earlier"}',
+            now,
+          ),
+        ),
+      ),
+    );
+    // Each client is under its own limit; the form has room for one more message.
+    const first = yield* fromClient("intake-backstop", "192.0.2.10");
+    assert.strictEqual(first.status, 202);
+    const second = yield* fromClient("intake-backstop", "2001:db8:5::20");
+    assert.strictEqual(second.status, 429);
+    assert.strictEqual(second.headers.get("retry-after"), "60");
+    yield* expectStored("intake-backstop", 30);
+  }),
 );
