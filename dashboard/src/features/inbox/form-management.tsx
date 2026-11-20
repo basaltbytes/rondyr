@@ -197,7 +197,7 @@ function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
           />
         </label>
         <button type="submit" name="action" value="set" disabled={redirecting}>
-          Enregistrer
+          Enregistrer la redirection
         </button>
         {form.successUrl !== null && (
           <button type="submit" name="action" value="clear" formNoValidate disabled={redirecting}>
@@ -224,7 +224,7 @@ function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
           Nom du champ piège <input name="field" required maxLength={100} placeholder="_hp" />
         </label>
         <button type="submit" name="action" value="set" disabled={trapping}>
-          Enregistrer
+          Enregistrer le champ piège
         </button>
         {form.honeypotField !== null && (
           <button type="submit" name="action" value="clear" formNoValidate disabled={trapping}>
