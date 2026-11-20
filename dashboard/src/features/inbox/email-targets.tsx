@@ -11,6 +11,7 @@ import {
 import type { EmailDestination } from "~/lib/targets-client";
 
 import { attempt } from "./target-problems.ts";
+import { TargetTest } from "./target-test.tsx";
 
 /** One address per line, or separated by commas or semicolons. */
 function addressesIn(data: FormData) {
@@ -114,6 +115,7 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
                   {target.active ? "Désactiver" : "Réactiver"}
                 </button>
               </form>
+              <TargetTest inboxId={inboxId} targetId={target.id} />
             </li>
           ))}
         </ul>

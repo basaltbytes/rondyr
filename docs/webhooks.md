@@ -8,7 +8,7 @@ A quarantined message is sent only once someone accepts it. A webhook created af
 
 The Worker needs `RONDYR_SECRETS_KEY` to store signing secrets; [deployment.md](./deployment.md#webhook-secrets) explains how to set it. Without it, creating a webhook or rotating its secret answers `503` with `{"error":"secrets-key-missing"}`, and the rest of Rondyr works as before.
 
-In the dashboard, open **Webhooks** under the inbox, enter the URL of the recipient next to the form, and click **Ajouter**. Rondyr generates a signing secret and shows it once: copy it into the recipient's configuration before you leave the page. **Renouveler le secret** issues a new one, and **Désactiver** stops deliveries for messages accepted from then on.
+In the dashboard, open **Webhooks** under the inbox, enter the URL of the recipient next to the form, and click **Ajouter**. Rondyr generates a signing secret and shows it once: copy it into the recipient's configuration before you leave the page. **Renouveler le secret** issues a new one, **Désactiver** stops deliveries for messages accepted from then on, and **Envoyer un essai** sends a [test request](#test-requests) and shows the answer.
 
 The dashboard calls these routes, which need a session cookie and the `Origin` of the Worker:
 
@@ -18,6 +18,7 @@ The dashboard calls these routes, which need a session cookie and the `Origin` o
 | `POST /api/organizations/:organizationId/forms/:publicId/targets` | Creates a webhook from `{"type":"webhook","url":"https://…"}` and returns it with its secret (`201`) |
 | `POST /api/organizations/:organizationId/targets/:targetId/rotate-secret` | Returns the webhook with a new secret |
 | `POST /api/organizations/:organizationId/targets/:targetId/deactivate` or `/activate` | Returns the webhook with its new state |
+| `POST /api/organizations/:organizationId/targets/:targetId/test` | Sends a test request and returns its result |
 
 A form or webhook of an organization the account isn't a member of answers `404`. The creation and rotation responses are the only ones that contain a secret, and they are sent with `Cache-Control: no-store`.
 
@@ -78,7 +79,7 @@ The body is version 1 of the payload:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `version` | `1` | Payload version. A change that removes or changes a field gets a new version |
-| `type` | `"submission.accepted"` | The only event type today |
+| `type` | `"submission.accepted"` or `"test"` | `"test"` for a [test request](#test-requests) sent from the dashboard |
 | `deliveryId` | UUID | Same value as `Rondyr-Delivery-Id` |
 | `submission.id` | UUID | The `submission-id` returned by `POST /f/:public-id` |
 | `submission.receivedAt` | ISO 8601, UTC | When Rondyr stored the submission |
@@ -149,11 +150,43 @@ export default {
     const body = await verifyRondyrWebhook(request, env.RONDYR_WEBHOOK_SECRET);
     if (body === null) return new Response(null, { status: 401 });
     const payload = JSON.parse(body);
+    // A test request from the dashboard: the signature is valid, there is nothing to store.
+    if (payload.type === "test") return new Response(null, { status: 204 });
     // Look up payload.deliveryId in your own store and stop here if you have seen it.
     return new Response(null, { status: 204 });
   },
 };
 ```
+
+## Test requests
+
+**Envoyer un essai** in the dashboard, or the `test` route, sends one request to the webhook. Rondyr checks the URL with the [destination rules](#destination-rules) and signs the request with the current secrets, as for a delivery. The body is version 1 of the payload with the type `test`:
+
+```json
+{
+  "version": 1,
+  "type": "test",
+  "deliveryId": "4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60",
+  "submission": {
+    "id": "4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60",
+    "receivedAt": "2026-11-20T15:42:07.000Z",
+    "fields": {
+      "message": "Message d’essai envoyé depuis le dashboard Rondyr. Aucun visiteur ne l’a envoyé."
+    }
+  },
+  "form": { "id": "YOUR_PUBLIC_ID", "name": "Classes" }
+}
+```
+
+`deliveryId`, `submission.id` and the `Rondyr-Delivery-Id` header have the same value, a new UUID for each test, and no submission or delivery has it. `receivedAt` is the time of the test. A recipient that stores messages should verify the signature, then skip a request whose `type` is `test`.
+
+Rondyr sends a test request once, never retries it, and waits up to 30 seconds for the answer. It stores nothing: no submission, no delivery, no attempt. The route answers with the result, where `summary` follows the rules of [Responses and retries](#responses-and-retries):
+
+```json
+{ "testId": "4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60", "outcome": "permanent-failure", "summary": "The recipient answered HTTP 400." }
+```
+
+`outcome` is `delivered` (without `summary`), `retryable-failure` for an answer that a delivery would retry, or `permanent-failure`. An inactive webhook can be tested. While a test of a webhook runs, a second test of the same webhook answers `409`; the check is per Worker instance, so two tests sent to different instances can run together.
 
 ## Secret rotation
 
@@ -181,6 +214,42 @@ A delivery gets up to 6 attempts. After a retryable failure, the next attempt st
 
 A failure that no retry can fix also ends the delivery at once: an invalid stored configuration, a URL that the destination rules now refuse, or a secret that can't be decrypted because `RONDYR_SECRETS_KEY` was removed or changed.
 
+## Delivery history and manual retry
+
+Under the fields of an accepted message, the dashboard lists its deliveries: the destination, the status, the number of attempts, the time of the next attempt while a retry waits, and each attempt with its start and end times, its result and its error summary. The summary is the one Rondyr stored, so it contains a status code and never the message fields. **Actualiser les livraisons** reloads the list.
+
+A failed delivery has a **Relancer la livraison** button. The retry keeps the delivery ID, so the recipient gets the same `Rondyr-Delivery-Id` and can drop the request if it processed it already. It starts a new series of up to 6 attempts with the delays above, and the attempts before it stay in the history, numbered on from the last one. The retry goes through the delivery queue like any attempt: two retries clicked at the same time, or a retry while the cron job runs, start one attempt. Only a failed delivery can be retried; any other status, and the second of two simultaneous retries, answers `409`.
+
+| Route | Effect |
+| --- | --- |
+| `GET /api/organizations/:organizationId/submissions/:submissionId/deliveries` | Lists the deliveries of the submission, oldest first, each with its attempts |
+| `POST /api/organizations/:organizationId/submissions/:submissionId/deliveries/:deliveryId/retry` | Retries a failed delivery and returns the list |
+
+Each delivery in the list has this shape:
+
+```json
+{
+  "id": "1b4e28ba-2fa1-4d2b-883f-0016d3cca427",
+  "destination": { "targetId": "…", "type": "webhook", "url": "https://hooks.example.com/rondyr" },
+  "status": "retrying",
+  "attemptCount": 1,
+  "nextAttemptAt": 1795190460000,
+  "lastError": "The recipient answered HTTP 503.",
+  "createdAt": 1795190399000,
+  "attempts": [
+    {
+      "attempt": 1,
+      "startedAt": 1795190399500,
+      "finishedAt": 1795190400000,
+      "outcome": "retryable-failure",
+      "error": "The recipient answered HTTP 503."
+    }
+  ]
+}
+```
+
+`status` is `pending`, `processing`, `delivered`, `retrying` or `failed`. `nextAttemptAt` is set only while the status is `retrying`. An attempt `outcome` is `delivered`, `retryable-failure`, `permanent-failure`, `interrupted` (the Worker stopped before it recorded the result), or `null` while the attempt runs. Times are milliseconds since the Unix epoch. An email destination has `"type": "email"` and `recipients` instead of `url`. A submission or delivery of an organization the account isn't a member of answers `404`.
+
 ## Delivery guarantee
 
 Delivery is at least once. If the Worker stops between sending a request and recording its result, it sends the request again about two minutes later, with the same `Rondyr-Delivery-Id`, and a recipient that answered `2xx` the first time receives it twice. Store the delivery IDs you have processed and ignore repeats.
@@ -189,5 +258,4 @@ Attempts for different messages run independently, so a recipient can receive th
 
 ## Not built yet
 
-- The dashboard doesn't show delivery history yet, and a failed delivery can't be retried by hand or tested with a sample request ([#16](https://github.com/basaltbytes/rondyr/issues/16)). The state of each delivery is in the `deliveries` and `delivery_attempts` tables of D1.
-- Every member of an organization can manage its webhooks; roles come with [#11](https://github.com/basaltbytes/rondyr/issues/11).
+- Every member of an organization can manage its webhooks, read the delivery history, retry a failed delivery and send a test; roles come with [#11](https://github.com/basaltbytes/rondyr/issues/11).
