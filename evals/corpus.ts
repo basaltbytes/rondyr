@@ -45,7 +45,7 @@ export type CorpusEntry = typeof CorpusEntry.Type;
 
 export interface Corpus {
   readonly name: string;
-  /** The business context as the Worker sends it to the classifier: trimmed, at most 2,000 characters. */
+  /** The same trimmed and bounded business context that the Worker sends to the classifier. */
   readonly context: string;
   readonly entries: readonly [CorpusEntry, ...CorpusEntry[]];
 }

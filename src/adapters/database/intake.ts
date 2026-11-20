@@ -182,10 +182,26 @@ const receive = Effect.fn("Intake.receive")(function* (
   `)
     .bind(id);
   const [accessResult, received] = yield* d1(() => db.batch([accessCheck, insert, outbox]));
-  const access = yield* readAccess(accessResult?.results);
-  if (Option.isNone(access)) return yield* FormNotFound.make();
-  const { origins, active, successUrl, honeypotField } = access.value;
-  if (received?.meta.changes === 1) return { submissionId: id, origins, successUrl };
+  const access = yield* Effect.result(readAccess(accessResult?.results));
+  if (received?.meta.changes === 1) {
+    const metadata = Option.flatten(Result.getSuccess(access));
+    if (Option.isSome(metadata)) {
+      const { origins, successUrl } = metadata.value;
+      return { submissionId: id, origins, successUrl };
+    }
+    yield* Effect.logWarning("Access metadata unavailable after submission commit", {
+      submissionId: id,
+    });
+    // The insert already checked the request origin. Echo it without a redirect.
+    return {
+      submissionId: id,
+      origins: Option.isSome(origin) ? ("listed" as const) : ("unlisted" as const),
+      successUrl: Option.none(),
+    };
+  }
+  if (Result.isFailure(access)) return yield* access.failure;
+  if (Option.isNone(access.success)) return yield* FormNotFound.make();
+  const { origins, active, honeypotField } = access.success.value;
   if (origins === "unlisted" && requestOrigin !== null) return yield* OriginRefused.make();
   if (!active) return yield* FormSuspended.make({ origins });
   if (onlyEmptyHoneypot(fields, honeypotField)) return yield* EmptySubmission.make({ origins });

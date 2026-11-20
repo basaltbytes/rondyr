@@ -789,6 +789,44 @@ it.live("redirects an accepted HTML form post to the form's success URL", () =>
   }),
 );
 
+it.live("acknowledges a committed submission even when the access row cannot be decoded", () =>
+  Effect.gen(function* () {
+    const name = "intake-invalid-access";
+    yield* seedForm(name);
+    yield* seedOrigins(name, [shop]);
+    yield* setSuccessUrl(name, `${shop}/merci`);
+    // SQLite allows a BLOB in this text column. The insert can still accept the submission.
+    yield* Effect.promise(() =>
+      env.DB.prepare("UPDATE forms SET honeypot_field = X'00' WHERE public_id = ?")
+        .bind(name)
+        .run(),
+    );
+
+    const accepted = yield* htmlPost(name, shop);
+    assert.deepEqual(cors(accepted), {
+      status: 202,
+      allowOrigin: shop,
+      vary: "Origin",
+      credentials: null,
+    });
+    assert.strictEqual(accepted.headers.get("location"), null);
+    assert.strictEqual(accepted.headers.get("content-type"), "text/html; charset=utf-8");
+    yield* expectStored(name, 1);
+    const outboxCount = yield* Effect.promise(() =>
+      env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM outbox_events JOIN submissions ON submission_id = submissions.id WHERE form_id = ?",
+      )
+        .bind(`${name}-form`)
+        .first("count"),
+    );
+    assert.strictEqual(outboxCount, 1);
+
+    const refused = yield* htmlPost(name, elsewhere);
+    assert.strictEqual(refused.status, 503);
+    yield* expectStored(name, 1);
+  }),
+);
+
 it.live("sends the CORS headers with a 503 when D1 is unavailable", () =>
   Effect.gen(function* () {
     const unavailable = Layer.mergeAll(
