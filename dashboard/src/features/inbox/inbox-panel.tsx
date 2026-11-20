@@ -3,6 +3,7 @@ import { useActionState, useEffect, useState } from "react";
 import { createInbox, listInboxes, listSubmissions } from "~/lib/inbox-client";
 import type { Inbox, Page, Status, Submission } from "~/lib/inbox-client";
 
+import { AllowedOrigins } from "./allowed-origins.tsx";
 import { statusLabels } from "./strings.ts";
 import { SubmissionReader } from "./submission-reader.tsx";
 import { WebhookTargets } from "./webhook-targets.tsx";
@@ -55,6 +56,7 @@ function InboxView({ inbox }: InboxViewProps) {
   const [selected, setSelected] = useState<Submission["submissionId"] | null>(null);
   const [failed, setFailed] = useState(false);
   const [webhooksOpen, setWebhooksOpen] = useState(false);
+  const [originsOpen, setOriginsOpen] = useState(false);
 
   function refresh() {
     setFailed(false);
@@ -92,6 +94,15 @@ function InboxView({ inbox }: InboxViewProps) {
           {webhooksOpen &&
             inbox.forms.map((form) => (
               <WebhookTargets key={form.publicId} inboxId={inbox.id} form={form} />
+            ))}
+        </details>
+      )}
+      {inbox.forms.length > 0 && (
+        <details onToggle={(event) => setOriginsOpen(event.currentTarget.open)}>
+          <summary>Origines autorisées</summary>
+          {originsOpen &&
+            inbox.forms.map((form) => (
+              <AllowedOrigins key={form.publicId} inboxId={inbox.id} form={form} />
             ))}
         </details>
       )}
