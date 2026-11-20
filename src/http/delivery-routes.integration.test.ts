@@ -190,7 +190,7 @@ const addEmail = Effect.fnUntraced(function* (form: FormScope, address: string) 
   const recipients = Result.getOrElse(parseEmailRecipients([address]), () =>
     assert.fail(`${address} is refused`),
   );
-  return yield* targets.createEmail(form, recipients);
+  return yield* targets.createEmail(form, recipients, "en");
 });
 
 /** Run the `Delivery` policy's scheduler for an acceptance now. */
@@ -556,9 +556,9 @@ it.live("sends a marked test message to each kind of target and stores nothing",
       assert.deepEqual(more, []);
       assert.strictEqual(message.headers["idempotency-key"], mailed.testId);
       const sentEmail = yield* readResendEmail(message.body);
-      assert.deepEqual([sentEmail.to, sentEmail.subject], [[team], "Message d’essai : Form probe"]);
-      assert.include(sentEmail.text, "Message d’essai envoyé depuis le dashboard Rondyr");
-      assert.include(sentEmail.text, `Identifiant d’essai : ${mailed.testId}`);
+      assert.deepEqual([sentEmail.to, sentEmail.subject], [[team], "Test message: Form probe"]);
+      assert.include(sentEmail.text, "Test message sent from the Rondyr dashboard");
+      assert.include(sentEmail.text, `Test ID: ${mailed.testId}`);
 
       const failures = yield* Effect.all([
         testResult(call, "probe", refusing.target.id),

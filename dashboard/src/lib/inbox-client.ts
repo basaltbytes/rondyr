@@ -1,12 +1,21 @@
 import { Schema } from "effect";
 
 import { InboxOrganizationWithForms, SetupInbox } from "@rondyr/contracts/inbox-setup";
-import { InboxPage, SubmissionDetail, SubmissionStatus } from "@rondyr/contracts/inbox";
+import {
+  InboxCounts,
+  InboxEntry,
+  InboxPage,
+  SubmissionDetail,
+  SubmissionStatus,
+} from "@rondyr/contracts/inbox";
 
 export type Inbox = typeof InboxOrganizationWithForms.Type;
-export type Page = typeof InboxPage.Type;
+/** A message in a page of the list. Its `preview` has every field, with long values cut short. */
+export type SubmissionEntry = typeof InboxEntry.Type;
+/** A message with its full fields, as the detail route and a decision return it. */
 export type Submission = typeof SubmissionDetail.Type;
 export type Status = typeof SubmissionStatus.Type;
+export type Counts = typeof InboxCounts.Type;
 
 export class InboxRequestError extends Schema.TaggedError<
   InboxRequestError,
@@ -24,6 +33,7 @@ const submissions = (id: Inbox["id"]) => `${organizations}/${encodeURIComponent(
 const decodeInboxes = Schema.decodeUnknownPromise(Schema.Array(InboxOrganizationWithForms));
 const decodePage = Schema.decodeUnknownPromise(InboxPage);
 const decodeSubmission = Schema.decodeUnknownPromise(SubmissionDetail);
+const decodeCounts = Schema.decodeUnknownPromise(InboxCounts);
 
 export async function listInboxes(signal?: AbortSignal) {
   const response = await send(organizations, signal === undefined ? {} : { signal });
@@ -52,6 +62,19 @@ export async function listSubmissions(
   return decodePage(await response.json());
 }
 
+/**
+ * How many messages of the organization have each status. The API reads every
+ * message of the organization to count them, so ask only when the counts may
+ * have changed without the dashboard knowing.
+ */
+export async function countSubmissions(id: Inbox["id"], signal: AbortSignal) {
+  const response = await send(`${organizations}/${encodeURIComponent(id)}/submission-counts`, {
+    signal,
+  });
+  return decodeCounts(await response.json());
+}
+
+/** A message with its full fields. */
 export async function getSubmission(
   id: Inbox["id"],
   submission: Submission["submissionId"],

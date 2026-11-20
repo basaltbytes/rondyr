@@ -100,7 +100,7 @@ Working in one of these languages? Read its mapping (shipped next to this file)
 before writing code.
 
 - Python → [PYTHON.md](PYTHON.md) — pydantic v2 strict, nominal wrappers, rejection tests.
-- TypeScript → [TYPESCRIPT.md](TYPESCRIPT.md) — Effect Schema at the edges, branded types, discriminated unions.
+- TypeScript → [TYPESCRIPT.md](TYPESCRIPT.md) — Zod at the edges, branded types, discriminated unions.
 
 ### Final check
 

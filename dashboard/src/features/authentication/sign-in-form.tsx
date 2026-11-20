@@ -1,8 +1,17 @@
 import { useActionState } from "react";
+import { useTranslation } from "react-i18next";
 
+import { FormProblem, TextField } from "~/components/text-field";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { authClient } from "~/lib/auth-client";
 
-async function signIn(_previousError: string | null, fields: FormData): Promise<string | null> {
+type SignInProblem = "rateLimited" | "unavailable" | "refused" | "failed";
+
+async function signIn(
+  _previous: SignInProblem | null,
+  fields: FormData,
+): Promise<SignInProblem | null> {
   try {
     const result = await authClient.signIn.email({
       email: String(fields.get("email") ?? ""),
@@ -10,32 +19,48 @@ async function signIn(_previousError: string | null, fields: FormData): Promise<
     });
 
     if (result.error === null) return null;
-    if (result.error.status === 429) return "Trop de tentatives. Réessayez dans un moment.";
-    if (result.error.status >= 500) return "Le service de connexion est indisponible.";
-    return "Vérifiez votre adresse e-mail et votre mot de passe.";
+    if (result.error.status === 429) return "rateLimited";
+    if (result.error.status >= 500) return "unavailable";
+    return "refused";
   } catch {
-    return "La connexion a échoué. Réessayez.";
+    return "failed";
   }
 }
 
 export function SignInForm() {
-  const [error, action, pending] = useActionState(signIn, null);
+  const { t } = useTranslation();
+  const [problem, action, pending] = useActionState(signIn, null);
 
   return (
-    <form action={action} className="auth-form">
-      <h2>Connexion</h2>
-      <label>
-        Adresse e-mail
-        <input type="email" name="email" autoComplete="username" required />
-      </label>
-      <label>
-        Mot de passe
-        <input type="password" name="password" autoComplete="current-password" required />
-      </label>
-      {error !== null && <p role="alert">{error}</p>}
-      <button type="submit" disabled={pending}>
-        {pending ? "Connexion en cours…" : "Se connecter"}
-      </button>
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("authentication.signIn.title")}</CardTitle>
+        <CardDescription>{t("authentication.signIn.description")}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form action={action} className="grid gap-4">
+          <TextField
+            label={t("authentication.signIn.email")}
+            type="email"
+            name="email"
+            autoComplete="username"
+            required
+          />
+          <TextField
+            label={t("authentication.signIn.password")}
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            required
+          />
+          <FormProblem>
+            {problem === null ? null : t(`authentication.signIn.problems.${problem}`)}
+          </FormProblem>
+          <Button type="submit" variant="default" disabled={pending}>
+            {pending ? t("authentication.signIn.pending") : t("authentication.signIn.submit")}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,0 +1,385 @@
+{
+  "common": {
+    "cancel": "Annuler",
+    "loading": "Chargement…",
+    "refresh": "Actualiser",
+    "save": "Enregistrer"
+  },
+  "languages": {
+    "en": "English",
+    "fr": "Français"
+  },
+  "session": {
+    "checking": "Vérification de la session…"
+  },
+  "sidebar": {
+    "menu": "Menu",
+    "toggle": "Afficher ou masquer le menu"
+  },
+  "authentication": {
+    "account": {
+      "label": "Compte {{email}}",
+      "language": "Langue"
+    },
+    "signIn": {
+      "title": "Connexion",
+      "description": "Le compte de cette installation de Rondyr.",
+      "email": "Adresse e-mail",
+      "password": "Mot de passe",
+      "submit": "Se connecter",
+      "pending": "Connexion en cours…",
+      "problems": {
+        "rateLimited": "Trop de tentatives. Réessayez dans un moment.",
+        "unavailable": "Le service de connexion est indisponible.",
+        "refused": "Vérifiez votre adresse e-mail et votre mot de passe.",
+        "failed": "La connexion a échoué. Réessayez."
+      }
+    },
+    "signOut": {
+      "submit": "Se déconnecter",
+      "pending": "Déconnexion en cours…",
+      "failed": "La déconnexion a échoué. Réessayez."
+    }
+  },
+  "status": {
+    "reasons": {
+      "probable-spam": "Indésirable probable",
+      "ambiguous": "Classement incertain",
+      "low-relevance": "Peu lié à votre activité",
+      "classification-error": "Analyse indisponible",
+      "honeypot": "Champ piège rempli",
+      "repetition": "Envois répétés"
+    },
+    "deliveries": {
+      "pending": "En attente",
+      "processing": "Envoi en cours",
+      "delivered": "Livrée",
+      "retrying": "Nouvel essai prévu",
+      "failed": "Échec"
+    }
+  },
+  "operations": {
+    "title": "État",
+    "loading": "Chargement de l’état…",
+    "unavailable": "L’état du traitement est indisponible. Réessayez.",
+    "cron": {
+      "last": "Dernière exécution réussie du Cron : <value>{{date}}</value>",
+      "never": "Dernière exécution réussie du Cron : <value>aucune réussite enregistrée</value>"
+    },
+    "noOrganizations": "Aucune organisation.",
+    "organization": "État de {{name}}",
+    "queue": {
+      "title": "File de classification",
+      "undelivered": "Événements non remis",
+      "oldestAge": "Âge du plus ancien",
+      "empty": "Aucun"
+    },
+    "deliveries": {
+      "title": "Livraisons"
+    },
+    "lastDay": {
+      "title": "Dernières 24 h",
+      "received": "Messages reçus",
+      "quarantined": "Encore en quarantaine, par motif"
+    }
+  },
+  "inbox": {
+    "navigation": {
+      "label": "Navigation",
+      "messages": "Messages",
+      "settings": "Réglages",
+      "operations": "Exploitation"
+    },
+    "folders": {
+      "quarantined": "À vérifier",
+      "accepted": "Acceptés",
+      "archived": "Archivés",
+      "all": "Tous les messages"
+    },
+    "folderTotal": "{{folder}} · {{total}}",
+    "sections": {
+      "forms": "Formulaires",
+      "destinations": "Destinations",
+      "origins": "Origines autorisées",
+      "organization": "Nouvelle organisation"
+    },
+    "statuses": {
+      "received": "Reçu",
+      "classifying": "En cours d’analyse",
+      "accepted": "Accepté",
+      "quarantined": "À vérifier",
+      "archived": "Archivé"
+    },
+    "unknownSender": "Expéditeur inconnu",
+    "organizations": {
+      "switcher": "Organisation : {{name}}. Changer d’organisation",
+      "title": "Organisations",
+      "forms_zero": "Aucun formulaire",
+      "forms_one": "{{count}} formulaire",
+      "forms_many": "{{count}} formulaires",
+      "forms_other": "{{count}} formulaires",
+      "loading": "Chargement des organisations…",
+      "loadFailed": "Impossible de charger les organisations."
+    },
+    "setup": {
+      "description": "Une organisation a sa boîte de réception, ses formulaires et ses destinations.",
+      "organization": "Organisation",
+      "firstForm": "Nom du premier formulaire",
+      "firstFormPlaceholder": "Contact",
+      "submit": "Créer l’organisation",
+      "pending": "Création en cours…",
+      "failed": "La boîte n’a pas pu être créée. Vérifiez les champs et réessayez."
+    },
+    "business": {
+      "label": "Activité de l’organisation",
+      "hint": "Facultatif. Le filtre s’en sert pour juger si un message concerne votre activité."
+    },
+    "list": {
+      "label": "Liste des messages",
+      "loading": "Chargement des messages…",
+      "loadFailed": "Impossible de charger les messages.",
+      "more": "Afficher les messages suivants",
+      "loadingMore": "Chargement…",
+      "yesterday": "hier",
+      "empty": {
+        "quarantined": {
+          "title": "Rien à vérifier",
+          "note": "Les messages que le filtre met de côté apparaissent ici, en attendant votre décision."
+        },
+        "accepted": {
+          "title": "Aucun message",
+          "note": "Les messages acceptés, par le filtre ou par vous, apparaissent ici."
+        },
+        "archived": {
+          "title": "Aucun message",
+          "note": "Les messages que vous archivez apparaissent ici."
+        },
+        "all": {
+          "title": "Aucun message reçu",
+          "note": "Les messages envoyés depuis vos formulaires arrivent ici. L’adresse de chaque formulaire est dans Formulaires."
+        }
+      }
+    },
+    "reader": {
+      "label": "Message ouvert",
+      "back": "Retour à la liste",
+      "archive": "Archiver",
+      "accept": "Accepter",
+      "acceptAndSend": "Accepter et envoyer",
+      "analyzing": "Le filtre analyse ce message. Actualisez la liste pour voir son classement.",
+      "nothingToReview": "Rien à vérifier",
+      "noOpenMessage": "Aucun message ouvert",
+      "position": "{{position}} sur {{total}}",
+      "previous": "Message précédent",
+      "next": "Message suivant",
+      "detail": {
+        "loadFailed": "Impossible de charger le message complet. Les champs longs sont tronqués.",
+        "retry": "Réessayer"
+      },
+      "waiting_zero": "Le filtre n’a mis aucun message de côté.",
+      "waiting_one": "{{count}} message attend votre décision. Ouvrez-le dans la liste.",
+      "waiting_many": "{{count}} messages attendent votre décision. Ouvrez-en un dans la liste.",
+      "waiting_other": "{{count}} messages attendent votre décision. Ouvrez-en un dans la liste.",
+      "problems": {
+        "notSaved": "La décision n’a pas pu être enregistrée. Réessayez.",
+        "alreadyHandled": "Ce message a déjà été traité.",
+        "alreadyHandledRefresh": "Ce message a déjà été traité. Actualisez la liste pour voir son statut."
+      }
+    },
+    "deliveries": {
+      "label": "Livraisons du message",
+      "title": "Livraisons",
+      "refresh": "Actualiser les livraisons",
+      "loading": "Chargement des livraisons…",
+      "loadFailed": "Impossible de charger les livraisons.",
+      "empty": "Aucune livraison pour ce message.",
+      "webhook": "Webhook <code>{{url}}</code>",
+      "email": "E-mail à {{recipients}}",
+      "nextAttempt": "Prochaine tentative après le {{date}}",
+      "attempts_one": "{{count}} tentative",
+      "attempts_many": "{{count}} tentatives",
+      "attempts_other": "{{count}} tentatives",
+      "attempt": "Tentative {{number}}",
+      "attemptRunning": "{{attempt}} : {{startedAt}} · en cours",
+      "attemptFinished": "{{attempt}} : {{startedAt}} → {{finishedAt}}",
+      "outcomes": {
+        "delivered": "livrée",
+        "retryable-failure": "échec temporaire",
+        "permanent-failure": "échec définitif",
+        "interrupted": "interrompue avant son résultat"
+      },
+      "retry": "Relancer la livraison",
+      "problems": {
+        "noLongerFailed": "Cette livraison n’est plus en échec : la liste est actualisée.",
+        "retryNotSaved": "La relance n’a pas pu être enregistrée. Réessayez."
+      }
+    },
+    "forms": {
+      "label": "Formulaires de l’organisation",
+      "new": "Nouveau",
+      "newTitle": "Nouveau formulaire",
+      "back": "Retour aux formulaires",
+      "empty": {
+        "title": "Aucun formulaire",
+        "note": "Un formulaire donne une adresse d’envoi à mettre sur votre site."
+      },
+      "none": "Cette organisation n’a pas encore de formulaire. Créez-en un dans Formulaires.",
+      "settings": "Réglages du formulaire {{name}}",
+      "statuses": {
+        "active": "Actif",
+        "suspended": "Suspendu"
+      },
+      "name": "Nom du formulaire",
+      "add": "Ajouter le formulaire",
+      "edit": "Modifier",
+      "address": {
+        "title": "Adresse d’envoi",
+        "active": "L’adresse à mettre dans l’attribut action de votre formulaire, ou à appeler en POST.",
+        "suspended": "Ce formulaire refuse les nouveaux messages. Les messages reçus restent dans la boîte de réception.",
+        "copy": "Copier l’adresse",
+        "copied": "Adresse copiée"
+      },
+      "details": {
+        "title": "Nom et activité",
+        "noBusiness": "Aucune activité décrite : la pertinence des messages n’est pas évaluée.",
+        "new": "Le formulaire reçoit une adresse d’envoi dès sa création. Elle ne change plus ensuite."
+      },
+      "redirect": {
+        "title": "Redirection après envoi",
+        "confirmationPage": "Après un envoi depuis un formulaire HTML, le visiteur voit la page de confirmation de Rondyr. $t(inbox.forms.redirect.origin)",
+        "successUrl": "Après un envoi depuis un formulaire HTML, le visiteur voit <code>{{url}}</code>. $t(inbox.forms.redirect.origin)",
+        "origin": "L’origine de l’adresse doit figurer dans les origines autorisées du formulaire.",
+        "url": "Adresse de redirection",
+        "placeholder": "https://www.example.com/merci",
+        "save": "Enregistrer la redirection",
+        "remove": "Retirer la redirection",
+        "refusals": {
+          "invalid-url": "Saisissez une adresse complète, par exemple https://www.example.com/merci.",
+          "not-https": "L’adresse doit commencer par https://.",
+          "credentials": "Retirez l’identifiant et le mot de passe de l’adresse.",
+          "origin-not-listed": "Ajoutez d’abord l’origine de cette adresse aux origines autorisées du formulaire."
+        }
+      },
+      "honeypot": {
+        "title": "Champ piège",
+        "none": "Aucun champ piège. $t(inbox.forms.honeypot.instructions)",
+        "current": "Champ actuel : <code>{{field}}</code>. $t(inbox.forms.honeypot.instructions)",
+        "instructions": "Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec <code>tabindex=\"-1\"</code> et <code>autocomplete=\"off\"</code> : les visiteurs le laissent vide, et un message qui le remplit est mis à vérifier sans être analysé.",
+        "name": "Nom du champ piège",
+        "placeholder": "_hp",
+        "save": "Enregistrer le champ piège",
+        "remove": "Retirer le champ piège"
+      },
+      "suspension": {
+        "title": "Suspension",
+        "suspendedTitle": "Formulaire suspendu",
+        "description": "Un formulaire suspendu refuse les nouveaux messages avec le statut 403. Les messages reçus, les destinations et l’adresse publique sont conservés.",
+        "suspend": "Suspendre le formulaire",
+        "confirm": "Confirmer la suspension",
+        "reactivate": "Réactiver le formulaire"
+      },
+      "problems": {
+        "notAdded": "Le formulaire n’a pas pu être ajouté. Vérifiez les champs et réessayez.",
+        "notChanged": "Le formulaire n’a pas pu être modifié. Vérifiez les champs et réessayez.",
+        "statusNotChanged": "Le statut n’a pas pu être modifié. Réessayez.",
+        "redirectNotSaved": "La redirection n’a pas pu être enregistrée. Réessayez.",
+        "honeypotNotSaved": "Le champ piège n’a pas pu être enregistré. Vérifiez le nom et réessayez."
+      }
+    },
+    "origins": {
+      "label": "Origines autorisées du formulaire {{name}}",
+      "description": "Les sites dont les pages peuvent envoyer ce formulaire depuis un navigateur. Une liste vide autorise tous les sites.",
+      "loading": "Chargement des origines…",
+      "loadFailed": "Impossible de charger les origines autorisées.",
+      "empty": "Aucune origine : tous les sites sont autorisés.",
+      "origin": "Origine",
+      "placeholder": "https://www.example.com",
+      "add": "Ajouter l’origine",
+      "remove": "Retirer",
+      "inUse": "La redirection après envoi de ce formulaire pointe vers cette origine. Retirez d’abord la redirection.",
+      "refusals": {
+        "invalid-origin": "Saisissez une origine complète, par exemple https://www.example.com.",
+        "wildcard": "Les caractères génériques ne sont pas acceptés : ajoutez chaque origine.",
+        "not-https": "L’origine doit commencer par https://. Seuls localhost et les adresses de boucle locale acceptent http://.",
+        "credentials": "Retirez l’identifiant et le mot de passe de l’origine.",
+        "not-an-origin": "Retirez le chemin, les paramètres et l’ancre : gardez le schéma, l’hôte et le port."
+      },
+      "problems": {
+        "notAdded": "L’origine n’a pas pu être ajoutée. Réessayez.",
+        "notRemoved": "L’origine n’a pas pu être retirée. Réessayez."
+      }
+    },
+    "destinations": {
+      "deactivate": "Désactiver",
+      "reactivate": "Réactiver",
+      "notSaved": "La modification n’a pas pu être enregistrée. Réessayez.",
+      "test": {
+        "send": "Envoyer un essai",
+        "sending": "Envoi de l’essai…",
+        "delivered": "Message d’essai livré",
+        "deliveredWithId": "$t(inbox.destinations.test.delivered), identifiant {{id}}.",
+        "retryableFailure": "Échec temporaire du message d’essai : {{summary}}",
+        "permanentFailure": "Échec du message d’essai : {{summary}}",
+        "alreadyRunning": "Un essai est déjà en cours pour cette destination.",
+        "notSent": "Le message d’essai n’a pas pu être envoyé. Réessayez."
+      }
+    },
+    "webhooks": {
+      "label": "Webhooks du formulaire {{name}}",
+      "title": "Webhooks",
+      "description": "Chaque message accepté est envoyé en POST à ces adresses, signé avec le secret du webhook.",
+      "loading": "Chargement des webhooks…",
+      "loadFailed": "Impossible de charger les webhooks.",
+      "empty": "Aucun webhook pour ce formulaire.",
+      "active": "Actif",
+      "inactive": "Désactivé",
+      "previousSecret": "L’ancien secret signe aussi les envois jusqu’au {{date}}.",
+      "rotate": "Renouveler le secret",
+      "secret": {
+        "title": "Secret de signature",
+        "description": "Secret de <code>{{url}}</code>. Il ne sera plus affiché : copiez-le maintenant dans la configuration du destinataire.",
+        "copy": "Copier le secret",
+        "copied": "Secret copié",
+        "hide": "Masquer"
+      },
+      "url": "URL du webhook",
+      "placeholder": "https://",
+      "add": "Ajouter le webhook",
+      "notAdded": "Le webhook n’a pas pu être ajouté. Réessayez.",
+      "missingSecretsKey": "Le Worker n’a pas de clé RONDYR_SECRETS_KEY : impossible de créer un webhook ou de renouveler son secret.",
+      "refusals": {
+        "invalid-url": "Cette adresse n’est pas une URL valide.",
+        "not-https": "L’adresse doit commencer par https://.",
+        "credentials": "Retirez l’identifiant et le mot de passe de l’adresse.",
+        "custom-port": "Utilisez le port HTTPS par défaut, sans numéro de port.",
+        "local-hostname": "Ce nom d’hôte désigne un réseau local.",
+        "reserved-address": "Cette adresse IP est privée ou réservée.",
+        "worker-origin": "Un webhook ne peut pas viser Rondyr lui-même."
+      }
+    },
+    "emails": {
+      "label": "Destinations e-mail du formulaire {{name}}",
+      "title": "E-mails",
+      "description": "Chaque message accepté est envoyé en texte brut aux destinataires de chaque destination, dans la langue de la destination.",
+      "loading": "Chargement des destinations e-mail…",
+      "loadFailed": "Impossible de charger les destinations e-mail.",
+      "empty": "Aucune destination e-mail pour ce formulaire.",
+      "active": "Active",
+      "inactive": "Désactivée",
+      "recipients": "Destinataires, un par ligne",
+      "language": "Langue des e-mails",
+      "languageValue": "Langue des e-mails : {{language}}",
+      "placeholder": "equipe@example.com",
+      "editRecipients": "Modifier les destinataires",
+      "add": "Ajouter la destination",
+      "notAdded": "La destination e-mail n’a pas pu être ajoutée. Réessayez.",
+      "missingProvider": "L’envoi d’e-mails n’est pas configuré sur ce Worker : il faut RESEND_API_KEY et RONDYR_EMAIL_FROM.",
+      "refusals": {
+        "no-recipients": "Saisissez au moins une adresse e-mail.",
+        "too-many-recipients": "Une destination accepte au plus {{max}} adresses.",
+        "invalid-address": "Une adresse n’est pas valide. Saisissez des adresses seules, comme equipe@example.com, sans nom ni chevrons.",
+        "duplicate-address": "Une adresse apparaît deux fois."
+      }
+    }
+  }
+}

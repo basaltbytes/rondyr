@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import babel from "@rolldown/plugin-babel";
+import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { unreachableChunksPlugin } from "alchemy/Bundle/UnreachableChunksPlugin";
 import { defineConfig } from "vite";
@@ -8,8 +9,32 @@ import { defineConfig } from "vite";
 export default defineConfig({
   define: { "globalThis.__ALCHEMY_RUNTIME__": "true" },
   build: { minify: true, rolldownOptions: { plugins: [unreachableChunksPlugin()] } },
+  environments: {
+    client: {
+      build: {
+        rolldownOptions: {
+          output: {
+            // The libraries of the dashboard change less often than its own code and are
+            // too large for one file together, so each family has its own chunk.
+            codeSplitting: {
+              groups: [
+                { name: "react", test: /node_modules\/(?:react|react-dom|scheduler)\// },
+                { name: "effect", test: /node_modules\/effect\// },
+                {
+                  name: "auth",
+                  test: /node_modules\/(?:better-auth|@better-auth|better-call|@better-fetch|nanostores)\//,
+                },
+                { name: "i18n", test: /node_modules\/(?:i18next|react-i18next)\// },
+              ],
+            },
+          },
+        },
+      },
+    },
+  },
   plugins: [
     react(),
+    tailwindcss(),
     babel({
       presets: [
         reactCompilerPreset({

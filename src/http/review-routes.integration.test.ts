@@ -7,7 +7,7 @@ import { testOrigin as origin, testSetupToken } from "../../tests/integration/au
 import { outboxLive } from "../adapters/database/outbox.ts";
 import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
-import { InboxPage, SubmissionDetail } from "../domain/submissions/inbox.ts";
+import { InboxCounts, InboxPage, SubmissionDetail } from "../domain/submissions/inbox.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { publishPendingSubmissions } from "../jobs/submission-outbox.ts";
 
@@ -15,6 +15,7 @@ const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));
 const readInboxes = Schema.decodeUnknownEffect(Schema.Array(InboxOrganizationWithForms));
 const readPage = Schema.decodeUnknownEffect(InboxPage);
+const readCounts = Schema.decodeUnknownEffect(InboxCounts);
 const readSubmission = Schema.decodeUnknownEffect(SubmissionDetail);
 const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
 const outboxLayer = Layer.mergeAll(outboxLive, classificationQueueLive);
@@ -167,6 +168,15 @@ it.live(
         page.entries.map((entry) => entry.submissionId),
         [submissionId],
       );
+      // A list entry has a preview of its message, so the inbox shows who wrote and what.
+      assert.deepEqual(page.entries[0]?.preview, contact);
+      const counted = yield* request(`/api/organizations/${inbox.id}/submission-counts`, {
+        headers,
+      });
+      const rawCounts = yield* Effect.promise(() => counted.json());
+      const totals = yield* readCounts(rawCounts);
+      // The counts themselves are checked against D1 in the inbox adapter's tests.
+      assert.strictEqual(totals.quarantined, 1);
 
       yield* Effect.promise(() =>
         env.DB.batch([
@@ -186,9 +196,12 @@ it.live(
         `/api/organizations/other-org/submissions/${outsiderId}/approve`,
         { method: "POST", headers },
       );
+      const foreignCounts = yield* request("/api/organizations/other-org/submission-counts", {
+        headers,
+      });
       assert.deepEqual(
-        [foreignList.status, foreignDetail.status, foreignReview.status],
-        [404, 404, 404],
+        [foreignList.status, foreignDetail.status, foreignReview.status, foreignCounts.status],
+        [404, 404, 404, 404],
       );
 
       const results = yield* Effect.all(

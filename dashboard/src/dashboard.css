@@ -1,154 +1,120 @@
-:root {
-  color-scheme: light dark;
-  font-family: system-ui, sans-serif;
+@import "tailwindcss";
+
+/*
+ * One neutral ramp on hue 250. Color is reserved for the status of a message
+ * and of its deliveries. Token names follow shadcn/ui.
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --color-*: initial;
+  --color-background: light-dark(oklch(0.982 0.002 250), oklch(0.165 0.004 250));
+  --color-foreground: light-dark(oklch(0.21 0.006 250), oklch(0.94 0.003 250));
+  --color-card: light-dark(oklch(1 0 0), oklch(0.205 0.005 250));
+  /* Lighter than every surface it opens over, since dark depth reads as lightness. */
+  --color-popover: light-dark(oklch(1 0 0), oklch(0.275 0.006 250));
+  --color-scrim: oklch(0 0 0 / 0.4);
+  --color-muted: light-dark(oklch(0.962 0.003 250), oklch(0.235 0.005 250));
+  --color-muted-foreground: light-dark(oklch(0.45 0.008 250), oklch(0.73 0.006 250));
+  --color-accent: light-dark(oklch(0.945 0.004 250), oklch(0.265 0.006 250));
+  --color-border: light-dark(oklch(0.895 0.004 250), oklch(0.32 0.006 250));
+  --color-input: light-dark(oklch(0.8 0.006 250), oklch(0.4 0.008 250));
+  --color-ring: light-dark(oklch(0.45 0.008 250), oklch(0.8 0.004 250));
+  --color-primary: light-dark(oklch(0.21 0.006 250), oklch(0.94 0.003 250));
+  --color-primary-foreground: light-dark(oklch(0.985 0.002 250), oklch(0.165 0.004 250));
+  --color-warning: light-dark(oklch(0.47 0.11 68), oklch(0.83 0.12 82));
+  --color-warning-subtle: light-dark(oklch(0.955 0.04 88), oklch(0.275 0.04 78));
+  --color-success: light-dark(oklch(0.44 0.1 155), oklch(0.8 0.12 155));
+  --color-success-subtle: light-dark(oklch(0.955 0.035 155), oklch(0.265 0.04 155));
+  --color-destructive: light-dark(oklch(0.49 0.17 27), oklch(0.77 0.13 25));
+
+  /* A 1px ring, a tight layer and a soft one. Dark surfaces keep the ring only. */
+  --shadow-raised:
+    0 0 0 1px rgb(0 0 0 / 0.07), 0 1px 2px rgb(0 0 0 / 0.05), 0 4px 10px -4px rgb(0 0 0 / 0.06);
+  /* Menus and the drawer float above the page. */
+  --shadow-popover:
+    0 0 0 1px rgb(0 0 0 / 0.08), 0 4px 12px -2px rgb(0 0 0 / 0.1),
+    0 12px 32px -8px rgb(0 0 0 / 0.14);
 }
 
-body {
-  margin: 0;
+@utility hairline-t {
+  border-top-width: var(--hairline);
 }
 
-main {
-  width: min(100% - 3rem, 64rem);
-  margin: 4rem auto;
+@utility hairline-b {
+  border-bottom-width: var(--hairline);
 }
 
-.auth-form {
-  display: grid;
-  gap: 1rem;
-  max-width: 24rem;
+@utility hairline-r {
+  border-right-width: var(--hairline);
 }
 
-.auth-form h2,
-.auth-form p {
-  margin: 0;
+/* The list and the reader of the inbox, next to the sidebar, from 64rem. */
+@utility inbox-panes {
+  grid-template-columns: minmax(18.75rem, 23.25rem) minmax(0, 1fr);
 }
 
-.auth-form label {
-  display: grid;
-  gap: 0.35rem;
+/* Field names next to their values. */
+@utility field-grid {
+  grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
 }
 
-.auth-form input,
-.auth-form button {
-  font: inherit;
-  padding: 0.5rem 0.75rem;
-}
+@layer base {
+  :root {
+    color-scheme: light dark;
+    --hairline: 1px;
+  }
 
-.auth-form button {
-  justify-self: start;
-}
+  @media (min-resolution: 2dppx) {
+    :root {
+      --hairline: 0.5px;
+    }
+  }
 
-.inbox {
-  border-top: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  display: grid;
-  gap: 1.25rem;
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-}
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --shadow-raised: 0 0 0 1px rgb(255 255 255 / 0.14);
+      --shadow-popover: 0 0 0 1px rgb(255 255 255 / 0.14), 0 12px 32px -8px rgb(0 0 0 / 0.6);
+    }
+  }
 
-.inbox h2,
-.inbox h3 {
-  margin: 0;
-}
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-border);
+  }
 
-.inbox button,
-.inbox input,
-.inbox select,
-.inbox textarea {
-  font: inherit;
-  padding: 0.4rem 0.55rem;
-}
+  /* Menus, tooltips and the drawer render after the app, so they need no z-index. */
+  #root {
+    isolation: isolate;
+  }
 
-.inbox code {
-  overflow-wrap: anywhere;
-}
+  body {
+    background: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-synthesis: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-.inbox-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-}
+  button,
+  select,
+  input,
+  label,
+  a {
+    touch-action: manipulation;
+  }
 
-.inbox-actions:empty {
-  display: none;
-}
+  button:not(:disabled),
+  select {
+    cursor: pointer;
+  }
 
-.inbox-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  gap: 1.25rem;
-}
-
-.submission-list {
-  list-style: none;
-  display: grid;
-  gap: 0.35rem;
-  margin: 0 0 1rem;
-  padding: 0;
-}
-
-.submission-list button {
-  display: grid;
-  gap: 0.25rem;
-  width: 100%;
-  text-align: start;
-}
-
-.submission-list button[aria-pressed="true"] {
-  outline: 2px solid currentColor;
-  outline-offset: -2px;
-}
-
-.submission-list span {
-  font-size: 0.85em;
-}
-
-.submission-reader {
-  padding: 1rem;
-  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  border-radius: 0.25rem;
-}
-
-.submission-reader dt {
-  font-weight: 600;
-}
-
-.submission-reader dd {
-  margin: 0.25rem 0 1rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.operations {
-  border-top: 1px solid color-mix(in srgb, currentColor 22%, transparent);
-  margin-top: 2rem;
-  padding-top: 1rem;
-}
-
-.operations summary {
-  cursor: pointer;
-}
-
-.operations button {
-  font: inherit;
-  margin-top: 0.75rem;
-  padding: 0.4rem 0.55rem;
-}
-
-.operations-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
-  gap: 0.75rem 1.25rem;
-}
-
-.operations dd {
-  font-variant-numeric: tabular-nums;
-  margin: 0.15rem 0 0.6rem;
-}
-
-@media (max-width: 42rem) {
-  .inbox-columns {
-    grid-template-columns: 1fr;
+  /* Inside the element, so a scrolling pane cannot clip it. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: -2px;
   }
 }

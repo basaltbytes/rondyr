@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { EmailTarget } from "@rondyr/deliveries/email";
+import { EmailLanguage, EmailTarget } from "@rondyr/deliveries/email";
 import { TargetTestResult } from "@rondyr/deliveries/history";
 import { DestinationTarget, TargetRequestError } from "@rondyr/deliveries/targets";
 import { IssuedWebhookSecret, WebhookTarget } from "@rondyr/deliveries/webhook";
@@ -10,6 +10,8 @@ import type { Inbox } from "./inbox-client.ts";
 export type Target = typeof DestinationTarget.Type;
 export type Webhook = typeof WebhookTarget.Type;
 export type EmailDestination = typeof EmailTarget.Type;
+/** A language in which Rondyr writes the emails of a destination. */
+export type DestinationLanguage = EmailLanguage;
 export type IssuedSecret = typeof IssuedWebhookSecret.Type;
 export type TargetProblem = typeof TargetRequestError.Type;
 export type TestResult = typeof TargetTestResult.Type;
@@ -18,6 +20,10 @@ type Form = Inbox["forms"][number];
 export const isWebhook = Schema.is(WebhookTarget);
 
 export const isEmailDestination = Schema.is(EmailTarget);
+
+export const destinationLanguages = EmailLanguage.literals;
+
+export const isDestinationLanguage = Schema.is(EmailLanguage);
 
 /** A refused request, with the error that the API explains in its body, if any. */
 export class TargetRequestFailed extends Schema.TaggedError<
@@ -64,28 +70,32 @@ export async function createWebhook(id: Inbox["id"], form: Form["publicId"], url
   return decodeIssued(await response.json());
 }
 
+/** Add an email destination. Without a language, the API gives it the default one. */
 export async function createEmailTarget(
   id: Inbox["id"],
   form: Form["publicId"],
   recipients: ReadonlyArray<string>,
+  language: DestinationLanguage | undefined,
 ) {
   const response = await send(formTargets(id, form), {
     method: "POST",
     headers: json,
-    body: JSON.stringify({ type: "email", recipients }),
+    body: JSON.stringify({ type: "email", recipients, language }),
   });
   return decodeEmailTarget(await response.json());
 }
 
+/** Replace the recipients of an email destination. Without a language, it keeps its own. */
 export async function replaceRecipients(
   id: Inbox["id"],
   targetId: Target["id"],
   recipients: ReadonlyArray<string>,
+  language: DestinationLanguage | undefined,
 ) {
   const response = await send(`${target(id, targetId)}/recipients`, {
     method: "PUT",
     headers: json,
-    body: JSON.stringify({ recipients }),
+    body: JSON.stringify({ recipients, language }),
   });
   return decodeEmailTarget(await response.json());
 }

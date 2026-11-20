@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 
+import "~/lib/i18n";
 import { Dashboard } from "~/routes/dashboard";
 
 import "./dashboard.css";

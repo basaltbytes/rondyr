@@ -3,7 +3,12 @@ import { SecureRandom } from "effect/crypto";
 import { Base64Url } from "effect/encoding";
 
 import { TargetId } from "../../domain/deliveries/delivery.ts";
-import { EmailTarget, type EmailRecipients } from "../../domain/deliveries/email.ts";
+import {
+  EmailTarget,
+  legacyEmailLanguage,
+  type EmailLanguage,
+  type EmailRecipients,
+} from "../../domain/deliveries/email.ts";
 import type { DestinationTarget } from "../../domain/deliveries/targets.ts";
 import type { WebhookUrl } from "../../domain/deliveries/webhook-destination.ts";
 import { secretRotationWindowMillis, WebhookTarget } from "../../domain/deliveries/webhook.ts";
@@ -69,6 +74,7 @@ const emailSummary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
     id: row.id,
     type: "email",
     recipients: configuration.recipients,
+    language: configuration.language ?? legacyEmailLanguage,
     active: row.active === 1,
     createdAt: row.created_at,
   });
@@ -191,13 +197,16 @@ const rotateSecret = Effect.fn("NotificationTargets.rotateSecret")(function* (ta
 const createEmail = Effect.fn("NotificationTargets.createEmail")(function* (
   form: FormScope,
   recipients: EmailRecipients,
+  language: EmailLanguage,
 ) {
   const email = yield* EmailSender;
   // A target that no provider can send to is refused, as a webhook without a secrets key is.
   yield* email.sender;
   const db = yield* database;
   const id = TargetId.make(SecureRandom.uuidV4Unsafe());
-  const configuration = yield* encodeEmailConfiguration({ recipients }).pipe(Effect.orDie);
+  const configuration = yield* encodeEmailConfiguration({ recipients, language }).pipe(
+    Effect.orDie,
+  );
   const now = yield* Clock.currentTimeMillis;
   const inserted = yield* d1(() =>
     db
@@ -219,17 +228,21 @@ const createEmail = Effect.fn("NotificationTargets.createEmail")(function* (
 const replaceRecipients = Effect.fn("NotificationTargets.replaceRecipients")(function* (
   target: TargetScope,
   recipients: EmailRecipients,
+  language: EmailLanguage | undefined,
 ) {
   const db = yield* database;
-  const configuration = yield* encodeEmailConfiguration({ recipients }).pipe(Effect.orDie);
+  const changes = yield* encodeEmailConfiguration(
+    language === undefined ? { recipients } : { recipients, language },
+  ).pipe(Effect.orDie);
+  // A merge patch replaces the recipients and keeps the stored language when none is given.
   const updated = yield* d1(() =>
     db
       .prepare(`
-    UPDATE notification_targets AS t SET configuration = ?4
+    UPDATE notification_targets AS t SET configuration = json_patch(t.configuration, ?4)
     WHERE ${scopedTarget} AND t.type = 'email'
     RETURNING ${returnedColumns}
   `)
-      .bind(target.targetId, target.organizationId, target.userId, configuration)
+      .bind(target.targetId, target.organizationId, target.userId, changes)
       .all(),
   );
   const [row] = yield* decodeTargets(updated.results).pipe(Effect.mapError(unreadable));
@@ -295,8 +308,8 @@ export const notificationTargetsLive = Layer.effect(
       list,
       createWebhook: (form: FormScope, url: WebhookUrl) => provideCipher(createWebhook(form, url)),
       rotateSecret: (target: TargetScope) => provideCipher(rotateSecret(target)),
-      createEmail: (form: FormScope, recipients: EmailRecipients) =>
-        createEmail(form, recipients).pipe(Effect.provideService(EmailSender, email)),
+      createEmail: (form: FormScope, recipients: EmailRecipients, language: EmailLanguage) =>
+        createEmail(form, recipients, language).pipe(Effect.provideService(EmailSender, email)),
       replaceRecipients,
       testable,
       setStatus,

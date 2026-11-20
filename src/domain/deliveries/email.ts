@@ -72,11 +72,23 @@ export function parseEmailRecipients(
   return Result.succeed(EmailRecipients.make(addresses));
 }
 
+/** The languages in which Rondyr writes the email of a destination. */
+export const EmailLanguage = Schema.Literals(["en", "fr"]);
+export type EmailLanguage = typeof EmailLanguage.Type;
+
+/** The language of a destination created without one. */
+export const defaultEmailLanguage: EmailLanguage = "en";
+
+/** A destination stored before the language setting got its emails in French, and keeps them. */
+export const legacyEmailLanguage: EmailLanguage = "fr";
+
 /** An email target as the admin API returns it. */
 export const EmailTarget = Schema.Struct({
   id: TargetId,
   type: Schema.Literal("email"),
   recipients: EmailRecipients,
+  /** The language of the emails that the recipients get. */
+  language: EmailLanguage,
   active: Schema.Boolean,
   createdAt: Schema.Int,
 });
@@ -89,6 +101,11 @@ const RecipientsInput = Schema.Array(Schema.String.check(Schema.isMaxLength(512)
 export const CreateEmailTarget = Schema.Struct({
   type: Schema.Literal("email"),
   recipients: RecipientsInput,
+  language: Schema.optionalKey(EmailLanguage),
 });
 
-export const ReplaceEmailRecipients = Schema.Struct({ recipients: RecipientsInput });
+/** New recipients, and a new language when the request has one. */
+export const ReplaceEmailRecipients = Schema.Struct({
+  recipients: RecipientsInput,
+  language: Schema.optionalKey(EmailLanguage),
+});
