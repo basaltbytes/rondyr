@@ -35,7 +35,8 @@ const ListParams = OrganizationPath.mapFields((fields) => ({
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 
-const reviewer = Effect.fn("ReviewRoute.reviewer")(function* () {
+/** The signed-in account and its organizations, or `ReviewUnauthorized`. */
+export const reviewer = Effect.fn("ReviewRoute.reviewer")(function* () {
   const auth = yield* Authentication;
   const incoming = yield* HttpServerRequest.HttpServerRequest;
   const request = yield* HttpServerRequest.toWeb(incoming);

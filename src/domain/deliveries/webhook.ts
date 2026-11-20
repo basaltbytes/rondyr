@@ -1,0 +1,55 @@
+import { Schema } from "effect";
+
+import { SubmissionFields } from "../submissions/submission-fields.ts";
+import { SubmissionId } from "../submissions/submission.id.ts";
+import { DeliveryId, TargetId } from "./delivery.ts";
+import { DestinationRefusalReason } from "./webhook-destination.ts";
+
+/** The JSON body of a webhook request, version 1. docs/webhooks.md documents it. */
+export const WebhookPayload = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("submission.accepted"),
+  deliveryId: DeliveryId,
+  submission: Schema.Struct({
+    id: SubmissionId,
+    receivedAt: Schema.DateTimeUtcFromString,
+    fields: SubmissionFields,
+  }),
+  form: Schema.Struct({ id: Schema.String, name: Schema.String }),
+});
+
+export const webhookHeaders = {
+  deliveryId: "rondyr-delivery-id",
+  timestamp: "rondyr-timestamp",
+  signature: "rondyr-signature",
+} as const;
+
+/** After a rotation, the previous secret also signs requests for 24 hours. */
+export const secretRotationWindowMillis = 86_400_000;
+
+/** A webhook target as the admin API returns it, without its secrets. */
+export const WebhookTarget = Schema.Struct({
+  id: TargetId,
+  type: Schema.Literal("webhook"),
+  url: Schema.String,
+  active: Schema.Boolean,
+  createdAt: Schema.Int,
+  /** When the previous secret stops signing requests, in milliseconds since the epoch. */
+  previousSecretExpiresAt: Schema.NullOr(Schema.Int),
+});
+
+export const CreateWebhookTarget = Schema.Struct({
+  type: Schema.Literal("webhook"),
+  url: Schema.String.check(Schema.isMaxLength(4096)),
+});
+
+/** The only response that contains a signing secret: after a creation or a rotation. */
+export const IssuedWebhookSecret = Schema.Struct({ target: WebhookTarget, secret: Schema.String });
+
+export const TargetRequestError = Schema.Union([
+  Schema.Struct({
+    error: Schema.Literal("destination-refused"),
+    reason: DestinationRefusalReason,
+  }),
+  Schema.Struct({ error: Schema.Literal("secrets-key-missing") }),
+]);

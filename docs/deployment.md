@@ -19,6 +19,7 @@ Create one environment file per stage, for example `.env.staging`.
 | `BETTER_AUTH_SECRET` | Yes | At least 32 characters. Generate it with `openssl rand -hex 32` |
 | `BETTER_AUTH_URL` | Yes | The HTTPS origin of the Worker, with no path and no custom port |
 | `RONDYR_SETUP_TOKEN` | Only for the first account | A second value from `openssl rand -hex 32` |
+| `RONDYR_SECRETS_KEY` | Only for webhooks | 32 bytes in base64, from `openssl rand -base64 32`. See [Webhook secrets](#webhook-secrets) |
 | `RONDYR_CLASSIFIER` | No | `jev` (default) or `openai` |
 
 For the Worker `rondyr-staging`, the origin is `https://rondyr-staging.<subdomain>.workers.dev`. For `prod`, Alchemy attaches the hostname of `BETTER_AUTH_URL` to the Worker `rondyr-prod` as a custom domain, and Cloudflare manages its DNS record and TLS certificate.
@@ -65,6 +66,20 @@ The stack doesn't create the `default` gateway. When an account has no gateway w
 
 Both classifiers use the same thresholds today, although their scores haven't been compared on a test corpus ([#6](https://github.com/basaltbytes/rondyr/issues/6)).
 
+## Webhook secrets
+
+`RONDYR_SECRETS_KEY` is the AES-256-GCM key that encrypts the signing secret of each webhook in D1. It is optional: without it, the dashboard and the API refuse to create a webhook or rotate its secret, and everything else works. Set it on a stage before its first webhook:
+
+```sh
+openssl rand -base64 32
+```
+
+Add the value to the stage environment file, or to the `RONDYR_SECRETS_KEY_STAGING` or `RONDYR_SECRETS_KEY_PROD` GitHub secret, and redeploy.
+
+Keep the key once webhooks exist. If you remove or change it, every delivery to an existing webhook fails without a retry, because its secret no longer decrypts. To recover with a new key, rotate the secret of each webhook and give the new secret to its recipient. A value that isn't 32 bytes of base64 counts as missing.
+
+[docs/webhooks.md](./webhooks.md) covers the payload, the signature, and the destination rules.
+
 ## GitHub Actions
 
 A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, then deploys `prod`. The **Deploy** workflow deploys `staging` when you start it by hand. Without `CLOUDFLARE_API_TOKEN`, the workflow runs the checks and reports that the deployment was skipped.
@@ -75,6 +90,7 @@ A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, th
 | `BETTER_AUTH_SECRET_PROD`, `BETTER_AUTH_SECRET_STAGING` | Secret | One each |
 | `BETTER_AUTH_URL_PROD`, `BETTER_AUTH_URL_STAGING` | Variable | One each |
 | `RONDYR_SETUP_TOKEN_PROD`, `RONDYR_SETUP_TOKEN_STAGING` | Secret, optional | One each |
+| `RONDYR_SECRETS_KEY_PROD`, `RONDYR_SECRETS_KEY_STAGING` | Secret, optional | One each |
 | `RONDYR_CLASSIFIER_PROD`, `RONDYR_CLASSIFIER_STAGING` | Variable, optional | One each |
 
 For the Basaltbytes repository, `BETTER_AUTH_URL_PROD` is `https://rondyr.basaltbytes.com`. Delete the setup token secret once the first account exists.
