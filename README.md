@@ -1,63 +1,107 @@
-# Rondyr
+<h1 align="center">Rondyr</h1>
 
-Rondyr est un backend de formulaires conçu pour tourner dans votre compte Cloudflare. Le Worker reçoit les soumissions, les classe avec Jev et sert la boîte de réception React protégée par Better Auth. Les messages mis en quarantaine restent consultables et peuvent être acceptés ou archivés. La [proposition d’architecture](architecture.md) décrit le périmètre de la v0.1.
+<p align="center">The gatekeeper for your forms: a form backend with spam filtering that runs in your own Cloudflare account.</p>
 
-## Développement
+<p align="center">
+  <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-red">
+  <a href="https://github.com/basaltbytes/rondyr/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/basaltbytes/rondyr/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+</p>
 
-Utilisez Node 24 selon `.nvmrc` et la version de pnpm déclarée dans `package.json`.
+> [!WARNING]
+> Rondyr is pre-alpha software. It receives, classifies, and stores submissions, but it doesn't send email or call webhooks yet: an accepted message is only readable in the dashboard. The data model and the HTTP API can change in any commit.
+
+Rondyr is a self-hosted alternative to hosted form services. You deploy one Cloudflare Worker, create a form, and point your site's `<form>` at its URL. Each submission is stored in D1 before anything else happens, then a classifier scores it for spam and, if you described your business, for relevance to it.
+
+Rondyr never deletes a message on a model's opinion. A clear message is accepted, and anything doubtful waits in quarantine until you accept or archive it in the dashboard. A classifier outage also sends the message to quarantine instead of losing it.
+
+## Quick start
+
+You need Node.js 24.22 or later and pnpm 11. The local setup needs no Cloudflare account: Wrangler emulates D1, the queues, and the Durable Objects.
 
 ```sh
 pnpm install --frozen-lockfile
 cp .env.example .env
+```
+
+Generate two different values with `openssl rand -hex 32`, and set them as `BETTER_AUTH_SECRET` and `RONDYR_SETUP_TOKEN` in `.env`. Then apply the migrations and start the Worker and the dashboard:
+
+```sh
 pnpm db:migrate
 pnpm dev
 ```
 
-Vite affiche l’URL locale. Le dashboard répond sur `/` et le Worker renvoie `{"status":"ok"}` sur `/health`. Wrangler émule D1 et les files en local sans compte Cloudflare. `pnpm dev:alchemy` permet également d’exécuter la pile Alchemy avec son état local et applique les migrations à sa propre base D1 de développement.
-
-Après une modification du schéma, lancez `pnpm db:generate --name nom-de-la-migration`, vérifiez le SQL et ajoutez le dossier généré au dépôt. Drizzle Kit et ORM utilisent le canal v1 RC pour partager le même format de migrations avec Alchemy, Wrangler et Vitest.
-
-## Premier compte
-
-Rondyr utilise Better Auth avec des sessions en D1. Les inscriptions publiques sont fermées. Pour créer le premier compte, générez deux valeurs distinctes avec `openssl rand -hex 32`. Renseignez `BETTER_AUTH_SECRET` et `RONDYR_SETUP_TOKEN` dans `.env` en local ou dans les secrets du stage pour Cloudflare.
-
-Lancez le script depuis la racine du dépôt avec Node et `curl`. Pour un stage distant, passez l’origine HTTPS du Worker.
+Vite prints the local URL, usually `http://localhost:5173`. Public sign-up is closed, so create the first account with the setup script in a second terminal:
 
 ```sh
 ./scripts/setup-owner.sh http://localhost:5173
 ```
 
-Le script lit `RONDYR_SETUP_TOKEN` dans l’environnement ou le demande dans le terminal. Utilisez la même valeur que celle configurée sur le Worker. Le script vous demande aussi le nom, l’adresse e-mail et le mot de passe du compte. Le mot de passe doit contenir de 12 à 128 caractères. Après la réponse `201`, connectez-vous sur `/`. Retirez le jeton d’installation de la configuration et redémarrez ou redéployez le Worker. D1 refuse toute deuxième création via ce point d’installation.
+The script asks for the setup token, a name, an email address, and a password of 12 to 128 characters. Its prompts and the dashboard are in French for now. After it prints `HTTP 201`, sign in at `/`, then remove `RONDYR_SETUP_TOKEN` from `.env` and restart `pnpm dev`. The setup endpoint refuses to create a second account even if the token stays.
 
-## Recevoir un premier message
+## Send a submission
 
-Après connexion, créez une boîte de réception en indiquant le nom de l’organisation et du formulaire. Le contexte métier est facultatif. Ouvrez **Adresses des formulaires** pour copier l’URL publique.
-
-```sh
-curl --json '{"email":"visiteur@example.com","message":"Reste-t-il des places pour le cours ?"}' \
-  http://localhost:5173/f/IDENTIFIANT_PUBLIC
-```
-
-Un formulaire HTML peut utiliser la même URL dans son attribut `action`, avec `method="post"`. Le corps de la requête peut peser jusqu’à 16 Kio et contenir de 1 à 32 champs texte. Un formulaire accepte jusqu’à 30 soumissions par minute. D1 enregistre le message et l’événement d’envoi en file avant la réponse `202`. La réponse JSON inclut `submission-id`. Un navigateur qui demande du HTML affiche une page de confirmation.
-
-Le Cron vérifie la file d’attente D1 chaque minute. Les seuils initiaux envoient les scores de spam à partir de 0,30 en revue et distinguent le spam probable à partir de 0,70. Avec un contexte configuré, un score de pertinence inférieur à 0,35 peut aussi déclencher une revue. Utilisez **Actualiser** pour voir le résultat de l’analyse. En développement local, le classificateur sans binding Workers AI place les messages en quarantaine avec le motif **Analyse indisponible**. Vous pouvez les ouvrir, les accepter ou les archiver.
-
-Si vous avez déjà une organisation créée en SQL, ajoutez une ligne dans `organization_members` avec son `organization_id` et l’identifiant Better Auth `user_id` du compte autorisé.
-
-## Qualité
+In the dashboard, create an inbox: an organization name, a form name, and an optional description of the business. Open **Adresses des formulaires** to copy the form URL, then post to it:
 
 ```sh
-pnpm check
-pnpm deploy:dry
+curl --json '{"email":"visitor@example.com","message":"Is there room in the pottery class?"}' \
+  http://localhost:5173/f/YOUR_PUBLIC_ID
 ```
 
-La première commande vérifie le lint Oxlint, le format Oxfmt, les diagnostics Effect et TypeScript, les tests dans workerd, les tests des règles locales, les dépendances avec Knip et les migrations. La seconde construit le Worker et les assets, valide le bundle avec Wrangler et vérifie son budget de taille. La CI lance les deux commandes sans identifiants Cloudflare.
+```json
+{ "submission-id": "73123ee4-40bf-4c5f-b8ff-1d56cdaa7640", "status": "received" }
+```
 
-Le dashboard utilise aussi le compilateur React. Les règles viennent de `agentic-engineering-training@b5c49ff` et de `usine@011c3f740`. Les skills adaptés sont dans `.agents/skills`. Le plugin Oxlint et sa provenance sont décrits dans son [README](tooling/oxlint/README.md).
+An HTML form works with the same URL:
 
-## Cloudflare
+```html
+<form action="https://rondyr.example.com/f/YOUR_PUBLIC_ID" method="post">
+  <input type="email" name="email" required />
+  <textarea name="message" required></textarea>
+  <button type="submit">Send</button>
+</form>
+```
 
-Activez un sous-domaine `workers.dev` pour le compte choisi. Connectez ce compte dans Alchemy et ciblez d’abord la préproduction. Renseignez `BETTER_AUTH_SECRET` et `BETTER_AUTH_URL` dans le fichier d’environnement du stage. Pour le Worker `rondyr-staging`, l’origine est `https://rondyr-staging.<sous-domaine>.workers.dev`. En production, Alchemy associe le nom d’hôte de `BETTER_AUTH_URL` au Worker `rondyr-prod` en tant que domaine personnalisé. Cloudflare gère son DNS et son certificat TLS.
+A `202` means D1 has stored the submission and the event that queues it for classification, in one transaction. It doesn't mean the classifier has run. A browser that posts an HTML form gets a confirmation page with the same status.
+
+The body can be `application/json` or `application/x-www-form-urlencoded`, up to 16 KiB, with 1 to 32 text fields of at most 4,000 characters each. A form accepts 30 submissions per minute. Rondyr answers `400` for invalid fields, `404` for an unknown form, `413` for a large body, `415` for another content type, and `429` over the rate limit.
+
+Locally there is no Workers AI binding, so every message is quarantined with the reason **Analyse indisponible**. Click **Actualiser** about a minute after posting to see it; you can then open, accept, or archive it.
+
+## Features
+
+- Stores each submission and its outbox event atomically before answering. A cron job publishes pending events every minute and republishes any event that wasn't handed to the classifier within 5 minutes. A duplicate queue message produces one decision.
+- Scores spam and business relevance with Jev through Workers AI, or with OpenAI Decisions through Cloudflare AI Gateway. You choose one classifier per deployment.
+- Quarantines instead of deleting. Probable spam, ambiguous scores, off-topic messages, and classifier failures all go to human review, each with its reason.
+- Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
+- Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
+- Isolates organizations. Every admin query is scoped to the signed-in account's organizations, and another organization's submission answers `404`.
+- Keeps message content in D1 only. The event history of a submission contains IDs, scores, and the reviewer, never the fields.
+- Deploys through [Alchemy](https://alchemy.run), with separate resources for the `staging` and `prod` stages.
+
+## Not built yet
+
+The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap. The largest gaps:
+
+| Gap | Issue |
+| --- | --- |
+| Email and signed webhook delivery of accepted messages | [#5](https://github.com/basaltbytes/rondyr/issues/5), [#13](https://github.com/basaltbytes/rondyr/issues/13), [#14](https://github.com/basaltbytes/rondyr/issues/14) |
+| JSON submissions from a browser on another origin (CORS) | [#19](https://github.com/basaltbytes/rondyr/issues/19) |
+| Editing, suspending, and adding forms | [#8](https://github.com/basaltbytes/rondyr/issues/8) |
+| Per-IP rate limits, honeypot, Turnstile, and quotas | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
+| Thresholds measured on a test corpus, per-organization policy | [#6](https://github.com/basaltbytes/rondyr/issues/6) |
+| Roles and invitations | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
+| Search, export, retention, and purge | [#9](https://github.com/basaltbytes/rondyr/issues/9) |
+
+## Concepts
+
+- An **organization** owns forms and an inbox. An account sees only the organizations it is a member of.
+- A **form** has a public URL, `/f/<public-id>`, and an optional **business context** that describes what the organization does.
+- A **submission** is one message: a set of text fields sent to a form.
+- The **classifier** returns a spam score and, when the form has a business context, a relevance score. Both are between 0 and 1.
+- A submission is **accepted** when its spam score is under 0.30 and its relevance score, if it has one, is at least 0.35. Otherwise it is **quarantined** with a reason: probable spam (0.70 and above), ambiguous, low relevance, or classifier error.
+- A **review** is a person's decision on a quarantined submission: accept it, or archive it.
+
+## Deploy to Cloudflare
 
 ```sh
 pnpm exec alchemy profile edit --config alchemy-run.ts --add Cloudflare
@@ -65,26 +109,32 @@ pnpm deploy:plan --stage staging --env-file .env.staging
 pnpm run deploy --stage staging --env-file .env.staging
 ```
 
-Alchemy peut proposer de créer son Worker d’état au premier plan ou déploiement. Les stages `staging` et `prod` utilisent des ressources applicatives distinctes. L’option `--profile` sélectionne un autre compte Cloudflare configuré dans Alchemy.
+The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification queue with its dead-letter queue, the cron trigger, and the Durable Objects. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, and deployment from GitHub Actions.
 
-La pile déploie le Worker avec ses assets Vite et les Durable Objects du modèle Alchemy Domain. Elle applique les migrations D1 et configure la file de classification, sa file d’échec et le Cron de reprise. Le Worker déployé utilise le binding Workers AI pour Jev. `RONDYR_AI_GATEWAY=true` provisionne aussi un AI Gateway avec la collecte de logs désactivée. La file de livraison est provisionnée pour l’étape de distribution.
+## Documentation
 
-Jev est le classificateur par défaut. Pour utiliser OpenAI Decisions avec GPT-6 Luna, définissez `RONDYR_CLASSIFIER=openai` dans l’environnement du stage. Avec GitHub Actions, utilisez la variable `RONDYR_CLASSIFIER_STAGING` ou `RONDYR_CLASSIFIER_PROD`. Le choix s’applique à tous les formulaires du stage après redéploiement. Le Worker appelle `openai/decisions` via le binding `AI` et le gateway `default`. Avec la facturation unifiée de Cloudflare, le Worker utilise les crédits du compte, sans clé OpenAI dans Rondyr. [Modèle Decisions](https://developers.cloudflare.com/ai/models/openai/decisions/) · [Facturation unifiée](https://developers.cloudflare.com/ai-gateway/features/unified-billing/)
+| Topic | Page |
+| --- | --- |
+| What is built, what is planned, and why | [architecture.md](./architecture.md) (French) |
+| Stages, secrets, API token permissions, CI deployment | [docs/deployment.md](./docs/deployment.md) |
+| Rules for contributors and coding agents | [AGENTS.md](./AGENTS.md) (French) |
+| Local lint rules and where they come from | [tooling/oxlint/README.md](./tooling/oxlint/README.md) |
 
-[Comptes et profils Alchemy](https://alchemy.run/cloudflare/accounts-and-tokens/) · [État partagé Alchemy](https://alchemy.run/state-store/)
-
-## Déploiement par GitHub Actions
-
-Un push sur `main`, y compris un merge, lance le déploiement `prod` après `pnpm check` et `pnpm deploy:dry`. Le workflow **Deploy** permet aussi de lancer `staging` manuellement.
-
-Ajoutez `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID` aux secrets du dépôt. Pour `prod`, ajoutez le secret `BETTER_AUTH_SECRET_PROD` et la variable `BETTER_AUTH_URL_PROD` avec l’origine HTTPS de `rondyr-prod`, `https://rondyr.basaltbytes.com` pour le dépôt Basaltbytes. Le domaine doit appartenir à une zone active du même compte Cloudflare. Pour la préproduction, utilisez `BETTER_AUTH_SECRET_STAGING` et `BETTER_AUTH_URL_STAGING`. Le jeton d’installation est facultatif et se configure via `RONDYR_SETUP_TOKEN_PROD` ou `RONDYR_SETUP_TOKEN_STAGING`.
-
-Créez un jeton Cloudflare de compte dédié à la CI. Sur le compte du Worker, attribuez `Workers Scripts Write`, `D1 Write`, `Queues Write`, `Account Settings Read` et la permission **Account Secrets Store Edit** (`Secrets Store Write` dans Alchemy). Pour la zone du domaine personnalisé, attribuez `Zone Read` et `Workers Routes Write`. La permission d’édition du Secrets Store permet à Alchemy de lier le secret d’état à son Worker de prévisualisation. [Permissions Secrets Store](https://developers.cloudflare.com/secrets-store/access-control/)
-
-Initialisez une fois le stockage d’état Alchemy sur le compte Cloudflare avant le premier déploiement non interactif.
+## Development
 
 ```sh
-pnpm exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts
+pnpm check         # lint, format, types, tests in workerd, Knip, migrations
+pnpm deploy:dry    # build, validate the bundle with Wrangler, check its size budget
 ```
 
-Sans `CLOUDFLARE_API_TOKEN`, GitHub Actions exécute les checks et indique que le déploiement a été ignoré.
+CI runs both commands without Cloudflare credentials. The tests build the Worker first and run it in workerd with D1, the queues, and the Durable Objects emulated.
+
+After a schema change in `src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `database/migrations`. `pnpm dev:alchemy` runs the Alchemy stack locally with its own state and D1 database, as an alternative to `pnpm dev`.
+
+## License
+
+No license has been chosen yet, so all rights are reserved for now. The choice is tracked in [#21](https://github.com/basaltbytes/rondyr/issues/21).
+
+## Author
+
+Rondyr is built by [Basaltbytes](https://basaltbytes.com).

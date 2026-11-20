@@ -1,359 +1,375 @@
-# Rondyr — Architecture technique
+# Rondyr : architecture technique
 
-> **Nom du projet :** **Rondyr**  
-> **Signature :** *The gatekeeper for your forms.*  
-> **Statut :** proposition d'architecture pour une v0.1  
-> **Objectif :** alternative à Formspree, multi-organisation, déployable dans **son propre compte Cloudflare**, avec classification anti-spam contextuelle, escalade IA facultative et livraison email/webhook.  
-> **Principes :** simplicité du déploiement, fiabilité, confidentialité, coût prévisible, portabilité du métier.
+> **Signature :** *The gatekeeper for your forms.*
+> **Statut :** v0.1 en cours, document mis à jour le 20 novembre 2026.
+> **Production :** `https://rondyr.basaltbytes.com` (stage `prod`).
+
+Ce document décrit ce qui est construit et ce qui reste à faire pour la v0.1. Chaque écart entre les deux renvoie à une issue GitHub. La section 12 donne l’ordre des travaux.
 
 ## 1. Vision et périmètre
 
-**Rondyr** est un backend de formulaires open source, auto-hébergeable sur Cloudflare, qui protège l'entrée des messages sans perdre les demandes légitimes. Son nom évoque le **rondier** : un gardien qui surveille, filtre et laisse passer les bonnes personnes. La marque reste indépendante des choix de modèles IA ou de fournisseurs.
+Rondyr est un backend de formulaires que l’on déploie dans son propre compte Cloudflare. Il reçoit les messages d’un site, écarte les indésirables sans supprimer les demandes réelles, et garde tout message douteux en quarantaine pour une revue humaine. Le nom vient du rondier, le gardien qui filtre les entrées.
 
-**Positionnement (EN) :** *Open-source form backend with intelligent spam protection.*  
-**Accroche (EN) :** *The gatekeeper for your forms.*
+Un administrateur déploie l’application, crée une organisation, puis des formulaires. Chaque formulaire a une URL publique utilisable depuis un formulaire HTML ou une application. Une organisation peut décrire son activité (par exemple « studio de poterie proposant des ateliers ») ; le classificateur s’en sert pour juger si un message est lié à cette activité.
 
-Un administrateur déploie l'application dans son compte Cloudflare, crée une ou plusieurs organisations, puis des formulaires. Chaque formulaire expose un endpoint public utilisable depuis un site statique, une application ou un formulaire HTML classique.
+Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du métier de l’organisation, et les données restent dans l’infrastructure de l’opérateur.
 
-Chaque organisation peut définir :
+### État de la v0.1
 
-- un **contexte métier** facultatif (ex. « studio de poterie proposant des ateliers ») ;
-- ses paramètres de filtrage et ses quotas ;
-- un modèle secondaire facultatif pour les cas ambigus ;
-- les destinations des messages acceptés : **inbox, email et/ou webhooks** ;
-- la politique de conservation des messages.
+| Capacité | État | Suivi |
+| --- | --- | --- |
+| Déploiement Alchemy, stages `staging` et `prod`, CI | Fait | #12 pour un compte vierge |
+| Premier compte, sessions, inscriptions fermées | Fait | |
+| Organisations et formulaires | Création seulement | #8, #11 |
+| Réception JSON et `application/x-www-form-urlencoded` | Fait, sauf JSON depuis un navigateur | #19 |
+| Limites à l’entrée | Taille, schéma, 30 par minute et par formulaire | #7 |
+| Enregistrement durable et outbox | Fait | #20 |
+| Classification et quarantaine | Fait, seuils fixes | #6, #15 |
+| Inbox et revue humaine | Fait | #9 |
+| Livraison par e-mail et webhook | À faire | #5, #13, #14, #16 |
+| Mesures et reprise après incident | À faire | #10 |
 
-**Différenciation de Rondyr :** filtrage *context-aware* dans une infrastructure intégralement contrôlée par l'opérateur, sans dépendre d'un SaaS de formulaires.
+Tant que #5 n’est pas livré, un message accepté n’est consultable que dans l’Inbox.
 
-### Inclus dans la v0.1
+### Hors périmètre de la v0.1
 
-- Déploiement autonome via Alchemy sur Cloudflare.
-- Organisations, utilisateurs administrateurs, formulaires et clés/secrets nécessaires.
-- Réception HTML (`application/x-www-form-urlencoded`) et JSON ; prise en charge `multipart/form-data` **sans fichiers** si nécessaire.
-- Limitation des abus : taille, validation, honeypot, quotas, rate limiting, Turnstile optionnel.
-- Enregistrement durable des soumissions **avant** le traitement IA.
-- Classification primaire avec Jev (spam + pertinence métier), puis escalade optionnelle.
-- Quarantaine et revue humaine ; restauration et livraison des messages validés.
-- Inbox d'administration, emails et webhooks signés, historique des livraisons.
-- Réessais, reprise après incident, déduplication, audit et tests automatisés.
-
-### Hors périmètre initial
-
-Form builder, CRM, pièces jointes, automatisations visuelles, moteur de templates avancé, facturation SaaS, analytics marketing et modèle IA entraîné sur les données clients.
+Form builder, CRM, pièces jointes, automatisations visuelles, moteur de templates, facturation SaaS, analytics marketing et modèle entraîné sur les données des clients.
 
 ## 2. Stack et conventions
 
 | Responsabilité | Choix |
 | --- | --- |
-| Runtime, API, assets | **Cloudflare Workers** (une application déployée) |
-| Domaine, erreurs, dépendances, concurrence | **Effect** et `@effect/platform` / Effect HTTP |
-| Contrats d'entrée/sortie | **Effect Schema** |
-| Infrastructure as Code | **Alchemy** |
-| Persistance | **Cloudflare D1** et **Drizzle ORM** |
-| Authentification du dashboard | **Better Auth**, sessions en D1 |
-| Asynchronisme | **Cloudflare Queues** et Cron Triggers |
-| Classification primaire | **Jev** via Workers AI / AI Gateway selon l'intégration retenue |
-| Escalade | Adaptateur configurable vers un LLM Cloudflare ou externe via AI Gateway |
-| Dashboard | **React + Vite**, servi par le Worker |
-| Tests | **Vitest** + runtime Workers et adaptateurs de test Effect |
-| Pièces jointes (ultérieurement) | **R2** |
+| Runtime, API, assets | Un seul Cloudflare Worker, `rondyr-<stage>` |
+| Métier, erreurs, concurrence | Effect 4 et Effect Schema |
+| Modèle de domaine | Alchemy Domain (`@alchemy.run/domain`) : agrégat, politique, saga et projection hébergés dans des Durable Objects |
+| Infrastructure as Code | Alchemy 2 (`alchemy-run.ts`) |
+| Persistance des messages et de la configuration | Cloudflare D1 |
+| Schéma et migrations | Drizzle Kit ; les requêtes d’exécution sont du SQL préparé décodé par Effect Schema (#23) |
+| Authentification du dashboard | Better Auth, sessions en D1 |
+| Asynchronisme | Cloudflare Queues et un Cron chaque minute |
+| Classificateur | Jev (`typesafe/jev`, binding Workers AI) ou OpenAI Decisions (`openai/decisions`, via AI Gateway), choisi par stage |
+| Dashboard | React 19 et Vite, servi comme assets du Worker |
+| Qualité | Oxlint avec un plugin local, Oxfmt, `effect-tsgo`, Knip, Vitest dans workerd |
 
-**Convention de nommage :** **tous les fichiers et dossiers créés par le projet sont en kebab-case**, par exemple `classification-service.ts` et `alchemy-run.ts`. Les noms des types et valeurs TypeScript suivent, eux, les conventions du langage. Les fichiers imposés par l'écosystème (`package.json`, etc.) conservent leurs noms obligatoires.
-
-Pour le point d'entrée Alchemy, utiliser `alchemy-run.ts` et préciser le chemin de configuration dans le script de déploiement plutôt que de conserver le nom conventionnel `alchemy.run.ts`.
+Les fichiers et dossiers du projet sont en kebab-case, sauf les noms imposés par les outils. Les fichiers du domaine ont un suffixe par type : `.aggregate.ts`, `.command.ts`, `.event.ts`, `.policy.ts`, `.saga.ts`, `.projection.ts`, `.query.ts`, `.external.ts`, `.api.ts`. Les colonnes SQL sont en `snake_case`.
 
 ### Principes de conception
 
-1. **Monolithe modulaire :** pas de microservices ; un Worker avec des modules de domaine isolés.
-2. **Effect-first :** les cas d'usage orchestrent des services Effect (`Context`, `Layer`, erreurs typées).
-3. **Adapters remplaçables :** le domaine ne dépend ni de D1, ni de Jev, ni d'Alchemy.
-4. **IA non destructive :** une incertitude, une erreur technique ou un contenu hors sujet ne provoque pas une suppression automatique.
-5. **Au moins une fois + idempotence :** ne jamais supposer que Queues livre un événement exactement une fois.
-6. **Coût borné :** limitation des volumes et du nombre d'appels IA par formulaire et organisation.
+1. **Monolithe modulaire.** Un Worker, pas de microservices.
+2. **Domaine isolé de la plateforme.** `src/domain` n’importe ni `cloudflare:*`, ni Drizzle, ni l’IaC Alchemy ; une règle Oxlint le vérifie. Il dépend d’Effect et de l’API de modélisation d’Alchemy Domain.
+3. **Ports et adaptateurs.** Les ports déclarent les services Effect et les adaptateurs fournissent les layers, composés dans `src/worker-implementation.ts`. Ce principe n’est respecté que pour l’authentification et l’Inbox ; les routes et les jobs appellent encore les adaptateurs D1 directement (#23).
+4. **IA non destructive.** Un doute, une erreur technique ou un message hors sujet mène à la quarantaine, jamais à une suppression.
+5. **Au moins une fois, avec idempotence.** Queues peut remettre deux fois le même message ; chaque consumer le tolère.
+6. **Coût borné.** Les protections s’appliquent avant l’appel au modèle. Les plafonds par organisation restent à faire (#7).
 
 ## 3. Parcours d'une soumission
 
 ```mermaid
 flowchart TD
-  A[POST public /f/:form-id] --> B[Validation et protection anti-abus]
-  B --> C{Requête acceptable ?}
-  C -->|Non| D[Réponse 4xx ou 429]
-  C -->|Oui| E[Transaction D1 : submission + outbox]
-  E --> F[202 Accepted + identifiant]
-  E --> G[Publication de l'événement]
-  G --> H[Queue de classification]
-  H --> I[Jev : spam + pertinence]
-  I --> J{Décision}
-  J -->|Acceptée| K[Création des livraisons]
-  J -->|Incertaine| L{Escalade activée ?}
-  J -->|Spam probable| M[Quarantaine]
-  L -->|Oui| N[LLM secondaire]
-  L -->|Non| M
-  N -->|Acceptée| K
-  N -->|Incertaine ou spam| M
-  K --> O[Queue de livraison]
-  O --> P[Email, webhook, inbox]
-  M --> Q[Revue humaine]
-  Q -->|Approuvée| K
-  Q -->|Écartée| R[Conservation ou purge selon la politique]
-  S[Cron de reprise outbox] --> G
+  A["POST /f/:public-id"] --> B["Validation : type, taille, champs, plafond"]
+  B -->|refus| C["400, 404, 413, 415, 429"]
+  B --> D["Lot D1 : submissions + outbox_events"]
+  D --> E["202 et submission-id"]
+  F["Cron, chaque minute"] --> G["Revendication des événements non remis"]
+  G --> H["classification-queue"]
+  H --> I["Consumer : commande RequestClassification"]
+  I --> J["Agrégat Submission (Durable Object)"]
+  J --> K["Saga ClassifySubmission"]
+  K --> L["Classificateur : Jev ou OpenAI Decisions"]
+  L --> M{"Règles de décision"}
+  M -->|aucun motif| N["SubmissionAccepted"]
+  M -->|motif de revue ou échec| O["SubmissionQuarantined"]
+  O --> P["Revue humaine"]
+  P -->|accepter| N
+  P -->|archiver| Q["SubmissionDismissed"]
+  J --> R["Projection Inbox vers D1"]
+  N -.->|à faire, #5| S["Livraisons : e-mail, webhook"]
 ```
 
-**Contrat important :** `202 Accepted` signifie que la soumission a été **enregistrée durablement dans D1** ; cela ne signifie ni que l'IA a terminé, ni qu'une notification a été livrée. Une requête rejetée **avant** sa création dans D1 n'entre pas dans cette garantie.
+`202 Accepted` signifie que D1 a enregistré la soumission et son événement outbox dans la même transaction. La réponse ne dit rien de la classification ni d’une livraison. Une requête refusée avant cet enregistrement n’entre pas dans la garantie, y compris un `429`.
 
-Pour les formulaires HTML, prévoir une redirection de succès configurée ou une page de confirmation, tout en conservant la même sémantique interne.
+Un envoi `application/x-www-form-urlencoded` dont l’en-tête `Accept` contient `text/html` reçoit une page de confirmation en HTML avec le statut `202`. La redirection de succès par formulaire est suivie dans #8.
 
 ## 4. Fiabilité : transactional outbox
 
-Cloudflare Queues délivre les messages *at least once* ; D1 et la publication d'une Queue ne forment pas une seule transaction distribuée.
+D1 et Queues ne partagent pas de transaction, et Queues remet les messages au moins une fois. Rondyr écrit donc l’intention de publier dans D1, puis la rejoue jusqu’à ce que le modèle de domaine l’ait prise en charge.
 
-- Dans **une transaction D1**, insérer la soumission et son événement `submission-received` dans `outbox-events`.
-- Ne répondre `202` que si cette transaction est confirmée.
-- Publier ensuite vers la Queue concernée, directement ou par un dispatcher.
-- Exécuter périodiquement un **Cron** qui retrouve les événements non publiés et les republie.
-- Utiliser une **revendication atomique** des événements (lease/expiration ou transition conditionnelle) pour réduire les publications concurrentes.
-- Considérer malgré tout que deux publications identiques sont possibles ; les consumers doivent être **idempotents**.
-- Acquitter le message de classification après l’enregistrement durable de `ClassificationRequested` dans l’agrégat. La saga reprend l’analyse et enregistre son résultat. Le Cron republie les événements dont la remise au modèle reste en attente.
-- Mettre en place retry avec backoff, nombre maximum de tentatives, **dead-letter queue** et réexécution manuelle.
+### Ingestion
 
-Deux Queues principales :
+`receiveSubmission` exécute un `db.batch` de deux instructions : l’insertion dans `submissions`, conditionnée à l’existence du formulaire et au plafond de 30 messages par minute, puis l’insertion dans `outbox_events`. D1 exécute le lot comme une transaction. Un test force l’échec de la seconde insertion avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
 
-1. `classification-queue` : première classification, puis escalade si nécessaire.
-2. `delivery-queue` : email et webhooks ; une destination défaillante ne bloque pas les autres.
+### Publication
 
-**Limite assumée :** un webhook ou fournisseur email peut recevoir deux tentatives, notamment après une interruption réseau. Chaque livraison possède un identifiant stable, transmis au destinataire pour permettre la déduplication. On promet une **reprise fiable**, pas un *exactly once* de bout en bout.
+`outbox_events` contient une ligne par soumission, avec trois colonnes d’état : `lease_until`, `published_at` et `handed_off_at`. Chaque minute, le Cron revendique jusqu’à 100 événements non remis dont le bail a expiré et qui n’ont jamais été publiés, ou qui l’ont été depuis plus de 5 minutes. Il pose un bail de 60 secondes, envoie le lot à `classification-queue`, puis renseigne `published_at`.
 
-Le modèle de classification et de revue tourne dans les Durable Objects du Worker applicatif via Alchemy Domain. D1 conserve les champs soumis et la projection de statut pour la boîte de réception. Les événements du domaine contiennent les identifiants et les données de décision nécessaires à l’audit.
+Le Cron est aujourd’hui le seul éditeur : un message attend jusqu’à une minute avant d’entrer dans la file. #20 ajoute une publication dès la réponse `202`.
+
+### Remise au modèle
+
+Le consumer lit des lots de 10 messages. Pour chacun, il vérifie que l’événement n’est pas déjà remis, envoie `RequestClassification` à l’agrégat avec le `commandId` `submission-received:<id>`, puis renseigne `handed_off_at` et acquitte le message. Un échec relance le message ; après 3 reprises, Queues le place dans la DLQ.
+
+Deux mécanismes absorbent les doublons : Alchemy Domain ignore une commande dont le `commandId` est déjà connu, et l’agrégat n’émet `ClassificationRequested` que depuis l’état `Unrecorded`.
+
+### Classification durable
+
+La politique `Classification` démarre la saga `ClassifySubmission` à chaque `ClassificationRequested`. La saga appelle le classificateur jusqu’à 3 fois, avec 10 puis 30 secondes d’attente et un délai maximal de 12 secondes par appel. Une erreur non réessayable ou l’épuisement des tentatives produit `SubmissionQuarantined` avec le motif `classification-error`. Les étapes sont des activités durables : un redémarrage du Durable Object reprend la saga là où elle s’est arrêtée.
+
+### Limites connues
+
+- L’outbox ne compte pas ses tentatives. Un événement que le consumer ne parvient jamais à remettre est republié toutes les 5 minutes sans alerte (#10).
+- La DLQ de classification n’a pas de consumer (#10).
+- La saga n’enregistre que le résultat final ; les tentatives échouées ne laissent pas de trace dans les événements.
+
+### Livraison
+
+`delivery-queue` est provisionnée et liée au Worker, sans producteur ni consumer. #5 applique le même schéma : une ligne `deliveries` par message et par destination, un identifiant stable transmis au destinataire, une mise en file rejouée depuis D1. Un webhook ou un fournisseur d’e-mail peut recevoir deux tentatives après une coupure réseau ; Rondyr promet une reprise fiable et un identifiant de déduplication, pas un envoi unique de bout en bout.
 
 ## 5. Classification intelligente
 
-### Deux dimensions indépendantes
+Le classificateur évalue deux dimensions indépendantes. Le **spam** couvre le marketing non sollicité, le hameçonnage, les sollicitations de masse et les envois automatisés. La **pertinence** mesure le lien entre le message et l’activité décrite par l’organisation ; sans contexte métier, la question n’est pas posée.
 
-- **Spam** : marketing non sollicité, tentative de fraude, robots, sollicitations massives, etc.
-- **Pertinence métier** : proximité de la demande avec l'activité décrite par l'organisation.
+Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant votre atelier » est authentique même s’il ne parle pas de poterie.
 
-Un message hors sujet **n'est pas automatiquement un spam** : « J'ai trouvé vos clés devant votre atelier » peut être authentique même s'il ne demande aucun cours de poterie.
+### Règles de décision
 
-### Politique de décision configurable
+`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 1`.
 
-Le classificateur retourne des scores et leur contexte (modèle, version, règles, date). L'application évalue ces scores avec des **seuils calibrés** sur un corpus de test. Les probabilités renvoyées par le modèle ne sont pas présumées être des mesures parfaitement calibrées de certitude.
-
-| Situation | Traitement par défaut |
+| Condition | Résultat |
 | --- | --- |
-| Spam peu probable, requête légitime | Accepter et déclencher les destinations |
-| Cas ambigu | Lancer le second modèle **si activé**, sinon quarantaine |
-| Spam probable | Quarantaine, sans suppression |
-| Hors sujet mais non-spam | Accepter ou demander revue selon la politique de l'organisation |
-| Jev ou second modèle indisponible | Réessayer ; après épuisement des tentatives, revue manuelle avec motif `classification-error` |
+| Spam ≥ 0,70 | Quarantaine, motif `probable-spam` |
+| Spam ≥ 0,30 | Quarantaine, motif `ambiguous` |
+| Contexte configuré et pertinence < 0,35 | Quarantaine, motif `low-relevance` |
+| Aucun motif | Acceptation automatique |
+| Classificateur en échec | Quarantaine, motif `classification-error` |
 
-Le **contexte métier reste optionnel**. Sans contexte, la classification de pertinence est désactivée et le spam reste vérifié.
+Ces seuils viennent d’une première estimation, pas d’une mesure. Les deux classificateurs les partagent alors que rien ne montre que leurs scores sont comparables. #6 ajoute un corpus de test, des seuils par classificateur et une politique par organisation ; #15 ajoute l’escalade facultative des cas `ambiguous` vers un second modèle.
+
+Chaque événement de décision enregistre les scores, l’identifiant du modèle et la version des règles.
+
+### Classificateurs
+
+`RONDYR_CLASSIFIER` choisit le classificateur pour tout un stage : `jev` par défaut, ou `openai`. Les deux sont des adaptateurs du système externe `Classifier` déclaré dans le domaine.
+
+- **Jev** reçoit les champs et le contexte dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
+- **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
+
+`RONDYR_AI_GATEWAY=true` crée un second gateway que le Worker n’utilise pas (#22). En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
 
 ### Sécurité du pipeline IA
 
-- Ne jamais interpréter le texte d'un visiteur comme une instruction système.
-- Encadrer le texte soumis comme donnée non fiable ; ne jamais lui permettre de modifier les seuils ou destinations.
-- Fixer une longueur maximale au contexte et aux messages envoyés au modèle.
-- Conserver le minimum utile pour auditer une décision : résultat, scores, identifiant/version du modèle, version des règles, horodatage.
-- Désactiver ou limiter la journalisation des corps de requête/prompts dans les passerelles et observabilités.
-- Plafonner les coûts : appels IA, longueur d'entrée, escalades et messages par organisation.
+Le texte d’un visiteur est transmis comme donnée à évaluer, dans un champ distinct des instructions, et il n’a aucun moyen de modifier les seuils. La taille du corps (16 Kio) borne l’entrée du modèle et le contexte métier est tronqué à 2 000 caractères. L’adaptateur OpenAI désactive la collecte de logs et le cache du gateway à chaque appel. Les plafonds d’appels par organisation restent à faire (#7).
 
-Le choix de Jev doit rester **un adaptateur**, et non une dépendance structurante du domaine : un autre classificateur peut prendre sa place sans migration de la logique métier.
+## 6. Modèle de données
 
-## 6. Modèle de données D1 (initial)
+L’état est réparti entre deux stockages. D1 contient la configuration, le contenu des messages et la vue de l’Inbox. Les Durable Objects d’Alchemy Domain contiennent le flux d’événements de chaque soumission, qui fait foi pour son statut.
 
-| Table | Responsabilité / contraintes principales |
+### Tables D1
+
+| Table | Contenu |
 | --- | --- |
-| `organizations` | Nom, configuration, quotas, politique de rétention |
-| `organization-members` | Utilisateur, organisation, rôle ; accès autorisé explicitement |
-| `forms` | Organisation, identifiant public, statut, contexte métier, paramètres |
-| `form-origins` | Origines autorisées pour le navigateur ; **pas** une authentification |
-| `submissions` | Identifiant stable, `organization-id`, `form-id`, données, statut, date |
-| `classification-attempts` | Modèle, version, scores, résultat, erreur éventuelle |
-| `notification-targets` | Destinations configurées par formulaire, statut, options |
-| `deliveries` | Destination, identifiant idempotent, tentatives, état, erreur |
-| `outbox-events` | Type d'événement, charge utile minimale, publication, lease |
-| `audit-events` | Modifications administratives, revue humaine, sans contenus sensibles inutiles |
+| `organizations` | `id`, `name` |
+| `organization_members` | `(organization_id, user_id)`, sans rôle |
+| `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context` |
+| `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at` |
+| `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
+| `submission_inbox` | `submission_id`, `version`, `status`, `reason` ; écrite par la projection |
+| `auth_*` | Comptes, sessions, vérifications et limites de débit de Better Auth |
 
-**Remarque SQL :** la convention des noms de fichiers reste en kebab-case. Pour les colonnes SQL, privilégier `snake_case` (ex. `organization_id`) pour rester idiomatique avec Drizzle et SQL ; les noms logiques ci-dessus décrivent les entités, pas un schéma SQL définitif.
+Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire.
 
-Toutes les requêtes administratives **doivent être bornées par l'organisation autorisée** ; un ID public ne suffit jamais à accéder à une soumission. Ajouter clés étrangères, index sur `(organization_id, form_id, created_at)` et contraintes d'unicité pour l'idempotence.
+### Événements de l’agrégat `Submission`
 
-### États suggérés
+| Événement | Données |
+| --- | --- |
+| `ClassificationRequested` | Organisation |
+| `SubmissionQuarantined` | Organisation, motif, scores éventuels, version des règles |
+| `SubmissionAccepted` | Organisation, puis scores et version des règles (automatique) ou relecteur (manuelle) |
+| `SubmissionDismissed` | Organisation, relecteur |
 
-- `submissions` : `received`, `classifying`, `accepted`, `quarantined`, `classification-error`, `archived`.
-- `deliveries` : `pending`, `processing`, `delivered`, `retrying`, `failed`.
-- Une validation manuelle crée les livraisons **une seule fois** si elles n'existent pas déjà.
+L’agrégat passe de `Unrecorded` à `Classifying`, puis à `Quarantined` ou `Accepted`. Seul un message `Quarantined` peut être accepté ou archivé à la main. La projection `Inbox` écrit le dernier statut dans `submission_inbox`, protégée par le numéro de séquence de l’événement. Une soumission sans ligne de projection a le statut `received`.
+
+Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. `classification-error` est un motif de quarantaine, pas un statut.
+
+Le contenu des messages n’existe que dans `submissions.fields`. Les événements ne contiennent que des identifiants, des scores et l’identifiant du relecteur, ce qui limite une purge aux lignes D1 (#9).
+
+### Tables à venir
+
+- `notification_targets` et `deliveries` (#5).
+- `form_origins` (#19).
+- Rôle dans `organization_members` et invitations (#11).
+- Statut des formulaires (#8), quotas (#7) et durées de conservation (#9).
+
+Les tables `classification-attempts` et `audit-events` du document initial ne sont pas prévues : le flux d’événements de l’agrégat enregistre les décisions et leurs auteurs.
 
 ## 7. API et expérience développeur
 
 ### API publique
 
-- `POST /f/:form-id` : réception des soumissions.
-- `GET /health` : santé applicative sans fuite de détails internes.
+`POST /f/:public-id` accepte `application/json` et `application/x-www-form-urlencoded`. Le corps pèse au plus 16 Kio et contient de 1 à 32 champs texte ; un nom de champ a de 1 à 100 caractères et une valeur au plus 4 000. Un objet JSON imbriqué, une valeur non textuelle ou un nom de champ répété sont refusés.
 
-Supporter `application/json` et `application/x-www-form-urlencoded`, taille et champs bornés, noms de champs arbitraires limités par configuration ; une réponse JSON comporte `submission-id` et `status` pour les intégrations API.
+| Statut | Cas |
+| --- | --- |
+| `202` | Soumission enregistrée ; le JSON contient `submission-id` et `status: "received"` |
+| `400` | Corps ou champs invalides |
+| `404` | Formulaire inconnu |
+| `413` | Corps de plus de 16 Kio |
+| `415` | Autre type de contenu |
+| `429` | Plus de 30 soumissions en une minute sur ce formulaire, avec `Retry-After: 60` |
+| `503` | D1 indisponible |
 
-### API d'administration (authentifiée)
+Les réponses ne révèlent rien de la décision anti-spam. La route ne répond pas aux prérequêtes CORS : un `fetch` JSON depuis un navigateur sur une autre origine échoue (#19). `GET /health` renvoie `{"status":"ok"}`.
 
-- Organisations : créer, éditer, inviter, gérer les rôles.
-- Formulaires : créer, éditer, suspendre, configurer contexte et destinations.
-- Soumissions : consulter, filtrer, rechercher, approuver, classer, exporter/supprimer.
-- Livraisons : voir les tentatives, relancer, tester les destinations.
+### API d’administration
 
-La v0.1 n'a pas besoin de publier une API d'administration exhaustive à des clients tiers : elle sert d'abord au dashboard.
+Elle sert le dashboard et n’est pas publiée pour des clients tiers.
+
+| Route | Rôle |
+| --- | --- |
+| `POST /api/setup` | Crée le premier compte, avec le jeton d’installation |
+| `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Session Better Auth |
+| `GET /api/organizations` | Organisations du compte et leurs formulaires |
+| `POST /api/organizations` | Crée une organisation et son premier formulaire |
+| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `after`), 25 messages par page |
+| `GET /api/organizations/:organizationId/submissions/:submissionId` | Détail d’un message |
+| `POST /api/organizations/:organizationId/submissions/:submissionId/approve` ou `/dismiss` | Décision de revue |
+
+Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`.
+
+Restent à ajouter : l’administration des formulaires (#8), les membres et les rôles (#11), les destinations et l’historique des livraisons (#5, #16), la recherche et l’export (#9).
 
 ## 8. Défenses et confidentialité
 
 ### Entrée publique
 
-- Limites strictes de taille, de champs, de fréquence et de consommation par formulaire/organisation.
-- Honeypot et Turnstile **optionnels** ; toujours valider le token Turnstile côté serveur lorsqu'activé.
-- CORS pour l'intégration navigateur, sans le traiter comme une défense contre l'abus (un client non-navigateur ignore CORS).
-- Rate limiting natif Cloudflare utile mais **approximatif** ; combiner avec quotas persistants / mécanismes adaptés si un contrôle strict est requis.
-- Ne pas révéler les décisions anti-spam détaillées dans les réponses publiques.
+En place : limite de taille, schéma des champs, refus des noms `__proto__`, `constructor` et `prototype`, et plafond de 30 soumissions par minute et par formulaire, calculé dans D1 par l’instruction d’insertion elle-même.
+
+Ce plafond est commun à tous les visiteurs d’un formulaire, donc un seul client peut le remplir et faire refuser les messages légitimes. #7 ajoute une limite par adresse IP, le honeypot, Turnstile et les plafonds par organisation. Le CORS (#19) sert l’intégration navigateur et ne protège pas contre l’abus, puisqu’un client hors navigateur l’ignore.
 
 ### Authentification et isolation
 
-- Première installation : création explicite du compte administrateur ; inscriptions publiques fermées.
-- Sessions sécurisées, rôles par organisation, contrôles d'accès systématiques.
-- **Tests de non-divulgation entre organisations** pour toutes les routes et toutes les opérations.
+- Les inscriptions publiques sont fermées. `/api/setup` exige `RONDYR_SETUP_TOKEN`, comparé en temps constant, et D1 refuse la création d’un second compte par ce chemin. Le jeton se retire après l’installation.
+- Les routes d’authentification et d’administration refusent toute requête dont l’origine diffère de `BETTER_AUTH_URL`. Le cookie de session est `Secure`, `HttpOnly` et `SameSite=Lax`.
+- Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
+- Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Un test couvre la lecture et l’écriture depuis un compte d’une autre organisation.
+
+Tout membre a aujourd’hui tous les droits sur son organisation, et tout compte connecté peut en créer une (#11). Le dashboard est servi sans CSP ni protection contre l’inclusion dans une iframe (#24).
 
 ### Sorties et secrets
 
-- Webhooks HTTPS, URLs validées, redirects interdits ou revérifiés, protection SSRF, filtrage des destinations dangereuses.
-- Webhooks signés HMAC avec timestamp, identifiant unique et politique de rotation de secret.
-- Identifiants fournisseurs et clés API conservés dans les **secrets Workers**, pas dans le front-end.
-- Pour des secrets propres à chaque organisation, prévoir du chiffrement applicatif et une stratégie de rotation.
-- Les emails sortants ne doivent pas transformer les entrées visiteurs en en-têtes non validés.
+Aucune sortie n’existe encore. Les exigences sont fixées dans les issues : HTTPS, refus des destinations privées et des redirections, signature HMAC avec horodatage pour les webhooks (#13), validation des valeurs placées dans les en-têtes d’e-mail (#14). Les secrets de la plateforme sont des secrets du Worker ; un secret propre à une organisation est chiffré avant son écriture dans D1.
 
 ### Données personnelles
 
-- Rétention configurable pour messages acceptés et quarantaine ; purge planifiée et suppression à la demande.
-- Export/suppression en tenant compte de l'historique de livraison et des sauvegardes.
-- Logs techniques sans corps de message par défaut ; pas de prompts sensibles dans les logs AI Gateway.
-- Documenter le traitement des données et les sous-traitants ; auto-hébergement ne supprime pas les obligations RGPD.
+Le contenu des messages est dans D1, et les journaux techniques n’en contiennent pas : le consumer n’écrit que le type de l’erreur. La conservation est illimitée tant que #9 n’a pas ajouté les durées de rétention, la purge planifiée, l’export et la suppression à la demande. L’auto-hébergement ne dispense pas l’opérateur de ses obligations RGPD ; la documentation doit lister les sous-traitants, dont le fournisseur du modèle.
 
-## 9. Arborescence proposée — uniquement kebab-case
+## 9. Arborescence
 
 ```text
 .
-├── alchemy-run.ts
-├── package.json
+├── alchemy-run.ts                  # pile Alchemy : D1, files, consumer, gateway
+├── wrangler.json                   # développement local, tests et dry-run
 ├── drizzle-config.ts
-├── architecture.md
+├── database/migrations/            # migrations et snapshots Drizzle
 ├── src/
-│   ├── domain/
-│   │   ├── submission.ts
-│   │   ├── classification.ts
-│   │   ├── delivery.ts
-│   │   ├── organization.ts
-│   │   ├── form.ts
-│   │   └── domain-errors.ts
+│   ├── worker.ts                   # entrée Wrangler et workerd
+│   ├── alchemy-worker.ts           # ressource Worker et bindings par stage
+│   ├── worker-implementation.ts    # composition des layers, fetch, queue, scheduled
+│   ├── domain/submissions/         # agrégat, commandes, événements, politique, saga,
+│   │                               # projection, requêtes, ReviewApi, schémas partagés
 │   ├── ports/
-│   │   ├── submission-repository.ts
-│   │   ├── classification-provider.ts
-│   │   └── notification-provider.ts
-│   ├── application/
-│   │   ├── accept-submission.ts
-│   │   ├── classify-submission.ts
-│   │   ├── prepare-deliveries.ts
-│   │   ├── deliver-notification.ts
-│   │   └── recover-outbox.ts
-│   ├── adapters/
-│   │   ├── database/
-│   │   │   ├── d1-repository.ts
-│   │   │   └── database-schema.ts
-│   │   ├── ai/
-│   │   │   ├── jev-classifier.ts
-│   │   │   └── llm-classifier.ts
-│   │   ├── email/
-│   │   │   └── email-provider.ts
-│   │   └── webhook/
-│   │       └── webhook-provider.ts
-│   ├── http/
-│   │   ├── public-routes.ts
-│   │   ├── admin-routes.ts
 │   │   └── authentication.ts
-│   ├── jobs/
-│   │   ├── classification-consumer.ts
-│   │   ├── delivery-consumer.ts
-│   │   └── recovery-cron.ts
-│   └── worker.ts
-├── dashboard/
-│   └── src/
-│       ├── routes/
-│       ├── components/
-│       └── main.tsx
-├── database/
-│   └── migrations/
-└── tests/
-    ├── domain/
-    ├── integration/
-    └── fixtures/
+│   ├── adapters/
+│   │   ├── ai/                     # classifier, jev, openai-decisions
+│   │   ├── authentication/         # better-auth, provider
+│   │   └── database/               # schémas Drizzle, d1, intake, inbox, inbox-setup
+│   ├── http/                       # public, submission, authentication, review
+│   └── jobs/
+│       └── submission-outbox.ts    # publication par le Cron et consumer de file
+├── dashboard/src/
+│   ├── routes/
+│   ├── features/                   # authentication, inbox
+│   └── lib/                        # clients HTTP
+├── scripts/                        # doctor, worker-budget, setup-owner
+├── tooling/oxlint/                 # règles de lint locales et leurs tests
+└── tests/integration/              # fixtures partagées
 ```
 
-L'emplacement final des fichiers générés par les frameworks peut nécessiter des exceptions imposées par leurs outils ; ne pas introduire arbitrairement de nouveaux noms PascalCase ni de mélange de styles.
+Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le dashboard importe les schémas du domaine par l’alias `@rondyr/contracts`, ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
 
 ## 10. Tests et critères de qualité
 
-### Tests de domaine
+`pnpm check` enchaîne le lint, le format, le typage, les tests, Knip, la vérification des migrations et `scripts/doctor.mjs`. Les tests d’intégration tournent dans workerd contre le Worker construit, avec D1, les files et les Durable Objects émulés.
 
-- Spam, message légitime, message indirectement lié, hors sujet, langues multiples.
-- Seuils exacts et comportement en cas de score manquant ou non valide.
-- Échec du modèle et passage à `classification-error` avec revue humaine.
-- Autorisations et invariants des transitions d'état.
+### Couverture actuelle
 
-### Tests d'intégration Workers / D1 / Queues
+- Stories du modèle : seuils, doublon de `RequestClassification`, trois échecs du classificateur, revue autorisée et refusée.
+- Décodage des réponses de Jev et d’OpenAI Decisions, y compris les réponses invalides.
+- Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.
+- Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
 
-- Échec de publication après transaction D1 : le Cron rattrape l'événement.
-- Queue livre **deux fois** le même événement : une décision logique, aucune livraison dupliquée dans D1.
-- Panne après envoi externe mais avant accusé de réception : duplication possible, identifiant de déduplication stable.
-- Erreurs `429`, `500`, timeout, DLQ et réexécution.
-- Arrivée concurrente de soumissions, contention sur l'outbox, expiration des leases.
-- Interdiction d'accès aux données d'une autre organisation (lecture **et** écriture).
-- URL webhook dangereuse, mauvais secret, signature expirée, payload trop volumineux.
+### Couverture manquante
+
+- Réponses `400`, `413`, `415` et `429` de l’ingestion (#7).
+- Échec d’envoi vers la file, expiration d’un bail et contention sur l’outbox (#20, #10).
+- Tout ce qui concerne les livraisons (#5, #13, #14).
+- Le dashboard n’a aucun test.
 
 ### Évaluation du filtrage
 
-Constituer un corpus de test représentatif de messages légitimes, spams, demandes ambiguës et hors sujet. Mesurer les **faux positifs**, la précision/rappel, le coût et la latence ; versionner seuils et prompts. Le critère le plus important est de **ne pas perdre de demande réelle**.
-
-### Observabilité
-
-Compteurs de soumissions, taux de quarantaine, taux d'escalade, coût IA estimé, latences, taille du backlog, délais de livraison, DLQ et actions manuelles. Les mesures agrégées évitent de stocker le contenu personnel dans les logs.
+Aucune mesure n’existe. #6 constitue le corpus et mesure les faux positifs, la précision, le rappel, la latence et le coût. Le critère qui prime est de ne perdre aucune demande réelle.
 
 ## 11. Déploiement et exploitation
 
-Alchemy crée et relie les ressources : Worker, D1, Queues, Cron, AI Gateway/Workers AI, assets et secrets requis. Les migrations D1 sont **versionnées** et appliquées explicitement pendant le déploiement ; ne pas les faire implicitement à chaque requête.
+Alchemy crée et relie le Worker, D1, les deux files, la DLQ de classification, le consumer, le Cron, les Durable Objects et le Workflow de backfill d’Alchemy Domain. Les migrations D1 sont versionnées dans `database/migrations` et appliquées au déploiement.
 
-Prévoir :
+Chaque stage a ses propres ressources. `prod` utilise un domaine personnalisé dérivé de `BETTER_AUTH_URL` ; les autres stages utilisent `workers.dev`. Un push sur `main` lance `pnpm check` et `pnpm deploy:dry`, puis déploie `prod`. `staging` se déploie à la main depuis le workflow **Deploy**, ce qui laisse la production sans étape de validation préalable (#10).
 
-- environnement local et environnement de préproduction distincts de la production ;
-- configuration de déploiement reproductible et lockfile des dépendances ;
-- validation du schéma et des migrations avant promotion ;
-- sauvegarde/export de D1, politique de restauration testée et procédure de rollback ;
-- guide d'installation à partir d'un compte Cloudflare vierge ;
-- limites et tarifs Cloudflare documentés **sans promettre un coût universel de 0 €**.
+`wrangler.json` sert au développement local, aux tests et au dry-run ; `alchemy-run.ts` et `src/alchemy-worker.ts` servent au déploiement. Les bindings, les réglages du consumer et les classes de Durable Objects sont donc déclarés deux fois. `scripts/doctor.mjs` vérifie une partie de cette cohérence, et `scripts/worker-budget.mjs` limite le JavaScript du Worker à 2 Mio.
 
-La réduction des coûts passe par les protections **avant** l'IA, l'absence d'escalade systématique et le maintien d'un Worker applicatif unique.
+### Dépendances en préversion
+
+Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épinglés à des versions exactes. `@alchemy.run/domain` a un patch local, dans `patches/`, qui corrige l’ordre entre la publication du Worker et le backfill. Le flux d’événements de chaque soumission dépend de cette bibliothèque : chaque montée de version demande de relire ses notes de migration et de rejouer les tests workerd.
+
+### À faire
+
+- Sauvegarde et restauration. Une restauration D1 ne ramène ni les Durable Objects ni l’état Alchemy au même instant ; la procédure reste à écrire et à exercer (#10).
+- Rollback du Worker et mesures d’exploitation (#10).
+- Guide d’installation vérifié sur un compte Cloudflare vierge, avec les coûts et les limites, sans promettre un coût nul (#12).
 
 ## 12. Ordre de réalisation
 
-1. **Fondations :** bootstrap Effect + Alchemy, Worker HTTP, D1/Drizzle, tests Workers, premier déploiement.
-2. **Ingestion fiable :** endpoint public, validation, organisations/formulaires, transaction D1 + outbox, Cron de reprise.
-3. **Classification :** queue, adaptateur Jev, contexte métier, politique de décision, quarantaine.
-4. **Distribution :** email, webhooks signés, retries, idempotence, historique de livraison.
-5. **Dashboard :** authentification, inbox, configuration, validation manuelle, logs d'exécution.
-6. **Durcissement :** sécurité multi-tenant, quotas, tests de panne, mesures de qualité IA, documentation self-hosting.
+Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La suite, dans l’ordre :
 
-## 13. Décisions ouvertes à trancher avant implémentation
+1. **Consolidation.** Ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). À faire avant d’ajouter des tables et une seconde file.
+2. **Distribution.** Livraisons (#5), puis e-mail (#14) et webhook signé (#13). C’est ce qui manque le plus pour remplacer un service de formulaires.
+3. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
+4. **Protection.** Anti-abus et quotas (#7), en-têtes de sécurité (#24).
+5. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
+6. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
+7. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12), licence (#21).
 
-- Fournisseur d'email initial : service Cloudflare lorsqu'adapté aux destinataires, ou adaptateur externe (ex. Resend).
-- Invitations et rôles par organisation après la création du premier compte Better Auth.
-- Politique exacte de pertinence hors sujet : revue humaine ou livraison avec étiquette.
-- Liste et seuils des quotas par organisation, avec comportements en cas de dépassement.
-- Rétention par défaut, restrictions sur les champs, politique d'export et purge.
-- Licence open source (MIT, Apache-2.0 ou AGPL) et stratégie de contributions.
+## 13. Décisions ouvertes
+
+| Décision | Suivi |
+| --- | --- |
+| Fournisseur d’e-mail initial : service Cloudflare ou adaptateur externe | #14 |
+| Message hors sujet : revue humaine (comportement actuel) ou acceptation avec étiquette | #6 |
+| Plafonds par organisation et comportement à la limite | #7 |
+| Durées de conservation par défaut, export et purge | #9 |
+| Origines autorisées quand la liste d’un formulaire est vide | #19 |
+| Champs répétés et `multipart/form-data` sans fichiers | #8 |
+| Query builder Drizzle ou SQL préparé pour les requêtes d’exécution | #23 |
+| Gateway IA : celui de la pile ou `default` | #22 |
+| Déploiement de `staging` avant `prod` dans la CI | #10 |
+| Licence : MIT, Apache-2.0 ou AGPL-3.0 | #21 |
+
+### Décisions prises
+
+- Le statut d’une soumission est un flux d’événements dans un Durable Object, projeté dans D1 pour l’Inbox.
+- Jev passe par le binding Workers AI ; OpenAI Decisions passe par AI Gateway avec la facturation unifiée. Le choix se fait par stage.
+- Le premier compte se crée avec un jeton d’installation et `scripts/setup-owner.sh`.
+- Un envoi HTML reçoit une page de confirmation avec le statut `202`.
 
 ---
 
-**Définition du succès de Rondyr v0.1 :** un développeur déploie le projet dans son compte Cloudflare, copie une URL de formulaire dans son site, reçoit les vrais messages malgré les pannes temporaires, et peut consulter/restaurer tout message suspect sans devoir exploiter un serveur traditionnel.
+**Définition du succès de la v0.1 :** un développeur déploie Rondyr dans son compte Cloudflare, copie une URL de formulaire dans son site, reçoit les vrais messages par e-mail ou webhook malgré les pannes temporaires, et peut consulter ou accepter tout message suspect sans exploiter de serveur.
