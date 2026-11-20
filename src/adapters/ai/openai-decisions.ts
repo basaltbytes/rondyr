@@ -23,6 +23,11 @@ const encodeInput = Schema.encodeEffect(
   ),
 );
 
+// AI Gateway creates the gateway named `default` on an account's first
+// authenticated request, with log collection on. Each call below turns log
+// collection and the cache off for itself.
+const aiGatewayId = "default";
+
 const spam = {
   type: "predicate",
   name: "spam",
@@ -63,7 +68,7 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
       ai.run(
         "openai/decisions",
         { input, questions: hasContext ? [spam, relevance] : [spam] },
-        { gateway: { id: "default", collectLog: false, skipCache: true } },
+        { gateway: { id: aiGatewayId, collectLog: false, skipCache: true } },
       ),
     catch: () => ClassificationFailed.make({ retryable: true }),
   });
