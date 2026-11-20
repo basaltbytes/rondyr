@@ -6,6 +6,7 @@ import {
   NotificationProvider,
   type Notification,
 } from "../../ports/notification-provider.ts";
+import { emailProvider } from "./email-provider.ts";
 import { webhookProvider } from "./webhook-provider.ts";
 
 type Provider = NotificationProvider["Service"];
@@ -31,8 +32,15 @@ export function notificationProviders(providers: ReadonlyMap<string, Provider>) 
   return Layer.succeed(NotificationProvider, dispatch(providers));
 }
 
-/** Webhooks over `fetch`. The email provider (#14) is not built yet. */
+/** Webhooks over `fetch`, and email through the `EmailSender` of the stage. */
 export const notificationProvidersLive = Layer.effect(
   NotificationProvider,
-  Effect.map(webhookProvider, (webhook) => dispatch(new Map([["webhook", webhook]]))),
+  Effect.map(Effect.all([webhookProvider, emailProvider]), ([webhook, email]) =>
+    dispatch(
+      new Map([
+        ["webhook", webhook],
+        ["email", email],
+      ]),
+    ),
+  ),
 ).pipe(Layer.provide(FetchHttpClient.layer));

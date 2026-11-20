@@ -2,6 +2,7 @@
   "include": [
     "*.ts",
     "src/**/*.ts",
+    "dashboard/src/**/*.ts",
     "dashboard/src/**/*.tsx",
     "tests/**/*.ts",
     "tooling/oxlint/**/*.ts",

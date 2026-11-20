@@ -21,6 +21,9 @@ Create one environment file per stage, for example `.env.staging`.
 | `RONDYR_SETUP_TOKEN` | Only for the first account | A second value from `openssl rand -hex 32` |
 | `RONDYR_SECRETS_KEY` | Only for webhooks | 32 bytes in base64, from `openssl rand -base64 32`. See [Webhook secrets](#webhook-secrets) |
 | `RONDYR_CLASSIFIER` | No | `jev` (default) or `openai` |
+| `RESEND_API_KEY` | Only for email | A Resend API key with sending access. See [Email](#email) |
+| `RONDYR_EMAIL_FROM` | Only for email | A bare sender address on a domain verified in Resend, such as `forms@notifications.example.com` |
+| `RONDYR_EMAIL_PROVIDER` | No | `resend` (default and only value) |
 
 For the Worker `rondyr-staging`, the origin is `https://rondyr-staging.<subdomain>.workers.dev`. For `prod`, Alchemy attaches the hostname of `BETTER_AUTH_URL` to the Worker `rondyr-prod` as a custom domain, and Cloudflare manages its DNS record and TLS certificate.
 
@@ -80,6 +83,14 @@ Keep the key once webhooks exist. If you remove or change it, every delivery to 
 
 [docs/webhooks.md](./webhooks.md) covers the payload, the signature, and the destination rules.
 
+## Email
+
+Email destinations need two values on the stage: `RESEND_API_KEY`, a secret, and `RONDYR_EMAIL_FROM`, the sender address, on a domain that you have verified in Resend. Both are optional. Without either of them the stage deploys and works as before, except that creating an email destination answers `503` with `{"error":"email-provider-missing"}`, and a delivery to an existing email destination fails without a retry.
+
+Add them to the stage environment file, or set the `RESEND_API_KEY_STAGING` or `RESEND_API_KEY_PROD` GitHub secret and the `RONDYR_EMAIL_FROM_STAGING` or `RONDYR_EMAIL_FROM_PROD` variable, then redeploy. The deployment fails if `RONDYR_EMAIL_FROM` is set to anything other than a bare address, such as `Rondyr <forms@example.com>`, and if `RONDYR_EMAIL_PROVIDER` is set to anything other than `resend`.
+
+Use a separate API key per stage, so you can revoke one without stopping the other. [docs/email.md](./email.md) covers the Resend domain setup, the limits and cost, the message format, and the retries.
+
 ## GitHub Actions
 
 A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, then deploys `prod`. The **Deploy** workflow deploys `staging` when you start it by hand. Without `CLOUDFLARE_API_TOKEN`, the workflow runs the checks and reports that the deployment was skipped.
@@ -92,6 +103,9 @@ A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, th
 | `RONDYR_SETUP_TOKEN_PROD`, `RONDYR_SETUP_TOKEN_STAGING` | Secret, optional | One each |
 | `RONDYR_SECRETS_KEY_PROD`, `RONDYR_SECRETS_KEY_STAGING` | Secret, optional | One each |
 | `RONDYR_CLASSIFIER_PROD`, `RONDYR_CLASSIFIER_STAGING` | Variable, optional | One each |
+| `RESEND_API_KEY_PROD`, `RESEND_API_KEY_STAGING` | Secret, optional | One each |
+| `RONDYR_EMAIL_FROM_PROD`, `RONDYR_EMAIL_FROM_STAGING` | Variable, optional | One each |
+| `RONDYR_EMAIL_PROVIDER_PROD`, `RONDYR_EMAIL_PROVIDER_STAGING` | Variable, optional | One each |
 
 For the Basaltbytes repository, `BETTER_AUTH_URL_PROD` is `https://rondyr.basaltbytes.com`. Delete the setup token secret once the first account exists.
 

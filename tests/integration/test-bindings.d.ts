@@ -5,6 +5,7 @@ declare global {
     interface Env {
       TEST_WORKER: Fetcher;
       WEBHOOK_RECEIVER: Fetcher;
+      RESEND_FIXTURE: Fetcher;
       TEST_MIGRATIONS: D1Migration[];
     }
   }

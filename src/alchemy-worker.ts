@@ -4,6 +4,8 @@ import { Config, Effect, Option, Schema } from "effect";
 
 import wrangler from "../wrangler.json" with { type: "json" };
 import { ClassifierProvider } from "./adapters/ai/classifier.ts";
+import { EmailProviderName } from "./adapters/email/email-sender.ts";
+import { EmailAddress } from "./domain/deliveries/email.ts";
 import { workerImplementation } from "./worker-implementation.ts";
 
 const deployedOrigin = Config.schema(
@@ -42,6 +44,12 @@ const deploymentProps = Effect.gen(function* () {
   const classifier = yield* Config.schema(ClassifierProvider, "RONDYR_CLASSIFIER").pipe(
     Config.withDefault("jev"),
   );
+  // Without the key and the sender, email targets cannot be created; everything else works.
+  const emailProvider = yield* Config.schema(EmailProviderName, "RONDYR_EMAIL_PROVIDER").pipe(
+    Config.withDefault("resend"),
+  );
+  const emailFrom = yield* Config.option(Config.schema(EmailAddress, "RONDYR_EMAIL_FROM"));
+  const resendKey = yield* Config.option(Config.Redacted("RESEND_API_KEY"));
   return {
     main: import.meta.url,
     name: `rondyr-${stage}`,
@@ -67,11 +75,14 @@ const deploymentProps = Effect.gen(function* () {
       CLASSIFICATION_QUEUE_NAME: classification.queueName,
       DELIVERY_QUEUE_NAME: delivery.queueName,
       RONDYR_CLASSIFIER: classifier,
+      RONDYR_EMAIL_PROVIDER: emailProvider,
       ...(!dev && { AI: Cloudflare.Workers.AI() }),
       ...(Option.isSome(authSecret) && { BETTER_AUTH_SECRET: authSecret.value }),
       ...(Option.isSome(authUrl) && { BETTER_AUTH_URL: authUrl.value.origin }),
       ...(Option.isSome(setupToken) && { RONDYR_SETUP_TOKEN: setupToken.value }),
       ...(Option.isSome(secretsKey) && { RONDYR_SECRETS_KEY: secretsKey.value }),
+      ...(Option.isSome(emailFrom) && { RONDYR_EMAIL_FROM: emailFrom.value }),
+      ...(Option.isSome(resendKey) && { RESEND_API_KEY: resendKey.value }),
     },
   };
 });
