@@ -95,7 +95,7 @@ Use a separate API key per stage, so you can revoke one without stopping the oth
 
 ## GitHub Actions
 
-A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, then deploys `prod`. The **Deploy** workflow deploys `staging` when you start it by hand. Without `CLOUDFLARE_API_TOKEN`, the workflow runs the checks and reports that the deployment was skipped.
+A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, deploys `staging`, then checks `/health` and a submission through the authenticated inbox. The workflow deploys `prod` only after the staging check passes. Pull requests run the quality and build checks. Start the **Deploy** workflow to deploy staging manually, including for the first setup. Without `CLOUDFLARE_API_TOKEN`, the workflow skips cloud deployment.
 
 | Name | Kind | Stage |
 | --- | --- | --- |
@@ -108,8 +108,17 @@ A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, th
 | `RESEND_API_KEY_PROD`, `RESEND_API_KEY_STAGING` | Secret, optional | One each |
 | `RONDYR_EMAIL_FROM_PROD`, `RONDYR_EMAIL_FROM_STAGING` | Variable, optional | One each |
 | `RONDYR_EMAIL_PROVIDER_PROD`, `RONDYR_EMAIL_PROVIDER_STAGING` | Variable, optional | One each |
+| `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` | Variable, required for promotion | ID of the staging test organization |
+| `RONDYR_SMOKE_FORM_ID_STAGING` | Variable, required for promotion | Public ID of the staging test form |
+| `RONDYR_SMOKE_EMAIL_STAGING`, `RONDYR_SMOKE_PASSWORD_STAGING` | Secret, required for promotion | Credentials of the staging-only test account |
 
 For the Basaltbytes repository, `BETTER_AUTH_URL_PROD` is `https://rondyr.basaltbytes.com`. Delete the setup token secret once the first account exists.
+
+### Staging smoke test setup
+
+Deploy staging manually and [create its first account](#first-account) if needed. Use staging-only credentials and create a dedicated organization and an active form with no notification destinations. A pottery workshop is suitable business context for the synthetic enquiry. With the staging account signed in, `/api/organizations` returns the organization’s `id` and the form’s `publicId`. Set the two smoke variables and the two smoke secrets in GitHub before merging a release.
+
+The test signs in, submits one synthetic message, checks the stored message, and waits up to three minutes for the normal classifier to accept it or place it in quarantine. A classifier error or intake quarantine fails the check. Keep the test form separate from forms used by people. Each successful intake leaves a message in staging, and no notification is sent with the form configured as above.
 
 ### API token
 
@@ -131,7 +140,4 @@ Create the Alchemy state store on the Cloudflare account once, before the first 
 pnpm exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts
 ```
 
-## Known gaps
-
-- Every merge to `main` deploys `prod` and applies its D1 migrations, with no `staging` step before it.
-- Backup, restore, and rollback aren't documented. A D1 restore doesn't rewind the Durable Objects or the Alchemy state to the same point in time. [#10](https://github.com/basaltbytes/rondyr/issues/10) tracks both points.
+For queue diagnosis, recovery, and secret rotation, see the [operations runbook](./operations.md).
