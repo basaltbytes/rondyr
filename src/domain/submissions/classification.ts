@@ -5,13 +5,21 @@ export const Score = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum:
 export const ClassificationScores = Schema.Struct({
   model: Schema.String,
   spam: Score,
+  // Decisions and durable activities recorded before this question have no score.
+  solicitation: Schema.optionalKey(Score),
   relevance: Schema.optionalKey(Score),
+});
+
+export const ClassifierScores = Schema.Struct({
+  ...ClassificationScores.fields,
+  solicitation: Score,
 });
 
 /** Why the classification rules quarantine a submission. */
 export const ClassificationReason = Schema.Literals([
   "probable-spam",
   "ambiguous",
+  "solicitation",
   "low-relevance",
   "classification-error",
 ]);
@@ -37,11 +45,32 @@ export const ClassificationResult = Schema.Union([
   Schema.TaggedStruct("ClassificationError", {}),
 ]);
 
-export const rulesVersion = 4;
+export const rulesVersion = 5;
 
-export function reviewReason(scores: typeof ClassificationScores.Type) {
-  if (scores.spam >= 0.7) return "probable-spam";
-  if (scores.spam >= 0.3) return "ambiguous";
-  if (scores.relevance !== undefined && scores.relevance < 0.35) return "low-relevance";
+export const ClassificationThresholds = Schema.Struct({
+  probableSpam: Score,
+  ambiguous: Score,
+  solicitation: Score,
+  lowRelevance: Score,
+});
+
+export const classificationThresholds: typeof ClassificationThresholds.Type = {
+  probableSpam: 0.7,
+  ambiguous: 0.3,
+  solicitation: 0.5,
+  lowRelevance: 0.35,
+};
+
+export function reviewReason(
+  scores: typeof ClassificationScores.Type,
+  thresholds = classificationThresholds,
+) {
+  if (scores.solicitation === undefined) return "classification-error";
+  if (scores.spam >= thresholds.probableSpam) return "probable-spam";
+  if (scores.spam >= thresholds.ambiguous) return "ambiguous";
+  if (scores.solicitation > thresholds.solicitation) return "solicitation";
+  if (scores.relevance !== undefined && scores.relevance < thresholds.lowRelevance) {
+    return "low-relevance";
+  }
   return null;
 }

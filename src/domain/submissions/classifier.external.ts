@@ -1,7 +1,7 @@
 import * as Domain from "@alchemy.run/domain";
 import { Schema } from "effect";
 
-import { ClassificationScores } from "./classification.ts";
+import { ClassifierScores } from "./classification.ts";
 import { OrganizationId, SubmissionId } from "./submission.id.ts";
 
 export class ClassificationFailed extends Schema.TaggedError<
@@ -14,9 +14,12 @@ export class Classifier extends Domain.ExternalSystem(
   {
     score: {
       args: { submissionId: SubmissionId, organizationId: OrganizationId },
-      success: ClassificationScores.fields,
+      success: ClassifierScores.fields,
       error: ClassificationFailed,
     },
   },
-  { description: "Evaluate spam and, when configured, business relevance for a stored message." },
+  {
+    description:
+      "Evaluate spam, unsolicited commercial outreach and, when configured, business relevance for a stored message.",
+  },
 ) {}

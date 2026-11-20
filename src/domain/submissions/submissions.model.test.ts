@@ -45,17 +45,56 @@ const story = Story.make(Submissions, {
 
 it("defines a valid Domain model and distinct classification thresholds", () => {
   assert.deepEqual(Domain.verify(Submissions), []);
-  assert.strictEqual(reviewReason({ model: "jev-fixture", spam: 0.7 }), "probable-spam");
-  assert.strictEqual(reviewReason({ model: "jev-fixture", spam: 0.3 }), "ambiguous");
-  assert.strictEqual(
-    reviewReason({ model: "jev-fixture", spam: 0.1, relevance: 0.1 }),
-    "low-relevance",
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0 };
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }), "probable-spam");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }), "ambiguous");
+  assert.strictEqual(reviewReason({ ...scores, relevance: 0.1 }), "low-relevance");
+  assert.isNull(reviewReason(scores));
+});
+
+it("quarantines for solicitation above 0.5, after the spam rules and before relevance", () => {
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.51, relevance: 0.1 };
+
+  assert.strictEqual(reviewReason(scores), "solicitation");
+  assert.strictEqual(reviewReason({ ...scores, solicitation: 0.5 }), "low-relevance");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }), "ambiguous");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }), "probable-spam");
+  assert.isNull(reviewReason({ model: "jev-fixture", spam: 0.1, solicitation: 0.5 }));
+});
+
+it.effect("quarantines a sales pitch with its scores and lets a reviewer accept it", () => {
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.93, relevance: 0.8 };
+  return story(
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    Story.call(Classifier.score, { submissionId, organizationId }),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "solicitation", scores, rulesVersion }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Manual", reviewerId: userId },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
   );
-  assert.isNull(reviewReason({ model: "jev-fixture", spam: 0.1 }));
 });
 
 it.effect("classifies one logical submission after duplicate intake", () => {
-  const scores = { model: "jev-fixture", spam: 0.1 };
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.15 };
   return story(
     Story.when(submission, RequestClassification.make({ organizationId }), {
       commandId: "ingestion-1",
@@ -84,6 +123,20 @@ it.effect("classifies one logical submission after duplicate intake", () => {
     Story.state(submission, { _tag: "Accepted" }),
   );
 });
+
+it.effect("quarantines an incomplete classifier response without retrying", () =>
+  story(
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    Story.call(Classifier.score, { submissionId, organizationId }),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: false })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "classification-error", rulesVersion }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+  ),
+);
 
 it.effect("quarantines exhausted failures and accepts only one authorized review", () =>
   story(
@@ -179,7 +232,7 @@ it.effect("lets a reviewer dismiss a submission quarantined at intake", () =>
 );
 
 it.effect("ignores a quarantine at intake once classification has started", () => {
-  const scores = { model: "jev-fixture", spam: 0.1 };
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0 };
   return story(
     Story.when(submission, RequestClassification.make({ organizationId })),
     Story.then(submission, ClassificationRequested.make({ organizationId })),

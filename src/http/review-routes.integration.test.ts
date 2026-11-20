@@ -101,9 +101,10 @@ it.live(
       if (inbox === undefined || form === undefined)
         return assert.fail("The new inbox should have a form");
 
+      const incompleteContact = { ...contact, "fixture-verdict": "missing-solicitation" };
       const accepted = yield* request(`/f/${form.publicId}`, {
         method: "POST",
-        body: new URLSearchParams(contact),
+        body: new URLSearchParams(incompleteContact),
       });
       assert.strictEqual(accepted.status, 202);
       const rawSubmissionId = yield* Effect.promise(() => accepted.json());
@@ -157,7 +158,7 @@ it.live(
       const rawDetail = yield* Effect.promise(() => classified.json());
       const detail = yield* readSubmission(rawDetail);
       assert.strictEqual(detail.reason, "classification-error");
-      assert.deepEqual(detail.fields, contact);
+      assert.deepEqual(detail.fields, incompleteContact);
 
       const invalid = yield* request(`${listPath}?after=invalid`, { headers });
       assert.strictEqual(invalid.status, 400);
@@ -169,7 +170,7 @@ it.live(
         [submissionId],
       );
       // A list entry has a preview of its message, so the inbox shows who wrote and what.
-      assert.deepEqual(page.entries[0]?.preview, contact);
+      assert.deepEqual(page.entries[0]?.preview, incompleteContact);
       const counted = yield* request(`/api/organizations/${inbox.id}/submission-counts`, {
         headers,
       });

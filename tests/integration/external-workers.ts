@@ -1,13 +1,23 @@
 import { fileURLToPath } from "node:url";
 
-// Workers AI for the tests. A submission with `fixture-verdict: accept` gets low
-// spam and high relevance scores from Jev, or a low relevance score when the
-// business context contains `fixture-relevance: low`; any other answer does
-// not decode, so the classifier quarantines it with `classification-error`, as
-// it does without an AI binding. Tests can read the fields or the complete
+// Workers AI for the tests. Jev answers by the `fixture-verdict` field of the
+// submission: `accept` gets low spam and solicitation scores, `solicitation` a
+// low spam score and a solicitation score above the threshold,
+// `ambiguous-solicitation` the same with an ambiguous spam score, and
+// `missing-solicitation` a low spam score without the solicitation answer. The
+// relevance score is high, or low when the business context contains
+// `fixture-relevance: low`. Any other request gets an answer that does not
+// decode, so the classifier quarantines it with `classification-error`, as it
+// does without an AI binding. Tests can read the fields or the complete
 // classifier inputs from GET /__calls or GET /__states.
 const workersAiFixture = `
 const calls = [];
+const verdicts = new Map([
+  ["accept", { spam: 0.02, solicitation: 0.03 }],
+  ["solicitation", { spam: 0.02, solicitation: 0.93 }],
+  ["ambiguous-solicitation", { spam: 0.3, solicitation: 0.93 }],
+  ["missing-solicitation", { spam: 0.02 }],
+]);
 export default {
   async fetch(request) {
     const path = new URL(request.url).pathname;
@@ -17,12 +27,15 @@ export default {
     const model = request.headers.get("cf-consn-model-id");
     const { inputs: input } = await request.json();
     calls.push(input?.state ?? null);
-    if (model !== "typesafe/jev" || input?.state?.submission_fields?.["fixture-verdict"] !== "accept") {
-      return Response.json({});
-    }
-    const answers = { spam: { type: "noul", noul: 0.02 } };
+    const verdict = verdicts.get(input?.state?.submission_fields?.["fixture-verdict"]);
+    if (model !== "typesafe/jev" || verdict === undefined) return Response.json({});
     const relevance = input.state.business_context.includes("fixture-relevance: low") ? 0.05 : 0.98;
-    if (input.questions.relevance !== undefined) answers.relevance = { type: "noul", noul: relevance };
+    const scores = { ...verdict, relevance };
+    const answers = Object.fromEntries(
+      Object.keys(input.questions)
+        .filter((question) => scores[question] !== undefined)
+        .map((question) => [question, { type: "noul", noul: scores[question] }]),
+    );
     return Response.json({ model: "workerd-fixture", answers });
   },
 };

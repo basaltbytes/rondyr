@@ -2,7 +2,7 @@
 
 `pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `src/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
 
-The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31). The model score thresholds still come from the first estimate described in [architecture.md](../architecture.md#5-classification-intelligente). Issue [#6](https://github.com/basaltbytes/rondyr/issues/6) tracks thresholds per classifier.
+The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31). The spam and relevance thresholds still come from the first estimate described in [architecture.md](../architecture.md#5-classification-intelligente). The solicitation threshold comes from the measurement in [#40](https://github.com/basaltbytes/rondyr/issues/40). Issue [#6](https://github.com/basaltbytes/rondyr/issues/6) tracks thresholds per classifier.
 
 The harness isn't part of the Worker: nothing in `src/` imports `evals/`, and `pnpm deploy:dry` checks the bundle size as before.
 
@@ -33,7 +33,7 @@ Dated lines are replayed by `received`, with ties resolved by file order. Undate
 
 ### Business context
 
-The business context of the form is in a second file next to the corpus. For `evals/corpus/synthetic.jsonl`, use `evals/corpus/synthetic.context.txt`. The harness and the Worker both trim the context and keep as many whole characters as fit within 2,000 UTF-16 code units. An empty file means the form has no business context. The classifiers then score spam only, and no message can be quarantined for low relevance.
+The business context of the form is in a second file next to the corpus. For `evals/corpus/synthetic.jsonl`, use `evals/corpus/synthetic.context.txt`. The harness and the Worker both trim the context and keep as many whole characters as fit within 2,000 UTF-16 code units. An empty file means the form has no business context. Both classifiers ask about spam and unsolicited sales outreach on every call. They ask about business relevance only when the context is present.
 
 A separate file keeps the corpus lines in the shape the issue describes, so an existing corpus works once the context file is next to it. A command-line option would let two runs of the same corpus use different contexts, and the results would no longer be comparable; the file is versioned, or kept local, together with its corpus. The context is part of the cache key, so changing it scores every entry again.
 
@@ -45,7 +45,7 @@ The replay checks the submission's `email` field against the declared domains an
 
 ### Synthetic corpus
 
-`evals/corpus/synthetic.jsonl` contains 51 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. People appear by first name only, and every address and link uses the reserved `.example` domain.
+`evals/corpus/synthetic.jsonl` contains 60 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. Unsolicited SEO, lead generation, and subcontracting offers use the `spam` label, as does a message that asks who handles the workshop's social media so the sender can send them an idea. A quote request, a delivery question from an existing supplier, a proposal from a peer, a shop that wants to resell the workshop's pieces, and a podcast recording request use the `legitimate` label; the last two read a little like a pitch, which makes them the boundary cases of the solicitation question. People appear by first name only, and every address and link uses the reserved `.example` domain.
 
 It's small: a result on it says whether the pipeline works and gives a first idea, not a measure of the classifiers.
 
@@ -115,10 +115,10 @@ The terminal shows the summary. The full report, with the threshold sweep, is wr
 
 For each classifier, in this order:
 
-- **Legitimate messages quarantined.** The false positives, by id, with the reason and the scores. A real message in quarantine waits for someone to find it, which is the failure that matters most.
+- **Legitimate messages quarantined.** The total includes intake rules and failed calls. The table lists the rule decisions by id and score, and the failed calls appear below.
 - **Off-topic messages quarantined.** Genuine messages that a person has to read and archive. Today's rules quarantine them for low relevance on purpose; a spam reason is the worse outcome.
 - **Spam accepted**, by id and family.
-- **Expected label and decision.** The table includes `repetition` for submissions in quarantine before a model call. Each cell counts distinct corpus lines and the submissions those lines represent. A line can appear in more than one cell when its occurrences get different decisions. The decision list identifies the first occurrence and number of submissions in each result.
+- **Expected label and decision.** The table includes `solicitation` and `repetition`. Each cell counts distinct corpus lines and the submissions those lines represent. A line can appear in more than one cell when its occurrences get different decisions. The decision list identifies the first occurrence and number of submissions in each result.
 - **Quarantine of spam.** Spam is the positive class; legitimate and off-topic lines are the negatives; ambiguous lines and failed calls are left out. Precision is the share of quarantined lines that are spam, and recall the share of spam that is quarantined, for any reason. Both are given for lines and for submissions.
 - **Latency**: p50, p90, p95, p99 and max of the scored calls, in milliseconds, from the client. Results from the cache keep the latency of the run that recorded them.
 - **Cost**: the token usage of the answers times the per-million prices of the model pages, checked on 2026-11-20 and kept in `evals/classifiers.ts`. If an answer has no usage, the cost is reported as unavailable. Calls that failed may also be billed and aren't counted.
@@ -128,9 +128,11 @@ The report also gives the returned model ids and their counts, `rulesVersion`, t
 
 ### Threshold sweep
 
-The sweep recomputes decisions from the recorded scores without new calls. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
+The sweep recomputes decisions from the recorded scores without new calls, with `reviewReason` and the thresholds of each point. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. All of these points keep the solicitation threshold at 0.50. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
 
-The Markdown shows the same grid as three tables. Whether a message is accepted depends only on the lower spam threshold, called `ambiguous`; the `probable-spam` reason depends only on the upper one.
+The solicitation sweep tests thresholds from 0 to 1 in steps of 0.05 while holding the spam and relevance thresholds fixed. A solicitation score must exceed the threshold. The report counts all legitimate lines quarantined among scored calls and shows how many legitimate and spam lines get the `solicitation` reason. The Markdown has one table for each threshold.
+
+The Worker quarantines a message whose solicitation score is above 0.50. On 20 November 2026, with Jev, no `legitimate` or `off-topic` line of the synthetic corpus scored above 0.32 and the four `syn-solicitation-*` lines scored between 0.94 and 0.98. OpenAI Decisions kept every `legitimate` line at 0.04 or below and scored the same four lines between 0.96 and 1. Scores vary by a few hundredths from one run to the next. When you change the solicitation question or its threshold, run both classifiers on the same corpus before and after the change, and use the full report to check that every `legitimate` entry stays out of quarantine, including entries quarantined at intake or after a failed call.
 
 ## Privacy
 
@@ -141,4 +143,4 @@ The Markdown shows the same grid as three tables. Whether a message is accepted 
 
 ## Tests
 
-`pnpm check` runs the harness tests in Node, as the `evals` Vitest project, without network: corpus validation with invalid lines, the decisions at each threshold, a comparison of the sweep rules with `reviewReason`, the report counts with `duplicates`, the cache key, the REST request against a fake Cloudflare API, retries, and a dry run of the synthetic corpus that checks that no field value appears in the reports. The REST path has not been checked against the live API yet.
+`pnpm check` runs the harness tests in Node, as the `evals` Vitest project, without network: corpus validation with invalid lines, the decisions at each threshold, the report counts with `duplicates`, the cache key, the REST request against a fake Cloudflare API, retries, and a dry run of the synthetic corpus that checks that no field value appears in the reports. The REST path has not been checked against the live API yet.
