@@ -1,0 +1,45 @@
+import { assert, it } from "@effect/vitest";
+
+import { reviewReason } from "../src/domain/submissions/classification.ts";
+import { decisionOf } from "./report.ts";
+import { currentThresholds, reasonAt } from "./thresholds.ts";
+
+const scored = (spam: number, relevance?: number) => ({
+  _tag: "Scored" as const,
+  cached: false,
+  call: {
+    latencyMs: 1,
+    scores: relevance === undefined ? { model: "m", spam } : { model: "m", spam, relevance },
+  },
+});
+
+it("maps scores to the Worker's decision at each threshold", () => {
+  const cases = [
+    [scored(0.7), "probable-spam"],
+    [scored(0.6999), "ambiguous"],
+    [scored(0.3), "ambiguous"],
+    [scored(0.2999), "accepted"],
+    [scored(0.2999, 0.35), "accepted"],
+    [scored(0.2999, 0.3499), "low-relevance"],
+    [scored(0.3, 0.01), "ambiguous"],
+    [scored(0, 0), "low-relevance"],
+    [{ _tag: "Failed", attempts: 3, retryable: true } as const, "classification-error"],
+  ] as const;
+  for (const [outcome, decision] of cases) assert.strictEqual(decisionOf(outcome), decision);
+});
+
+it("keeps the sweep rules identical to reviewReason at the current thresholds", () => {
+  const steps = Array.from({ length: 1001 }, (_, index) => index / 1000);
+  for (const spam of steps) {
+    for (const relevance of [
+      undefined,
+      ...steps.filter((_, index) => index % 10 === 0),
+      0.349,
+      0.351,
+    ]) {
+      const scores =
+        relevance === undefined ? { model: "m", spam } : { model: "m", spam, relevance };
+      assert.strictEqual(reasonAt(currentThresholds, scores), reviewReason(scores));
+    }
+  }
+});
