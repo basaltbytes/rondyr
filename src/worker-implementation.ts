@@ -12,6 +12,7 @@ import { submissionIntakeLive } from "./adapters/database/intake.ts";
 import { organizationDirectoryLive } from "./adapters/database/organization-directory.ts";
 import { outboxLive } from "./adapters/database/outbox.ts";
 import { storedMessagesLive } from "./adapters/database/stored-messages.ts";
+import { notificationProvidersLive } from "./adapters/notifications/notification-providers.ts";
 import { classificationQueueLive } from "./adapters/queues/classification-queue.ts";
 import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
 import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
@@ -20,7 +21,11 @@ import { authenticationRoutes } from "./http/authentication.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
 import { submissionRoutes } from "./http/submission-routes.ts";
-import { deliverySchedulerLive, publishPendingDeliveries } from "./jobs/delivery-outbox.ts";
+import {
+  consumeDeliveries,
+  deliverySchedulerLive,
+  publishPendingDeliveries,
+} from "./jobs/delivery-outbox.ts";
 import { consumeSubmissions, publishPendingSubmissions } from "./jobs/submission-outbox.ts";
 import { BackgroundTasks } from "./ports/background-tasks.ts";
 
@@ -33,6 +38,7 @@ const services = Layer.mergeAll(
   outboxLive,
   classificationQueueLive,
   deliveries,
+  notificationProvidersLive,
   Submissions.layer(submissionHandlers, { legacyData: false }).pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -55,6 +61,14 @@ const publishOutboxes = Effect.gen(function* () {
   for (const result of results) {
     if (Result.isFailure(result)) return yield* result.failure;
   }
+});
+
+const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
+  const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
+  if (batch.queue === env.CLASSIFICATION_QUEUE_NAME) return yield* consumeSubmissions(batch);
+  if (batch.queue === env.DELIVERY_QUEUE_NAME) return yield* consumeDeliveries(batch);
+  yield* Effect.logError("Queue batch from an unknown queue", { queue: batch.queue });
+  batch.retryAll();
 });
 
 export const workerImplementation = Effect.gen(function* () {
@@ -82,7 +96,7 @@ export const workerImplementation = Effect.gen(function* () {
       return publishOutboxes.pipe(Effect.provideContext(context), Effect.orDie);
     }
     if (event.type === "queue") {
-      return consumeSubmissions(event.input).pipe(Effect.provideContext(context));
+      return consumeBatch(event.input).pipe(Effect.provideContext(context));
     }
   });
 

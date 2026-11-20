@@ -61,6 +61,9 @@ const deploymentProps = Effect.gen(function* () {
       DB: database,
       CLASSIFICATION_QUEUE: classification,
       DELIVERY_QUEUE: delivery,
+      // The queue handler tells the two queues apart by name.
+      CLASSIFICATION_QUEUE_NAME: classification.queueName,
+      DELIVERY_QUEUE_NAME: delivery.queueName,
       RONDYR_CLASSIFIER: classifier,
       ...(!dev && { AI: Cloudflare.Workers.AI() }),
       ...(Option.isSome(authSecret) && { BETTER_AUTH_SECRET: authSecret.value }),
