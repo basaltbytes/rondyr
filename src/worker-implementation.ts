@@ -30,6 +30,7 @@ import { authenticationRoutes } from "./http/authentication.ts";
 import { deliveryRoutes } from "./http/delivery-routes.ts";
 import { formRoutes } from "./http/form-routes.ts";
 import { operationsRoute } from "./http/operations-route.ts";
+import { organizationDomainRoutes } from "./http/organization-domain-routes.ts";
 import { originRoutes } from "./http/origin-routes.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
@@ -76,6 +77,7 @@ const routes = Layer.mergeAll(
   reviewRoutes,
   targetRoutes,
   originRoutes,
+  organizationDomainRoutes,
   formRoutes,
   deliveryRoutes,
   operationsRoute,

@@ -53,6 +53,9 @@ export default defineConfig({
       "@rondyr/contracts": fileURLToPath(new URL("./src/domain/submissions", import.meta.url)),
       "@rondyr/deliveries": fileURLToPath(new URL("./src/domain/deliveries", import.meta.url)),
       "@rondyr/forms": fileURLToPath(new URL("./src/domain/forms", import.meta.url)),
+      "@rondyr/organizations": fileURLToPath(
+        new URL("./src/domain/organizations", import.meta.url),
+      ),
     },
   },
 });

@@ -101,6 +101,7 @@
       "forms": "Forms",
       "destinations": "Destinations",
       "origins": "Allowed origins",
+      "domains": "Organization domains",
       "organization": "New organization"
     },
     "statuses": {
@@ -285,6 +286,21 @@
         "redirectNotSaved": "The redirect could not be saved. Try again.",
         "honeypotNotSaved": "The honeypot field could not be saved. Check the name and try again."
       }
+    },
+    "domains": {
+      "description": "Declare up to {{limit}} domains for this organization. The classifier checks whether a submitted email address uses one of these domains or a subdomain.",
+      "empty": "No domains declared.",
+      "hostname": "Domain name",
+      "placeholder": "example.com",
+      "add": "Add domain",
+      "remove": "Remove",
+      "removeLabel": "Remove {{domain}}",
+      "invalid": "Enter a lowercase domain name such as example.com, without a scheme or path.",
+      "limit": "This organization already has {{limit}} domains. Remove one before adding another.",
+      "loadFailed": "Could not load the organization’s domains.",
+      "retry": "Try again",
+      "addFailed": "Could not add the domain. Try again.",
+      "removeFailed": "Could not remove the domain. Try again."
     },
     "origins": {
       "label": "Allowed origins of the form {{name}}",

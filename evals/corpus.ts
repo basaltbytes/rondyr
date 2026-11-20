@@ -1,5 +1,6 @@
 import { DateTime, Effect, FileSystem, Option, Path, Schema } from "effect";
 
+import { OrganizationDomainList } from "../src/domain/organizations/organization-domain.ts";
 import { classifierContext } from "../src/domain/submissions/classifier-input.ts";
 import { SubmissionFields } from "../src/domain/submissions/submission-fields.ts";
 
@@ -47,6 +48,7 @@ export interface Corpus {
   readonly name: string;
   /** The same trimmed and bounded business context that the Worker sends to the classifier. */
   readonly context: string;
+  readonly domains: OrganizationDomainList;
   readonly entries: readonly [CorpusEntry, ...CorpusEntry[]];
 }
 
@@ -77,6 +79,7 @@ export const parseCorpus = Effect.fn("Corpus.parse")(function* (
   file: string,
   text: string,
   context: string,
+  domains: OrganizationDomainList = [],
 ) {
   const problems: CorpusProblem[] = [];
   const entries: CorpusEntry[] = [];
@@ -102,16 +105,8 @@ export const parseCorpus = Effect.fn("Corpus.parse")(function* (
   if (problems.length > 0 || first === undefined) {
     return yield* CorpusInvalid.make({ file, problems });
   }
-  return { context: classifierContext(context), entries: [first, ...rest] } as const;
+  return { context: classifierContext(context), domains, entries: [first, ...rest] } as const;
 });
-
-/** `name.jsonl` is paired with `name.context.txt`, the business context of its form. */
-export function contextFileOf(path: Path.Path, corpusFile: string) {
-  return path.join(
-    path.dirname(corpusFile),
-    `${path.basename(corpusFile, path.extname(corpusFile))}.context.txt`,
-  );
-}
 
 function unreadable(file: string, message: string) {
   return CorpusInvalid.make({ file, problems: [{ line: 0, message }] });
@@ -120,7 +115,10 @@ function unreadable(file: string, message: string) {
 export const loadCorpus = Effect.fn("Corpus.load")(function* (corpusFile: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const contextFile = contextFileOf(path, corpusFile);
+  const name = path.basename(corpusFile, path.extname(corpusFile));
+  const directory = path.dirname(corpusFile);
+  const contextFile = path.join(directory, `${name}.context.txt`);
+  const domainsFile = path.join(directory, `${name}.domains.txt`);
   const text = yield* fs
     .readFileString(corpusFile)
     .pipe(Effect.mapError(() => unreadable(corpusFile, "The corpus file cannot be read")));
@@ -134,7 +132,23 @@ export const loadCorpus = Effect.fn("Corpus.load")(function* (corpusFile: string
         ),
       ),
     );
-  const parsed = yield* parseCorpus(corpusFile, text, context);
-  const name = path.basename(corpusFile, path.extname(corpusFile));
+  const domainText = yield* fs.readFileString(domainsFile).pipe(
+    Effect.catchIf(
+      (error) => error.reason._tag === "NotFound",
+      () => Effect.succeed(""),
+    ),
+    Effect.mapError(() => unreadable(domainsFile, "The domains file cannot be read")),
+  );
+  const domains = yield* Schema.decodeEffect(OrganizationDomainList)(
+    domainText.split(/\r?\n/u).filter((line) => line.trim() !== ""),
+  ).pipe(
+    Effect.mapError(() =>
+      unreadable(
+        domainsFile,
+        "Expected up to ten distinct lowercase ASCII hostnames, one per line",
+      ),
+    ),
+  );
+  const parsed = yield* parseCorpus(corpusFile, text, context, domains);
   return { name, ...parsed } satisfies Corpus;
 });

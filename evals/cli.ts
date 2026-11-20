@@ -17,7 +17,9 @@ class InvalidOption extends Schema.TaggedError<InvalidOption, { readonly brand: 
 ) {}
 
 const corpusFile = Argument.String("corpus").pipe(
-  Argument.withDescription("A JSON Lines corpus, next to its <name>.context.txt"),
+  Argument.withDescription(
+    "A JSON Lines corpus, next to its <name>.context.txt and optional <name>.domains.txt",
+  ),
 );
 const classifier = Flag.Literals("classifier", ["jev", "openai", "both"]).pipe(
   Flag.withDefault("both"),

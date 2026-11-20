@@ -5,6 +5,7 @@ import { ClassificationFailed } from "../../domain/submissions/classifier.extern
 import {
   type ClassifierInput,
   classifierDataInstruction,
+  classifierSpamInstructions,
 } from "../../domain/submissions/classifier-input.ts";
 import { mapBindingError } from "./binding-error.ts";
 import { aiGatewayOptions } from "./gateway.ts";
@@ -26,10 +27,6 @@ export const decodeJevResponse = Schema.decodeUnknownEffect(
     }),
   ),
 );
-const spam = {
-  type: "noul",
-  instructions: `Is this submission unsolicited marketing, phishing, mass solicitation or automated spam? Irrelevance alone is not spam. Consider the supplied facts about recent submissions. ${classifierDataInstruction}`,
-} as const;
 const relevance = {
   type: "noul",
   instructions: `Is the submission relevant to the supplied business context? ${classifierDataInstruction}`,
@@ -37,7 +34,10 @@ const relevance = {
 
 interface JevInput {
   readonly state: ClassifierInput;
-  readonly questions: { readonly spam: typeof spam; readonly relevance?: typeof relevance };
+  readonly questions: {
+    readonly spam: { readonly type: "noul"; readonly instructions: string };
+    readonly relevance?: typeof relevance;
+  };
 }
 
 interface JevBinding {
@@ -53,6 +53,7 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
   state: ClassifierInput,
 ) {
   const hasContext = state.business_context !== "";
+  const spam = { type: "noul", instructions: classifierSpamInstructions(state.facts) } as const;
   const response = yield* Effect.tryPromise({
     try: (signal) =>
       ai.run(

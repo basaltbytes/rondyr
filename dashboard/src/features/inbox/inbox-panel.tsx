@@ -3,9 +3,12 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { OrganizationDomainList } from "@rondyr/organizations/organization-domain";
+
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
 import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
+import { listDomains } from "~/lib/organization-domains-client";
 import { productName } from "~/lib/product";
 
 import { InboxSetup } from "./inbox-setup.tsx";
@@ -20,6 +23,10 @@ import { SubmissionReader } from "./submission-reader.tsx";
 const InboxSettings = lazy(async () => {
   const { InboxSettings: Settings } = await import("./inbox-settings.tsx");
   return { default: Settings };
+});
+const OrganizationDomains = lazy(async () => {
+  const { OrganizationDomains: Domains } = await import("./organization-domains.tsx");
+  return { default: Domains };
 });
 
 /**
@@ -45,6 +52,10 @@ interface Listing {
   readonly readAt: number;
 }
 
+type SettingsSelection =
+  | { readonly section: "domains"; readonly domains: Promise<OrganizationDomainList | null> }
+  | { readonly section: Exclude<Section, "domains"> };
+
 interface InboxViewProps {
   readonly inboxes: readonly Inbox[];
   readonly inbox: Inbox;
@@ -68,7 +79,7 @@ function InboxView({
 }: InboxViewProps) {
   const { t } = useTranslation();
   const [folder, setFolder] = useState<Folder>("quarantined");
-  const [section, setSection] = useState<Section | null>(null);
+  const [settings, setSettings] = useState<SettingsSelection | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [opened, setOpened] = useState<SubmissionEntry | null>(null);
@@ -77,6 +88,7 @@ function InboxView({
   const [loadingMore, setLoadingMore] = useState(false);
 
   const status = folder === "all" ? "" : folder;
+  const section = settings?.section ?? null;
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the list of messages with the Rondyr API.
   useEffect(() => {
@@ -114,12 +126,23 @@ function InboxView({
   const total = counts === null ? null : totalOf(counts, folder);
 
   function openFolder(next: Folder) {
-    setSection(null);
+    setSettings(null);
     setOpened(null);
     if (next === folder) return;
     setFolder(next);
     setListing(null);
     setFailed(false);
+  }
+
+  function openDomains() {
+    setSettings({ section: "domains", domains: listDomains(inbox.id).catch(() => null) });
+  }
+
+  function openSection(next: Section) {
+    if (next === section) return;
+    setOpened(null);
+    if (next === "domains") openDomains();
+    else setSettings({ section: next });
   }
 
   async function loadMore() {
@@ -178,13 +201,10 @@ function InboxView({
         account={account}
         onInbox={onInbox}
         onFolder={openFolder}
-        onSection={(next) => {
-          setSection(next);
-          setOpened(null);
-        }}
+        onSection={openSection}
       />
       <SidebarInset className="lg:grid lg:h-dvh lg:inbox-panes">
-        {section === null ? (
+        {settings === null ? (
           <>
             <MessageList
               folder={folder}
@@ -227,11 +247,17 @@ function InboxView({
           </>
         ) : (
           <Suspense fallback={<PageFallback />}>
-            {section === "operations" ? (
+            {settings.section === "operations" ? (
               operations
+            ) : settings.section === "domains" ? (
+              <OrganizationDomains
+                inboxId={inbox.id}
+                domains={settings.domains}
+                onRetry={openDomains}
+              />
             ) : (
               <InboxSettings
-                section={section}
+                section={settings.section}
                 inbox={inbox}
                 onFormsChanged={onFormsChanged}
                 onOrganizationCreated={onOrganizationCreated}

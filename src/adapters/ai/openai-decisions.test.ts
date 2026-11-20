@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 
+import { OrganizationDomain } from "../../domain/organizations/organization-domain.ts";
 import { classifierInput } from "../../domain/submissions/classifier-input.ts";
 import { scoreWithOpenAi } from "./openai-decisions.ts";
 
@@ -70,6 +71,48 @@ it.effect("omits relevance without context and unwraps a completed Gateway respo
     );
 
     assert.deepEqual(scores, { model: "gpt-6-luna", spam: 0.03 });
+  }),
+);
+
+it.effect("sends Decisions a same-domain fact without the matching email address", () =>
+  Effect.gen(function* () {
+    const scores = yield* scoreWithOpenAi(
+      {
+        run: (_model, request) => {
+          assert.include(request.input, '"sender_matches_organization_domain":true');
+          assert.notInclude(request.input, "studio.example");
+          assert.include(
+            request.questions.find(({ name }) => name === "spam")?.instructions,
+            "sender_matches_organization_domain",
+          );
+          return Promise.resolve(decision);
+        },
+      },
+      classifierInput({ ...fields, email: "team@sub.studio.example" }, "Pottery classes", counts, [
+        OrganizationDomain.make("studio.example"),
+      ]),
+    );
+    assert.strictEqual(scores.spam, 0.03);
+  }),
+);
+
+it.effect("omits the domain fact and its instruction for an address outside the domains", () =>
+  Effect.gen(function* () {
+    const scores = yield* scoreWithOpenAi(
+      {
+        run: (_model, request) => {
+          assert.notInclude(request.input, "sender_matches_organization_domain");
+          assert.include(request.input, '"email":"team@notstudio.example"');
+          for (const { instructions } of request.questions)
+            assert.notInclude(instructions, "sender_matches_organization_domain");
+          return Promise.resolve(decision);
+        },
+      },
+      classifierInput({ ...fields, email: "team@notstudio.example" }, "Pottery classes", counts, [
+        OrganizationDomain.make("studio.example"),
+      ]),
+    );
+    assert.strictEqual(scores.spam, 0.03);
   }),
 );
 
