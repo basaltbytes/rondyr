@@ -52,7 +52,9 @@ export const ClassifierInput = Schema.Struct({
   facts: Schema.Struct({
     ...RepetitionCounts.fields,
     url_or_html_outside_longest_field: Schema.Boolean,
-    sender_matches_organization_domain: Schema.optionalKey(Schema.Boolean),
+    // Present only on a match: a `false` on every other message moved the scores of
+    // unrelated legitimate messages in the evaluation.
+    sender_matches_organization_domain: Schema.optionalKey(Schema.Literal(true)),
   }),
   submission_fields: SubmissionFields,
 });
@@ -84,7 +86,7 @@ export function classifierInput(
     if (value.length > (values[longest]?.length ?? 0)) longest = index;
   }
   const matches = senderMatchesOrganizationDomain(fields, domains);
-  const facts = {
+  const facts: ClassifierInput["facts"] = {
     ...counts,
     url_or_html_outside_longest_field: values.some(
       (value, index) => index !== longest && urlOrTag.test(value),
@@ -92,10 +94,9 @@ export function classifierInput(
   };
   return {
     business_context: classifierContext(context ?? ""),
-    facts:
-      matches === undefined ? facts : { ...facts, sender_matches_organization_domain: matches },
+    facts: matches ? { ...facts, sender_matches_organization_domain: true } : facts,
     // Keep the email field even when it is the submission's only field.
-    submission_fields: matches === true ? { ...fields, email: "" } : fields,
+    submission_fields: matches ? { ...fields, email: "" } : fields,
   };
 }
 
@@ -104,8 +105,7 @@ const isEmailAddress = Schema.is(EmailAddress);
 function senderMatchesOrganizationDomain(
   fields: typeof SubmissionFields.Type,
   domains: OrganizationDomainList,
-): boolean | undefined {
-  if (domains.length === 0) return undefined;
+) {
   const email = fields.email?.trim();
   if (!isEmailAddress(email)) return false;
   const hostname = email.slice(email.indexOf("@") + 1).toLowerCase();
@@ -119,8 +119,8 @@ export function classifierSpamInstructions(facts: ClassifierInput["facts"]) {
   const question =
     "Is this submission unsolicited marketing, phishing, mass solicitation or automated spam? Irrelevance alone is not spam. Consider the supplied facts about recent submissions.";
   const domain =
-    facts.sender_matches_organization_domain === undefined
-      ? ""
-      : " The sender_matches_organization_domain fact describes the domain of the submitted address. It does not verify the sender's identity, and a match alone is not evidence of spam.";
+    facts.sender_matches_organization_domain === true
+      ? " The sender_matches_organization_domain fact means the submitted address uses a domain of the organization. It does not verify the sender's identity, and a match alone is not evidence of spam."
+      : "";
   return `${question}${domain} ${classifierDataInstruction}`;
 }
