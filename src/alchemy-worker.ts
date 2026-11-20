@@ -3,6 +3,7 @@ import * as Alchemy from "alchemy";
 import { Config, Effect, Option, Schema } from "effect";
 
 import wrangler from "../wrangler.json" with { type: "json" };
+import { ClassifierProvider } from "./adapters/ai/classifier.ts";
 import { workerImplementation } from "./worker-implementation.ts";
 
 const deployedOrigin = Config.schema(
@@ -36,6 +37,9 @@ const deploymentProps = Effect.gen(function* () {
     ? Config.option(Config.URL("BETTER_AUTH_URL"))
     : deployedOrigin.pipe(Config.map(Option.some));
   const setupToken = yield* Config.option(Config.Redacted("RONDYR_SETUP_TOKEN"));
+  const classifier = yield* Config.schema(ClassifierProvider, "RONDYR_CLASSIFIER").pipe(
+    Config.withDefault("jev"),
+  );
   return {
     main: import.meta.url,
     name: `rondyr-${stage}`,
@@ -57,6 +61,7 @@ const deploymentProps = Effect.gen(function* () {
       DB: database,
       CLASSIFICATION_QUEUE: classification,
       DELIVERY_QUEUE: delivery,
+      RONDYR_CLASSIFIER: classifier,
       ...(!dev && { AI: Cloudflare.Workers.AI() }),
       ...(Option.isSome(authSecret) && { BETTER_AUTH_SECRET: authSecret.value }),
       ...(Option.isSome(authUrl) && { BETTER_AUTH_URL: authUrl.value.origin }),
