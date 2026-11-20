@@ -37,6 +37,12 @@ On the first plan or deployment, Alchemy can offer to create its state Worker. P
 
 The stack deploys the Worker with the Vite assets and the Durable Objects of the domain model. It applies the D1 migrations, and it configures the classification queue, its dead-letter queue, and the cron trigger that runs every minute. It also creates the delivery queue, which nothing uses until [#5](https://github.com/basaltbytes/rondyr/issues/5) is done.
 
+The dashboard assets get their security headers from `public/_headers`. After a deployment, check them on the stage origin:
+
+```sh
+curl -sI https://rondyr-staging.<subdomain>.workers.dev/ | grep -iE 'content-security-policy|strict-transport-security|x-frame-options|x-content-type-options|referrer-policy'
+```
+
 ## First account
 
 Public sign-up is closed. With `RONDYR_SETUP_TOKEN` set on the stage, run the setup script against the stage origin:

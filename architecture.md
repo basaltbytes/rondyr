@@ -255,7 +255,16 @@ Ce plafond est commun à tous les visiteurs d’un formulaire, donc un seul clie
 - Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
 - Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Un test couvre la lecture et l’écriture depuis un compte d’une autre organisation.
 
-Tout membre a aujourd’hui tous les droits sur son organisation, et tout compte connecté peut en créer une (#11). Le dashboard est servi sans CSP ni protection contre l’inclusion dans une iframe (#24).
+Tout membre a aujourd’hui tous les droits sur son organisation, et tout compte connecté peut en créer une (#11).
+
+### En-têtes HTTP
+
+`public/_headers`, que Vite copie dans `dist/client`, fixe les en-têtes des assets du dashboard. Alchemy et Wrangler le lisent au déploiement et ne le publient pas comme fichier.
+
+- Une CSP sans script ni style en ligne : `default-src 'none'`, puis `'self'` pour les scripts, les styles, les images, les polices, le manifeste et les requêtes `fetch`, avec `base-uri 'none'`, `form-action 'self'` et `frame-ancestors 'none'`. Le build Vite de production ne contient ni script ni style en ligne, et le client Better Auth appelle `/api/auth/*` sur la même origine.
+- `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` et `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
+
+Ce fichier ne s’applique pas aux réponses du Worker (`/health`, `/f`, `/api`). Le Worker ajoute `X-Content-Type-Options: nosniff` à chacune d’elles, et un test workerd le vérifie. La connexion et la revue d’un message ont été vérifiées avec cette CSP dans Chrome, sur le build de production servi par `vite preview`.
 
 ### Sorties et secrets
 
@@ -296,6 +305,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   ├── routes/
 │   ├── features/                   # authentication, inbox
 │   └── lib/                        # clients HTTP
+├── public/_headers                 # en-têtes HTTP des assets du dashboard
 ├── scripts/                        # doctor, worker-budget, setup-owner
 ├── tooling/oxlint/                 # règles de lint locales et leurs tests
 └── tests/integration/              # fixtures partagées
@@ -350,7 +360,7 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 
 1. **Distribution.** Livraisons (#5), puis e-mail (#14) et webhook signé (#13). C’est ce qui manque le plus pour remplacer un service de formulaires.
 2. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
-3. **Protection.** Anti-abus et quotas (#7), en-têtes de sécurité (#24).
+3. **Protection.** Anti-abus et quotas (#7).
 4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
 5. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
 6. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12), licence (#21).

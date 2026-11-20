@@ -39,6 +39,31 @@ describe("Rondyr Worker", () => {
     }),
   );
 
+  it.effect("forbids MIME sniffing on every Worker response", () =>
+    Effect.gen(function* () {
+      const responses = yield* Effect.all([
+        Effect.promise(() => env.TEST_WORKER.fetch(`${origin}/health`)),
+        Effect.promise(() => env.TEST_WORKER.fetch(`${origin}/api/missing`)),
+        Effect.promise(() => env.TEST_WORKER.fetch(`${origin}/api/auth/get-session`)),
+        Effect.promise(() =>
+          env.TEST_WORKER.fetch(`${origin}/f/unknown`, {
+            method: "POST",
+            headers: { "content-type": "text/plain" },
+            body: "message",
+          }),
+        ),
+      ]);
+
+      assert.deepEqual(
+        responses.map(({ status }) => status),
+        [200, 404, 200, 415],
+      );
+      for (const response of responses) {
+        assert.strictEqual(response.headers.get("x-content-type-options"), "nosniff");
+      }
+    }),
+  );
+
   it.effect("returns 404 for a missing API route", () =>
     Effect.gen(function* () {
       const response = yield* Effect.promise(() =>

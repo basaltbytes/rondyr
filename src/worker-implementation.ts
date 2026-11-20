@@ -54,6 +54,8 @@ export const workerImplementation = Effect.gen(function* () {
       RouteNotFound: () => Effect.succeed(HttpServerResponse.empty({ status: 404 })),
     }),
     Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 500 })),
+    // The Worker answers /health, /f and /api. public/_headers covers the dashboard assets.
+    Effect.map(HttpServerResponse.setHeader("x-content-type-options", "nosniff")),
   );
 
   const worker = yield* Worker;
