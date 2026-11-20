@@ -1,15 +1,34 @@
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
 import { InboxForm, SetupInbox } from "../../domain/submissions/inbox-setup.ts";
+import { InboxOrganization } from "../../domain/submissions/inbox.ts";
 import { InboxUnavailable } from "../../domain/submissions/submission.rejection.ts";
 import type { OrganizationId, UserId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationDirectory } from "../../ports/organization-directory.ts";
 import { d1, database } from "./d1.ts";
 
+const decodeOrganizations = Schema.decodeUnknownEffect(Schema.Array(InboxOrganization));
 const decodeForms = Schema.decodeUnknownEffect(Schema.Array(InboxForm));
 const unavailable = () => InboxUnavailable.make();
 
-export const listForms = Effect.fn("InboxSetup.listForms")(function* (
+const organizationsFor = Effect.fn("OrganizationDirectory.organizationsFor")(function* (
+  userId: typeof UserId.Type,
+) {
+  const db = yield* database;
+  const rows = yield* d1(() =>
+    db
+      .prepare(`
+    SELECT o.id, o.name FROM organizations o JOIN organization_members m ON m.organization_id = o.id
+    WHERE m.user_id = ? ORDER BY o.name, o.id
+  `)
+      .bind(userId)
+      .all(),
+  );
+  return yield* decodeOrganizations(rows.results);
+}, Effect.mapError(unavailable));
+
+const formsOf = Effect.fn("OrganizationDirectory.formsOf")(function* (
   userId: typeof UserId.Type,
   organizationId: OrganizationId,
 ) {
@@ -27,7 +46,7 @@ export const listForms = Effect.fn("InboxSetup.listForms")(function* (
   return yield* decodeForms(results.results);
 }, Effect.mapError(unavailable));
 
-export const setupInbox = Effect.fn("InboxSetup.create")(function* (
+const create = Effect.fn("OrganizationDirectory.create")(function* (
   userId: typeof UserId.Type,
   input: typeof SetupInbox.Type,
 ) {
@@ -52,3 +71,9 @@ export const setupInbox = Effect.fn("InboxSetup.create")(function* (
     ]),
   );
 }, Effect.mapError(unavailable));
+
+export const organizationDirectoryLive = Layer.succeed(OrganizationDirectory, {
+  organizationsFor,
+  formsOf,
+  create,
+});

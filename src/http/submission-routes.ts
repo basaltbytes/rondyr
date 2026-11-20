@@ -6,9 +6,9 @@ import {
   HttpServerResponse,
 } from "effect/http";
 
-import { receiveSubmission } from "../adapters/database/intake.ts";
 import { SubmissionFields } from "../domain/submissions/submission-fields.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
+import { SubmissionIntake } from "../ports/intake.ts";
 
 const PublicFormPath = Schema.Struct({
   formId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
@@ -45,7 +45,8 @@ const receive = Effect.gen(function* () {
   if (!json && media !== "application/x-www-form-urlencoded") return empty(415);
   const body = yield* request.text;
   const fields = json ? yield* decodeJson(body) : yield* decodeUrlEncoded(body);
-  const submissionId = yield* receiveSubmission(formId, fields);
+  const intake = yield* SubmissionIntake;
+  const submissionId = yield* intake.receive(formId, fields);
   const browser =
     request.headers.accept
       ?.split(",")

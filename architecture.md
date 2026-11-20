@@ -44,7 +44,7 @@ Form builder, CRM, pièces jointes, automatisations visuelles, moteur de templat
 | Modèle de domaine | Alchemy Domain (`@alchemy.run/domain`) : agrégat, politique, saga et projection hébergés dans des Durable Objects |
 | Infrastructure as Code | Alchemy 2 (`alchemy-run.ts`) |
 | Persistance des messages et de la configuration | Cloudflare D1 |
-| Schéma et migrations | Drizzle Kit ; les requêtes d’exécution sont du SQL préparé décodé par Effect Schema (#23) |
+| Schéma et migrations | Drizzle Kit. Les requêtes d’exécution sont du SQL préparé, et Effect Schema décode chaque ligne lue |
 | Authentification du dashboard | Better Auth, sessions en D1 |
 | Asynchronisme | Cloudflare Queues et un Cron chaque minute |
 | Classificateur | Jev (`typesafe/jev`, binding Workers AI) ou OpenAI Decisions (`openai/decisions`, via AI Gateway), choisi par stage |
@@ -57,7 +57,7 @@ Les fichiers et dossiers du projet sont en kebab-case, sauf les noms imposés pa
 
 1. **Monolithe modulaire.** Un Worker, pas de microservices.
 2. **Domaine isolé de la plateforme.** `src/domain` n’importe ni `cloudflare:*`, ni Drizzle, ni l’IaC Alchemy ; une règle Oxlint le vérifie. Il dépend d’Effect et de l’API de modélisation d’Alchemy Domain.
-3. **Ports et adaptateurs.** Les ports déclarent les services Effect et les adaptateurs fournissent les layers, composés dans `src/worker-implementation.ts`. Ce principe n’est respecté que pour l’authentification et l’Inbox ; les routes et les jobs appellent encore les adaptateurs D1 directement (#23).
+3. **Ports et adaptateurs.** Les ports de `src/ports` déclarent les services Effect, les adaptateurs fournissent les layers, et `src/worker-implementation.ts` les compose. Les routes et les jobs n’utilisent que des ports : une règle Oxlint leur interdit d’importer `src/adapters`, sauf dans les tests. Le domaine déclare lui-même `InboxStore` et le système externe `Classifier`, puisqu’il ne peut pas importer `src/ports`.
 4. **IA non destructive.** Un doute, une erreur technique ou un message hors sujet mène à la quarantaine, jamais à une suppression.
 5. **Au moins une fois, avec idempotence.** Queues peut remettre deux fois le même message ; chaque consumer le tolère.
 6. **Coût borné.** Les protections s’appliquent avant l’appel au modèle. Les plafonds par organisation restent à faire (#7).
@@ -96,7 +96,7 @@ D1 et Queues ne partagent pas de transaction, et Queues remet les messages au mo
 
 ### Ingestion
 
-`receiveSubmission` exécute un `db.batch` de deux instructions : l’insertion dans `submissions`, conditionnée à l’existence du formulaire et au plafond de 30 messages par minute, puis l’insertion dans `outbox_events`. D1 exécute le lot comme une transaction. Un test force l’échec de la seconde insertion avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
+L’adaptateur D1 du port `SubmissionIntake` exécute un `db.batch` de deux instructions : l’insertion dans `submissions`, conditionnée à l’existence du formulaire et au plafond de 30 messages par minute, puis l’insertion dans `outbox_events`. D1 exécute le lot comme une transaction. Un test force l’échec de la seconde insertion avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
 
 ### Publication
 
@@ -276,12 +276,14 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   ├── worker-implementation.ts    # composition des layers, fetch, queue, scheduled
 │   ├── domain/submissions/         # agrégat, commandes, événements, politique, saga,
 │   │                               # projection, requêtes, ReviewApi, schémas partagés
-│   ├── ports/
-│   │   └── authentication.ts
+│   ├── ports/                      # authentication, intake, outbox, classification-queue,
+│   │                               # organization-directory, stored-messages, storage
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
-│   │   └── database/               # schémas Drizzle, d1, intake, inbox, inbox-setup
+│   │   ├── database/               # schémas Drizzle, d1, intake, outbox, inbox,
+│   │   │                           # organization-directory, stored-messages
+│   │   └── queues/                 # classification-queue
 │   ├── http/                       # public, submission, authentication, review
 │   └── jobs/
 │       └── submission-outbox.ts    # publication par le Cron et consumer de file
@@ -358,7 +360,6 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 | Durées de conservation par défaut, export et purge | #9 |
 | Origines autorisées quand la liste d’un formulaire est vide | #19 |
 | Champs répétés et `multipart/form-data` sans fichiers | #8 |
-| Query builder Drizzle ou SQL préparé pour les requêtes d’exécution | #23 |
 | Gateway IA : celui de la pile ou `default` | #22 |
 | Déploiement de `staging` avant `prod` dans la CI | #10 |
 | Licence : MIT, Apache-2.0 ou AGPL-3.0 | #21 |
@@ -366,6 +367,7 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 ### Décisions prises
 
 - Le statut d’une soumission est un flux d’événements dans un Durable Object, projeté dans D1 pour l’Inbox.
+- Les requêtes d’exécution restent du SQL préparé, dans les adaptateurs de `src/adapters/database`, et Effect Schema décode les lignes qu’elles renvoient. Drizzle sert au schéma, aux migrations et à Better Auth (#23).
 - Jev passe par le binding Workers AI ; OpenAI Decisions passe par AI Gateway avec la facturation unifiée. Le choix se fait par stage.
 - Le premier compte se crée avec un jeton d’installation et `scripts/setup-owner.sh`.
 - Un envoi HTML reçoit une page de confirmation avec le statut `202`.

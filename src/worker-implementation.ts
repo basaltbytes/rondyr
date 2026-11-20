@@ -7,6 +7,11 @@ import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
+import { submissionIntakeLive } from "./adapters/database/intake.ts";
+import { organizationDirectoryLive } from "./adapters/database/organization-directory.ts";
+import { outboxLive } from "./adapters/database/outbox.ts";
+import { storedMessagesLive } from "./adapters/database/stored-messages.ts";
+import { classificationQueueLive } from "./adapters/queues/classification-queue.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
 import { publicRoutes } from "./http/public-routes.ts";
@@ -17,9 +22,17 @@ import { consumeSubmissions, publishPendingSubmissions } from "./jobs/submission
 const services = Layer.mergeAll(
   authenticationLive,
   HttpServer.layerServices,
+  submissionIntakeLive,
+  organizationDirectoryLive,
+  outboxLive,
+  classificationQueueLive,
   Submissions.layer(submissionHandlers, { legacyData: false }).pipe(
     Layer.provide(
-      Layer.mergeAll(DomainCloudflare.layerDurableObjects(), classifierLive, inboxStoreLive),
+      Layer.mergeAll(
+        DomainCloudflare.layerDurableObjects(),
+        classifierLive.pipe(Layer.provide(storedMessagesLive)),
+        inboxStoreLive,
+      ),
     ),
   ),
 );
@@ -43,7 +56,9 @@ export const workerImplementation = Effect.gen(function* () {
   const worker = yield* Worker;
   yield* worker.listen((event) => {
     if (!isWorkerEvent(event)) return;
-    if (event.type === "scheduled") return publishPendingSubmissions().pipe(Effect.orDie);
+    if (event.type === "scheduled") {
+      return publishPendingSubmissions().pipe(Effect.provideContext(context), Effect.orDie);
+    }
     if (event.type === "queue") {
       return consumeSubmissions(event.input).pipe(Effect.provideContext(context));
     }

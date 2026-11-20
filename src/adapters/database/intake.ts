@@ -1,22 +1,14 @@
-import { Clock, Effect, Schema } from "effect";
+import { Clock, Effect, Layer, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
 import { SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { FormNotFound, FormRateLimited, SubmissionIntake } from "../../ports/intake.ts";
 import { d1, database } from "./d1.ts";
-
-export class FormNotFound extends Schema.TaggedError<
-  FormNotFound,
-  { readonly brand: unique symbol }
->()("FormNotFound", {}) {}
-export class FormRateLimited extends Schema.TaggedError<
-  FormRateLimited,
-  { readonly brand: unique symbol }
->()("FormRateLimited", {}) {}
 
 const encodeFields = Schema.encodeEffect(Schema.fromJsonString(SubmissionFields));
 
-export const receiveSubmission = Effect.fn("Intake.receive")(function* (
+const receive = Effect.fn("Intake.receive")(function* (
   publicId: string,
   fields: typeof SubmissionFields.Type,
 ) {
@@ -48,3 +40,5 @@ export const receiveSubmission = Effect.fn("Intake.receive")(function* (
   if (exists === null) return yield* FormNotFound.make();
   return yield* FormRateLimited.make();
 });
+
+export const submissionIntakeLive = Layer.succeed(SubmissionIntake, { receive });

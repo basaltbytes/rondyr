@@ -6,8 +6,6 @@ import {
   HttpServerResponse,
 } from "effect/http";
 
-import { listForms, setupInbox } from "../adapters/database/inbox-setup.ts";
-import { organizationsFor } from "../adapters/database/inbox.ts";
 import { InboxOrganizationWithForms, SetupInbox } from "../domain/submissions/inbox-setup.ts";
 import { InboxPage, SubmissionDetail, SubmissionStatus } from "../domain/submissions/inbox.ts";
 import { ReviewApi } from "../domain/submissions/review.api.ts";
@@ -18,6 +16,7 @@ import {
 } from "../domain/submissions/review-session.middleware.ts";
 import { OrganizationId, SubmissionId, UserId } from "../domain/submissions/submission.id.ts";
 import { Authentication } from "../ports/authentication.ts";
+import { OrganizationDirectory } from "../ports/organization-directory.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const SubmissionPath = Schema.Struct({
@@ -43,7 +42,8 @@ const reviewer = Effect.fn("ReviewRoute.reviewer")(function* () {
   const user = yield* auth.userId(request);
   if (user === null) return yield* ReviewUnauthorized.make();
   const userId = yield* Schema.decodeEffect(UserId)(user);
-  const organizations = yield* organizationsFor(userId);
+  const directory = yield* OrganizationDirectory;
+  const organizations = yield* directory.organizationsFor(userId);
   return { userId, organizations };
 });
 
@@ -81,8 +81,9 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
 
 const organizationList = Effect.gen(function* () {
   const { organizations, userId } = yield* reviewer();
+  const directory = yield* OrganizationDirectory;
   const inboxes = yield* Effect.forEach(organizations, (organization) =>
-    Effect.map(listForms(userId, organization.id), (forms) => ({ ...organization, forms })),
+    Effect.map(directory.formsOf(userId, organization.id), (forms) => ({ ...organization, forms })),
   );
   return yield* HttpServerResponse.schemaJson(Schema.Array(InboxOrganizationWithForms))(
     inboxes,
@@ -93,7 +94,8 @@ const organizationList = Effect.gen(function* () {
 const create = Effect.gen(function* () {
   const { userId } = yield* reviewer();
   const input = yield* HttpServerRequest.schemaBodyJson(SetupInbox);
-  yield* setupInbox(userId, input);
+  const directory = yield* OrganizationDirectory;
+  yield* directory.create(userId, input);
   return HttpServerResponse.empty({ status: 201, ...jsonOptions });
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
 
