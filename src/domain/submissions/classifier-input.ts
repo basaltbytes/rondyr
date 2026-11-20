@@ -58,8 +58,15 @@ export type ClassifierInput = typeof ClassifierInput.Type;
 const urlOrTag =
   /(?:\b(?:https?|ftp):\/\/|\bwww\.)[^\s<>]+|<\/?[a-z][a-z0-9:-]*(?=[\s/>])[^<>]*>/iu;
 
+const contextLimit = 2000;
+const contextSegments = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/** Trim the context and keep whole characters within the UTF-16 length limit. */
 export function classifierContext(raw: string) {
-  return raw.trim().slice(0, 2000);
+  const trimmed = raw.trim();
+  if (trimmed.length <= contextLimit) return trimmed;
+  const boundary = contextSegments.segment(trimmed).containing(contextLimit);
+  return trimmed.slice(0, boundary?.index ?? contextLimit);
 }
 
 export function classifierInput(

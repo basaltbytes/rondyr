@@ -96,7 +96,7 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
   const runPromise = Effect.runPromiseWith(services);
   const observed = yield* Ref.make(nothingObserved);
   const binding: ModelBinding = {
-    run: (model: ClassifierModel, request: ModelInput, options: AiOptions) =>
+    run: (model: ClassifierModel, request: ModelInput, { signal, ...options }: AiOptions) =>
       runPromise(
         Ref.update(observed, (seen) => ({ ...seen, requested: Option.some(model) })).pipe(
           Effect.andThen(ai.run(model, request, options)),
@@ -112,6 +112,7 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
             Ref.update(observed, (seen) => ({ ...seen, failure: Option.some(failure) })),
           ),
         ),
+        signal === undefined ? undefined : { signal },
       ),
   };
   const result = yield* classifiers[classifier].score(binding, input).pipe(
@@ -133,8 +134,7 @@ const attempt = Effect.fn("Evaluation.attempt")(function* (
   if (Option.isSome(seen.requested) && seen.requested.value !== expected) {
     return yield* UnexpectedModel.make({ classifier, expected, requested: seen.requested.value });
   }
-  // The adapters turn any rejection of `run` into a retryable ClassificationFailed. These two
-  // failures would repeat on every call, so the run stops instead.
+  // Invalid gateway options and REST authentication failures would repeat on every call.
   if (Option.isSome(seen.failure) && seen.failure.value._tag === "UnsupportedGatewayOptions") {
     return yield* seen.failure.value;
   }

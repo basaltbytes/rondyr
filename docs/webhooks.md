@@ -87,6 +87,8 @@ The body is version 1 of the payload:
 | `form.id` | String | The public ID of the form, as in `/f/<public-id>` |
 | `form.name` | String | The form name set in the dashboard |
 
+Treat `submission.fields` as an unordered JSON object. Rondyr serializes field names that are JavaScript array indices, such as `"1"` and `"2"`, first in numeric order.
+
 Version 1 can gain fields, so ignore the ones you don't know. Bodies larger than 64 KiB are never sent; a submission is at most 16 KiB, so this limit only stops a malformed record.
 
 ## Signature

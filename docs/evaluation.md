@@ -33,7 +33,7 @@ Dated lines are replayed by `received`, with ties resolved by file order. Undate
 
 ### Business context
 
-The business context of the form is in a second file next to the corpus, with the same name and `.context.txt` in place of `.jsonl`: `evals/corpus/synthetic.jsonl` goes with `evals/corpus/synthetic.context.txt`. The harness trims it and keeps the first 2,000 characters, as the Worker does. An empty file means the form has no business context; the classifiers are then asked about spam only, and no message can be quarantined for low relevance.
+The business context of the form is in a second file next to the corpus. For `evals/corpus/synthetic.jsonl`, use `evals/corpus/synthetic.context.txt`. The harness and the Worker both trim the context and keep as many whole characters as fit within 2,000 UTF-16 code units. An empty file means the form has no business context. The classifiers then score spam only, and no message can be quarantined for low relevance.
 
 A separate file keeps the corpus lines in the shape the issue describes, so an existing corpus works once the context file is next to it. A command-line option would let two runs of the same corpus use different contexts, and the results would no longer be comparable; the file is versioned, or kept local, together with its corpus. The context is part of the cache key, so changing it scores every entry again.
 

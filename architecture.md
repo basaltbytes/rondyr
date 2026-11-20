@@ -190,7 +190,7 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 
 ### Règles de décision
 
-`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 2`.
+`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 3`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur.
 
 | Condition | Résultat |
 | --- | --- |
@@ -235,7 +235,7 @@ La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la premiè
 
 ### Sécurité du pipeline IA
 
-Les deux adaptateurs indiquent au modèle que l’entrée est à lire comme des données. Les champs du visiteur figurent dans un objet distinct des instructions. Le corps est limité à 16 Kio et le contexte métier à 2 000 caractères. Les plafonds d’appels par organisation restent à faire (#7).
+Les deux adaptateurs indiquent au modèle que l’entrée est à lire comme des données. Les champs du visiteur figurent dans un objet distinct des instructions. Le corps est limité à 16 Kio. Le contexte métier est limité à 2 000 unités UTF-16 sans couper de caractère. Les plafonds d’appels par organisation restent à faire (#7).
 
 ## 6. Modèle de données
 
@@ -296,6 +296,8 @@ Les tables `classification-attempts` et `audit-events` du document initial ne so
 `POST /f/:public-id` accepte `application/json`, `application/x-www-form-urlencoded` et `multipart/form-data`. Le corps pèse au plus 16 Kio et contient de 1 à 32 champs texte ; un nom de champ a de 1 à 100 caractères, sans caractère de contrôle ni saut de ligne (y compris U+0085, U+2028 et U+2029), et une valeur au plus 4 000. Les noms `__proto__`, `constructor` et `prototype` restent refusés, et un nom qui commence par `_` n’a pas de sens particulier.
 
 Un objet JSON imbriqué ou une valeur non textuelle sont refusés. Dans un corps de formulaire, un nom répété (cases à cocher, liste à choix multiples) est accepté : ses valeurs sont jointes par `, ` dans l’ordre reçu, et la valeur jointe doit tenir en 4 000 caractères. Un corps `multipart/form-data` ne contient que des champs texte : une partie avec un paramètre `filename`, même vide comme celle d’un champ fichier laissé vide, fait refuser le corps en `400`, sans rien enregistrer. L’analyseur multipart d’Effect (`MultipartParser`) lit le corps déjà borné à 16 Kio. Les messages reçus avant la règle des caractères de contrôle restent lisibles : seule l’ingestion l’applique.
+
+Les champs sont stockés dans un objet JSON. Les noms qui sont des indices de tableau JavaScript (par exemple `"1"` et `"2"`) passent en tête, par ordre numérique. Pour conserver l’ordre de réception de bout en bout, il faudrait changer le format de stockage et transmettre l’ordre dans le payload webhook.
 
 | Statut | Cas |
 | --- | --- |
@@ -434,7 +436,7 @@ Le secret de signature fait 32 octets aléatoires, préfixés de `whsec_`. Il n�
 
 `EmailAddress`, dans `src/domain/deliveries/email.ts`, n’accepte qu’une adresse ASCII nue : une partie locale en dot-atom et un nom d’hôte d’au moins deux labels DNS, sans espace, guillemet, chevron, virgule, point-virgule, parenthèse ni caractère de contrôle. Un nom affiché, deux adresses dans une entrée et un saut de ligne sont donc refusés. Une destination a de 1 à 10 destinataires distincts, sans tenir compte de la casse ; chaque destinataire compte comme un e-mail dans le quota de Resend. `RONDYR_EMAIL_FROM` passe la même règle au déploiement et à chaque lecture par le Worker.
 
-Les en-têtes ne contiennent aucune saisie d’un visiteur, sauf `Reply-To` : il vaut le champ nommé exactement `email` quand sa valeur passe `EmailAddress`, et il est absent sinon. L’objet est `Nouveau message : <nom du formulaire>`, sans saut de ligne ni caractère de contrôle, borné à 150 caractères. Le corps, en texte brut, liste les champs dans l’ordre reçu (les sauts de ligne d’un nom deviennent des espaces, ceux d’une valeur des `\n`), puis le nom du formulaire, la date de réception en UTC et l’identifiant de livraison. Le texte est en français, dans le seul module `src/domain/deliveries/email-message.ts`. Aucun en-tête personnalisé n’est envoyé.
+Les en-têtes ne contiennent aucune saisie d’un visiteur, sauf `Reply-To` : il vaut le champ nommé exactement `email` quand sa valeur passe `EmailAddress`, et il est absent sinon. L’objet est `Nouveau message : <nom du formulaire>`, sans saut de ligne ni caractère de contrôle, borné à 150 caractères. Le corps, en texte brut, commence par les champs dont le nom est un indice de tableau JavaScript, par ordre numérique, puis liste les autres dans l’ordre reçu. Les sauts de ligne d’un nom deviennent des espaces, ceux d’une valeur des `\n`. Le nom du formulaire, la date de réception en UTC et l’identifiant de livraison suivent les champs. Le texte est en français, dans le seul module `src/domain/deliveries/email-message.ts`. Aucun en-tête personnalisé n’est envoyé.
 
 L’adaptateur Resend envoie `POST https://api.resend.com/emails` avec `Idempotency-Key` égal à l’identifiant de livraison, `redirect: "manual"` et sans propagation de trace. `2xx` est un succès. `429` (débit ou quota), `5xx`, `409 concurrent_idempotent_requests`, une erreur réseau et l’absence de réponse en 30 secondes sont réessayés ; tout autre statut, dont `400`, `401`, `403` (domaine non vérifié), `409 invalid_idempotent_request` et `422`, est un échec définitif. Le résumé d’erreur ne contient que le statut et le code d’erreur de Resend (`name`, vérifié par le motif `[a-z_]{1,64}`), jamais son message, qui peut reprendre un champ de la requête.
 

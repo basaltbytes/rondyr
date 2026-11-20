@@ -6,6 +6,7 @@ import {
   type ClassifierInput,
   classifierDataInstruction,
 } from "../../domain/submissions/classifier-input.ts";
+import { mapBindingError } from "./binding-error.ts";
 import { aiGatewayOptions } from "./gateway.ts";
 
 const Answer = Schema.Struct({ type: Schema.Literal("noul"), noul: Score });
@@ -53,16 +54,16 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
 ) {
   const hasContext = state.business_context !== "";
   const response = yield* Effect.tryPromise({
-    try: () =>
+    try: (signal) =>
       ai.run(
         "typesafe/jev",
         {
           state,
           questions: hasContext ? { spam, relevance } : { spam },
         },
-        aiGatewayOptions,
+        { ...aiGatewayOptions, signal },
       ),
-    catch: () => ClassificationFailed.make({ retryable: true }),
+    catch: mapBindingError,
   });
   const { model, answers } = yield* decodeJevResponse(response).pipe(
     Effect.mapError(() => ClassificationFailed.make({ retryable: false })),

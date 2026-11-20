@@ -64,11 +64,12 @@ const workersAiAnswering = Effect.fn(function* (status: number, body: string) {
   const runPromise = Effect.runPromiseWith(services);
   const score = scoreWithJev(
     {
-      run: (model, input, options) =>
+      run: (model, input, { signal, ...options }) =>
         runPromise(
           ai
             .run(model, input, options)
             .pipe(Effect.tapError((failure) => Ref.update(failures, (all) => [...all, failure]))),
+          signal === undefined ? undefined : { signal },
         ),
     },
     modelInput,
