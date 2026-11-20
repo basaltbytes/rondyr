@@ -1,7 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
-import { Clock, Context, Deferred, Effect, Fiber, Layer, Schema } from "effect";
+import { Clock, Context, Deferred, Effect, Fiber, Layer, Option, Schema } from "effect";
 
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
 import { submissionIntakeLive } from "../adapters/database/intake.ts";
@@ -83,9 +83,10 @@ it.live(
       const services = yield* Layer.build(adapters);
       const queue = Context.get(services, ClassificationQueue);
       yield* seedForm("outbox-failed");
-      const submissionId = yield* Context.get(services, SubmissionIntake).receive(
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
         "outbox-failed",
         contact,
+        Option.none(),
       );
 
       const failure = yield* publishSubmission(submissionId).pipe(
@@ -171,9 +172,10 @@ it.live(
       const services = yield* Layer.build(adapters);
       const queue = Context.get(services, ClassificationQueue);
       yield* seedForm("outbox-lease");
-      const submissionId = yield* Context.get(services, SubmissionIntake).receive(
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
         "outbox-lease",
         contact,
+        Option.none(),
       );
 
       const sending = yield* Deferred.make<void>();
