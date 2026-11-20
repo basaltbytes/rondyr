@@ -1,6 +1,18 @@
 import { Option, Schema } from "effect";
 import { useActionState, useState } from "react";
 
+import { FormProblem, TextAreaField, TextField } from "~/components/text-field";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
+
 import {
   clearHoneypotField,
   clearSuccessUrl,
@@ -42,9 +54,11 @@ interface FormSettingsProps {
   readonly onChanged: () => Promise<void>;
 }
 
-function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
+/** One form: public URL, name, business context, redirect, honeypot field and status. */
+export function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [copied, setCopied] = useState(false);
   const publicUrl = `${window.location.origin}/f/${encodeURIComponent(form.publicId)}`;
 
   const [editProblem, edit, saving] = useActionState(
@@ -95,183 +109,280 @@ function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
   );
 
   return (
-    <section aria-label={`Réglages du formulaire ${form.name}`}>
-      <h3>{form.name}</h3>
-      <p>
-        {formStatusLabels[form.status]} · <code>{publicUrl}</code>
-      </p>
-      {form.status === "suspended" && (
-        <p>
-          Ce formulaire refuse les nouveaux messages. Les messages reçus restent dans la boîte de
-          réception.
-        </p>
-      )}
-      <p>
-        {form.businessContext === null
-          ? "Aucune activité décrite : la pertinence des messages n’est pas évaluée."
-          : `Activité : ${form.businessContext}`}
-      </p>
-      {editing ? (
-        <form action={edit} className="auth-form">
-          <label>
-            Nom du formulaire{" "}
-            <input name="name" required maxLength={100} defaultValue={form.name} />
-          </label>
-          <label>
-            Activité de l’organisation{" "}
-            <textarea
-              name="businessContext"
-              maxLength={2000}
-              placeholder="Facultatif"
-              defaultValue={form.businessContext ?? ""}
-            />
-          </label>
-          <div className="inbox-actions">
-            <button type="submit" disabled={saving}>
-              Enregistrer
-            </button>
-            <button type="button" onClick={() => setEditing(false)}>
-              Annuler
-            </button>
+    <div className="grid gap-4" aria-label={`Réglages du formulaire ${form.name}`}>
+      <Card>
+        <CardHeader>
+          <CardTitle>Adresse d’envoi</CardTitle>
+          <CardDescription>
+            {form.status === "suspended"
+              ? "Ce formulaire refuse les nouveaux messages. Les messages reçus restent dans la boîte de réception."
+              : "L’adresse à mettre dans l’attribut action de votre formulaire, ou à appeler en POST."}
+          </CardDescription>
+          <CardAction>
+            <Badge variant={form.status === "active" ? "success" : "neutral"}>
+              {formStatusLabels[form.status]}
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-3">
+            <code className="min-w-0 flex-1 basis-64 rounded-md bg-muted px-3 py-2 font-mono text-sm wrap-anywhere">
+              {publicUrl}
+            </code>
+            <Button
+              onClick={() => {
+                void navigator.clipboard.writeText(publicUrl).then(() => setCopied(true));
+              }}
+            >
+              {copied ? "Adresse copiée" : "Copier l’adresse"}
+            </Button>
           </div>
-        </form>
-      ) : (
-        <div className="inbox-actions">
-          <button type="button" onClick={() => setEditing(true)}>
-            Modifier le nom ou l’activité
-          </button>
-        </div>
-      )}
-      {editProblem !== null && <p role="alert">{editProblem}</p>}
-      {form.status === "active" && !confirming && (
-        <div className="inbox-actions">
-          <button type="button" onClick={() => setConfirming(true)}>
-            Suspendre le formulaire
-          </button>
-        </div>
-      )}
-      {form.status === "active" && confirming && (
-        <form action={changeStatus}>
-          <p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Nom et activité</CardTitle>
+          <CardDescription>
+            {form.businessContext === null
+              ? "Aucune activité décrite : la pertinence des messages n’est pas évaluée."
+              : form.businessContext}
+          </CardDescription>
+          {!editing && (
+            <CardAction>
+              <Button size="sm" onClick={() => setEditing(true)}>
+                Modifier
+              </Button>
+            </CardAction>
+          )}
+        </CardHeader>
+        {editing && (
+          <CardContent>
+            <form action={edit} className="grid gap-4">
+              <TextField
+                label="Nom du formulaire"
+                name="name"
+                required
+                maxLength={100}
+                defaultValue={form.name}
+              />
+              <TextAreaField
+                label="Activité de l’organisation"
+                name="businessContext"
+                maxLength={2000}
+                defaultValue={form.businessContext ?? ""}
+                hint="Facultatif. Le filtre s’en sert pour juger si un message concerne votre activité."
+              />
+              <FormProblem>{editProblem}</FormProblem>
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" variant="default" disabled={saving}>
+                  Enregistrer
+                </Button>
+                <Button variant="ghost" onClick={() => setEditing(false)}>
+                  Annuler
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Redirection après envoi</CardTitle>
+          <CardDescription>
+            Après un envoi depuis un formulaire HTML, le visiteur voit{" "}
+            {form.successUrl === null ? (
+              "la page de confirmation de Rondyr."
+            ) : (
+              <>
+                <code className="font-mono wrap-anywhere">{form.successUrl}</code>.
+              </>
+            )}{" "}
+            L’origine de l’adresse doit figurer dans les origines autorisées du formulaire.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={changeRedirect} className="grid gap-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <TextField
+                label="Adresse de redirection"
+                className="min-w-0 flex-1 basis-64"
+                type="url"
+                name="url"
+                required
+                maxLength={2048}
+                placeholder="https://www.example.com/merci"
+              />
+              <Button type="submit" name="action" value="set" disabled={redirecting}>
+                Enregistrer la redirection
+              </Button>
+              {form.successUrl !== null && (
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  name="action"
+                  value="clear"
+                  formNoValidate
+                  disabled={redirecting}
+                >
+                  Retirer la redirection
+                </Button>
+              )}
+            </div>
+            <FormProblem>{redirectProblem}</FormProblem>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Champ piège</CardTitle>
+          <CardDescription>
+            {form.honeypotField === null ? (
+              "Aucun champ piège. "
+            ) : (
+              <>
+                Champ actuel : <code className="font-mono wrap-anywhere">{form.honeypotField}</code>
+                .{" "}
+              </>
+            )}
+            Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec{" "}
+            <code className="font-mono">tabindex="-1"</code> et{" "}
+            <code className="font-mono">autocomplete="off"</code> : les visiteurs le laissent vide,
+            et un message qui le remplit est mis à vérifier sans être analysé.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={changeHoneypot} className="grid gap-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <TextField
+                label="Nom du champ piège"
+                className="min-w-0 flex-1 basis-64"
+                name="field"
+                required
+                maxLength={100}
+                placeholder="_hp"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <Button type="submit" name="action" value="set" disabled={trapping}>
+                Enregistrer le champ piège
+              </Button>
+              {form.honeypotField !== null && (
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  name="action"
+                  value="clear"
+                  formNoValidate
+                  disabled={trapping}
+                >
+                  Retirer le champ piège
+                </Button>
+              )}
+            </div>
+            <FormProblem>{honeypotProblem}</FormProblem>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{form.status === "active" ? "Suspension" : "Formulaire suspendu"}</CardTitle>
+          <CardDescription>
             Un formulaire suspendu refuse les nouveaux messages avec le statut 403. Les messages
             reçus, les destinations et l’adresse publique sont conservés.
-          </p>
-          <div className="inbox-actions">
-            <button type="submit" name="action" value="suspend" disabled={changing}>
-              Confirmer la suspension
-            </button>
-            <button type="button" onClick={() => setConfirming(false)}>
-              Annuler
-            </button>
-          </div>
-        </form>
-      )}
-      {form.status === "suspended" && (
-        <form action={changeStatus} className="inbox-actions">
-          <button type="submit" name="action" value="reactivate" disabled={changing}>
-            Réactiver le formulaire
-          </button>
-        </form>
-      )}
-      {statusProblem !== null && <p role="alert">{statusProblem}</p>}
-      <p>
-        Après un envoi depuis un formulaire HTML :{" "}
-        {form.successUrl === null ? (
-          "page de confirmation de Rondyr."
-        ) : (
-          <>
-            redirection vers <code>{form.successUrl}</code>.
-          </>
-        )}{" "}
-        L’origine de l’adresse doit figurer dans les origines autorisées du formulaire.
-      </p>
-      <form action={changeRedirect} className="inbox-actions">
-        <label>
-          Adresse de redirection{" "}
-          <input
-            type="url"
-            name="url"
-            required
-            maxLength={2048}
-            placeholder="https://www.example.com/merci"
-          />
-        </label>
-        <button type="submit" name="action" value="set" disabled={redirecting}>
-          Enregistrer la redirection
-        </button>
-        {form.successUrl !== null && (
-          <button type="submit" name="action" value="clear" formNoValidate disabled={redirecting}>
-            Retirer la redirection
-          </button>
-        )}
-      </form>
-      {redirectProblem !== null && <p role="alert">{redirectProblem}</p>}
-      <p>
-        Champ piège :{" "}
-        {form.honeypotField === null ? (
-          "aucun."
-        ) : (
-          <>
-            <code>{form.honeypotField}</code>.
-          </>
-        )}{" "}
-        Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec{" "}
-        <code>tabindex="-1"</code> et <code>autocomplete="off"</code> : les visiteurs le laissent
-        vide, et un message qui le remplit est mis à vérifier sans être analysé.
-      </p>
-      <form action={changeHoneypot} className="inbox-actions">
-        <label>
-          Nom du champ piège <input name="field" required maxLength={100} placeholder="_hp" />
-        </label>
-        <button type="submit" name="action" value="set" disabled={trapping}>
-          Enregistrer le champ piège
-        </button>
-        {form.honeypotField !== null && (
-          <button type="submit" name="action" value="clear" formNoValidate disabled={trapping}>
-            Retirer le champ piège
-          </button>
-        )}
-      </form>
-      {honeypotProblem !== null && <p role="alert">{honeypotProblem}</p>}
-    </section>
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={changeStatus} className="grid gap-3">
+            <div className="flex flex-wrap gap-2">
+              {form.status === "active" && !confirming && (
+                <Button onClick={() => setConfirming(true)}>Suspendre le formulaire</Button>
+              )}
+              {form.status === "active" && confirming && (
+                <>
+                  <Button
+                    type="submit"
+                    variant="default"
+                    name="action"
+                    value="suspend"
+                    disabled={changing}
+                  >
+                    Confirmer la suspension
+                  </Button>
+                  <Button variant="ghost" onClick={() => setConfirming(false)}>
+                    Annuler
+                  </Button>
+                </>
+              )}
+              {form.status === "suspended" && (
+                <Button
+                  type="submit"
+                  variant="default"
+                  name="action"
+                  value="reactivate"
+                  disabled={changing}
+                >
+                  Réactiver le formulaire
+                </Button>
+              )}
+            </div>
+            <FormProblem>{statusProblem}</FormProblem>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
-interface FormManagementProps {
-  readonly inbox: Inbox;
+interface NewFormProps {
+  readonly inboxId: Inbox["id"];
   readonly onChanged: () => Promise<void>;
+  /** The public identifier of the form once it exists. */
+  readonly onCreated: (publicId: Form["publicId"]) => void;
 }
 
-/** The forms of an organization: public URL, status, name, business context, redirect and honeypot field. */
-export function FormManagement({ inbox, onChanged }: FormManagementProps) {
+/** Adds a form to the organization. */
+export function NewForm({ inboxId, onChanged, onCreated }: NewFormProps) {
   const [addProblem, add, adding] = useActionState(
     (_: string | null, data: FormData) =>
       attempt(async () => {
-        await createForm(inbox.id, text(data, "name"), text(data, "businessContext"));
+        const created = await createForm(
+          inboxId,
+          text(data, "name"),
+          text(data, "businessContext"),
+        );
         await onChanged();
+        onCreated(created.publicId);
       }, "Le formulaire n’a pas pu être ajouté. Vérifiez les champs et réessayez."),
     null,
   );
 
   return (
-    <>
-      {inbox.forms.map((form) => (
-        <FormSettings key={form.publicId} inboxId={inbox.id} form={form} onChanged={onChanged} />
-      ))}
-      <form action={add} className="auth-form">
-        <h3>Nouveau formulaire</h3>
-        <label>
-          Nom du formulaire <input name="name" required maxLength={100} />
-        </label>
-        <label>
-          Activité de l’organisation{" "}
-          <textarea name="businessContext" maxLength={2000} placeholder="Facultatif" />
-        </label>
-        {addProblem !== null && <p role="alert">{addProblem}</p>}
-        <button type="submit" disabled={adding}>
-          Ajouter le formulaire
-        </button>
-      </form>
-    </>
+    <Card>
+      <CardHeader>
+        <CardTitle>Nom et activité</CardTitle>
+        <CardDescription>
+          Le formulaire reçoit une adresse d’envoi dès sa création. Elle ne change plus ensuite.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form action={add} className="grid gap-4">
+          <TextField label="Nom du formulaire" name="name" required maxLength={100} />
+          <TextAreaField
+            label="Activité de l’organisation"
+            name="businessContext"
+            maxLength={2000}
+            hint="Facultatif. Le filtre s’en sert pour juger si un message concerne votre activité."
+          />
+          <FormProblem>{addProblem}</FormProblem>
+          <Button type="submit" variant="default" className="justify-self-start" disabled={adding}>
+            Ajouter le formulaire
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

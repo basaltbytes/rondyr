@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 import { useActionState } from "react";
 
+import { Button } from "~/components/ui/button";
 import type { Inbox } from "~/lib/inbox-client";
 import { TargetRequestFailed, testTarget } from "~/lib/targets-client";
 import type { Target, TestResult } from "~/lib/targets-client";
@@ -37,11 +38,15 @@ export function TargetTest({ inboxId, targetId }: TargetTestProps) {
   }, null);
 
   return (
-    <form action={send} className="inbox-actions">
-      <button type="submit" disabled={sending}>
+    <form action={send} className="contents">
+      <Button type="submit" size="sm" disabled={sending}>
         {sending ? "Envoi de l’essai…" : "Envoyer un essai"}
-      </button>
-      {result !== null && <output>{result}</output>}
+      </Button>
+      {result !== null && (
+        <output className="order-last basis-full text-sm wrap-anywhere text-muted-foreground">
+          {result}
+        </output>
+      )}
     </form>
   );
 }

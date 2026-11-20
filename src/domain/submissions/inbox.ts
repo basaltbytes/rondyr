@@ -22,14 +22,24 @@ export const InboxRow = Schema.Struct({
   reason: Schema.NullOr(QuarantineReason),
 });
 
-export const InboxPage = Schema.Struct({
-  entries: Schema.Array(InboxRow),
-  cursor: Schema.NullOr(Schema.String),
-});
-
 export const SubmissionDetail = InboxRow.mapFields((fields) => ({
   ...fields,
   fields: SubmissionFields,
 }));
+
+/** A page of the inbox. Each entry has its fields, so a list shows who wrote and what. */
+export const InboxPage = Schema.Struct({
+  entries: Schema.Array(SubmissionDetail),
+  cursor: Schema.NullOr(Schema.String),
+});
+
+/** How many submissions of an organization have each status. */
+export const InboxCounts = Schema.Struct({
+  received: Schema.Int,
+  classifying: Schema.Int,
+  accepted: Schema.Int,
+  quarantined: Schema.Int,
+  archived: Schema.Int,
+});
 
 export const InboxOrganization = Schema.Struct({ id: OrganizationId, name: Schema.String });

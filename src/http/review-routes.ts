@@ -7,7 +7,12 @@ import {
 } from "effect/http";
 
 import { InboxOrganizationWithForms, SetupInbox } from "../domain/submissions/inbox-setup.ts";
-import { InboxPage, SubmissionDetail, SubmissionStatus } from "../domain/submissions/inbox.ts";
+import {
+  InboxCounts,
+  InboxPage,
+  SubmissionDetail,
+  SubmissionStatus,
+} from "../domain/submissions/inbox.ts";
 import { ReviewApi } from "../domain/submissions/review.api.ts";
 import {
   CurrentReviewer,
@@ -107,6 +112,13 @@ const list = Effect.gen(function* () {
   return yield* HttpServerResponse.schemaJson(InboxPage)(page, jsonOptions);
 });
 
+const counts = Effect.gen(function* () {
+  const client = yield* reviewClient;
+  const input = yield* HttpRouter.schemaPathParams(OrganizationPath);
+  const totals = yield* client.CountSubmissions(input);
+  return yield* HttpServerResponse.schemaJson(InboxCounts)(totals, jsonOptions);
+});
+
 const detail = Effect.gen(function* () {
   const client = yield* reviewClient;
   const input = yield* HttpRouter.schemaPathParams(SubmissionPath);
@@ -130,6 +142,7 @@ export const reviewRoutes = Layer.mergeAll(
   HttpRouter.add("GET", "/api/organizations", withErrors(organizationList)),
   HttpRouter.add("POST", "/api/organizations", withErrors(create)),
   HttpRouter.add("GET", "/api/organizations/:organizationId/submissions", withErrors(list)),
+  HttpRouter.add("GET", "/api/organizations/:organizationId/submission-counts", withErrors(counts)),
   HttpRouter.add(
     "GET",
     "/api/organizations/:organizationId/submissions/:submissionId",

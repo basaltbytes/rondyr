@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import babel from "@rolldown/plugin-babel";
+import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { unreachableChunksPlugin } from "alchemy/Bundle/UnreachableChunksPlugin";
 import { defineConfig } from "vite";
@@ -10,6 +11,7 @@ export default defineConfig({
   build: { minify: true, rolldownOptions: { plugins: [unreachableChunksPlugin()] } },
   plugins: [
     react(),
+    tailwindcss(),
     babel({
       presets: [
         reactCompilerPreset({

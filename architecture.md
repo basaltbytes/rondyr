@@ -361,7 +361,8 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `DELETE /api/organizations/:organizationId/forms/:publicId/success-url` | Retire l’URL de succès |
 | `PUT /api/organizations/:organizationId/forms/:publicId/honeypot` | Nomme le champ piège (`{"field":…}`) |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/honeypot` | Retire le champ piège |
-| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `after`), 25 messages par page |
+| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `after`), 25 messages par page, chacun avec ses champs |
+| `GET /api/organizations/:organizationId/submission-counts` | Nombre de messages de l’organisation par statut |
 | `GET /api/organizations/:organizationId/submissions/:submissionId` | Détail d’un message |
 | `POST /api/organizations/:organizationId/submissions/:submissionId/approve` ou `/dismiss` | Décision de revue |
 | `GET /api/organizations/:organizationId/forms/:publicId/targets` | Destinations webhook et e-mail du formulaire, chacune avec son `type`, sans les secrets |
@@ -492,7 +493,10 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 ├── dashboard/src/
 │   ├── routes/
 │   ├── features/                   # authentication, inbox
-│   └── lib/                        # clients HTTP
+│   ├── components/                 # text-field, et ui/ : composants shadcn/ui (Base UI) adaptés au thème
+│   ├── hooks/                      # use-mobile
+│   ├── lib/                        # clients HTTP
+│   └── dashboard.css               # thème Tailwind
 ├── docs/                           # déploiement, webhooks, e-mail, évaluation, exemple de vérification testé
 ├── evals/                          # harnais d’évaluation des classificateurs, corpus synthétique
 ├── public/_headers                 # en-têtes HTTP des assets du dashboard
@@ -501,7 +505,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 └── tests/integration/              # fixtures partagées
 ```
 
-Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le dashboard importe les schémas du domaine par les alias `@rondyr/contracts` (soumissions), `@rondyr/deliveries` (destinations) et `@rondyr/forms` (origines autorisées et formulaires), ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
+Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts` et `dashboard/src/**/*.test.ts`. Le dashboard importe les schémas du domaine par les alias `@rondyr/contracts` (soumissions), `@rondyr/deliveries` (destinations) et `@rondyr/forms` (origines autorisées et formulaires), ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
 
 ## 10. Tests et critères de qualité
 

@@ -1,6 +1,9 @@
 import { Option, Schema } from "effect";
 import { useActionState, useEffect, useState } from "react";
 
+import { FormProblem, TextField } from "~/components/text-field";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import type { Inbox } from "~/lib/inbox-client";
 import { addOrigin, listOrigins, OriginRequestFailed, removeOrigin } from "~/lib/origins-client";
 import type { AllowedOrigin } from "~/lib/origins-client";
@@ -62,44 +65,62 @@ export function AllowedOrigins({ inboxId, form }: AllowedOriginsProps) {
   }, null);
 
   return (
-    <section aria-label={`Origines autorisées du formulaire ${form.name}`}>
-      <h3>{form.name}</h3>
-      <p>Une liste vide autorise tous les sites à envoyer ce formulaire depuis un navigateur.</p>
-      {failed && <p role="alert">Impossible de charger les origines autorisées.</p>}
-      {origins === null && !failed && <output>Chargement des origines…</output>}
-      {origins?.length === 0 && <p>Aucune origine.</p>}
-      {origins !== null && origins.length > 0 && (
-        <ul>
-          {origins.map((item) => (
-            <li key={item.origin}>
-              <form action={remove} className="inbox-actions">
-                <code>{item.origin}</code>
-                <input type="hidden" name="origin" value={item.origin} />
-                <button type="submit" disabled={removing}>
-                  Retirer
-                </button>
-              </form>
-            </li>
-          ))}
-        </ul>
-      )}
-      {removeProblem !== null && <p role="alert">{removeProblem}</p>}
-      <form action={add} className="inbox-actions">
-        <label>
-          Origine{" "}
-          <input
-            type="url"
-            name="origin"
-            required
-            maxLength={2048}
-            placeholder="https://www.example.com"
-          />
-        </label>
-        <button type="submit" disabled={adding}>
-          Ajouter
-        </button>
-      </form>
-      {addProblem !== null && <p role="alert">{addProblem}</p>}
-    </section>
+    <Card aria-label={`Origines autorisées du formulaire ${form.name}`}>
+      <CardHeader>
+        <CardTitle>Origines autorisées</CardTitle>
+        <CardDescription>
+          Les sites dont les pages peuvent envoyer ce formulaire depuis un navigateur. Une liste
+          vide autorise tous les sites.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {failed && <FormProblem>Impossible de charger les origines autorisées.</FormProblem>}
+        {origins === null && !failed && (
+          <output className="text-sm text-muted-foreground">Chargement des origines…</output>
+        )}
+        {origins?.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            Aucune origine : tous les sites sont autorisés.
+          </p>
+        )}
+        {origins !== null && origins.length > 0 && (
+          <ul className="grid gap-px overflow-hidden rounded-md bg-border shadow-raised">
+            {origins.map((item) => (
+              <li key={item.origin} className="bg-card py-1 pr-1 pl-3">
+                <form action={remove} className="flex items-center gap-3">
+                  <code className="min-w-0 flex-1 font-mono text-sm wrap-anywhere">
+                    {item.origin}
+                  </code>
+                  <input type="hidden" name="origin" value={item.origin} />
+                  <Button type="submit" variant="ghost" disabled={removing}>
+                    Retirer
+                  </Button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+        <FormProblem>{removeProblem}</FormProblem>
+        <form action={add} className="grid gap-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <TextField
+              label="Origine"
+              className="min-w-0 flex-1 basis-64"
+              type="url"
+              name="origin"
+              required
+              maxLength={2048}
+              placeholder="https://www.example.com"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <Button type="submit" disabled={adding}>
+              Ajouter l’origine
+            </Button>
+          </div>
+          <FormProblem>{addProblem}</FormProblem>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,5 +1,8 @@
 import { useActionState } from "react";
 
+import { FormProblem, TextField } from "~/components/text-field";
+import { Button } from "~/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { authClient } from "~/lib/auth-client";
 
 async function signIn(_previousError: string | null, fields: FormData): Promise<string | null> {
@@ -22,20 +25,33 @@ export function SignInForm() {
   const [error, action, pending] = useActionState(signIn, null);
 
   return (
-    <form action={action} className="auth-form">
-      <h2>Connexion</h2>
-      <label>
-        Adresse e-mail
-        <input type="email" name="email" autoComplete="username" required />
-      </label>
-      <label>
-        Mot de passe
-        <input type="password" name="password" autoComplete="current-password" required />
-      </label>
-      {error !== null && <p role="alert">{error}</p>}
-      <button type="submit" disabled={pending}>
-        {pending ? "Connexion en cours…" : "Se connecter"}
-      </button>
-    </form>
+    <Card>
+      <CardHeader>
+        <CardTitle>Connexion</CardTitle>
+        <CardDescription>Le compte de cette installation de Rondyr.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form action={action} className="grid gap-4">
+          <TextField
+            label="Adresse e-mail"
+            type="email"
+            name="email"
+            autoComplete="username"
+            required
+          />
+          <TextField
+            label="Mot de passe"
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            required
+          />
+          <FormProblem>{error}</FormProblem>
+          <Button type="submit" variant="default" disabled={pending}>
+            {pending ? "Connexion en cours…" : "Se connecter"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
