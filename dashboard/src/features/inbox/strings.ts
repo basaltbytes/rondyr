@@ -23,5 +23,15 @@ export const destinationRefusals = {
   "worker-origin": "Un webhook ne peut pas viser Rondyr lui-même.",
 } as const;
 
+export const originRefusals = {
+  "invalid-origin": "Saisissez une origine complète, par exemple https://www.example.com.",
+  wildcard: "Les caractères génériques ne sont pas acceptés : ajoutez chaque origine.",
+  "not-https":
+    "L’origine doit commencer par https://. Seuls localhost et les adresses de boucle locale acceptent http://.",
+  credentials: "Retirez l’identifiant et le mot de passe de l’origine.",
+  "not-an-origin":
+    "Retirez le chemin, les paramètres et l’ancre : gardez le schéma, l’hôte et le port.",
+} as const;
+
 export const missingSecretsKey =
   "Le Worker n’a pas de clé RONDYR_SECRETS_KEY : impossible de créer un webhook ou de renouveler son secret.";
