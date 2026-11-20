@@ -430,7 +430,7 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 3. **Protection.** Anti-abus et quotas (#7).
 4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
 5. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
-6. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12), licence (#21).
+6. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12).
 
 ## 13. Décisions ouvertes
 
@@ -443,10 +443,10 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 | Origines autorisées quand la liste d’un formulaire est vide | #19 |
 | Champs répétés et `multipart/form-data` sans fichiers | #8 |
 | Déploiement de `staging` avant `prod` dans la CI | #10 |
-| Licence : MIT, Apache-2.0 ou AGPL-3.0 | #21 |
 
 ### Décisions prises
 
+- Rondyr est sous licence AGPL-3.0, comme usine : toute personne qui propose une version modifiée comme service doit en publier les sources, et un auto-hébergeur n’a aucune obligation. Les dépendances sont sous MIT ou Apache-2.0, et le plugin Oxlint repris d’usine est déjà sous AGPL-3.0 (#21).
 - Le statut d’une soumission est un flux d’événements dans un Durable Object, projeté dans D1 pour l’Inbox.
 - Les requêtes d’exécution restent du SQL préparé, dans les adaptateurs de `src/adapters/database`, et Effect Schema décode les lignes qu’elles renvoient. Drizzle sert au schéma, aux migrations et à Better Auth (#23).
 - Jev passe par le binding Workers AI ; OpenAI Decisions passe par AI Gateway avec la facturation unifiée. Le choix se fait par stage.
