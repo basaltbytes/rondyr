@@ -1,9 +1,12 @@
 import { Context, Effect, Schema } from "effect";
 
 import type { TargetId } from "../domain/deliveries/delivery.ts";
+import type { EmailRecipients, EmailTarget } from "../domain/deliveries/email.ts";
+import type { DestinationTarget } from "../domain/deliveries/targets.ts";
 import type { WebhookUrl } from "../domain/deliveries/webhook-destination.ts";
-import type { IssuedWebhookSecret, WebhookTarget } from "../domain/deliveries/webhook.ts";
+import type { IssuedWebhookSecret } from "../domain/deliveries/webhook.ts";
 import type { OrganizationId, UserId } from "../domain/submissions/submission.id.ts";
+import type { EmailProviderMissing } from "./email-sender.ts";
 import type { SecretsKeyMissing } from "./secret-cipher.ts";
 import type { StorageUnavailable } from "./storage.ts";
 
@@ -37,10 +40,11 @@ export const TargetStatus = Schema.Literals(["active", "inactive"]);
 export class NotificationTargets extends Context.Service<
   NotificationTargets,
   {
+    /** The webhook and email targets of a form. */
     readonly list: (
       form: FormScope,
     ) => Effect.Effect<
-      ReadonlyArray<typeof WebhookTarget.Type>,
+      ReadonlyArray<typeof DestinationTarget.Type>,
       TargetNotFound | StorageUnavailable
     >;
     /** Create an active webhook target with a new signing secret. */
@@ -58,10 +62,23 @@ export class NotificationTargets extends Context.Service<
       typeof IssuedWebhookSecret.Type,
       TargetNotFound | TargetChanged | SecretsKeyMissing | StorageUnavailable
     >;
+    /** Create an active email target. Refused when the stage has no email provider. */
+    readonly createEmail: (
+      form: FormScope,
+      recipients: EmailRecipients,
+    ) => Effect.Effect<
+      typeof EmailTarget.Type,
+      TargetNotFound | EmailProviderMissing | StorageUnavailable
+    >;
+    /** Replace the recipients of an email target. */
+    readonly replaceRecipients: (
+      target: TargetScope,
+      recipients: EmailRecipients,
+    ) => Effect.Effect<typeof EmailTarget.Type, TargetNotFound | StorageUnavailable>;
     /** An inactive target gets no delivery for the messages accepted while it is inactive. */
     readonly setStatus: (
       target: TargetScope,
       status: typeof TargetStatus.Type,
-    ) => Effect.Effect<typeof WebhookTarget.Type, TargetNotFound | StorageUnavailable>;
+    ) => Effect.Effect<typeof DestinationTarget.Type, TargetNotFound | StorageUnavailable>;
   }
 >()("rondyr/ports/notification-targets/NotificationTargets") {}

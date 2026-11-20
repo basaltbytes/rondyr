@@ -3,7 +3,13 @@ import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 import { unstable_getMiniflareWorkerOptions } from "wrangler";
 
-import { testOrigin, testSecretsKey, testSetupToken } from "./tests/integration/auth-fixture.ts";
+import {
+  testEmailFrom,
+  testOrigin,
+  testResendKey,
+  testSecretsKey,
+  testSetupToken,
+} from "./tests/integration/auth-fixture.ts";
 import wrangler from "./wrangler.json" with { type: "json" };
 
 // Workers AI for the tests. A submission with `fixture-verdict: accept` gets low
@@ -28,12 +34,14 @@ export default { fetch: () => new Response(null, { status: 404 }) };
 // A webhook recipient for the tests. It records every request, which tests read
 // back from GET /__received?prefix=..., and answers by the last path segment:
 // ok (204), fail-once (500, then 200), bad-request (400), redirect (307 to ok).
-// The test Worker's outbound fetch goes here, whatever the hostname.
+// The test Worker's outbound fetch goes here, whatever the hostname. Requests to
+// api.resend.com go on to the Resend fixture.
 const webhookReceiverFixture = `
 const received = [];
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.hostname === "api.resend.com") return env.RESEND.fetch(request);
     if (url.pathname === "/__received") {
       const prefix = url.searchParams.get("prefix") ?? "/";
       return Response.json(received.filter((entry) => entry.path.startsWith(prefix)));
@@ -64,6 +72,55 @@ export default {
 };
 `;
 
+// The Resend API for the tests. It records every POST /emails, which tests read
+// back from GET /__received?recipient=..., and answers by the local part of the
+// first recipient: once-<status> answers <status> to the first request with an
+// idempotency key and 200 to the next ones, always-<status> answers <status>
+// every time, and any other address gets 200. Error bodies have the shape that
+// https://resend.com/docs/api-reference/errors documents.
+const resendFixture = `
+const received = [];
+const names = {
+  400: "validation_error",
+  401: "missing_api_key",
+  403: "validation_error",
+  409: "concurrent_idempotent_requests",
+  422: "validation_error",
+  429: "rate_limit_exceeded",
+  500: "application_error",
+};
+const recipientsOf = (entry) => JSON.parse(entry.body).to ?? [];
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/__received") {
+      const recipient = url.searchParams.get("recipient");
+      return Response.json(received.filter((entry) => recipientsOf(entry).includes(recipient)));
+    }
+    if (request.method !== "POST" || url.pathname !== "/emails") {
+      return new Response(null, { status: 404 });
+    }
+    const entry = {
+      url: url.href,
+      method: request.method,
+      headers: Object.fromEntries(request.headers),
+      body: await request.text(),
+    };
+    received.push(entry);
+    const key = entry.headers["idempotency-key"];
+    const first = received.filter((other) => other.headers["idempotency-key"] === key).length === 1;
+    const [, mode, status] = /^(once|always)-([0-9]{3})@/u.exec(recipientsOf(entry)[0] ?? "") ?? [];
+    if (mode === "always" || (mode === "once" && first)) {
+      const code = Number(status);
+      const name = names[code] ?? "application_error";
+      const message = "Resend message that Rondyr must not store";
+      return Response.json({ statusCode: code, name, message }, { status: code });
+    }
+    return Response.json({ id: crypto.randomUUID() });
+  },
+};
+`;
+
 export default defineConfig({
   plugins: [
     cloudflareTest(async () => {
@@ -87,6 +144,7 @@ export default defineConfig({
           serviceBindings: {
             TEST_WORKER: "rondyr-test-app",
             WEBHOOK_RECEIVER: "webhook-receiver-fixture",
+            RESEND_FIXTURE: "resend-fixture",
           },
           bindings: {
             TEST_MIGRATIONS: await readD1Migrations({
@@ -109,6 +167,8 @@ export default defineConfig({
                 BETTER_AUTH_URL: testOrigin,
                 RONDYR_SETUP_TOKEN: testSetupToken,
                 RONDYR_SECRETS_KEY: testSecretsKey,
+                RESEND_API_KEY: testResendKey,
+                RONDYR_EMAIL_FROM: testEmailFrom,
               },
             },
             {
@@ -121,6 +181,13 @@ export default defineConfig({
               name: "webhook-receiver-fixture",
               modules: true,
               script: webhookReceiverFixture,
+              compatibilityDate: wrangler.compatibility_date,
+              serviceBindings: { RESEND: "resend-fixture" },
+            },
+            {
+              name: "resend-fixture",
+              modules: true,
+              script: resendFixture,
               compatibilityDate: wrangler.compatibility_date,
             },
           ],
