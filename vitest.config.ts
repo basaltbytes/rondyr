@@ -195,5 +195,11 @@ export default defineConfig({
       };
     }),
   ],
-  test: { include: ["src/**/*.test.ts"] },
+  test: {
+    projects: [
+      { extends: true, test: { name: "workerd", include: ["src/**/*.test.ts"] } },
+      // The evaluation harness runs in Node, outside the Worker.
+      "./evals/vitest.config.ts",
+    ],
+  },
 });
