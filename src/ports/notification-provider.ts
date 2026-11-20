@@ -25,10 +25,20 @@ export interface Notification {
   readonly fields: typeof SubmissionFields.Type;
 }
 
+/** A message that tests a target. It belongs to no submission and no delivery. */
+export interface TestNotification {
+  /** A new identifier for each test, sent where a delivery sends its delivery ID. */
+  readonly testId: DeliveryId;
+  readonly target: typeof NotificationTarget.Type;
+  readonly form: { readonly publicId: string; readonly name: string };
+}
+
 export class NotificationProvider extends Context.Service<
   NotificationProvider,
   {
     /** Send one attempt of a delivery to its target. */
     readonly send: (notification: Notification) => Effect.Effect<void, NotificationFailed>;
+    /** Send a test message, marked as such, with the checks of `send`. */
+    readonly sendTest: (test: TestNotification) => Effect.Effect<void, NotificationFailed>;
   }
 >()("rondyr/ports/notification-provider/NotificationProvider") {}

@@ -101,6 +101,8 @@ describe("Rondyr Worker", () => {
           publicId: "contact",
           name: "Contact",
           businessContext: null,
+          status: "active",
+          successUrl: null,
         },
       ]);
 

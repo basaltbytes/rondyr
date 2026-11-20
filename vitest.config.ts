@@ -13,9 +13,10 @@ import {
 import wrangler from "./wrangler.json" with { type: "json" };
 
 // Workers AI for the tests. A submission with `fixture-verdict: accept` gets low
-// spam and high relevance scores from Jev; any other answer does not decode,
-// so the classifier quarantines it with `classification-error`, as it does
-// without an AI binding.
+// spam and high relevance scores from Jev, or a low relevance score when the
+// business context contains `fixture-relevance: low`; any other answer does
+// not decode, so the classifier quarantines it with `classification-error`, as
+// it does without an AI binding.
 const workersAiFixture = `
 import { WorkerEntrypoint } from "cloudflare:workers";
 export class Ai extends WorkerEntrypoint {
@@ -24,7 +25,8 @@ export class Ai extends WorkerEntrypoint {
       return {};
     }
     const answers = { spam: { type: "noul", noul: 0.02 } };
-    if (input.questions.relevance !== undefined) answers.relevance = { type: "noul", noul: 0.98 };
+    const relevance = input.state.business_context.includes("fixture-relevance: low") ? 0.05 : 0.98;
+    if (input.questions.relevance !== undefined) answers.relevance = { type: "noul", noul: relevance };
     return { model: "workerd-fixture", answers };
   }
 }

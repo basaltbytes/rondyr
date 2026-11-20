@@ -1,15 +1,17 @@
 import { Effect, Layer, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
-import { InboxForm, SetupInbox } from "../../domain/submissions/inbox-setup.ts";
+import { ManagedForm } from "../../domain/forms/form.ts";
+import type { SetupInbox } from "../../domain/submissions/inbox-setup.ts";
 import { InboxOrganization } from "../../domain/submissions/inbox.ts";
 import { InboxUnavailable } from "../../domain/submissions/submission.rejection.ts";
 import type { OrganizationId, UserId } from "../../domain/submissions/submission.id.ts";
 import { OrganizationDirectory } from "../../ports/organization-directory.ts";
 import { d1, database } from "./d1.ts";
+import { managedFormColumns } from "./forms.ts";
 
 const decodeOrganizations = Schema.decodeUnknownEffect(Schema.Array(InboxOrganization));
-const decodeForms = Schema.decodeUnknownEffect(Schema.Array(InboxForm));
+const decodeForms = Schema.decodeUnknownEffect(Schema.Array(ManagedForm));
 const unavailable = () => InboxUnavailable.make();
 
 const organizationsFor = Effect.fn("OrganizationDirectory.organizationsFor")(function* (
@@ -36,7 +38,7 @@ const formsOf = Effect.fn("OrganizationDirectory.formsOf")(function* (
   const results = yield* d1(() =>
     db
       .prepare(`
-    SELECT f.name, f.public_id AS publicId FROM forms f JOIN organization_members m
+    SELECT ${managedFormColumns} FROM forms f JOIN organization_members m
       ON f.organization_id = m.organization_id WHERE m.user_id = ? AND f.organization_id = ?
     ORDER BY f.name, f.id
   `)

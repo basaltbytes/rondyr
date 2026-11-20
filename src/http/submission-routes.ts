@@ -4,9 +4,10 @@ import {
   HttpRouter,
   HttpServerRequest,
   HttpServerResponse,
+  MultipartParser,
 } from "effect/http";
 
-import { SubmissionFields } from "../domain/submissions/submission-fields.ts";
+import { joinRepeatedFields, SubmittedFields } from "../domain/submissions/submission-fields.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { publishSubmission } from "../jobs/submission-outbox.ts";
 import { BackgroundTasks } from "../ports/background-tasks.ts";
@@ -14,6 +15,7 @@ import {
   SubmissionIntake,
   type FormNotFound,
   type FormRateLimited,
+  type FormSuspended,
   type OriginMatch,
   type OriginRefused,
 } from "../ports/intake.ts";
@@ -27,8 +29,8 @@ const Accepted = Schema.Struct({
   status: Schema.Literal("received"),
 });
 const accepted = HttpServerResponse.schemaJson(Accepted);
-const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(SubmissionFields));
-const decodeFields = Schema.decodeUnknownEffect(SubmissionFields);
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(SubmittedFields));
+const decodeFields = Schema.decodeUnknownEffect(SubmittedFields);
 
 // Browsers cache a preflight for at most this long; Chromium caps it at 2 hours.
 const preflightMaxAgeSeconds = "7200";
@@ -60,11 +62,32 @@ function empty(status: number, headers: Headers) {
   return HttpServerResponse.empty({ status, headers: { "cache-control": "no-store", ...headers } });
 }
 
-const decodeUrlEncoded = Effect.fnUntraced(function* (body: string) {
-  const entries = new URLSearchParams(body);
-  const fields = yield* decodeFields(Object.fromEntries(entries));
-  if (entries.size !== Object.keys(fields).length) return yield* MalformedForm.make();
-  return fields;
+/**
+ * The text fields of a `multipart/form-data` body, in order. A part with a
+ * `filename` parameter is a file, even an empty one from a file input left
+ * blank, and Rondyr stores no file: the body is refused.
+ */
+const readMultipart = Effect.fnUntraced(function* (body: ArrayBuffer, contentType: string) {
+  const entries: Array<readonly [string, string]> = [];
+  let refused = false;
+  const parser = MultipartParser.make({
+    headers: { "content-type": contentType },
+    isFile: (part) => part.filename !== undefined,
+    onField: (part, value) => entries.push([part.name, MultipartParser.decodeField(part, value)]),
+    onFile: () => {
+      refused = true;
+      return () => {};
+    },
+    onError: () => {
+      refused = true;
+    },
+    onDone: () => {},
+  });
+  // The parser runs its callbacks synchronously, so the body is parsed when `end` returns.
+  parser.write(new Uint8Array(body));
+  parser.end();
+  if (refused) return yield* MalformedForm.make();
+  return entries;
 });
 
 class MalformedForm extends Schema.TaggedError<MalformedForm, { readonly brand: unique symbol }>()(
@@ -78,16 +101,29 @@ class InvalidBody extends Schema.TaggedError<InvalidBody, { readonly brand: uniq
   { status: Schema.Literals([400, 413, 415]) },
 ) {}
 
+/**
+ * Decode the fields of a JSON, URL-encoded or multipart body. A form body may
+ * repeat a field name, whose values are joined; a JSON body has string values only.
+ */
 const readFields = Effect.fnUntraced(
   function* (request: HttpServerRequest.HttpServerRequest) {
-    const media = request.headers["content-type"]?.split(";", 1)[0]?.trim().toLowerCase();
-    const json = media === "application/json";
-    if (!json && media !== "application/x-www-form-urlencoded") {
-      return yield* InvalidBody.make({ status: 415 });
+    const contentType = request.headers["content-type"] ?? "";
+    const media = contentType.split(";", 1)[0]?.trim().toLowerCase();
+    if (media === "application/json") {
+      const body = yield* request.text;
+      return { json: true, fields: yield* decodeJson(body) };
     }
-    const body = yield* request.text;
-    const fields = json ? yield* decodeJson(body) : yield* decodeUrlEncoded(body);
-    return { json, fields };
+    if (media === "application/x-www-form-urlencoded") {
+      const body = yield* request.text;
+      const fields = joinRepeatedFields(new URLSearchParams(body));
+      return { json: false, fields: yield* decodeFields(fields) };
+    }
+    if (media === "multipart/form-data") {
+      const body = yield* request.arrayBuffer;
+      const entries = yield* readMultipart(body, contentType);
+      return { json: false, fields: yield* decodeFields(joinRepeatedFields(entries)) };
+    }
+    return yield* InvalidBody.make({ status: 415 });
   },
   Effect.catchTags({
     SchemaError: () => InvalidBody.make({ status: 400 }),
@@ -117,11 +153,13 @@ const refuseBody = Effect.fnUntraced(function* (
 });
 
 function refusal(
-  error: FormNotFound | FormRateLimited | OriginRefused | StorageUnavailable,
+  error: FormNotFound | FormRateLimited | FormSuspended | OriginRefused | StorageUnavailable,
   origin: Option.Option<string>,
 ) {
   return Match.valueTags(error, {
     FormNotFound: () => empty(404, corsHeaders("unrestricted", origin)),
+    // A page on an allowed origin can read this refusal, as it can read a 429.
+    FormSuspended: ({ origins }) => empty(403, corsHeaders(origins, origin)),
     // A browser cannot read this response: it has no Access-Control-Allow-Origin.
     OriginRefused: () => empty(403, corsHeaders("unlisted", origin)),
     FormRateLimited: ({ origins }) =>
@@ -153,7 +191,7 @@ const receive = Effect.gen(function* () {
   const intake = yield* SubmissionIntake;
   const received = yield* Effect.result(intake.receive(formId, fields, origin));
   if (Result.isFailure(received)) return refusal(received.failure, origin);
-  const { submissionId, origins } = received.success;
+  const { submissionId, origins, successUrl } = received.success;
   // The cron publishes the event later if this attempt fails or never runs.
   const tasks = yield* BackgroundTasks;
   yield* tasks.run(
@@ -169,6 +207,10 @@ const receive = Effect.gen(function* () {
     request.headers.accept
       ?.split(",")
       .some((value) => value.split(";", 1)[0]?.trim() === "text/html") ?? false;
+  if (!json && browser && Option.isSome(successUrl)) {
+    // The form's stored URL, never one from the request.
+    return HttpServerResponse.redirect(successUrl.value, { status: 303, headers });
+  }
   if (!json && browser) {
     return HttpServerResponse.text(
       '<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Message reçu</title><main><h1>Message reçu</h1><p>Votre message a été enregistré.</p></main></html>',

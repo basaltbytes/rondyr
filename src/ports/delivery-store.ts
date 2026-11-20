@@ -1,14 +1,15 @@
-import { Context, Effect, Option } from "effect";
+import { Context, Effect, Option, Schema } from "effect";
 
-import type {
-  AttemptOutcome,
-  DeliveredSubmission,
-  DeliveryId,
-  DeliveryTransition,
-  NotificationTarget,
+import {
+  DeliveryStatus,
+  type AttemptOutcome,
+  type DeliveredSubmission,
+  type DeliveryId,
+  type DeliveryTransition,
+  type NotificationTarget,
 } from "../domain/deliveries/delivery.ts";
 import type { SubmissionFields } from "../domain/submissions/submission-fields.ts";
-import type { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
+import type { OrganizationId, SubmissionId, UserId } from "../domain/submissions/submission.id.ts";
 import type { OutboxLease } from "./outbox.ts";
 import type { StorageUnavailable } from "./storage.ts";
 
@@ -27,10 +28,41 @@ export interface AttemptLease {
   readonly maxAttempts: number;
 }
 
+/** The submission or delivery does not exist in an organization of the account. */
+export class DeliveryNotFound extends Schema.TaggedError<
+  DeliveryNotFound,
+  { readonly brand: unique symbol }
+>()("DeliveryNotFound", {}) {}
+
+/** Only a failed delivery can be retried by hand. */
+export class DeliveryNotRetryable extends Schema.TaggedError<
+  DeliveryNotRetryable,
+  { readonly brand: unique symbol }
+>()("DeliveryNotRetryable", { status: DeliveryStatus }) {}
+
+/** A submission of one of the account's organizations. */
+export interface SubmissionScope {
+  readonly userId: typeof UserId.Type;
+  readonly organizationId: OrganizationId;
+  readonly submissionId: SubmissionId;
+}
+
+/** A delivery of a submission of one of the account's organizations. */
+export interface DeliveryScope extends SubmissionScope {
+  readonly deliveryId: DeliveryId;
+}
+
 /** An attempt that this caller started and must finish. */
 export interface StartedAttempt {
   readonly deliveryId: DeliveryId;
+  /** Position of the attempt in the history of the delivery, from 1. */
   readonly attempt: number;
+  /**
+   * Position in the current series: the attempts since the delivery was created
+   * or last retried by hand, this one included. It decides the retry delay and
+   * when the delivery fails.
+   */
+  readonly seriesAttempt: number;
   readonly target: typeof NotificationTarget.Type;
   readonly submission: typeof DeliveredSubmission.Type;
   readonly fields: typeof SubmissionFields.Type;
@@ -77,6 +109,16 @@ export class DeliveryStore extends Context.Service<
       deliveryId: DeliveryId,
       lease: AttemptLease,
     ) => Effect.Effect<Option.Option<StartedAttempt>, StorageUnavailable>;
+    /**
+     * Start a new series of attempts on a failed delivery, with the same ID: the
+     * delivery becomes pending with a fresh attempt budget, and its recorded
+     * attempts stay. Refused for any other status, so concurrent retries
+     * succeed once.
+     */
+    readonly retry: (
+      delivery: DeliveryScope,
+      now: number,
+    ) => Effect.Effect<void, DeliveryNotFound | DeliveryNotRetryable | StorageUnavailable>;
     /** Record the result of an attempt, and move the delivery on unless a later attempt started. */
     readonly finish: (
       attempt: StartedAttempt,

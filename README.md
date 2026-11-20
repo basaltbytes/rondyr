@@ -41,7 +41,7 @@ The script asks for the setup token, a name, an email address, and a password of
 
 ## Send a submission
 
-In the dashboard, create an inbox: an organization name, a form name, and an optional description of the business. Open **Adresses des formulaires** to copy the form URL, then post to it:
+In the dashboard, create an inbox: an organization name, a form name, and an optional description of the business. Open **Formulaires** to copy the form URL, then post to it:
 
 ```sh
 curl --json '{"email":"visitor@example.com","message":"Is there room in the pottery class?"}' \
@@ -76,15 +76,39 @@ const { "submission-id": submissionId } = await response.json();
 
 Don't send cookies: `credentials: "include"` makes the browser refuse the response.
 
-A `202` means D1 has stored the submission and the event that queues it for classification, in one transaction. It doesn't mean the classifier has run. A browser that posts an HTML form gets a confirmation page with the same status.
+A `202` means D1 has stored the submission and the event that queues it for classification, in one transaction. It doesn't mean the classifier has run.
 
-The body can be `application/json` or `application/x-www-form-urlencoded`, up to 16 KiB, with 1 to 32 text fields of at most 4,000 characters each. A form accepts 30 submissions per minute. Rondyr answers `400` for invalid fields, `403` for a browser on an origin that the form doesn't allow, `404` for an unknown form, `413` for a large body, `415` for another content type, and `429` over the rate limit.
+The body can be `application/json`, `application/x-www-form-urlencoded`, or `multipart/form-data`, up to 16 KiB, with 1 to 32 text fields of at most 4,000 characters each. A field name has 1 to 100 characters, with no control character or line break. A form accepts 30 submissions per minute.
+
+| Status | Meaning |
+| --- | --- |
+| `202` | Stored. The JSON body has `submission-id` and `status: "received"` |
+| `303` | Stored, and the browser is sent to the form's success URL (see below) |
+| `400` | Invalid body or fields, or a file in a multipart body |
+| `403` | The form is suspended, or a browser on an origin that the form doesn't allow sent it. Nothing is stored |
+| `404` | Unknown form |
+| `413` | Body larger than 16 KiB |
+| `415` | Another content type |
+| `429` | More than 30 submissions in a minute on this form, with `Retry-After: 60` |
+| `503` | D1 unavailable |
+
+### HTML forms
+
+A browser that posts an HTML form sends `Accept: text/html`. Rondyr answers it with a confirmation page in French and the status `202`, or, when the form has a success URL, with `303 See Other` to that URL. You set the success URL for each form in **Formulaires**. It must use HTTPS, and its origin must be one of the form's [allowed origins](#allowed-origins), so add the origin first. Rondyr only redirects to the stored URL: a field, a query parameter, or a header of the request can't choose another one. A `fetch` with a JSON body, or a client that doesn't accept HTML, gets the `202` JSON answer.
+
+A group of checkboxes or a multiple `<select>` sends the same field name several times. Rondyr joins the values with `, ` in the order received, so `topic=glaze&topic=kiln` is stored as `topic: "glaze, kiln"`. The joined value must still fit in 4,000 characters. JSON bodies take string values only.
+
+`multipart/form-data` (`enctype="multipart/form-data"`) works for text fields only. A part with a filename, including a file input left empty, makes Rondyr answer `400` and store nothing.
+
+### Suspended forms
+
+A suspended form answers `403` to every submission and stores nothing, with the same CORS headers as an active form. Its messages, its destinations, its allowed origins, and its URL don't change, and reactivating it accepts submissions again. Suspend and reactivate a form in **Formulaires**.
 
 ### Allowed origins
 
 By default a form accepts submissions from a page on any origin. To restrict it, open **Origines autorisées** in the dashboard and add the origins of your site, such as `https://www.example.com`. An origin is a scheme, a host, and an optional port, with no path. It must use HTTPS, except `http://localhost` and loopback addresses such as `http://127.0.0.1:8080` during development.
 
-Once a form has at least one allowed origin, Rondyr answers `403` to a browser that sends any other `Origin` header, whether it posts with `fetch` or with an HTML form, and stores nothing. A request without an `Origin` header, from curl or a server, is still accepted, and so is one with `Origin: null`, which a browser sends when the page hides its origin (a `no-referrer` policy, a sandboxed frame). This list keeps another site from sending messages to your form through its visitors' browsers; it doesn't stop spam from scripts, which can send any header.
+Once a form has at least one allowed origin, Rondyr answers `403` to a browser that sends any other `Origin` header, whether it posts with `fetch` or with an HTML form, and stores nothing. The origin of the form's success URL can't be removed from the list while the success URL is set; clear the success URL first. A request without an `Origin` header, from curl or a server, is still accepted, and so is one with `Origin: null`, which a browser sends when the page hides its origin (a `no-referrer` policy, a sandboxed frame). This list keeps another site from sending messages to your form through its visitors' browsers; it doesn't stop spam from scripts, which can send any header.
 
 Locally there is no Workers AI binding, so every message is quarantined with the reason **Analyse indisponible**. Click **Actualiser** a few seconds after posting to see it; you can then open, accept, or archive it.
 
@@ -96,10 +120,12 @@ Locally there is no Workers AI binding, so every message is quarantined with the
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
 - Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
 - Answers CORS preflights on the form URL, so a page on another origin can post JSON with `fetch`. Each form can restrict the origins that browsers may submit from.
+- Manages the forms of an organization in the dashboard: add a form, rename it, edit its business context, suspend and reactivate it, and redirect HTML form posts to a page of your site. A form keeps its public URL through every change.
 - Isolates organizations. Every admin query is scoped to the signed-in account's organizations, and another organization's submission answers `404`.
 - Creates one delivery per active destination of the form when a message is accepted, automatically or in review, and queues it through the same D1 outbox and cron. Each delivery has a stable ID that the recipient gets on every attempt. A retryable failure is attempted again after 1 minute, 5 minutes, 30 minutes, 2 hours, and 6 hours, then the delivery is marked as failed; a crash between the send and its record leads to a second send with the same ID.
 - Sends accepted messages to the form's webhooks as a versioned JSON `POST`, signed with HMAC-SHA-256 over the timestamp and the body. Signing secrets are generated by Rondyr, shown once, encrypted in D1 with `RONDYR_SECRETS_KEY`, and can be rotated with a 24-hour overlap. Rondyr refuses non-HTTPS URLs, private and reserved IP literals, local hostnames, its own origin, and redirects. [docs/webhooks.md](./docs/webhooks.md) has the payload, the headers, and a verification example.
 - Sends accepted messages by email through [Resend](https://resend.com), as plain text with every field, to up to 10 recipients per destination. The delivery ID is Resend's idempotency key, so a retry within 24 hours doesn't send a second email. Visitor input never goes into a header: the subject is built from the form name, and a field named `email` becomes `Reply-To` only when it is a single valid address. A stage needs `RESEND_API_KEY` and a sender address on a verified domain; [docs/email.md](./docs/email.md) has the setup, the limits, and the message format.
+- Shows the deliveries of each accepted message in the dashboard: the destination, the status, and every attempt with its start and end times and its error summary. A failed delivery can be retried by hand; the retry keeps the delivery ID, starts a new series of up to 6 attempts, and two retries at the same time start one attempt. Each webhook and email destination can also receive a test message, marked as a test, without creating a submission or a delivery.
 - Keeps message content in D1, and sends it only in webhook bodies and emails. The event history of a submission contains IDs, scores, and the reviewer, never the fields.
 - Deploys through [Alchemy](https://alchemy.run), with separate resources for the `staging` and `prod` stages.
 
@@ -110,8 +136,6 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 | Gap | Issue |
 | --- | --- |
 | Email through Cloudflare's email service, as an alternative to Resend | Follow-up of [#14](https://github.com/basaltbytes/rondyr/issues/14) |
-| Delivery history, manual retry, and test sends in the dashboard | [#16](https://github.com/basaltbytes/rondyr/issues/16) |
-| Editing, suspending, and adding forms | [#8](https://github.com/basaltbytes/rondyr/issues/8) |
 | Per-IP rate limits, honeypot, Turnstile, and quotas | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
 | Thresholds measured on a test corpus, per-organization policy | [#6](https://github.com/basaltbytes/rondyr/issues/6) |
 | Roles and invitations | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
@@ -120,7 +144,7 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 ## Concepts
 
 - An **organization** owns forms and an inbox. An account sees only the organizations it is a member of.
-- A **form** has a public URL, `/f/<public-id>`, and an optional **business context** that describes what the organization does.
+- A **form** has a public URL, `/f/<public-id>`, and an optional **business context** that describes what the organization does. A form is **active** or **suspended**; a suspended form refuses new submissions and keeps the ones it has.
 - A **submission** is one message: a set of text fields sent to a form.
 - The **classifier** returns a spam score and, when the form has a business context, a relevance score. Both are between 0 and 1.
 - A submission is **accepted** when its spam score is under 0.30 and its relevance score, if it has one, is at least 0.35. Otherwise it is **quarantined** with a reason: probable spam (0.70 and above), ambiguous, low relevance, or classifier error.
