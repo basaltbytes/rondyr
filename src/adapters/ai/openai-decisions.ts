@@ -61,11 +61,11 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
     Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
   );
   const response = yield* Effect.tryPromise({
-    try: () =>
+    try: (signal) =>
       ai.run(
         "openai/decisions",
         { input, questions: hasContext ? [spam, relevance] : [spam] },
-        aiGatewayOptions,
+        { ...aiGatewayOptions, signal },
       ),
     catch: mapBindingError,
   });

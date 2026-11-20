@@ -57,14 +57,14 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
 ) {
   const hasContext = context !== "";
   const response = yield* Effect.tryPromise({
-    try: () =>
+    try: (signal) =>
       ai.run(
         "typesafe/jev",
         {
           state: { submission_fields: fields, business_context: context },
           questions: hasContext ? { spam, relevance } : { spam },
         },
-        aiGatewayOptions,
+        { ...aiGatewayOptions, signal },
       ),
     catch: mapBindingError,
   });
