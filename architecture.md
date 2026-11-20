@@ -324,10 +324,11 @@ Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le 
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.
 - Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
 - Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
+- Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
 
 ### Couverture manquante
 
-- Réponses `400`, `413`, `415` et `429` de l’ingestion (#7).
+- Soumissions concurrentes à la frontière du plafond par formulaire (#7).
 - Événement que le consumer ne parvient jamais à remettre (#10).
 - Tout ce qui concerne les livraisons (#5, #13, #14).
 - Le dashboard n’a aucun test.
