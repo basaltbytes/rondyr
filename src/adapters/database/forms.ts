@@ -6,6 +6,7 @@ import {
   successUrlOrigin,
   type CreateForm,
   type FormStatus,
+  type HoneypotField,
   type SuccessUrl,
   type UpdateForm,
 } from "../../domain/forms/form.ts";
@@ -22,7 +23,7 @@ const unreadable = () => StorageUnavailable.make();
 
 export const managedFormColumns = `
   name, public_id AS publicId, status, business_context AS businessContext,
-  success_url AS successUrl
+  success_url AS successUrl, honeypot_field AS honeypotField
 `;
 
 // ?1 is the account, ?2 the organization and ?3 the public ID of the form.
@@ -149,10 +150,38 @@ const clearSuccessUrl = Effect.fn("Forms.clearSuccessUrl")(function* (form: Form
   return yield* returned(updated.results);
 });
 
+/** Set the honeypot field, or clear it with null. */
+const writeHoneypotField = Effect.fnUntraced(function* (form: FormScope, field: string | null) {
+  const db = yield* database;
+  const updated = yield* d1(() =>
+    db
+      .prepare(`
+    UPDATE forms SET honeypot_field = ?4 WHERE id IN (${scopedForm})
+    RETURNING ${managedFormColumns}
+  `)
+      .bind(form.userId, form.organizationId, form.formPublicId, field)
+      .all(),
+  );
+  return yield* returned(updated.results);
+});
+
+const setHoneypotField = Effect.fn("Forms.setHoneypotField")(function* (
+  form: FormScope,
+  field: typeof HoneypotField.Type,
+) {
+  return yield* writeHoneypotField(form, field);
+});
+
+const clearHoneypotField = Effect.fn("Forms.clearHoneypotField")(function* (form: FormScope) {
+  return yield* writeHoneypotField(form, null);
+});
+
 export const formsLive = Layer.succeed(Forms, {
   create,
   update,
   setStatus,
   setSuccessUrl,
   clearSuccessUrl,
+  setHoneypotField,
+  clearHoneypotField,
 });
