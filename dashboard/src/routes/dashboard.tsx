@@ -1,6 +1,7 @@
 import { AccountMenu, SignOutButton } from "~/features/authentication/account";
 import { SignInForm } from "~/features/authentication/sign-in-form";
 import { InboxPanel } from "~/features/inbox/inbox-panel";
+import { OperationsPanel } from "~/features/operations/operations-panel";
 import { authClient } from "~/lib/auth-client";
 
 export function Dashboard() {
@@ -26,6 +27,7 @@ export function Dashboard() {
       key={user.id}
       account={<AccountMenu email={user.email} />}
       signOut={<SignOutButton email={user.email} />}
+      operations={<OperationsPanel />}
     />
   );
 }
