@@ -37,6 +37,8 @@ const deploymentProps = Effect.gen(function* () {
     ? Config.option(Config.URL("BETTER_AUTH_URL"))
     : deployedOrigin.pipe(Config.map(Option.some));
   const setupToken = yield* Config.option(Config.Redacted("RONDYR_SETUP_TOKEN"));
+  // Without it, webhook targets cannot be created or rotated; everything else works.
+  const secretsKey = yield* Config.option(Config.Redacted("RONDYR_SECRETS_KEY"));
   const classifier = yield* Config.schema(ClassifierProvider, "RONDYR_CLASSIFIER").pipe(
     Config.withDefault("jev"),
   );
@@ -69,6 +71,7 @@ const deploymentProps = Effect.gen(function* () {
       ...(Option.isSome(authSecret) && { BETTER_AUTH_SECRET: authSecret.value }),
       ...(Option.isSome(authUrl) && { BETTER_AUTH_URL: authUrl.value.origin }),
       ...(Option.isSome(setupToken) && { RONDYR_SETUP_TOKEN: setupToken.value }),
+      ...(Option.isSome(secretsKey) && { RONDYR_SECRETS_KEY: secretsKey.value }),
     },
   };
 });
