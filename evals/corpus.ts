@@ -1,5 +1,6 @@
 import { Effect, FileSystem, Path, Schema } from "effect";
 
+import { classifierContext } from "../src/domain/submissions/classification.ts";
 import { SubmissionFields } from "../src/domain/submissions/submission-fields.ts";
 
 export const Label = Schema.Literals(["legitimate", "spam", "ambiguous", "off-topic"]);
@@ -35,7 +36,7 @@ export type CorpusEntry = typeof CorpusEntry.Type;
 
 export interface Corpus {
   readonly name: string;
-  /** The business context as the Worker sends it to the classifier: trimmed, at most 2,000 characters. */
+  /** The same trimmed and bounded business context that the Worker sends to the classifier. */
   readonly context: string;
   readonly entries: readonly [CorpusEntry, ...CorpusEntry[]];
 }
@@ -57,11 +58,6 @@ const decodeLine = Schema.decodeUnknownEffect(Schema.fromJsonString(CorpusEntry)
 
 export function weight(entry: CorpusEntry) {
   return entry.duplicates ?? 1;
-}
-
-// Same normalization as src/adapters/ai/classifier.ts applies to a form's business context.
-export function classifierContext(raw: string) {
-  return raw.trim().slice(0, 2000);
 }
 
 /**

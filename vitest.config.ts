@@ -10,7 +10,7 @@ import {
   testSecretsKey,
   testSetupToken,
 } from "./tests/integration/auth-fixture.ts";
-import { externalWorkers } from "./tests/integration/external-workers.ts";
+import { externalWorkers, workersAiBinding } from "./tests/integration/external-workers.ts";
 import wrangler from "./wrangler.json" with { type: "json" };
 
 export default defineConfig({
@@ -52,7 +52,7 @@ export default defineConfig({
               name: "rondyr-test-app",
               rootPath: "./dist/rondyr",
               modules,
-              serviceBindings: { AI: { name: "workers-ai-fixture", entrypoint: "Ai" } },
+              unsafeBindings: [workersAiBinding],
               outboundService: "webhook-receiver-fixture",
               bindings: {
                 ...wrangler.vars,

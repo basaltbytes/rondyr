@@ -10,7 +10,7 @@ import {
   testSecretsKey,
   testSetupToken,
 } from "../integration/auth-fixture.ts";
-import { externalWorkers } from "../integration/external-workers.ts";
+import { externalWorkers, workersAiBinding } from "../integration/external-workers.ts";
 
 const owner = {
   name: "Responsable des formulaires",
@@ -58,7 +58,7 @@ export const test = base.extend({
             ...workerOptions,
             name: "rondyr-browser-test",
             modules: ["index.js", ...chunks].map((path) => ({ type: "ESModule", path })),
-            serviceBindings: { AI: { name: "workers-ai-fixture", entrypoint: "Ai" } },
+            unsafeBindings: [workersAiBinding],
             outboundService: "webhook-receiver-fixture",
             bindings: {
               ...workerOptions.bindings,
