@@ -11,6 +11,7 @@ import {
 import type { IssuedSecret, Webhook } from "~/lib/targets-client";
 
 import { attempt } from "./target-problems.ts";
+import { TargetTest } from "./target-test.tsx";
 
 const date = new Intl.DateTimeFormat("fr", { dateStyle: "short", timeStyle: "short" });
 
@@ -100,6 +101,7 @@ export function WebhookTargets({ inboxId, form }: WebhookTargetsProps) {
                   {target.active ? "Désactiver" : "Réactiver"}
                 </button>
               </form>
+              <TargetTest inboxId={inboxId} targetId={target.id} />
             </li>
           ))}
         </ul>
