@@ -26,6 +26,7 @@ const DeliveryPolicy = durableObject("Submissions.DeliveryPolicy");
 const InboxProjection = durableObject("Submissions.InboxProjection");
 const InboxProjectionRun = durableObject("Submissions.InboxProjectionRun");
 const ClassifySubmissionWorkflow = durableObject("Submissions.ClassifySubmissionWorkflow");
+const CronHeartbeatObject = durableObject("CronHeartbeatObject");
 const DomainBackfill = workflow("Submissions.DomainBackfill");
 
 export {
@@ -36,5 +37,6 @@ export {
   InboxProjection,
   InboxProjectionRun,
   ClassifySubmissionWorkflow,
+  CronHeartbeatObject,
   DomainBackfill,
 };

@@ -91,7 +91,10 @@ export const deliverySchedulerLive = DeliveryScheduler.toLayer(
         yield* publishSubmission(accepted.submissionId).pipe(
           Effect.provideContext(context),
           Effect.tapError((error) =>
-            Effect.logWarning("Direct delivery publication failed", { tag: error._tag }),
+            Effect.logWarning("Direct delivery publication failed", {
+              submissionId: accepted.submissionId,
+              tag: error._tag,
+            }),
           ),
           Effect.ignore,
         );
@@ -113,7 +116,10 @@ export const retryDelivery = Effect.fn("Deliveries.retry")(function* (delivery: 
   yield* Effect.logInfo("Delivery retried by hand", { deliveryId: delivery.deliveryId });
   yield* publishSubmission(delivery.submissionId).pipe(
     Effect.tapError((error) =>
-      Effect.logWarning("Direct delivery publication failed", { tag: error._tag }),
+      Effect.logWarning("Direct delivery publication failed", {
+        deliveryId: delivery.deliveryId,
+        tag: error._tag,
+      }),
     ),
     Effect.ignore,
   );
@@ -142,7 +148,7 @@ export const sendTestNotification = Effect.fn("Deliveries.sendTest")(function* (
   );
   yield* Effect.logInfo("Test message sent", {
     testId,
-    targetType: testable.target.type,
+    targetId: testable.target.id,
     outcome: result.outcome,
   });
   return result;
@@ -188,7 +194,8 @@ const attemptDelivery = Effect.fnUntraced(function* (message: Message) {
   yield* Effect.logInfo("Delivery attempt finished", {
     deliveryId,
     attempt: attempt.attempt,
-    targetType: attempt.target.type,
+    targetId: attempt.target.id,
+    durationMs: finishedAt - now,
     outcome: outcome._tag,
     status: transition._tag,
   });

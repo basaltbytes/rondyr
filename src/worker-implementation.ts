@@ -1,7 +1,7 @@
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import { isWorkerEvent } from "@alchemy.run/cloudflare/Workers/WorkerRuntime";
 import * as DomainCloudflare from "@alchemy.run/domain/Cloudflare";
-import { Effect, Layer, Result } from "effect";
+import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 
 import { classifierLive } from "./adapters/ai/classifier.ts";
@@ -14,6 +14,7 @@ import { formsLive } from "./adapters/database/forms.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
 import { submissionIntakeLive } from "./adapters/database/intake.ts";
 import { notificationTargetsLive } from "./adapters/database/notification-targets.ts";
+import { operationsStoreLive } from "./adapters/database/operations-status.ts";
 import { organizationDirectoryLive } from "./adapters/database/organization-directory.ts";
 import { outboxLive } from "./adapters/database/outbox.ts";
 import { storedMessagesLive } from "./adapters/database/stored-messages.ts";
@@ -23,21 +24,20 @@ import { classificationQueueLive } from "./adapters/queues/classification-queue.
 import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
 import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
 import { clientRateLimitLive } from "./adapters/workers/client-rate-limit.ts";
+import { cronHeartbeatLive } from "./adapters/workers/cron-heartbeat.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
 import { deliveryRoutes } from "./http/delivery-routes.ts";
 import { formRoutes } from "./http/form-routes.ts";
+import { operationsRoute } from "./http/operations-route.ts";
 import { originRoutes } from "./http/origin-routes.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
 import { submissionRoutes } from "./http/submission-routes.ts";
 import { targetRoutes } from "./http/target-routes.ts";
-import {
-  consumeDeliveries,
-  deliverySchedulerLive,
-  publishPendingDeliveries,
-} from "./jobs/delivery-outbox.ts";
-import { consumeSubmissions, publishPendingSubmissions } from "./jobs/submission-outbox.ts";
+import { consumeDeliveries, deliverySchedulerLive } from "./jobs/delivery-outbox.ts";
+import { publishOutboxes } from "./jobs/publish-outboxes.ts";
+import { consumeSubmissions } from "./jobs/submission-outbox.ts";
 import { BackgroundTasks } from "./ports/background-tasks.ts";
 
 const deliveries = Layer.mergeAll(deliveryStoreLive, deliveryQueueLive);
@@ -53,6 +53,8 @@ const services = Layer.mergeAll(
   classificationQueueLive,
   deliveries,
   deliveryHistoryLive,
+  operationsStoreLive,
+  cronHeartbeatLive,
   Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
     Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
   ),
@@ -76,18 +78,8 @@ const routes = Layer.mergeAll(
   originRoutes,
   formRoutes,
   deliveryRoutes,
+  operationsRoute,
 );
-
-// One outbox failing does not keep the other from being published.
-const publishOutboxes = Effect.gen(function* () {
-  const results = yield* Effect.all([publishPendingSubmissions(), publishPendingDeliveries()], {
-    concurrency: "unbounded",
-    mode: "result",
-  });
-  for (const result of results) {
-    if (Result.isFailure(result)) return yield* result.failure;
-  }
-});
 
 const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
@@ -123,7 +115,7 @@ export const workerImplementation = Effect.gen(function* () {
   yield* worker.listen((event) => {
     if (!isWorkerEvent(event)) return;
     if (event.type === "scheduled") {
-      return publishOutboxes.pipe(Effect.provideContext(context), Effect.orDie);
+      return publishOutboxes().pipe(Effect.provideContext(context));
     }
     if (event.type === "queue") {
       return consumeBatch(event.input).pipe(Effect.provideContext(context));
