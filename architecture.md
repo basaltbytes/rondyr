@@ -186,7 +186,7 @@ Chaque événement de décision enregistre les scores, l’identifiant du modèl
 - **Jev** reçoit les champs et le contexte dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
 - **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
 
-La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la première requête authentifiée du compte, avec la collecte de logs activée ; l’adaptateur OpenAI désactive donc la collecte et le cache à chaque appel, et un test vérifie ces options. Jev appelle Workers AI sans gateway. L’identifiant `default` est une constante de `src/adapters/ai/openai-decisions.ts`. En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
+La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la première requête authentifiée du compte, avec la collecte de logs activée ; les appels Jev faits par le binding y passent aussi, et leurs journaux contenaient les champs des soumissions tant que l’adaptateur ne s’y opposait pas. Les deux adaptateurs désactivent donc la collecte et le cache à chaque appel, avec les options de `src/adapters/ai/gateway.ts`, et un test par adaptateur vérifie ces options. En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
 
 ### Sécurité du pipeline IA
 
@@ -424,7 +424,7 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 - Le statut d’une soumission est un flux d’événements dans un Durable Object, projeté dans D1 pour l’Inbox.
 - Les requêtes d’exécution restent du SQL préparé, dans les adaptateurs de `src/adapters/database`, et Effect Schema décode les lignes qu’elles renvoient. Drizzle sert au schéma, aux migrations et à Better Auth (#23).
 - Jev passe par le binding Workers AI ; OpenAI Decisions passe par AI Gateway avec la facturation unifiée. Le choix se fait par stage.
-- OpenAI Decisions utilise le gateway `default`, que AI Gateway crée lui-même, et la pile ne provisionne pas de gateway (#22).
+- Les deux classificateurs passent par le gateway `default`, que AI Gateway crée lui-même, et chaque appel y désactive la collecte de logs et le cache. La pile ne provisionne pas de gateway (#22).
 - Le premier compte se crée avec un jeton d’installation et `scripts/setup-owner.sh`.
 - Un envoi HTML reçoit une page de confirmation avec le statut `202`.
 

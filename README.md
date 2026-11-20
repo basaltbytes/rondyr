@@ -70,7 +70,7 @@ Locally there is no Workers AI binding, so every message is quarantined with the
 ## Features
 
 - Stores each submission and its outbox event atomically before answering, then publishes the event to the classification queue in the background of the same request. A cron job runs every minute as the recovery path: it publishes the events whose first publication failed, and republishes any event that wasn't handed to the classifier within 5 minutes. A duplicate queue message produces one decision.
-- Scores spam and business relevance with Jev through Workers AI, or with OpenAI Decisions through the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment.
+- Scores spam and business relevance with Jev or with OpenAI Decisions, both through Workers AI and the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment.
 - Quarantines instead of deleting. Probable spam, ambiguous scores, off-topic messages, and classifier failures all go to human review, each with its reason.
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
 - Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
