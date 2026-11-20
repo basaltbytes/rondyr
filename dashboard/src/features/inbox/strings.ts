@@ -1,3 +1,5 @@
+import { maxRecipients } from "@rondyr/deliveries/email";
+
 export const statusLabels = {
   received: "Reçu",
   classifying: "En cours d’analyse",
@@ -35,3 +37,14 @@ export const originRefusals = {
 
 export const missingSecretsKey =
   "Le Worker n’a pas de clé RONDYR_SECRETS_KEY : impossible de créer un webhook ou de renouveler son secret.";
+
+export const recipientRefusals = {
+  "no-recipients": "Saisissez au moins une adresse e-mail.",
+  "too-many-recipients": `Une destination accepte au plus ${maxRecipients} adresses.`,
+  "invalid-address":
+    "Une adresse n’est pas valide. Saisissez des adresses seules, comme equipe@example.com, sans nom ni chevrons.",
+  "duplicate-address": "Une adresse apparaît deux fois.",
+} as const;
+
+export const missingEmailProvider =
+  "L’envoi d’e-mails n’est pas configuré sur ce Worker : il faut RESEND_API_KEY et RONDYR_EMAIL_FROM.";

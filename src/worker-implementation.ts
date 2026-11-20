@@ -15,6 +15,7 @@ import { notificationTargetsLive } from "./adapters/database/notification-target
 import { organizationDirectoryLive } from "./adapters/database/organization-directory.ts";
 import { outboxLive } from "./adapters/database/outbox.ts";
 import { storedMessagesLive } from "./adapters/database/stored-messages.ts";
+import { emailSenderLive } from "./adapters/email/email-sender.ts";
 import { notificationProvidersLive } from "./adapters/notifications/notification-providers.ts";
 import { classificationQueueLive } from "./adapters/queues/classification-queue.ts";
 import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
@@ -45,7 +46,7 @@ const services = Layer.mergeAll(
   classificationQueueLive,
   deliveries,
   Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
-    Layer.provide(secretCipherLive),
+    Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
   ),
   Submissions.layer(submissionHandlers, { legacyData: false }).pipe(
     Layer.provide(

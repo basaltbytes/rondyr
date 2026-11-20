@@ -5,16 +5,20 @@ import { Clock, Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 
 import { verifyRondyrWebhook } from "../../docs/examples/verify-webhook.ts";
-import { testOrigin as origin, testSetupToken } from "../../tests/integration/auth-fixture.ts";
+import {
+  testEmailFrom,
+  testOrigin as origin,
+  testResendKey,
+  testSetupToken,
+} from "../../tests/integration/auth-fixture.ts";
 import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
 import { organizationDirectoryLive } from "../adapters/database/organization-directory.ts";
+import { emailSenderLive } from "../adapters/email/email-sender.ts";
+import { EmailTarget, type RecipientsRefusalReason } from "../domain/deliveries/email.ts";
+import { DestinationTarget, TargetRequestError } from "../domain/deliveries/targets.ts";
 import type { DestinationRefusalReason } from "../domain/deliveries/webhook-destination.ts";
-import {
-  IssuedWebhookSecret,
-  TargetRequestError,
-  WebhookTarget,
-} from "../domain/deliveries/webhook.ts";
+import { IssuedWebhookSecret, WebhookTarget } from "../domain/deliveries/webhook.ts";
 import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
 import { Authentication } from "../ports/authentication.ts";
 import { targetRoutes } from "./target-routes.ts";
@@ -28,6 +32,17 @@ const readTargetsText = Schema.decodeUnknownEffect(
 const readTarget = Schema.decodeUnknownEffect(WebhookTarget);
 const readIssued = Schema.decodeUnknownEffect(IssuedWebhookSecret);
 const readError = Schema.decodeUnknownEffect(TargetRequestError);
+const readDestinations = Schema.decodeUnknownEffect(Schema.Array(DestinationTarget));
+const readEmailTarget = Schema.decodeUnknownEffect(EmailTarget);
+const readDestination = Schema.decodeUnknownEffect(DestinationTarget);
+const ResendEmail = Schema.Struct({
+  from: Schema.String,
+  to: Schema.Array(Schema.String),
+  subject: Schema.String,
+  text: Schema.String,
+  reply_to: Schema.optionalKey(Schema.Array(Schema.String)),
+});
+const readResendEmail = Schema.decodeUnknownEffect(Schema.fromJsonString(ResendEmail));
 const Received = Schema.Struct({
   url: Schema.String,
   method: Schema.String,
@@ -53,10 +68,24 @@ const post = Effect.fnUntraced(function* (path: string, data: Schema.Json, extra
 
 const json = (response: Response) => Effect.promise(() => response.json());
 
+const put = Effect.fnUntraced(function* (path: string, data: Schema.Json, extra?: HeadersInit) {
+  const body = yield* encode(data);
+  const headers = new Headers(extra);
+  headers.set("content-type", "application/json");
+  headers.set("origin", origin);
+  return yield* request(path, { method: "PUT", headers, body });
+});
+
+/** Status and JSON body of each response. */
+const answers = (responses: ReadonlyArray<Response>) =>
+  Effect.forEach(responses, (response) =>
+    Effect.map(json(response), (body) => ({ status: response.status, body })),
+  );
+
 const statusOf = (response: Response) => response.status;
 
 it.live(
-  "manages the webhook targets of the account's forms and delivers through the deployed Worker",
+  "manages the webhook and email targets of the account's forms and delivers through the deployed Worker",
   () =>
     Effect.gen(function* () {
       const credentials = { email: "potter@example.test", password: "webhook-routes-password" };
@@ -197,6 +226,104 @@ it.live(
       );
       assert.isTrue(reactivated.active);
 
+      // Email targets: each address is a bare address, with no display name or line break.
+      const refusedRecipients: ReadonlyArray<
+        readonly [ReadonlyArray<string>, RecipientsRefusalReason]
+      > = [
+        [[], "no-recipients"],
+        [["Potter <potter@example.test>"], "invalid-address"],
+        [["potter@example.test\r\nBcc: victim@example.test"], "invalid-address"],
+        [["potter@example.test, victim@example.test"], "invalid-address"],
+        [
+          Array.from({ length: 11 }, (_, index) => `team-${index}@example.test`),
+          "too-many-recipients",
+        ],
+        [["Team@example.test", "team@example.test"], "duplicate-address"],
+      ];
+      const recipientRefusals = yield* Effect.forEach(refusedRecipients, ([recipients]) =>
+        post(formTargets, { type: "email", recipients }, headers),
+      ).pipe(Effect.flatMap(answers));
+      assert.deepEqual(
+        recipientRefusals,
+        refusedRecipients.map(([, reason]) => ({
+          status: 400,
+          body: { error: "recipients-refused", reason },
+        })),
+      );
+      const createdEmail = yield* post(
+        formTargets,
+        { type: "email", recipients: ["routes-team@example.test"] },
+        headers,
+      );
+      assert.strictEqual(createdEmail.status, 201);
+      const email = yield* json(createdEmail).pipe(Effect.flatMap(readEmailTarget));
+      assert.deepEqual([email.recipients, email.active], [["routes-team@example.test"], true]);
+      const both = yield* request(formTargets, { headers }).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readDestinations),
+      );
+      assert.deepEqual(both, [reactivated, email]);
+
+      const emailTarget = `/api/organizations/${inbox.id}/targets/${email.id}`;
+      const recipients = ["routes-team@example.test", "routes-owner@example.test"];
+      const replaced = yield* put(`${emailTarget}/recipients`, { recipients }, headers).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readEmailTarget),
+      );
+      assert.deepEqual([...replaced.recipients], recipients);
+      const replaceRefused = yield* Effect.all([
+        put(`${emailTarget}/recipients`, { recipients: ["Owner <owner@example.test>"] }, headers),
+        put(`${emailTarget}/recipients`, { recipients: [] }, headers),
+      ]).pipe(Effect.flatMap(answers));
+      assert.deepEqual(replaceRefused, [
+        { status: 400, body: { error: "recipients-refused", reason: "invalid-address" } },
+        { status: 400, body: { error: "recipients-refused", reason: "no-recipients" } },
+      ]);
+      // A webhook has no recipients.
+      const notEmail = yield* put(`${target}/recipients`, { recipients }, headers);
+      assert.strictEqual(notEmail.status, 404);
+      const emailOff = yield* post(`${emailTarget}/deactivate`, {}, headers).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readDestination),
+      );
+      assert.deepEqual([emailOff.type, emailOff.active], ["email", false]);
+      const emailOn = yield* post(`${emailTarget}/activate`, {}, headers).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readDestination),
+      );
+      assert.deepEqual(emailOn, { ...replaced, active: true });
+
+      // The deployed composition sends the next accepted message through Resend.
+      const mailed = yield* post(`/f/${form.publicId}`, {
+        ...contact,
+        "fixture-verdict": "accept",
+      });
+      assert.strictEqual(mailed.status, 202);
+      const sent = yield* Effect.promise(() =>
+        vi.waitFor(
+          () =>
+            env.RESEND_FIXTURE.fetch(
+              "https://api.resend.com/__received?recipient=routes-team@example.test",
+            )
+              .then((response) => response.json())
+              .then((body) => {
+                assert.isTrue(Array.isArray(body) && body.length === 1);
+                return body;
+              }),
+          { timeout: 20_000, interval: 100 },
+        ),
+      );
+      const [resend] = yield* readReceived(sent);
+      if (resend === undefined) return assert.fail("Expected a Resend request");
+      assert.strictEqual(resend.headers["authorization"], `Bearer ${testResendKey}`);
+      assert.match(resend.headers["idempotency-key"] ?? "", /^[0-9a-f-]{36}$/u);
+      const message = yield* readResendEmail(resend.body);
+      assert.deepEqual(
+        [message.from, message.to, message.subject, message.reply_to],
+        [testEmailFrom, recipients, "Nouveau message : Classes", [contact.email]],
+      );
+      assert.include(message.text, contact.message);
+
       // Another organization's form and target answer 404 and stay unchanged.
       yield* Effect.promise(() =>
         env.DB.batch([
@@ -237,7 +364,127 @@ it.live(
         configuration:
           '{"url":"https://hooks.example.com/else","secret":"v1.a.b","previousSecret":null}',
       });
+
+      // The same for email targets: listing, creating, editing and deactivating.
+      const farawayRecipients = '{"recipients":["faraway@example.test"]}';
+      yield* Effect.promise(() =>
+        env.DB.batch([
+          env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('faraway-org', 'Far')"),
+          env.DB.prepare(
+            "INSERT INTO forms (id, organization_id, public_id, name) VALUES ('faraway-form', 'faraway-org', 'faraway', 'Far')",
+          ),
+          env.DB.prepare(`
+            INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, created_at)
+            VALUES ('faraway-email', 'faraway-org', 'faraway-form', 'email', ?, 0)
+          `).bind(farawayRecipients),
+        ]),
+      );
+      const farForm = "/api/organizations/faraway-org/forms/faraway/targets";
+      const farTarget = "/api/organizations/faraway-org/targets/faraway-email";
+      const mixedEmail = `/api/organizations/${inbox.id}/targets/faraway-email`;
+      const mixedFarForm = `/api/organizations/${inbox.id}/forms/faraway/targets`;
+      const mail = { type: "email", recipients: ["intruder@example.test"] };
+      const edit = { recipients: ["intruder@example.test"] };
+      const farAway = yield* Effect.all([
+        request(farForm, { headers }),
+        post(farForm, mail, headers),
+        post(mixedFarForm, mail, headers),
+        put(`${farTarget}/recipients`, edit, headers),
+        post(`${farTarget}/deactivate`, {}, headers),
+        put(`${mixedEmail}/recipients`, edit, headers),
+        post(`${mixedEmail}/deactivate`, {}, headers),
+      ]);
+      assert.deepEqual(farAway.map(statusOf), [404, 404, 404, 404, 404, 404, 404]);
+      const farUntouched = yield* Effect.promise(() =>
+        env.DB.prepare(
+          "SELECT COUNT(*) AS targets, MAX(active) AS active, MAX(configuration) AS configuration FROM notification_targets WHERE organization_id = 'faraway-org'",
+        ).first(),
+      );
+      assert.deepEqual(farUntouched, { targets: 1, active: 1, configuration: farawayRecipients });
     }),
+  // Two messages go through classification and delivery in the deployed Worker.
+  45_000,
+);
+
+it.live("refuses to create an email target when the stage has no email provider", () =>
+  Effect.gen(function* () {
+    // This test Worker has no RESEND_API_KEY nor RONDYR_EMAIL_FROM.
+    const configuration = '{"recipients":["owner@example.test"]}';
+    yield* Effect.promise(() =>
+      env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO auth_users (id, name, email, created_at, updated_at) VALUES ('mailless-user', 'Mailless', 'mailless@example.test', 0, 0)",
+        ),
+        env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('mailless-org', 'Mailless')"),
+        env.DB.prepare(
+          "INSERT INTO organization_members (organization_id, user_id) VALUES ('mailless-org', 'mailless-user')",
+        ),
+        env.DB.prepare(
+          "INSERT INTO forms (id, organization_id, public_id, name) VALUES ('mailless-form', 'mailless-org', 'mailless', 'Mailless')",
+        ),
+        env.DB.prepare(
+          "INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, created_at) VALUES ('mailless-email', 'mailless-org', 'mailless-form', 'email', ?, 0)",
+        ).bind(configuration),
+      ]),
+    );
+    const member = Layer.succeed(Authentication, {
+      userId: () => Effect.succeed("mailless-user"),
+      handle: () => Effect.die("The routes under test do not proxy Better Auth"),
+      setup: () => Effect.die("The routes under test do not create accounts"),
+    });
+    const services = yield* Layer.build(
+      Layer.mergeAll(
+        member,
+        organizationDirectoryLive,
+        notificationTargetsLive.pipe(
+          Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
+        ),
+      ),
+    );
+    const { handler, dispose } = HttpRouter.toWebHandler(
+      targetRoutes.pipe(Layer.provide(HttpServer.layerServices)),
+      { disableLogger: true },
+    );
+    const call = (path: string, method = "GET", body?: string) =>
+      Effect.promise(() =>
+        handler(
+          new Request(new URL(`/api/organizations/mailless-org${path}`, origin), {
+            method,
+            headers: { "content-type": "application/json", origin },
+            body: body ?? null,
+          }),
+          services,
+        ),
+      );
+
+    const createBody = yield* encode({ type: "email", recipients: ["team@example.test"] });
+    const refused = yield* call("/forms/mailless/targets", "POST", createBody);
+    const error = yield* json(refused).pipe(Effect.flatMap(readError));
+    assert.deepEqual([refused.status, error], [503, { error: "email-provider-missing" }]);
+
+    // Listing, editing and deactivation need no provider.
+    const listed = yield* call("/forms/mailless/targets").pipe(
+      Effect.flatMap(json),
+      Effect.flatMap(readDestinations),
+    );
+    assert.deepEqual(
+      listed.map(({ id, type }) => [id, type]),
+      [["mailless-email", "email"]],
+    );
+    const editBody = yield* encode({ recipients: ["team@example.test"] });
+    const edited = yield* call("/targets/mailless-email/recipients", "PUT", editBody);
+    const deactivated = yield* call("/targets/mailless-email/deactivate", "POST");
+    assert.deepEqual([edited.status, deactivated.status], [200, 200]);
+    const rows = yield* Effect.promise(() =>
+      env.DB.prepare(
+        "SELECT id, configuration, active FROM notification_targets WHERE organization_id = 'mailless-org'",
+      ).all(),
+    );
+    assert.deepEqual(rows.results, [
+      { id: "mailless-email", configuration: '{"recipients":["team@example.test"]}', active: 0 },
+    ]);
+    yield* Effect.promise(dispose);
+  }).pipe(Effect.scoped),
 );
 
 it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY", () =>
@@ -271,7 +518,9 @@ it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY
       Layer.mergeAll(
         member,
         organizationDirectoryLive,
-        notificationTargetsLive.pipe(Layer.provide(secretCipherLive)),
+        notificationTargetsLive.pipe(
+          Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
+        ),
       ),
     );
     const { handler, dispose } = HttpRouter.toWebHandler(

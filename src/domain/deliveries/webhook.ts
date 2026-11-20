@@ -3,7 +3,6 @@ import { Schema } from "effect";
 import { SubmissionFields } from "../submissions/submission-fields.ts";
 import { SubmissionId } from "../submissions/submission.id.ts";
 import { DeliveryId, TargetId } from "./delivery.ts";
-import { DestinationRefusalReason } from "./webhook-destination.ts";
 
 /** The JSON body of a webhook request, version 1. docs/webhooks.md documents it. */
 export const WebhookPayload = Schema.Struct({
@@ -45,11 +44,3 @@ export const CreateWebhookTarget = Schema.Struct({
 
 /** The only response that contains a signing secret: after a creation or a rotation. */
 export const IssuedWebhookSecret = Schema.Struct({ target: WebhookTarget, secret: Schema.String });
-
-export const TargetRequestError = Schema.Union([
-  Schema.Struct({
-    error: Schema.Literal("destination-refused"),
-    reason: DestinationRefusalReason,
-  }),
-  Schema.Struct({ error: Schema.Literal("secrets-key-missing") }),
-]);
