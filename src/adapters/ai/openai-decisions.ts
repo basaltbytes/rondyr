@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 import { Score } from "../../domain/submissions/classification.ts";
 import { ClassificationFailed } from "../../domain/submissions/classifier.external.ts";
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
+import { aiGatewayOptions } from "./gateway.ts";
 
 const Decision = Schema.Struct({
   model: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
@@ -22,11 +23,6 @@ const encodeInput = Schema.encodeEffect(
     Schema.Struct({ submission_fields: SubmissionFields, business_context: Schema.String }),
   ),
 );
-
-// AI Gateway creates the gateway named `default` on an account's first
-// authenticated request, with log collection on. Each call below turns log
-// collection and the cache off for itself.
-const aiGatewayId = "default";
 
 const spam = {
   type: "predicate",
@@ -68,7 +64,7 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
       ai.run(
         "openai/decisions",
         { input, questions: hasContext ? [spam, relevance] : [spam] },
-        { gateway: { id: aiGatewayId, collectLog: false, skipCache: true } },
+        aiGatewayOptions,
       ),
     catch: () => ClassificationFailed.make({ retryable: true }),
   });

@@ -5,6 +5,7 @@ dist/
 .miniflare/
 .agent-sources/
 .scratchpad/
+.claude/worktrees/
 coverage/
 test-results/
 playwright-report/

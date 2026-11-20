@@ -1,7 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 
-import { decodeJevResponse } from "./jev.ts";
+import { decodeJevResponse, scoreWithJev } from "./jev.ts";
 
 const spamOnly = { model: "jev-1.13.0", answers: { spam: { type: "noul", noul: 0.69 } } } as const;
 const contextual = {
@@ -34,5 +34,28 @@ it.effect("requires a completed run and a valid spam score", () =>
     );
     assert.strictEqual(pending._tag, "SchemaError");
     assert.strictEqual(invalidScore._tag, "SchemaError");
+  }),
+);
+
+it.effect("asks the gateway to keep the submission out of its logs and cache", () =>
+  Effect.gen(function* () {
+    const scores = yield* scoreWithJev(
+      {
+        run: (model, request, options) => {
+          assert.strictEqual(model, "typesafe/jev");
+          assert.deepEqual(options.gateway, { id: "default", collectLog: false, skipCache: true });
+          assert.deepEqual(request.state, {
+            submission_fields: { message: "Do you offer pottery classes?" },
+            business_context: "",
+          });
+          assert.deepEqual(Object.keys(request.questions), ["spam"]);
+          return Promise.resolve(spamOnly);
+        },
+      },
+      { message: "Do you offer pottery classes?" },
+      "",
+    );
+
+    assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.69 });
   }),
 );
