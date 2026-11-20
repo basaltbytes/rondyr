@@ -21,6 +21,19 @@ export const SubmissionFields = Schema.Record(FieldName, FieldValue).check(
 const controlCharacter = /[\p{Cc}\u2028\u2029]/u;
 
 /**
+ * Whether intake accepts `name` as a field name, besides its length of 1 to 100
+ * characters: not a reserved name, and without a control character or a line break.
+ */
+export function isSubmittedFieldName(name: string) {
+  return (
+    name !== "__proto__" &&
+    name !== "constructor" &&
+    name !== "prototype" &&
+    !controlCharacter.test(name)
+  );
+}
+
+/**
  * The fields of a new submission. Intake also refuses a field name with a
  * control character or a line break. Stored submissions are read with
  * `SubmissionFields`, so a message received before this rule stays readable.

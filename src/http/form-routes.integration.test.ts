@@ -109,6 +109,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       status: "active",
       businessContext: null,
       successUrl: null,
+      honeypotField: null,
     });
     const forms = `/api/organizations/${inbox.id}/forms`;
     const formPath = (publicId: string) => `${forms}/${encodeURIComponent(publicId)}`;
@@ -155,6 +156,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       status: "active",
       businessContext: "Pottery workshops",
       successUrl: null,
+      honeypotField: null,
     });
     assert.notStrictEqual(classes.publicId, first.publicId);
     const shop = yield* call("POST", forms, { name: "Shop", businessContext: "" }, headers).pipe(
@@ -450,4 +452,81 @@ it.live(
       assert.strictEqual(storedAfter, 2);
     }),
   45_000,
+);
+
+it.live("sets and clears the honeypot field of a form, within the account's organizations", () =>
+  Effect.gen(function* () {
+    const headers = yield* signIn;
+    const { inbox, form } = yield* createInbox(headers, "Honeypot settings", "");
+    const honeypot = `/api/organizations/${inbox.id}/forms/${encodeURIComponent(form.publicId)}/honeypot`;
+
+    const anonymous = yield* Effect.all([
+      call("PUT", honeypot, { field: "_hp" }),
+      call("DELETE", honeypot),
+    ]);
+    assert.deepEqual(anonymous.map(statusOf), [401, 401]);
+
+    // The rule of the field names that intake accepts, without surrounding spaces.
+    const invalid: ReadonlyArray<Schema.Json> = [
+      {},
+      { field: "" },
+      { field: "   " },
+      { field: "n".repeat(101) },
+      { field: "__proto__" },
+      { field: "constructor" },
+      { field: "web\nsite" },
+      { field: "web\u2028site" },
+      { field: 42 },
+    ];
+    const refused = yield* Effect.forEach(invalid, (body) => call("PUT", honeypot, body, headers));
+    assert.deepEqual(
+      refused.map(statusOf),
+      invalid.map(() => 400),
+    );
+
+    const set = yield* call("PUT", honeypot, { field: "  _gotcha " }, headers);
+    assert.strictEqual(set.status, 200);
+    assert.strictEqual(set.headers.get("cache-control"), "no-store");
+    const withField = yield* formOf(set);
+    assert.deepEqual(withField, { ...form, honeypotField: "_gotcha" });
+    const longest = yield* call("PUT", honeypot, { field: "h".repeat(100) }, headers).pipe(
+      Effect.flatMap(formOf),
+    );
+    assert.strictEqual(longest.honeypotField, "h".repeat(100));
+    const listed = yield* request("/api/organizations", { headers }).pipe(
+      Effect.flatMap(json),
+      Effect.flatMap(readInboxes),
+    );
+    assert.strictEqual(
+      listed.find(({ id }) => id === inbox.id)?.forms[0]?.honeypotField,
+      "h".repeat(100),
+    );
+    const cleared = yield* call("DELETE", honeypot, undefined, headers).pipe(
+      Effect.flatMap(formOf),
+    );
+    assert.deepEqual(cleared, form);
+
+    // Another organization's form answers 404 and keeps its honeypot field.
+    yield* Effect.promise(() =>
+      env.DB.batch([
+        env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('trap-org', 'Trap')"),
+        env.DB.prepare(`
+          INSERT INTO forms (id, organization_id, public_id, name, honeypot_field)
+          VALUES ('trap-form', 'trap-org', 'trap', 'Trap', '_hp')
+        `),
+      ]),
+    );
+    const foreign = yield* Effect.all([
+      call("PUT", "/api/organizations/trap-org/forms/trap/honeypot", { field: "x" }, headers),
+      call("DELETE", "/api/organizations/trap-org/forms/trap/honeypot", undefined, headers),
+      call("PUT", `/api/organizations/${inbox.id}/forms/trap/honeypot`, { field: "x" }, headers),
+    ]);
+    assert.deepEqual(foreign.map(statusOf), [404, 404, 404]);
+    const kept = yield* Effect.promise(() =>
+      env.DB.prepare("SELECT honeypot_field FROM forms WHERE id = 'trap-form'").first(
+        "honeypot_field",
+      ),
+    );
+    assert.strictEqual(kept, "_hp");
+  }),
 );
