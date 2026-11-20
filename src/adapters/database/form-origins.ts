@@ -1,7 +1,7 @@
 import { Clock, Effect, Layer, Schema } from "effect";
 
 import { FormOrigin, type AllowedOrigin } from "../../domain/forms/allowed-origin.ts";
-import { FormOriginNotFound, FormOrigins } from "../../ports/form-origins.ts";
+import { FormOriginNotFound, FormOrigins, OriginInUse } from "../../ports/form-origins.ts";
 import type { FormScope } from "../../ports/notification-targets.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
@@ -75,18 +75,36 @@ const add = Effect.fn("FormOrigins.add")(function* (form: FormScope, origin: All
 
 const remove = Effect.fn("FormOrigins.remove")(function* (form: FormScope, origin: AllowedOrigin) {
   const db = yield* database;
-  const deleted = yield* d1(() =>
-    db
-      .prepare(`
-    DELETE FROM form_origins
-    WHERE form_id IN (${scopedForm}) AND origin = ?4
-    RETURNING origin, created_at
-  `)
-      .bind(form.userId, form.organizationId, form.formPublicId, origin)
-      .all(),
+  const scope = [form.userId, form.organizationId, form.formPublicId, origin] as const;
+  // A success URL starts with its origin and a slash. Checking it in the DELETE
+  // keeps a concurrent change of the success URL from leaving it on an unlisted origin.
+  const [deleted, kept] = yield* d1(() =>
+    db.batch([
+      db
+        .prepare(`
+      DELETE FROM form_origins
+      WHERE form_id IN (${scopedForm}) AND origin = ?4
+        AND NOT EXISTS (
+          SELECT 1 FROM forms f
+          WHERE f.id = form_origins.form_id
+            AND substr(f.success_url, 1, length(?4) + 1) = ?4 || '/'
+        )
+      RETURNING origin, created_at
+    `)
+        .bind(...scope),
+      db
+        .prepare(`
+      SELECT o.origin, o.created_at FROM form_origins o
+      WHERE o.form_id IN (${scopedForm}) AND o.origin = ?4
+    `)
+        .bind(...scope),
+    ]),
   );
-  const rows = yield* decodeOrigins(deleted.results).pipe(Effect.mapError(unreadable));
-  if (rows.length === 0) return yield* FormOriginNotFound.make();
+  const rows = yield* decodeOrigins(deleted?.results ?? []).pipe(Effect.mapError(unreadable));
+  if (rows.length > 0) return;
+  const remaining = yield* decodeOrigins(kept?.results ?? []).pipe(Effect.mapError(unreadable));
+  if (remaining.length > 0) return yield* OriginInUse.make();
+  return yield* FormOriginNotFound.make();
 });
 
 export const formOriginsLive = Layer.succeed(FormOrigins, { list, add, remove });

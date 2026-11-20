@@ -31,6 +31,10 @@ export const forms = sqliteTable(
     publicId: text("public_id").notNull().unique(),
     businessContext: text("business_context"),
     name: text().notNull(),
+    // `active` or `suspended`. A suspended form refuses submissions and keeps its messages.
+    status: text().notNull().default("active"),
+    // Normalized by parseSuccessUrl. Its origin is one of the form's allowed origins.
+    successUrl: text("success_url"),
   },
   (table) => [
     check("forms_id_not_null", sql`${table.id} is not null`),

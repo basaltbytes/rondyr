@@ -5,7 +5,7 @@ import type { Inbox } from "~/lib/inbox-client";
 import { addOrigin, listOrigins, OriginRequestFailed, removeOrigin } from "~/lib/origins-client";
 import type { AllowedOrigin } from "~/lib/origins-client";
 
-import { originRefusals } from "./strings.ts";
+import { originInUse, originRefusals } from "./strings.ts";
 
 const isFailed = Schema.is(OriginRequestFailed);
 
@@ -18,7 +18,8 @@ async function attempt(request: () => Promise<void>, fallback: string) {
     if (!isFailed(error)) return fallback;
     return Option.match(error.problem, {
       onNone: () => fallback,
-      onSome: (problem) => originRefusals[problem.reason],
+      onSome: (problem) =>
+        problem.error === "origin-in-use" ? originInUse : originRefusals[problem.reason],
     });
   }
 }

@@ -56,12 +56,12 @@ function urlEncodedBody(bytes: number) {
   return sizes.map((length, index) => `f${index + 1}=${"x".repeat(length)}`).join("&");
 }
 
-it.live("answers 415 to a body that is neither JSON nor URL-encoded", () =>
+it.live("answers 415 to a body that is neither JSON nor a form body", () =>
   Effect.gen(function* () {
     yield* seedForm("intake-media");
     const responses = yield* Effect.all([
       submit("intake-media", "text/plain", "message=hello"),
-      submit("intake-media", "multipart/form-data; boundary=x", "--x--"),
+      submit("intake-media", "application/xml", "<message>hello</message>"),
       // A byte body gets no default content type, unlike a string body.
       submit("intake-media", null, new TextEncoder().encode('{"message":"hello"}')),
     ]);
@@ -97,13 +97,15 @@ it.live("answers 400 to invalid fields and stores nothing", () =>
       submit("intake-fields", json, tooMany),
       submit("intake-fields", json, longValue),
       submit("intake-fields", json, longName),
-      submit("intake-fields", form, "message=hello&message=again"),
+      // A repeated name is joined; the joined value has 4,002 characters.
+      submit("intake-fields", form, `message=${"x".repeat(2000)}&message=${"x".repeat(2000)}`),
       submit("intake-fields", form, ""),
+      submit("intake-fields", "multipart/form-data; boundary=x", "--x--"),
     ]);
 
     assert.deepEqual(
       responses.map(({ status }) => status),
-      Array.from({ length: 11 }, () => 400),
+      Array.from({ length: 12 }, () => 400),
     );
     yield* expectStored("intake-fields", 0);
   }),
@@ -392,6 +394,309 @@ it.live("sends the CORS headers with each error status of the intake", () =>
     const refusedWhileLimited = yield* fetchJson("cors-errors", elsewhere);
     assert.strictEqual(refusedWhileLimited.status, 403);
     yield* expectStored("cors-errors", 30);
+  }),
+);
+
+const readStored = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ fields: Schema.fromJsonString(Schema.Unknown) })),
+);
+
+/** The fields of each submission stored for a form, oldest first. */
+const storedFields = (name: string) =>
+  Effect.promise(() =>
+    env.DB.prepare("SELECT fields FROM submissions WHERE form_id = ? ORDER BY received_at, rowid")
+      .bind(`${name}-form`)
+      .all(),
+  ).pipe(
+    Effect.flatMap(({ results }) => readStored(results)),
+    Effect.map((rows) => rows.map(({ fields }) => fields)),
+  );
+
+const boundary = "rondyr-test-boundary";
+const multipartType = `multipart/form-data; boundary=${boundary}`;
+
+/** A multipart body written by hand, one part per Content-Disposition parameters and value. */
+function multipartBody(parts: ReadonlyArray<readonly [string, string]>) {
+  const encoded = parts.map(
+    ([disposition, value]) =>
+      `--${boundary}\r\nContent-Disposition: form-data; ${disposition}\r\n\r\n${value}\r\n`,
+  );
+  return `${encoded.join("")}--${boundary}--\r\n`;
+}
+
+const urlEncoded = "application/x-www-form-urlencoded";
+const htmlAccept = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8";
+
+it.live("joins the values of a repeated field name in a form body", () =>
+  Effect.gen(function* () {
+    yield* seedForm("intake-repeated");
+    const checkboxes = yield* submit(
+      "intake-repeated",
+      urlEncoded,
+      "topic=throwing&message=Hello&topic=glazing&topic=kiln",
+    );
+    assert.strictEqual(checkboxes.status, 202);
+    const select = new FormData();
+    select.append("days", "Monday");
+    select.append("message", "Hi");
+    select.append("days", "Friday");
+    const multipart = yield* submit("intake-repeated", null, select);
+    assert.strictEqual(multipart.status, 202);
+    // Two values of 1,999 characters and the separator make exactly 4,000.
+    const atLimit = yield* submit(
+      "intake-repeated",
+      urlEncoded,
+      `long=${"x".repeat(1999)}&long=${"y".repeat(1999)}`,
+    );
+    assert.strictEqual(atLimit.status, 202);
+    const overLimit = new FormData();
+    overLimit.append("long", "x".repeat(2000));
+    overLimit.append("long", "y".repeat(2000));
+    const tooLong = yield* submit("intake-repeated", null, overLimit);
+    assert.strictEqual(tooLong.status, 400);
+
+    const stored = yield* storedFields("intake-repeated");
+    assert.deepEqual(stored, [
+      { topic: "throwing, glazing, kiln", message: "Hello" },
+      { days: "Monday, Friday", message: "Hi" },
+      { long: `${"x".repeat(1999)}, ${"y".repeat(1999)}` },
+    ]);
+
+    // JSON keeps string values only.
+    const array = yield* submit("intake-repeated", "application/json", '{"topic":["a","b"]}');
+    assert.strictEqual(array.status, 400);
+    yield* expectStored("intake-repeated", 3);
+  }),
+);
+
+it.live("accepts a multipart body of text fields and refuses a file", () =>
+  Effect.gen(function* () {
+    yield* seedForm("intake-multipart");
+    const text = new FormData();
+    text.append("email", "visitor@example.com");
+    text.append("message", "Is there room in the pottery class?");
+    const accepted = yield* submit("intake-multipart", null, text);
+    assert.strictEqual(accepted.status, 202);
+    const body = yield* Effect.promise(() => accepted.json());
+    assert.include(body, { status: "received" });
+
+    const withFile = new FormData();
+    withFile.append("message", "See the attached file");
+    withFile.append("attachment", new File(["hello"], "hello.txt", { type: "text/plain" }));
+    // An empty file input still sends a part with a filename.
+    const emptyFile = multipartBody([
+      ['name="message"', "Hello"],
+      ['name="attachment"; filename=""', ""],
+    ]);
+    const tooLarge = new FormData();
+    tooLarge.append("message", "x".repeat(17 * 1024));
+    const refused = yield* Effect.all([
+      submit("intake-multipart", null, withFile),
+      submit("intake-multipart", multipartType, emptyFile),
+      submit("intake-multipart", "multipart/form-data", multipartBody([['name="a"', "b"]])),
+      submit("intake-multipart", null, tooLarge),
+    ]);
+    assert.deepEqual(
+      refused.map(({ status }) => status),
+      [400, 400, 400, 413],
+    );
+
+    // A browser posting a multipart form gets the confirmation page.
+    const page = yield* send("intake-multipart", {
+      method: "POST",
+      headers: { accept: htmlAccept },
+      body: text,
+    });
+    assert.strictEqual(page.status, 202);
+    assert.strictEqual(page.headers.get("content-type"), "text/html; charset=utf-8");
+
+    const stored = yield* storedFields("intake-multipart");
+    const sent = {
+      email: "visitor@example.com",
+      message: "Is there room in the pottery class?",
+    };
+    assert.deepEqual(stored, [sent, sent]);
+  }),
+);
+
+it.live("refuses a field name with a control character or a line break", () =>
+  Effect.gen(function* () {
+    yield* seedForm("intake-names");
+    const json = "application/json";
+    const names = ["sub\nject", "sub\rject", "sub\u0000ject", "sub\u0085ject", "sub\u2028ject"];
+    const jsonBodies = yield* Effect.forEach(names, (name) => encode({ [name]: "hello" }));
+    // A browser escapes CR, LF and quotes in a part name, but a client can send other
+    // controls. The multipart parser refuses most of them in a header; these pass it.
+    const multipartNames = ["sub\tject", "sub\u0085ject", "sub\u2028ject", "sub\u0007ject"];
+    const multipartBodies = multipartNames.map((name) =>
+      multipartBody([[`name="${name}"`, "hello"]]),
+    );
+    const responses = yield* Effect.all([
+      ...jsonBodies.map((body) => submit("intake-names", json, body)),
+      ...names.map((name) =>
+        submit("intake-names", urlEncoded, new URLSearchParams({ [name]: "hello" }).toString()),
+      ),
+      ...multipartBodies.map((body) => submit("intake-names", multipartType, body)),
+    ]);
+    assert.deepEqual(
+      responses.map(({ status }) => status),
+      Array.from({ length: names.length * 2 + multipartNames.length }, () => 400),
+    );
+    yield* expectStored("intake-names", 0);
+
+    // The same names without the control character are accepted in each content type.
+    const valid = yield* Effect.all([
+      submit("intake-names", json, '{"subject":"hello"}'),
+      submit("intake-names", urlEncoded, "subject=hello"),
+      submit("intake-names", multipartType, multipartBody([['name="subject"', "hello"]])),
+    ]);
+    assert.deepEqual(
+      valid.map(({ status }) => status),
+      [202, 202, 202],
+    );
+    yield* expectStored("intake-names", 3);
+  }),
+);
+
+const setStatus = (name: string, status: "active" | "suspended") =>
+  Effect.promise(() =>
+    env.DB.prepare("UPDATE forms SET status = ? WHERE id = ?").bind(status, `${name}-form`).run(),
+  );
+
+it.live("refuses a post to a suspended form and stores nothing", () =>
+  Effect.gen(function* () {
+    yield* seedForm("intake-suspended");
+    yield* seedOrigins("intake-suspended", [shop]);
+    yield* seedForm("intake-suspended-open");
+    const before = yield* fetchJson("intake-suspended", shop);
+    assert.strictEqual(before.status, 202);
+    yield* setStatus("intake-suspended", "suspended");
+    yield* setStatus("intake-suspended-open", "suspended");
+
+    const refused = yield* Effect.all([
+      fetchJson("intake-suspended", shop),
+      fetchJson("intake-suspended", null),
+      htmlPost("intake-suspended", shop),
+      fetchJson("intake-suspended-open", elsewhere),
+      // An origin that is not listed gets the origin refusal, as for an active form.
+      fetchJson("intake-suspended", elsewhere),
+    ]);
+    assert.deepEqual(refused.map(cors), [
+      { status: 403, allowOrigin: shop, vary: "Origin", credentials: null },
+      { status: 403, allowOrigin: null, vary: "Origin", credentials: null },
+      { status: 403, allowOrigin: shop, vary: "Origin", credentials: null },
+      { status: 403, allowOrigin: "*", vary: null, credentials: null },
+      { status: 403, allowOrigin: null, vary: "Origin", credentials: null },
+    ]);
+    for (const response of refused) {
+      assert.strictEqual(response.headers.get("cache-control"), "no-store");
+    }
+    // An invalid request keeps its status.
+    const invalid = yield* fetchJson("intake-suspended", shop, '{"message":');
+    assert.deepEqual(cors(invalid), {
+      status: 400,
+      allowOrigin: shop,
+      vary: "Origin",
+      credentials: null,
+    });
+    // The preflight answers as for an active form.
+    const preflights = yield* Effect.all([
+      preflight("intake-suspended", shop),
+      preflight("intake-suspended-open", elsewhere),
+    ]);
+    assert.deepEqual(preflights.map(cors), [
+      { status: 204, allowOrigin: shop, vary: "Origin", credentials: null },
+      { status: 204, allowOrigin: "*", vary: null, credentials: null },
+    ]);
+    yield* expectStored("intake-suspended", 1);
+    yield* expectStored("intake-suspended-open", 0);
+
+    yield* setStatus("intake-suspended", "active");
+    const reactivated = yield* fetchJson("intake-suspended", shop);
+    assert.strictEqual(reactivated.status, 202);
+    yield* expectStored("intake-suspended", 2);
+  }),
+);
+
+const setSuccessUrl = (name: string, url: string | null) =>
+  Effect.promise(() =>
+    env.DB.prepare("UPDATE forms SET success_url = ? WHERE id = ?").bind(url, `${name}-form`).run(),
+  );
+
+it.live("redirects an accepted HTML form post to the form's success URL", () =>
+  Effect.gen(function* () {
+    const successUrl = `${shop}/merci?source=rondyr`;
+    yield* seedForm("intake-redirect");
+    yield* seedOrigins("intake-redirect", [shop]);
+    yield* setSuccessUrl("intake-redirect", successUrl);
+
+    // A field, a query parameter or a Referer cannot choose the destination.
+    const redirected = yield* Effect.promise(() =>
+      env.TEST_WORKER.fetch(
+        new URL("/f/intake-redirect?redirect=https://evil.example.com/", origin),
+        {
+          method: "POST",
+          redirect: "manual",
+          headers: {
+            "content-type": urlEncoded,
+            accept: htmlAccept,
+            origin: shop,
+            referer: "https://evil.example.com/page",
+          },
+          body: "message=Hello&_next=https%3A%2F%2Fevil.example.com%2F&redirect=https%3A%2F%2Fevil.example.com%2F",
+        },
+      ),
+    );
+    assert.strictEqual(redirected.status, 303);
+    assert.strictEqual(redirected.headers.get("location"), successUrl);
+    assert.strictEqual(redirected.headers.get("cache-control"), "no-store");
+    assert.strictEqual(redirected.headers.get("access-control-allow-origin"), shop);
+
+    const multipart = new FormData();
+    multipart.append("message", "Hello");
+    const responses = yield* Effect.all([
+      send("intake-redirect", {
+        method: "POST",
+        redirect: "manual",
+        headers: { accept: htmlAccept, origin: shop },
+        body: multipart,
+      }),
+      // A JSON client gets the JSON answer, even if it accepts HTML.
+      send("intake-redirect", {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/json", accept: htmlAccept, origin: shop },
+        body: contact,
+      }),
+      // A form post that does not accept HTML gets the JSON answer.
+      send("intake-redirect", {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": urlEncoded, origin: shop },
+        body: "message=Hello",
+      }),
+    ]);
+    assert.deepEqual(
+      responses.map((response) => [response.status, response.headers.get("location")]),
+      [
+        [303, successUrl],
+        [202, null],
+        [202, null],
+      ],
+    );
+    for (const response of responses.slice(1)) {
+      const body = yield* Effect.promise(() => response.json());
+      assert.include(body, { status: "received" });
+    }
+    yield* expectStored("intake-redirect", 4);
+
+    // A success URL whose origin is no longer listed, as after an edit by hand, is not used.
+    yield* setSuccessUrl("intake-redirect", "https://elsewhere.example.com/merci");
+    const unlisted = yield* htmlPost("intake-redirect", shop);
+    assert.strictEqual(unlisted.status, 202);
+    assert.strictEqual(unlisted.headers.get("location"), null);
+    assert.strictEqual(unlisted.headers.get("content-type"), "text/html; charset=utf-8");
+    yield* expectStored("intake-redirect", 5);
   }),
 );
 
