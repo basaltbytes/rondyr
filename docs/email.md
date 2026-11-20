@@ -37,7 +37,7 @@ A message over quota or over the rate limit gets `429`, which Rondyr retries. A 
 
 ## Destinations
 
-In the dashboard, open **E-mails** under the inbox, enter the recipients next to the form, one per line, and click **Ajouter**. **Modifier les destinataires** replaces the list, and **Désactiver** stops deliveries for messages accepted from then on.
+In the dashboard, open **E-mails** under the inbox, enter the recipients next to the form, one per line, and click **Ajouter**. **Modifier les destinataires** replaces the list, **Désactiver** stops deliveries for messages accepted from then on, and **Envoyer un essai** sends a [test email](#test-email) and shows the answer.
 
 A destination has 1 to 10 recipients. Each one is a bare ASCII address such as `team@example.com`. Rondyr refuses a display name (`Team <team@example.com>`), several addresses in one entry, spaces, line breaks, an internationalized address, and the same address twice, ignoring case.
 
@@ -49,6 +49,7 @@ The dashboard calls these routes, which need a session cookie and the `Origin` o
 | `POST /api/organizations/:organizationId/forms/:publicId/targets` | Creates an email destination from `{"type":"email","recipients":["team@example.com"]}` (`201`) |
 | `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Replaces the recipients from `{"recipients":[…]}` |
 | `POST /api/organizations/:organizationId/targets/:targetId/deactivate` or `/activate` | Returns the destination with its new state |
+| `POST /api/organizations/:organizationId/targets/:targetId/test` | Sends a test email and returns its result |
 
 A refused list answers `400` with `{"error":"recipients-refused","reason":…}`, where the reason is `no-recipients`, `too-many-recipients`, `invalid-address` or `duplicate-address`. A form or destination of an organization the account isn't a member of answers `404`.
 
@@ -82,6 +83,27 @@ The body lists every field in the order the form sent them, then the form name, 
 
 Field names and values come from visitors, so none of them goes into a header, with one exception. When the submission has a field named exactly `email` whose value is a single valid address, with no display name, no space and no line break, it becomes the `Reply-To` address, and answering the email writes to the visitor. Any other value, such as `visitor@example.com` followed by a line break, leaves the email without `Reply-To`. The subject is built from the form name only. In the body, line breaks inside a field name become spaces, and line breaks inside a value become plain `\n`.
 
+## Test email
+
+**Envoyer un essai** in the dashboard, or the `test` route, sends one email to the recipients of the destination, through the same provider and with the same checks as a delivery. For a form named `Classes`:
+
+```text
+From: forms@notifications.example.com
+To: team@example.com
+Subject: Message d’essai : Classes
+
+Message d’essai envoyé depuis le dashboard Rondyr pour le formulaire « Classes ».
+
+Aucun visiteur n’a envoyé ce message. Il vérifie que les e-mails de ce formulaire arrivent à ces destinataires.
+
+-- 
+Formulaire : Classes
+Envoyé le : 20 novembre 2026 à 15:42:07 UTC
+Identifiant d’essai : 4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60
+```
+
+The test ID is new for each test and is the idempotency key of the request, so every test sends an email and counts in the Resend quota, once per recipient. Rondyr sends it once, without a retry, waits up to 30 seconds, and stores nothing: no submission, no delivery, no attempt. The route answers `{"testId", "outcome", "summary"}`, where `outcome` is `delivered`, `retryable-failure` or `permanent-failure` and `summary`, absent after a success, is the status and error code described below, such as `Resend answered HTTP 403 (validation_error).` While a test of a destination runs, a second test of the same destination answers `409`; the check is per Worker instance.
+
 ## Responses and retries
 
 Rondyr sends each attempt with the delivery ID as Resend's [idempotency key](https://resend.com/docs/dashboard/emails/idempotency-keys). Resend keeps a key for 24 hours and answers a repeated request with the same response, without sending the email again. All six attempts of a delivery fall within that window.
@@ -101,6 +123,8 @@ Retries follow the delays of every delivery: 1 minute, 5 minutes, 30 minutes, 2 
 
 Resend compares the request with the first one that used the same key. If you change the recipients or `RONDYR_EMAIL_FROM` while a delivery is waiting for a retry, the next attempt gets `409 invalid_idempotent_request` and the delivery fails.
 
+A failed delivery can be retried by hand from the dashboard. The retry keeps the delivery ID, and so the idempotency key, and starts a new series of 6 attempts; [webhooks.md](./webhooks.md#delivery-history-and-manual-retry) describes the history and the retry. Within 24 hours of the first attempt, the rule above also applies to a manual retry: after a change of recipients or of `RONDYR_EMAIL_FROM`, Resend refuses it with `409 invalid_idempotent_request`.
+
 ## Delivery guarantee
 
 Delivery is at least once, as for webhooks. The idempotency key covers a retry within 24 hours, including a retry after the Worker stopped between the request and the record of its result. It doesn't cover a send more than 24 hours after the first attempt, and mail servers can also deliver one email twice. Two emails that end with the same delivery ID are the same delivery.
@@ -112,6 +136,5 @@ The content of a message leaves Rondyr in the email. Resend processes it and kee
 ## Not built yet
 
 - An adapter for Cloudflare's email service, chosen with `RONDYR_EMAIL_PROVIDER`, is planned in a separate issue.
-- The dashboard doesn't show delivery history yet, and a failed delivery can't be retried by hand or tested with a sample email ([#16](https://github.com/basaltbytes/rondyr/issues/16)).
 - The message text can't be changed, and it is only in French.
-- Every member of an organization can manage its destinations; roles come with [#11](https://github.com/basaltbytes/rondyr/issues/11).
+- Every member of an organization can manage its destinations, retry a failed delivery and send a test email; roles come with [#11](https://github.com/basaltbytes/rondyr/issues/11).

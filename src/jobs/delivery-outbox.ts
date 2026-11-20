@@ -1,19 +1,23 @@
 import { Clock, Context, Effect, Option, Schema } from "effect";
+import { SecureRandom } from "effect/crypto";
 
 import {
   afterAttempt,
   DeliveryId,
   maxDeliveryAttempts,
+  summarize,
   type AttemptOutcome,
 } from "../domain/deliveries/delivery.ts";
+import type { TargetTestResult } from "../domain/deliveries/history.ts";
 import {
   DeliveriesUnavailable,
   DeliveryScheduler,
 } from "../domain/submissions/delivery-scheduler.external.ts";
 import type { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { DeliveryQueue } from "../ports/delivery-queue.ts";
-import { DeliveryStore } from "../ports/delivery-store.ts";
+import { DeliveryStore, type DeliveryScope } from "../ports/delivery-store.ts";
 import { NotificationFailed, NotificationProvider } from "../ports/notification-provider.ts";
+import type { TestableTarget } from "../ports/notification-targets.ts";
 import type { OutboxLease } from "../ports/outbox.ts";
 
 const decodeMessage = Schema.decodeUnknownEffect(Schema.Struct({ deliveryId: DeliveryId }));
@@ -31,6 +35,12 @@ const attemptLeaseMillis = 120_000;
 
 /** A provider that does not answer in time counts as a retryable failure. */
 const providerTimeout = "30 seconds";
+
+const timedOut = () =>
+  NotificationFailed.make({
+    retryable: true,
+    summary: `The provider did not answer within ${providerTimeout}.`,
+  });
 
 const publishClaimed = Effect.fnUntraced(function* (
   lease: OutboxLease,
@@ -90,6 +100,54 @@ export const deliverySchedulerLive = DeliveryScheduler.toLayer(
   }),
 );
 
+/**
+ * Retry a failed delivery by hand: a new series of attempts with the same
+ * delivery ID, published as the policy publishes a new delivery. The cron
+ * publishes it later if this publication fails.
+ */
+export const retryDelivery = Effect.fn("Deliveries.retry")(function* (delivery: DeliveryScope) {
+  yield* Effect.annotateCurrentSpan({ deliveryId: delivery.deliveryId });
+  const store = yield* DeliveryStore;
+  const now = yield* Clock.currentTimeMillis;
+  yield* store.retry(delivery, now);
+  yield* Effect.logInfo("Delivery retried by hand", { deliveryId: delivery.deliveryId });
+  yield* publishSubmission(delivery.submissionId).pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning("Direct delivery publication failed", { tag: error._tag }),
+    ),
+    Effect.ignore,
+  );
+});
+
+/**
+ * Send a test message to a target and wait for its result. Nothing is stored:
+ * the test has its own new ID and no delivery.
+ */
+export const sendTestNotification = Effect.fn("Deliveries.sendTest")(function* (
+  testable: TestableTarget,
+) {
+  const provider = yield* NotificationProvider;
+  const testId = DeliveryId.make(SecureRandom.uuidV4Unsafe());
+  yield* Effect.annotateCurrentSpan({ testId, targetId: testable.target.id });
+  const result = yield* provider.sendTest({ testId, ...testable }).pipe(
+    Effect.timeoutOrElse({ duration: providerTimeout, orElse: () => Effect.fail(timedOut()) }),
+    Effect.match({
+      onSuccess: (): typeof TargetTestResult.Type => ({ testId, outcome: "delivered" }),
+      onFailure: (failure): typeof TargetTestResult.Type => ({
+        testId,
+        outcome: failure.retryable ? "retryable-failure" : "permanent-failure",
+        summary: summarize(failure.summary),
+      }),
+    }),
+  );
+  yield* Effect.logInfo("Test message sent", {
+    testId,
+    targetType: testable.target.type,
+    outcome: result.outcome,
+  });
+  return result;
+});
+
 const outcomeOf = (failure: NotificationFailed): typeof AttemptOutcome.Type =>
   failure.retryable
     ? { _tag: "RetryableFailure", summary: failure.summary }
@@ -118,23 +176,14 @@ const attemptDelivery = Effect.fnUntraced(function* (message: Message) {
       fields: attempt.fields,
     })
     .pipe(
-      Effect.timeoutOrElse({
-        duration: providerTimeout,
-        orElse: () =>
-          Effect.fail(
-            NotificationFailed.make({
-              retryable: true,
-              summary: `The provider did not answer within ${providerTimeout}.`,
-            }),
-          ),
-      }),
+      Effect.timeoutOrElse({ duration: providerTimeout, orElse: () => Effect.fail(timedOut()) }),
       Effect.match({
         onSuccess: (): typeof AttemptOutcome.Type => ({ _tag: "Delivered" }),
         onFailure: outcomeOf,
       }),
     );
   const finishedAt = yield* Clock.currentTimeMillis;
-  const transition = afterAttempt(attempt.attempt, outcome, finishedAt);
+  const transition = afterAttempt(attempt.seriesAttempt, outcome, finishedAt);
   yield* store.finish(attempt, outcome, transition, finishedAt);
   yield* Effect.logInfo("Delivery attempt finished", {
     deliveryId,

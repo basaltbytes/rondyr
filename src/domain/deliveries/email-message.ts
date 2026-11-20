@@ -47,9 +47,9 @@ function multiline(text: string) {
   return text.replace(valueLineBreaks, "\n").replace(valueControls, "");
 }
 
-function subjectFor(formName: string) {
+function subjectFor(prefix: string, formName: string) {
   const name = oneLine(formName);
-  const subject = name === "" ? "Nouveau message" : `Nouveau message : ${name}`;
+  const subject = name === "" ? prefix : `${prefix} : ${name}`;
   return subject.length > maxSubjectLength ? `${subject.slice(0, maxSubjectLength - 1)}…` : subject;
 }
 
@@ -75,8 +75,35 @@ export function emailContent(delivery: DeliveredEmail): EmailContent {
     "Rondyr peut envoyer deux fois la même livraison. Deux messages qui portent le même identifiant de livraison sont des doublons.",
   ].join("\n\n");
   return {
-    subject: subjectFor(submission.formName),
+    subject: subjectFor("Nouveau message", submission.formName),
     text: `${text}\n`,
     replyTo: email !== undefined && isAddress(email) ? Option.some(email) : Option.none(),
+  };
+}
+
+export interface TestEmail {
+  readonly testId: DeliveryId;
+  readonly formName: string;
+  /** Milliseconds since the epoch. */
+  readonly sentAt: number;
+}
+
+/** The email that tests a target from the dashboard. Its subject and body say it is a test. */
+export function testEmailContent(test: TestEmail): EmailContent {
+  const formName = oneLine(test.formName);
+  const text = [
+    `Message d’essai envoyé depuis le dashboard Rondyr pour le formulaire « ${formName} ».`,
+    "Aucun visiteur n’a envoyé ce message. Il vérifie que les e-mails de ce formulaire arrivent à ces destinataires.",
+    [
+      "-- ",
+      `Formulaire : ${formName}`,
+      `Envoyé le : ${received.format(test.sentAt)}`,
+      `Identifiant d’essai : ${test.testId}`,
+    ].join("\n"),
+  ].join("\n\n");
+  return {
+    subject: subjectFor("Message d’essai", test.formName),
+    text: `${text}\n`,
+    replyTo: Option.none(),
   };
 }
