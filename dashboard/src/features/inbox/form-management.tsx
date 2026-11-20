@@ -1,5 +1,18 @@
 import { Option, Schema } from "effect";
 import { useActionState, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
+
+import { FormProblem, TextAreaField, TextField } from "~/components/text-field";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
 
 import {
   clearHoneypotField,
@@ -11,26 +24,46 @@ import {
   setSuccessUrl,
   updateForm,
 } from "~/lib/forms-client";
-import type { Form } from "~/lib/forms-client";
+import type { Form, FormProblem as FormRequestProblem } from "~/lib/forms-client";
 import type { Inbox } from "~/lib/inbox-client";
-
-import { formStatusLabels, successUrlRefusals } from "./strings.ts";
 
 const isFailed = Schema.is(FormRequestFailed);
 
-/** Run a request and return the message to show if it fails, or null. */
-async function attempt(request: () => Promise<void>, fallback: string) {
+/** Why a request to the forms API failed: the problem that the API names, or no stated reason. */
+type FormFailure = FormRequestProblem | "unexplained";
+
+/** Run a request and return why it failed, or null. */
+async function attempt(request: () => Promise<void>): Promise<FormFailure | null> {
   try {
     await request();
     return null;
   } catch (error) {
-    if (!isFailed(error)) return fallback;
+    if (!isFailed(error)) return "unexplained";
     return Option.match(error.problem, {
-      onNone: () => fallback,
-      onSome: (problem) => successUrlRefusals[problem.reason],
+      onNone: (): FormFailure => "unexplained",
+      onSome: (problem): FormFailure => problem,
     });
   }
 }
+
+interface FormFailureNoteProps {
+  readonly failure: FormFailure | null;
+  /** The message for a failure that the API does not explain. */
+  readonly fallback: string;
+}
+
+function FormFailureNote({ failure, fallback }: FormFailureNoteProps) {
+  const { t } = useTranslation();
+  if (failure === null) return null;
+  return (
+    <FormProblem>
+      {failure === "unexplained" ? fallback : t(`inbox.forms.redirect.refusals.${failure.reason}`)}
+    </FormProblem>
+  );
+}
+
+// The element of a field name or of an address inside a translated sentence.
+const code = <code className="font-mono wrap-anywhere" />;
 
 function text(data: FormData, name: string) {
   return data.get(name)?.toString() ?? "";
@@ -42,236 +75,345 @@ interface FormSettingsProps {
   readonly onChanged: () => Promise<void>;
 }
 
-function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
+/** One form: public URL, name, business context, redirect, honeypot field and status. */
+export function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [copied, setCopied] = useState(false);
   const publicUrl = `${window.location.origin}/f/${encodeURIComponent(form.publicId)}`;
 
-  const [editProblem, edit, saving] = useActionState(
-    (_: string | null, data: FormData) =>
+  const [editFailure, edit, saving] = useActionState(
+    (_: FormFailure | null, data: FormData) =>
       attempt(async () => {
         await updateForm(inboxId, form.publicId, text(data, "name"), text(data, "businessContext"));
         await onChanged();
         setEditing(false);
-      }, "Le formulaire n’a pas pu être modifié. Vérifiez les champs et réessayez."),
+      }),
     null,
   );
 
-  const [statusProblem, changeStatus, changing] = useActionState(
-    (_: string | null, data: FormData) => {
+  const [statusFailure, changeStatus, changing] = useActionState(
+    (_: FormFailure | null, data: FormData) => {
       const action = data.get("action");
       if (action !== "suspend" && action !== "reactivate") return null;
       return attempt(async () => {
         await setFormStatus(inboxId, form.publicId, action);
         await onChanged();
         setConfirming(false);
-      }, "Le statut n’a pas pu être modifié. Réessayez.");
+      });
     },
     null,
   );
 
-  const [redirectProblem, changeRedirect, redirecting] = useActionState(
-    (_: string | null, data: FormData) => {
+  const [redirectFailure, changeRedirect, redirecting] = useActionState(
+    (_: FormFailure | null, data: FormData) => {
       const clear = data.get("action") === "clear";
       return attempt(async () => {
         if (clear) await clearSuccessUrl(inboxId, form.publicId);
         else await setSuccessUrl(inboxId, form.publicId, text(data, "url"));
         await onChanged();
-      }, "La redirection n’a pas pu être enregistrée. Réessayez.");
+      });
     },
     null,
   );
 
-  const [honeypotProblem, changeHoneypot, trapping] = useActionState(
-    (_: string | null, data: FormData) => {
+  const [honeypotFailure, changeHoneypot, trapping] = useActionState(
+    (_: FormFailure | null, data: FormData) => {
       const clear = data.get("action") === "clear";
       return attempt(async () => {
         if (clear) await clearHoneypotField(inboxId, form.publicId);
         else await setHoneypotField(inboxId, form.publicId, text(data, "field"));
         await onChanged();
-      }, "Le champ piège n’a pas pu être enregistré. Vérifiez le nom et réessayez.");
+      });
     },
     null,
   );
 
   return (
-    <section aria-label={`Réglages du formulaire ${form.name}`}>
-      <h3>{form.name}</h3>
-      <p>
-        {formStatusLabels[form.status]} · <code>{publicUrl}</code>
-      </p>
-      {form.status === "suspended" && (
-        <p>
-          Ce formulaire refuse les nouveaux messages. Les messages reçus restent dans la boîte de
-          réception.
-        </p>
-      )}
-      <p>
-        {form.businessContext === null
-          ? "Aucune activité décrite : la pertinence des messages n’est pas évaluée."
-          : `Activité : ${form.businessContext}`}
-      </p>
-      {editing ? (
-        <form action={edit} className="auth-form">
-          <label>
-            Nom du formulaire{" "}
-            <input name="name" required maxLength={100} defaultValue={form.name} />
-          </label>
-          <label>
-            Activité de l’organisation{" "}
-            <textarea
-              name="businessContext"
-              maxLength={2000}
-              placeholder="Facultatif"
-              defaultValue={form.businessContext ?? ""}
+    <section className="grid gap-4" aria-label={t("inbox.forms.settings", { name: form.name })}>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("inbox.forms.address.title")}</CardTitle>
+          <CardDescription>
+            {form.status === "suspended"
+              ? t("inbox.forms.address.suspended")
+              : t("inbox.forms.address.active")}
+          </CardDescription>
+          <CardAction>
+            <Badge variant={form.status === "active" ? "success" : "neutral"}>
+              {t(`inbox.forms.statuses.${form.status}`)}
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap items-center gap-3">
+            <code className="min-w-0 flex-1 basis-64 rounded-md bg-muted px-3 py-2 font-mono text-sm wrap-anywhere">
+              {publicUrl}
+            </code>
+            <Button
+              onClick={() => {
+                void navigator.clipboard.writeText(publicUrl).then(() => setCopied(true));
+              }}
+            >
+              {copied ? t("inbox.forms.address.copied") : t("inbox.forms.address.copy")}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("inbox.forms.details.title")}</CardTitle>
+          <CardDescription>
+            {form.businessContext ?? t("inbox.forms.details.noBusiness")}
+          </CardDescription>
+          {!editing && (
+            <CardAction>
+              <Button size="sm" onClick={() => setEditing(true)}>
+                {t("inbox.forms.edit")}
+              </Button>
+            </CardAction>
+          )}
+        </CardHeader>
+        {editing && (
+          <CardContent>
+            <form action={edit} className="grid gap-4">
+              <TextField
+                label={t("inbox.forms.name")}
+                name="name"
+                required
+                maxLength={100}
+                defaultValue={form.name}
+              />
+              <TextAreaField
+                label={t("inbox.business.label")}
+                name="businessContext"
+                maxLength={2000}
+                defaultValue={form.businessContext ?? ""}
+                hint={t("inbox.business.hint")}
+              />
+              <FormFailureNote
+                failure={editFailure}
+                fallback={t("inbox.forms.problems.notChanged")}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button type="submit" variant="default" disabled={saving}>
+                  {t("common.save")}
+                </Button>
+                <Button variant="ghost" onClick={() => setEditing(false)}>
+                  {t("common.cancel")}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("inbox.forms.redirect.title")}</CardTitle>
+          <CardDescription>
+            {form.successUrl === null ? (
+              t("inbox.forms.redirect.confirmationPage")
+            ) : (
+              <Trans
+                i18nKey="inbox.forms.redirect.successUrl"
+                values={{ url: form.successUrl }}
+                components={{ code }}
+              />
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={changeRedirect} className="grid gap-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <TextField
+                label={t("inbox.forms.redirect.url")}
+                className="min-w-0 flex-1 basis-64"
+                type="url"
+                name="url"
+                required
+                maxLength={2048}
+                placeholder={t("inbox.forms.redirect.placeholder")}
+              />
+              <Button type="submit" name="action" value="set" disabled={redirecting}>
+                {t("inbox.forms.redirect.save")}
+              </Button>
+              {form.successUrl !== null && (
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  name="action"
+                  value="clear"
+                  formNoValidate
+                  disabled={redirecting}
+                >
+                  {t("inbox.forms.redirect.remove")}
+                </Button>
+              )}
+            </div>
+            <FormFailureNote
+              failure={redirectFailure}
+              fallback={t("inbox.forms.problems.redirectNotSaved")}
             />
-          </label>
-          <div className="inbox-actions">
-            <button type="submit" disabled={saving}>
-              Enregistrer
-            </button>
-            <button type="button" onClick={() => setEditing(false)}>
-              Annuler
-            </button>
-          </div>
-        </form>
-      ) : (
-        <div className="inbox-actions">
-          <button type="button" onClick={() => setEditing(true)}>
-            Modifier le nom ou l’activité
-          </button>
-        </div>
-      )}
-      {editProblem !== null && <p role="alert">{editProblem}</p>}
-      {form.status === "active" && !confirming && (
-        <div className="inbox-actions">
-          <button type="button" onClick={() => setConfirming(true)}>
-            Suspendre le formulaire
-          </button>
-        </div>
-      )}
-      {form.status === "active" && confirming && (
-        <form action={changeStatus}>
-          <p>
-            Un formulaire suspendu refuse les nouveaux messages avec le statut 403. Les messages
-            reçus, les destinations et l’adresse publique sont conservés.
-          </p>
-          <div className="inbox-actions">
-            <button type="submit" name="action" value="suspend" disabled={changing}>
-              Confirmer la suspension
-            </button>
-            <button type="button" onClick={() => setConfirming(false)}>
-              Annuler
-            </button>
-          </div>
-        </form>
-      )}
-      {form.status === "suspended" && (
-        <form action={changeStatus} className="inbox-actions">
-          <button type="submit" name="action" value="reactivate" disabled={changing}>
-            Réactiver le formulaire
-          </button>
-        </form>
-      )}
-      {statusProblem !== null && <p role="alert">{statusProblem}</p>}
-      <p>
-        Après un envoi depuis un formulaire HTML :{" "}
-        {form.successUrl === null ? (
-          "page de confirmation de Rondyr."
-        ) : (
-          <>
-            redirection vers <code>{form.successUrl}</code>.
-          </>
-        )}{" "}
-        L’origine de l’adresse doit figurer dans les origines autorisées du formulaire.
-      </p>
-      <form action={changeRedirect} className="inbox-actions">
-        <label>
-          Adresse de redirection{" "}
-          <input
-            type="url"
-            name="url"
-            required
-            maxLength={2048}
-            placeholder="https://www.example.com/merci"
-          />
-        </label>
-        <button type="submit" name="action" value="set" disabled={redirecting}>
-          Enregistrer la redirection
-        </button>
-        {form.successUrl !== null && (
-          <button type="submit" name="action" value="clear" formNoValidate disabled={redirecting}>
-            Retirer la redirection
-          </button>
-        )}
-      </form>
-      {redirectProblem !== null && <p role="alert">{redirectProblem}</p>}
-      <p>
-        Champ piège :{" "}
-        {form.honeypotField === null ? (
-          "aucun."
-        ) : (
-          <>
-            <code>{form.honeypotField}</code>.
-          </>
-        )}{" "}
-        Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec{" "}
-        <code>tabindex="-1"</code> et <code>autocomplete="off"</code> : les visiteurs le laissent
-        vide, et un message qui le remplit est mis à vérifier sans être analysé.
-      </p>
-      <form action={changeHoneypot} className="inbox-actions">
-        <label>
-          Nom du champ piège <input name="field" required maxLength={100} placeholder="_hp" />
-        </label>
-        <button type="submit" name="action" value="set" disabled={trapping}>
-          Enregistrer le champ piège
-        </button>
-        {form.honeypotField !== null && (
-          <button type="submit" name="action" value="clear" formNoValidate disabled={trapping}>
-            Retirer le champ piège
-          </button>
-        )}
-      </form>
-      {honeypotProblem !== null && <p role="alert">{honeypotProblem}</p>}
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("inbox.forms.honeypot.title")}</CardTitle>
+          <CardDescription>
+            {form.honeypotField === null ? (
+              <Trans i18nKey="inbox.forms.honeypot.none" components={{ code }} />
+            ) : (
+              <Trans
+                i18nKey="inbox.forms.honeypot.current"
+                values={{ field: form.honeypotField }}
+                components={{ code }}
+              />
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={changeHoneypot} className="grid gap-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <TextField
+                label={t("inbox.forms.honeypot.name")}
+                className="min-w-0 flex-1 basis-64"
+                name="field"
+                required
+                maxLength={100}
+                placeholder={t("inbox.forms.honeypot.placeholder")}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <Button type="submit" name="action" value="set" disabled={trapping}>
+                {t("inbox.forms.honeypot.save")}
+              </Button>
+              {form.honeypotField !== null && (
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  name="action"
+                  value="clear"
+                  formNoValidate
+                  disabled={trapping}
+                >
+                  {t("inbox.forms.honeypot.remove")}
+                </Button>
+              )}
+            </div>
+            <FormFailureNote
+              failure={honeypotFailure}
+              fallback={t("inbox.forms.problems.honeypotNotSaved")}
+            />
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            {form.status === "active"
+              ? t("inbox.forms.suspension.title")
+              : t("inbox.forms.suspension.suspendedTitle")}
+          </CardTitle>
+          <CardDescription>{t("inbox.forms.suspension.description")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form action={changeStatus} className="grid gap-3">
+            <div className="flex flex-wrap gap-2">
+              {form.status === "active" && !confirming && (
+                <Button onClick={() => setConfirming(true)}>
+                  {t("inbox.forms.suspension.suspend")}
+                </Button>
+              )}
+              {form.status === "active" && confirming && (
+                <>
+                  <Button
+                    type="submit"
+                    variant="default"
+                    name="action"
+                    value="suspend"
+                    disabled={changing}
+                  >
+                    {t("inbox.forms.suspension.confirm")}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setConfirming(false)}>
+                    {t("common.cancel")}
+                  </Button>
+                </>
+              )}
+              {form.status === "suspended" && (
+                <Button
+                  type="submit"
+                  variant="default"
+                  name="action"
+                  value="reactivate"
+                  disabled={changing}
+                >
+                  {t("inbox.forms.suspension.reactivate")}
+                </Button>
+              )}
+            </div>
+            <FormFailureNote
+              failure={statusFailure}
+              fallback={t("inbox.forms.problems.statusNotChanged")}
+            />
+          </form>
+        </CardContent>
+      </Card>
     </section>
   );
 }
 
-interface FormManagementProps {
-  readonly inbox: Inbox;
+interface NewFormProps {
+  readonly inboxId: Inbox["id"];
   readonly onChanged: () => Promise<void>;
+  /** The public identifier of the form once it exists. */
+  readonly onCreated: (publicId: Form["publicId"]) => void;
 }
 
-/** The forms of an organization: public URL, status, name, business context, redirect and honeypot field. */
-export function FormManagement({ inbox, onChanged }: FormManagementProps) {
-  const [addProblem, add, adding] = useActionState(
-    (_: string | null, data: FormData) =>
+/** Adds a form to the organization. */
+export function NewForm({ inboxId, onChanged, onCreated }: NewFormProps) {
+  const { t } = useTranslation();
+  const [addFailure, add, adding] = useActionState(
+    (_: FormFailure | null, data: FormData) =>
       attempt(async () => {
-        await createForm(inbox.id, text(data, "name"), text(data, "businessContext"));
+        const created = await createForm(
+          inboxId,
+          text(data, "name"),
+          text(data, "businessContext"),
+        );
         await onChanged();
-      }, "Le formulaire n’a pas pu être ajouté. Vérifiez les champs et réessayez."),
+        onCreated(created.publicId);
+      }),
     null,
   );
 
   return (
-    <>
-      {inbox.forms.map((form) => (
-        <FormSettings key={form.publicId} inboxId={inbox.id} form={form} onChanged={onChanged} />
-      ))}
-      <form action={add} className="auth-form">
-        <h3>Nouveau formulaire</h3>
-        <label>
-          Nom du formulaire <input name="name" required maxLength={100} />
-        </label>
-        <label>
-          Activité de l’organisation{" "}
-          <textarea name="businessContext" maxLength={2000} placeholder="Facultatif" />
-        </label>
-        {addProblem !== null && <p role="alert">{addProblem}</p>}
-        <button type="submit" disabled={adding}>
-          Ajouter le formulaire
-        </button>
-      </form>
-    </>
+    <Card>
+      <CardHeader>
+        <CardTitle>{t("inbox.forms.details.title")}</CardTitle>
+        <CardDescription>{t("inbox.forms.details.new")}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form action={add} className="grid gap-4">
+          <TextField label={t("inbox.forms.name")} name="name" required maxLength={100} />
+          <TextAreaField
+            label={t("inbox.business.label")}
+            name="businessContext"
+            maxLength={2000}
+            hint={t("inbox.business.hint")}
+          />
+          <FormFailureNote failure={addFailure} fallback={t("inbox.forms.problems.notAdded")} />
+          <Button type="submit" variant="default" className="justify-self-start" disabled={adding}>
+            {t("inbox.forms.add")}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

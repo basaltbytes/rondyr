@@ -258,6 +258,8 @@ it.live(
       assert.strictEqual(createdEmail.status, 201);
       const email = yield* json(createdEmail).pipe(Effect.flatMap(readEmailTarget));
       assert.deepEqual([email.recipients, email.active], [["routes-team@example.test"], true]);
+      // A request that names no language gets a target in English.
+      assert.strictEqual(email.language, "en");
       const both = yield* request(formTargets, { headers }).pipe(
         Effect.flatMap(json),
         Effect.flatMap(readDestinations),
@@ -320,7 +322,7 @@ it.live(
       const message = yield* readResendEmail(resend.body);
       assert.deepEqual(
         [message.from, message.to, message.subject, message.reply_to],
-        [testEmailFrom, recipients, "Nouveau message : Classes", [contact.email]],
+        [testEmailFrom, recipients, "New message: Classes", [contact.email]],
       );
       assert.include(message.text, contact.message);
 

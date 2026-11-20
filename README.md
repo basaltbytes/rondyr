@@ -37,11 +37,11 @@ Vite prints the local URL, usually `http://localhost:5173`. Public sign-up is cl
 ./scripts/setup-owner.sh http://localhost:5173
 ```
 
-The script asks for the setup token, a name, an email address, and a password of 12 to 128 characters. Its prompts and the dashboard are in French for now. After it prints `HTTP 201`, sign in at `/`, then remove `RONDYR_SETUP_TOKEN` from `.env` and restart `pnpm dev`. The setup endpoint refuses to create a second account even if the token stays.
+The script asks for the setup token, a name, an email address, and a password of 12 to 128 characters. After it prints `HTTP 201`, sign in at `/`, then remove `RONDYR_SETUP_TOKEN` from `.env` and restart `pnpm dev`. The setup endpoint refuses to create a second account even if the token stays.
 
 ## Send a submission
 
-In the dashboard, create an inbox: an organization name, a form name, and an optional description of the business. Open **Formulaires** to copy the form URL, then post to it:
+In the dashboard, create an inbox: an organization name, a form name, and an optional description of the business. Open **Forms** to copy the form URL, then post to it:
 
 ```sh
 curl --json '{"email":"visitor@example.com","message":"Is there room in the pottery class?"}' \
@@ -94,7 +94,7 @@ The body can be `application/json`, `application/x-www-form-urlencoded`, or `mul
 
 ### HTML forms
 
-A browser that posts an HTML form sends `Accept: text/html`. Rondyr answers it with a confirmation page in French and the status `202`, or, when the form has a success URL, with `303 See Other` to that URL. You set the success URL for each form in **Formulaires**. It must use HTTPS, and its origin must be one of the form's [allowed origins](#allowed-origins), so add the origin first. Rondyr only redirects to the stored URL: a field, a query parameter, or a header of the request can't choose another one. A `fetch` with a JSON body, or a client that doesn't accept HTML, gets the `202` JSON answer.
+A browser that posts an HTML form sends `Accept: text/html`. Rondyr answers it with a confirmation page, in French or in English depending on the browser's `Accept-Language`, and the status `202`, or, when the form has a success URL, with `303 See Other` to that URL. You set the success URL for each form in **Forms**. It must use HTTPS, and its origin must be one of the form's [allowed origins](#allowed-origins), so add the origin first. Rondyr only redirects to the stored URL: a field, a query parameter, or a header of the request can't choose another one. A `fetch` with a JSON body, or a client that doesn't accept HTML, gets the `202` JSON answer.
 
 A group of checkboxes or a multiple `<select>` sends the same field name several times. Rondyr joins the values with `, ` in the order received, so `topic=glaze&topic=kiln` is stored as `topic: "glaze, kiln"`. The joined value must still fit in 4,000 characters. JSON bodies take string values only.
 
@@ -102,7 +102,7 @@ A group of checkboxes or a multiple `<select>` sends the same field name several
 
 ### Honeypot field
 
-A honeypot is a field that people don't see and leave empty, while many bots fill in every field they find. Name it for each form in **Formulaires**, for example `_hp`, then add it to your form, hidden with CSS rather than with `type="hidden"`, out of the tab order and of autofill:
+A honeypot is a field that people don't see and leave empty, while many bots fill in every field they find. Name it for each form in **Forms**, for example `_hp`, then add it to your form, hidden with CSS rather than with `type="hidden"`, out of the tab order and of autofill:
 
 ```html
 <form action="https://rondyr.example.com/f/YOUR_PUBLIC_ID" method="post">
@@ -115,19 +115,19 @@ A honeypot is a field that people don't see and leave empty, while many bots fil
 </form>
 ```
 
-When the field arrives empty, Rondyr removes it before storing the message, so it never reaches the classifier, a webhook, or an email. When it has a value, Rondyr gives the usual answer (the same `202`, confirmation page, or redirect), stores the message with the field, and quarantines it with the reason **Champ piège rempli** without calling the classifier. You can still accept it in the dashboard, for example when a browser's autofill filled the field, and its deliveries then go out as for any accepted message. A body with the empty honeypot field as its only field gets `400`. Without a honeypot field, a field named `_hp` is an ordinary field.
+When the field arrives empty, Rondyr removes it before storing the message, so it never reaches the classifier, a webhook, or an email. When it has a value, Rondyr gives the usual answer (the same `202`, confirmation page, or redirect), stores the message with the field, and quarantines it with the reason **Honeypot field filled** without calling the classifier. You can still accept it in the dashboard, for example when a browser's autofill filled the field, and its deliveries then go out as for any accepted message. A body with the empty honeypot field as its only field gets `400`. Without a honeypot field, a field named `_hp` is an ordinary field.
 
 ### Suspended forms
 
-A suspended form answers `403` to every submission and stores nothing, with the same CORS headers as an active form. Its messages, its destinations, its allowed origins, and its URL don't change, and reactivating it accepts submissions again. Suspend and reactivate a form in **Formulaires**.
+A suspended form answers `403` to every submission and stores nothing, with the same CORS headers as an active form. Its messages, its destinations, its allowed origins, and its URL don't change, and reactivating it accepts submissions again. Suspend and reactivate a form in **Forms**.
 
 ### Allowed origins
 
-By default a form accepts submissions from a page on any origin. To restrict it, open **Origines autorisées** in the dashboard and add the origins of your site, such as `https://www.example.com`. An origin is a scheme, a host, and an optional port, with no path. It must use HTTPS, except `http://localhost` and loopback addresses such as `http://127.0.0.1:8080` during development.
+By default a form accepts submissions from a page on any origin. To restrict it, open **Allowed origins** in the dashboard and add the origins of your site, such as `https://www.example.com`. An origin is a scheme, a host, and an optional port, with no path. It must use HTTPS, except `http://localhost` and loopback addresses such as `http://127.0.0.1:8080` during development.
 
 Once a form has at least one allowed origin, Rondyr answers `403` to a browser that sends any other `Origin` header, whether it posts with `fetch` or with an HTML form, and stores nothing. The origin of the form's success URL can't be removed from the list while the success URL is set; clear the success URL first. A request without an `Origin` header, from curl or a server, is still accepted, and so is one with `Origin: null`, which a browser sends when the page hides its origin (a `no-referrer` policy, a sandboxed frame). This list keeps another site from sending messages to your form through its visitors' browsers; it doesn't stop spam from scripts, which can send any header.
 
-Locally there is no Workers AI binding, so every message is quarantined with the reason **Analyse indisponible**. Click **Actualiser** a few seconds after posting to see it; you can then open, accept, or archive it.
+Locally there is no Workers AI binding, so every message is quarantined with the reason **Analysis unavailable**. Click **Refresh** a few seconds after posting to see it; you can then open, accept, or archive it.
 
 ### Rate limits
 

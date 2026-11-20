@@ -108,7 +108,7 @@ flowchart TD
 
 Une soumission dont le champ piège est rempli suit le même chemin jusqu’au `202`, et la réponse est identique : le robot n’apprend rien. Le lot D1 enregistre avec elle le motif d’entrée `honeypot`, puis le consumer envoie `QuarantineAtIntake` au lieu de `RequestClassification`, et l’agrégat la met en quarantaine sans démarrer la saga.
 
-Un envoi `application/x-www-form-urlencoded` ou `multipart/form-data` dont l’en-tête `Accept` contient `text/html` reçoit une page de confirmation en HTML avec le statut `202`, au texte fixe et en français. Si le formulaire a une URL de succès, il reçoit à la place `303` vers cette URL.
+Un envoi `application/x-www-form-urlencoded` ou `multipart/form-data` dont l’en-tête `Accept` contient `text/html` reçoit une page de confirmation en HTML avec le statut `202`, au texte fixe, en français ou en anglais selon l’en-tête `Accept-Language` du visiteur. Si le formulaire a une URL de succès, il reçoit à la place `303` vers cette URL.
 
 ## 4. Fiabilité : transactional outbox
 
@@ -170,7 +170,7 @@ Une livraison `failed` peut être relancée depuis le dashboard. La relance gard
 
 #### Envoi d’essai
 
-L’envoi d’essai passe par la méthode `sendTest` du port `NotificationProvider`, avec le fournisseur du type de la destination et les mêmes vérifications qu’une livraison : configuration, URL, secrets, fournisseur d’e-mail. Chaque essai reçoit un nouvel identifiant et ne crée ni soumission, ni livraison, ni tentative ; la route attend la réponse au plus 30 secondes, sans reprise. Le webhook reçoit la charge utile version 1 avec le type `test`, et l’e-mail porte « Message d’essai » dans son objet et son texte. Un seul essai à la fois par destination : la route garde en mémoire les destinations en cours d’essai, ce qui ne vaut que pour une instance du Worker.
+L’envoi d’essai passe par la méthode `sendTest` du port `NotificationProvider`, avec le fournisseur du type de la destination et les mêmes vérifications qu’une livraison : configuration, URL, secrets, fournisseur d’e-mail. Chaque essai reçoit un nouvel identifiant et ne crée ni soumission, ni livraison, ni tentative ; la route attend la réponse au plus 30 secondes, sans reprise. Le webhook reçoit la charge utile version 1 avec le type `test`, et l’e-mail porte « Test message » (« Message d’essai » en français) dans son objet et son texte. Un seul essai à la fois par destination : la route garde en mémoire les destinations en cours d’essai, ce qui ne vaut que pour une instance du Worker.
 
 Le fournisseur `email` construit le message et appelle le port `EmailSender`, qui ne connaît aucun fournisseur d’e-mail : il reçoit l’expéditeur, les destinataires, le `Reply-To` éventuel, l’objet, le texte et la clé d’idempotence, et distingue un succès, un rejet définitif (`EmailRejected`) et un échec à réessayer (`EmailUnavailable`). `RONDYR_EMAIL_PROVIDER` choisit l’adaptateur du stage, `resend` par défaut et seule valeur pour l’instant ; un second adaptateur est une entrée de plus dans `src/adapters/email/email-sender.ts`. La clé d’idempotence est l’identifiant de livraison : Resend la garde 24 heures et ne renvoie pas un message déjà accepté, ce qui couvre les six tentatives d’une livraison, y compris après une tentative interrompue.
 
@@ -361,13 +361,14 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `DELETE /api/organizations/:organizationId/forms/:publicId/success-url` | Retire l’URL de succès |
 | `PUT /api/organizations/:organizationId/forms/:publicId/honeypot` | Nomme le champ piège (`{"field":…}`) |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/honeypot` | Retire le champ piège |
-| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `after`), 25 messages par page |
+| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `after`), 25 messages par page, chacun avec un aperçu de ses champs (`preview`) : chaque valeur est coupée à 240 caractères, pour qu’une page de longs messages reste légère |
+| `GET /api/organizations/:organizationId/submission-counts` | Nombre de messages de l’organisation par statut |
 | `GET /api/organizations/:organizationId/submissions/:submissionId` | Détail d’un message |
 | `POST /api/organizations/:organizationId/submissions/:submissionId/approve` ou `/dismiss` | Décision de revue |
 | `GET /api/organizations/:organizationId/forms/:publicId/targets` | Destinations webhook et e-mail du formulaire, chacune avec son `type`, sans les secrets |
-| `POST /api/organizations/:organizationId/forms/:publicId/targets` | Crée un webhook (`{"type":"webhook","url":…}`) et renvoie son secret, une seule fois, ou une destination e-mail (`{"type":"email","recipients":[…]}`) |
+| `POST /api/organizations/:organizationId/forms/:publicId/targets` | Crée un webhook (`{"type":"webhook","url":…}`) et renvoie son secret, une seule fois, ou une destination e-mail (`{"type":"email","recipients":[…],"language":"en"}`, langue `en` ou `fr`, `en` par défaut) |
 | `POST /api/organizations/:organizationId/targets/:targetId/rotate-secret` | Renvoie un nouveau secret de webhook |
-| `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Remplace les destinataires d’une destination e-mail (`{"recipients":[…]}`) |
+| `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Remplace les destinataires d’une destination e-mail (`{"recipients":[…]}`), et sa langue si le corps contient aussi `"language"` |
 | `POST /api/organizations/:organizationId/targets/:targetId/activate` ou `/deactivate` | Active ou désactive la destination |
 | `POST /api/organizations/:organizationId/targets/:targetId/test` | Envoie un message d’essai et renvoie `{"testId","outcome","summary"}` ; `409` si un essai de cette destination est en cours |
 | `GET /api/organizations/:organizationId/submissions/:submissionId/deliveries` | Livraisons du message, chacune avec sa destination (URL du webhook ou destinataires), son statut, son nombre de tentatives, sa prochaine tentative si elle attend une reprise et ses tentatives horodatées |
@@ -436,7 +437,7 @@ Le secret de signature fait 32 octets aléatoires, préfixés de `whsec_`. Il n�
 
 `EmailAddress`, dans `src/domain/deliveries/email.ts`, n’accepte qu’une adresse ASCII nue : une partie locale en dot-atom et un nom d’hôte d’au moins deux labels DNS, sans espace, guillemet, chevron, virgule, point-virgule, parenthèse ni caractère de contrôle. Un nom affiché, deux adresses dans une entrée et un saut de ligne sont donc refusés. Une destination a de 1 à 10 destinataires distincts, sans tenir compte de la casse ; chaque destinataire compte comme un e-mail dans le quota de Resend. `RONDYR_EMAIL_FROM` passe la même règle au déploiement et à chaque lecture par le Worker.
 
-Les en-têtes ne contiennent aucune saisie d’un visiteur, sauf `Reply-To` : il vaut le champ nommé exactement `email` quand sa valeur passe `EmailAddress`, et il est absent sinon. L’objet est `Nouveau message : <nom du formulaire>`, sans saut de ligne ni caractère de contrôle, borné à 150 caractères. Le corps, en texte brut, commence par les champs dont le nom est un indice de tableau JavaScript, par ordre numérique, puis liste les autres dans l’ordre reçu. Les sauts de ligne d’un nom deviennent des espaces, ceux d’une valeur des `\n`. Le nom du formulaire, la date de réception en UTC et l’identifiant de livraison suivent les champs. Le texte est en français, dans le seul module `src/domain/deliveries/email-message.ts`. Aucun en-tête personnalisé n’est envoyé.
+Les en-têtes ne contiennent aucune saisie d’un visiteur, sauf `Reply-To` : il vaut le champ nommé exactement `email` quand sa valeur passe `EmailAddress`, et il est absent sinon. L’objet est `New message: <nom du formulaire>` (ou `Nouveau message : <nom du formulaire>` en français), sans saut de ligne ni caractère de contrôle, borné à 150 caractères. Le corps, en texte brut, commence par les champs dont le nom est un indice de tableau JavaScript, par ordre numérique, puis liste les autres dans l’ordre reçu. Les sauts de ligne d’un nom deviennent des espaces, ceux d’une valeur des `\n`. Le nom du formulaire, la date de réception en UTC et l’identifiant de livraison suivent les champs. Le texte est en anglais ou en français, selon la langue de la destination, dans le seul module `src/domain/deliveries/email-message.ts`. Aucun en-tête personnalisé n’est envoyé.
 
 L’adaptateur Resend envoie `POST https://api.resend.com/emails` avec `Idempotency-Key` égal à l’identifiant de livraison, `redirect: "manual"` et sans propagation de trace. `2xx` est un succès. `429` (débit ou quota), `5xx`, `409 concurrent_idempotent_requests`, une erreur réseau et l’absence de réponse en 30 secondes sont réessayés ; tout autre statut, dont `400`, `401`, `403` (domaine non vérifié), `409 invalid_idempotent_request` et `422`, est un échec définitif. Le résumé d’erreur ne contient que le statut et le code d’erreur de Resend (`name`, vérifié par le motif `[a-z_]{1,64}`), jamais son message, qui peut reprendre un champ de la requête.
 
@@ -491,8 +492,11 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │                                   # consumer de livraison, relance, envoi d’essai
 ├── dashboard/src/
 │   ├── routes/
-│   ├── features/                   # authentication, inbox
-│   └── lib/                        # clients HTTP
+│   ├── features/                   # authentication, inbox, operations
+│   ├── components/                 # text-field, et ui/ : composants shadcn/ui (Base UI) adaptés au thème
+│   ├── hooks/                      # use-mobile
+│   ├── lib/                        # clients HTTP
+│   └── dashboard.css               # thème Tailwind
 ├── docs/                           # déploiement, webhooks, e-mail, évaluation, exemple de vérification testé
 ├── evals/                          # harnais d’évaluation des classificateurs, corpus synthétique
 ├── public/_headers                 # en-têtes HTTP des assets du dashboard
@@ -501,7 +505,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 └── tests/integration/              # fixtures partagées
 ```
 
-Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le dashboard importe les schémas du domaine par les alias `@rondyr/contracts` (soumissions), `@rondyr/deliveries` (destinations) et `@rondyr/forms` (origines autorisées et formulaires), ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
+Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts` et `dashboard/src/**/*.test.ts`. Le dashboard importe les schémas du domaine par les alias `@rondyr/contracts` (soumissions), `@rondyr/deliveries` (destinations) et `@rondyr/forms` (origines autorisées et formulaires), ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
 
 ## 10. Tests et critères de qualité
 
@@ -513,7 +517,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 
 ### Couverture actuelle
 
-- `pnpm test:e2e` exerce le dashboard dans Chromium, dans un job CI dédié. La suite couvre le cycle de session, la création d’une organisation, la gestion des formulaires et des origines, les envois HTML avec confirmation ou redirection, le refus CORS d’un envoi JSON et la revue d’un message au champ piège rempli. Elle couvre aussi la création de destinations, les essais et la relance d’un webhook en échec. Playwright vérifie la CSP de `public/_headers` sur le dashboard compilé et surveille la console du navigateur.
+- `pnpm test:e2e` exerce le dashboard dans Chromium, dans un job CI dédié. La suite couvre le cycle de session, la création d’une organisation, la gestion des formulaires et des origines, les envois HTML avec confirmation ou redirection, le refus CORS d’un envoi JSON et la revue d’un message au champ piège rempli. Elle couvre aussi la création de destinations, les essais et la relance d’un webhook en échec. Un dernier test vérifie que la page État compte un nouveau message après son actualisation. Playwright vérifie la CSP de `public/_headers` sur le dashboard compilé et surveille la console du navigateur.
 - Stories du modèle : seuils, doublon de `RequestClassification`, trois échecs du classificateur, revue autorisée et refusée ; quarantaine d’entrée sans appel au classificateur, doublon de `QuarantineAtIntake` avec le même `commandId` ou un autre, `RequestClassification` ignoré après elle, quarantaine d’entrée ignorée pendant une classification, acceptation et archivage d’un message mis en quarantaine à l’entrée.
 - Décodage des réponses de Jev et d’OpenAI Decisions, y compris les réponses invalides.
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.

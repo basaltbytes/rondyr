@@ -94,6 +94,8 @@ export default defineConfig({
       { extends: true, test: { name: "workerd", include: ["src/**/*.test.ts"] } },
       // The evaluation harness runs in Node, outside the Worker.
       "./evals/vitest.config.ts",
+      // The dashboard's calculations run in Node, without a DOM.
+      "./dashboard/vitest.config.ts",
     ],
   },
 });

@@ -1,22 +1,37 @@
 import { expect } from "@playwright/test";
 
-import { test } from "./fixtures.mjs";
+import { confirmationPages } from "../../src/domain/submissions/confirmation-page.ts";
+import { externalSite, frenchT, owner, t, test } from "./fixtures.mjs";
 
-const formName = "Contact visiteurs";
+const organizationName = "Rondyr Workshop";
+const formName = "Visitor contact";
+// Under 64rem the dashboard shows one pane at a time and its navigation is a drawer.
+const narrowScreen = { width: 390, height: 844 };
 
 async function createOrganization(page) {
-  await page.getByRole("textbox", { name: "Organisation", exact: true }).fill("Atelier Rondyr");
-  await page.getByRole("textbox", { name: "Nom du formulaire" }).fill(formName);
-  await page.getByRole("button", { name: "Créer une boîte de réception" }).click();
-  await expect(page.getByRole("option", { name: "Atelier Rondyr" })).toBeAttached();
+  await page
+    .getByRole("textbox", { name: t("inbox.setup.organization"), exact: true })
+    .fill(organizationName);
+  await page.getByRole("textbox", { name: t("inbox.setup.firstForm") }).fill(formName);
+  await page.getByRole("button", { name: t("inbox.setup.submit") }).click();
+  await expect(
+    page.getByRole("button", {
+      name: t("inbox.organizations.switcher", { name: organizationName }),
+      exact: true,
+    }),
+  ).toBeVisible();
 }
 
-function sectionToggle(page, name) {
-  return page.getByRole("group", { name, exact: true }).getByText(name, { exact: true });
+/** Open a page from a group of the sidebar. Without a group, a page of the settings. */
+async function openSection(page, name, group = t("inbox.navigation.settings")) {
+  await page
+    .getByRole("navigation", { name: group, exact: true })
+    .getByRole("button", { name, exact: true })
+    .click();
 }
 
 function settingsFor(page, name) {
-  return page.getByRole("region", { name: `Réglages du formulaire ${name}`, exact: true });
+  return page.getByRole("region", { name: t("inbox.forms.settings", { name }), exact: true });
 }
 
 async function publicFormUrl(page, name) {
@@ -29,23 +44,23 @@ async function publicFormUrl(page, name) {
 async function openContact(site, externalOrigin, endpoint, trapFilled = false) {
   const contact = new URL("/contact", externalOrigin);
   contact.searchParams.set("form", decodeURIComponent(endpoint.pathname.split("/").at(-1)));
-  if (trapFilled) contact.searchParams.set("piege", "rempli");
+  if (trapFilled) contact.searchParams.set(externalSite.honeypotParameter, "filled");
   await site.goto(contact.href);
-  await expect(site.getByRole("heading", { name: "Nous contacter" })).toBeVisible();
+  await expect(site.getByRole("heading", { name: externalSite.contactHeading })).toBeVisible();
 }
 
 async function submitContact(site, endpoint, message) {
-  await site.getByRole("textbox", { name: "Votre message" }).fill(message);
+  await site.getByRole("textbox", { name: externalSite.messageField }).fill(message);
   const posted = site.waitForResponse(
     (response) => response.url() === endpoint.href && response.request().method() === "POST",
   );
-  await site.getByRole("button", { name: "Envoyer le message" }).click();
+  await site.getByRole("button", { name: externalSite.submitButton }).click();
   return posted;
 }
 
 async function addOrigin(region, origin) {
-  await region.getByRole("textbox", { name: "Origine", exact: true }).fill(origin);
-  await region.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await region.getByRole("textbox", { name: t("inbox.origins.origin"), exact: true }).fill(origin);
+  await region.getByRole("button", { name: t("inbox.origins.add") }).click();
   await expect(region.getByText(origin, { exact: true })).toBeVisible();
 }
 
@@ -55,7 +70,7 @@ async function sendJson(site, endpoint) {
       const response = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: "Demande envoyée en JSON", "fixture-verdict": "accept" }),
+        body: JSON.stringify({ message: "Request sent as JSON", "fixture-verdict": "accept" }),
       });
       return response.status;
     } catch (error) {
@@ -65,199 +80,401 @@ async function sendJson(site, endpoint) {
   }, endpoint.href);
 }
 
-async function openSubmission(page, status, message) {
-  const row = page.getByRole("button", { name: new RegExp(`^${formName} .+ ${status}$`, "u") });
+function accountMenu(page) {
+  return page.getByRole("button", {
+    name: t("authentication.account.label", { email: owner.email }),
+    exact: true,
+  });
+}
+
+/** The button of a folder in the navigation, which is the sidebar or the drawer. */
+function folderButton(navigation, folder) {
+  return (
+    navigation
+      .getByRole("navigation", { name: t("inbox.navigation.messages"), exact: true })
+      // The name of a folder ends with the number of its messages.
+      .getByRole("button", { name: new RegExp(`^${RegExp.escape(folder)}`, "u") })
+  );
+}
+
+/** Open a message from a folder of the sidebar, once the list shows it. */
+async function openSubmission(page, folder, message) {
+  await folderButton(page, folder).click();
+  return openMessage(page, message);
+}
+
+/** Open a message of the folder on screen, once the list shows it. */
+async function openMessage(page, message) {
+  const list = page.getByRole("region", { name: t("inbox.list.label") });
+  const row = list.getByRole("button").filter({ hasText: message });
   await expect(async () => {
-    await page.getByRole("button", { name: "Actualiser", exact: true }).click();
+    await list.getByRole("button", { name: t("common.refresh"), exact: true }).click();
     await expect(row).toBeVisible({ timeout: 500 });
   }).toPass({ timeout: 10_000 });
   await row.click();
-  const reader = page.getByRole("region", { name: "Message sélectionné" });
+  const reader = page.getByRole("region", { name: t("inbox.reader.label") });
   await expect(reader.getByText(message, { exact: true })).toBeVisible();
   return reader;
 }
 
-test("se connecter, créer une organisation et gérer ses formulaires, puis se déconnecter", async ({
+/** A figure of the status page as its text reads: the label, then the value. */
+function figure(label, value) {
+  return new RegExp(`${RegExp.escape(label)}\\s*${value}`, "u");
+}
+
+test("sign in, create an organization and manage its forms, then sign out", async ({
   dashboard: page,
   context,
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
-  const addedName = "Demandes de devis";
-  const renamed = "Devis professionnels";
-  await page.getByRole("textbox", { name: "Nom du formulaire" }).fill(addedName);
-  await page.getByRole("button", { name: "Ajouter le formulaire" }).click();
+  await openSection(page, t("inbox.sections.forms"));
+  const addedName = "Quote requests";
+  const renamed = "Business quotes";
+  await page.getByRole("button", { name: t("inbox.forms.new"), exact: true }).click();
+  await page.getByRole("textbox", { name: t("inbox.forms.name") }).fill(addedName);
+  await page.getByRole("button", { name: t("inbox.forms.add") }).click();
   const beforeRename = await publicFormUrl(page, addedName);
   await settingsFor(page, addedName)
-    .getByRole("button", { name: "Modifier le nom ou l’activité" })
+    .getByRole("button", { name: t("inbox.forms.edit"), exact: true })
     .click();
   const edit = settingsFor(page, addedName);
-  await edit.getByRole("textbox", { name: "Nom du formulaire" }).fill(renamed);
-  await edit.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await edit.getByRole("textbox", { name: t("inbox.forms.name") }).fill(renamed);
+  await edit.getByRole("button", { name: t("common.save"), exact: true }).click();
   const endpoint = await publicFormUrl(page, renamed);
   expect(endpoint.href).toBe(beforeRename.href);
 
   const settings = settingsFor(page, renamed);
-  await settings.getByRole("button", { name: "Suspendre le formulaire" }).click();
-  await settings.getByRole("button", { name: "Confirmer la suspension" }).click();
-  await expect(settings.getByRole("button", { name: "Réactiver le formulaire" })).toBeVisible();
+  const suspend = settings.getByRole("button", { name: t("inbox.forms.suspension.suspend") });
+  const reactivate = settings.getByRole("button", {
+    name: t("inbox.forms.suspension.reactivate"),
+  });
+  await suspend.click();
+  await settings.getByRole("button", { name: t("inbox.forms.suspension.confirm") }).click();
+  await expect(reactivate).toBeVisible();
   const site = await context.newPage();
   await openContact(site, externalOrigin, endpoint);
-  expect((await submitContact(site, endpoint, "Demande pendant la suspension")).status()).toBe(403);
-  await settings.getByRole("button", { name: "Réactiver le formulaire" }).click();
-  await expect(settings.getByRole("button", { name: "Suspendre le formulaire" })).toBeVisible();
+  expect((await submitContact(site, endpoint, "Request during the suspension")).status()).toBe(403);
+  await reactivate.click();
+  await expect(suspend).toBeVisible();
   await openContact(site, externalOrigin, endpoint);
-  expect((await submitContact(site, endpoint, "Demande après la réactivation")).status()).toBe(202);
+  expect((await submitContact(site, endpoint, "Request after the reactivation")).status()).toBe(
+    202,
+  );
 
-  await page.getByRole("button", { name: "Se déconnecter", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Connexion" })).toBeVisible();
+  await accountMenu(page).click();
+  await page.getByRole("menuitem", { name: t("authentication.signOut.submit") }).click();
+  const signIn = page.getByRole("heading", { name: t("authentication.signIn.title") });
+  await expect(signIn).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Connexion" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Boîte de réception" })).toHaveCount(0);
+  await expect(signIn).toBeVisible();
+  await expect(page.getByRole("navigation", { name: t("inbox.navigation.messages") })).toHaveCount(
+    0,
+  );
 });
 
-test("confirmer et rediriger les envois HTML, puis refuser le JSON depuis une origine retirée", async ({
+test("confirm and redirect HTML submissions, then refuse JSON from a removed origin", async ({
   dashboard: page,
   context,
   dashboardOrigin,
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
+  await openSection(page, t("inbox.sections.forms"));
   const endpoint = await publicFormUrl(page, formName);
   const site = await context.newPage();
   await openContact(site, externalOrigin, endpoint);
-  const confirmation = await submitContact(site, endpoint, "Demande avec confirmation");
+  const confirmation = await submitContact(site, endpoint, "Request with confirmation");
   expect(confirmation.status()).toBe(202);
-  await expect(site.getByRole("heading", { name: "Message reçu" })).toBeVisible();
+  await expect(site.getByRole("heading", { name: confirmationPages.en.title })).toBeVisible();
   await expect(site).toHaveURL(endpoint.href);
 
-  await sectionToggle(page, "Origines autorisées").click();
-  const origins = page.getByRole("region", {
-    name: `Origines autorisées du formulaire ${formName}`,
-  });
-  await expect(origins.getByText("Aucune origine.")).toBeVisible();
+  await openSection(page, t("inbox.sections.origins"));
+  const origins = page.getByRole("region", { name: t("inbox.origins.label", { name: formName }) });
+  await expect(origins.getByText(t("inbox.origins.empty"))).toBeVisible();
   // An empty allowlist admits all origins, so leave another entry in the list.
   await addOrigin(origins, dashboardOrigin);
   await addOrigin(origins, externalOrigin);
 
-  const successUrl = `${externalOrigin}/merci`;
+  const successUrl = `${externalOrigin}${externalSite.thanksPath}`;
   const settings = settingsFor(page, formName);
-  await settings.getByRole("textbox", { name: "Adresse de redirection" }).fill(successUrl);
-  await settings.getByRole("button", { name: "Enregistrer la redirection" }).click();
+  await openSection(page, t("inbox.sections.forms"));
+  await settings.getByRole("textbox", { name: t("inbox.forms.redirect.url") }).fill(successUrl);
+  await settings.getByRole("button", { name: t("inbox.forms.redirect.save") }).click();
   await expect(settings.getByText(successUrl, { exact: true })).toBeVisible();
   await openContact(site, externalOrigin, endpoint);
-  const redirect = await submitContact(site, endpoint, "Demande avec redirection");
+  const redirect = await submitContact(site, endpoint, "Request with redirect");
   expect(redirect.status()).toBe(303);
   await expect(site).toHaveURL(successUrl);
-  await expect(site.getByRole("heading", { name: "Merci de votre message" })).toBeVisible();
+  await expect(site.getByRole("heading", { name: externalSite.thanksHeading })).toBeVisible();
   expect(await sendJson(site, endpoint)).toBe(202);
 
-  await settings.getByRole("button", { name: "Retirer la redirection" }).click();
+  await settings.getByRole("button", { name: t("inbox.forms.redirect.remove") }).click();
   await expect(settings.getByText(successUrl, { exact: true })).toHaveCount(0);
+  await openSection(page, t("inbox.sections.origins"));
   const externalEntry = origins.getByRole("listitem").filter({ hasText: externalOrigin });
-  await externalEntry.getByRole("button", { name: "Retirer", exact: true }).click();
+  await externalEntry.getByRole("button", { name: t("inbox.origins.remove"), exact: true }).click();
   await expect(externalEntry).toHaveCount(0);
   await expect(origins.getByText(dashboardOrigin, { exact: true })).toBeVisible();
   // Use a new URL so Chromium sends a fresh CORS preflight after removal.
-  const afterRemoval = new URL("?origine=retiree", endpoint);
+  const afterRemoval = new URL("?origin=removed", endpoint);
   expect(await sendJson(site, afterRemoval)).toBe("fetch refused");
 });
 
-test("mettre en quarantaine un message au champ piège rempli et le revoir", async ({
+test("quarantine a message with a filled honeypot field and review it", async ({
   dashboard: page,
   context,
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
+  await openSection(page, t("inbox.sections.forms"));
   const endpoint = await publicFormUrl(page, formName);
   const settings = settingsFor(page, formName);
-  await settings.getByRole("textbox", { name: "Nom du champ piège" }).fill("societe");
-  await settings.getByRole("button", { name: "Enregistrer le champ piège" }).click();
-  await expect(settings.getByRole("button", { name: "Retirer le champ piège" })).toBeVisible();
+  await settings
+    .getByRole("textbox", { name: t("inbox.forms.honeypot.name") })
+    .fill(externalSite.honeypotField);
+  await settings.getByRole("button", { name: t("inbox.forms.honeypot.save") }).click();
+  await expect(
+    settings.getByRole("button", { name: t("inbox.forms.honeypot.remove") }),
+  ).toBeVisible();
 
   const site = await context.newPage();
   await openContact(site, externalOrigin, endpoint, true);
-  const message = "Demande saisie avec un champ caché rempli";
+  const message = "Request typed with a hidden field filled";
   expect((await submitContact(site, endpoint, message)).status()).toBe(202);
-  await expect(site.getByRole("heading", { name: "Message reçu" })).toBeVisible();
-  const reader = await openSubmission(page, "À vérifier", message);
-  await expect(reader.getByText("À vérifier · Champ piège rempli")).toBeVisible();
-  await reader.getByRole("button", { name: "Accepter le message" }).click();
-  await expect(reader.getByText("Accepté", { exact: true })).toBeVisible();
-  await expect(reader.getByRole("button", { name: "Accepter le message" })).toHaveCount(0);
+  await expect(site.getByRole("heading", { name: confirmationPages.en.title })).toBeVisible();
+  const reader = await openSubmission(page, t("inbox.folders.quarantined"), message);
+  await expect(reader.getByText(t("status.reasons.honeypot"), { exact: true })).toBeVisible();
+  const accept = t("inbox.reader.acceptAndSend");
+  await reader.getByRole("button", { name: accept }).click();
+  // An accepted message leaves the folder of the messages to review.
+  await expect(reader.getByText(message, { exact: true })).toHaveCount(0);
+  const accepted = await openSubmission(page, t("inbox.folders.accepted"), message);
+  await expect(accepted.getByText(t("inbox.statuses.accepted"), { exact: true })).toBeVisible();
+  await expect(accepted.getByRole("button", { name: accept })).toHaveCount(0);
 });
 
-test("ajouter des destinations, envoyer un essai et relancer un webhook en échec", async ({
+test("add destinations, send a test and retry a failed webhook", async ({
   dashboard: page,
   context,
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
+  await openSection(page, t("inbox.sections.forms"));
   const endpoint = await publicFormUrl(page, formName);
   const receiver = "https://webhooks.example.test/bad-request-once";
-  const email = "equipe@example.test";
-  const webhooksSection = sectionToggle(page, "Webhooks");
-  await webhooksSection.click();
-  const webhooks = page.getByRole("region", { name: `Webhooks du formulaire ${formName}` });
-  await expect(webhooks.getByText("Aucun webhook.")).toBeVisible();
-  await webhooks.getByRole("textbox", { name: "URL du webhook" }).fill(receiver);
-  await webhooks.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const email = "team@example.test";
+  const sendTest = t("inbox.destinations.test.send");
+  const testDelivered = t("inbox.destinations.test.delivered");
+  await openSection(page, t("inbox.sections.destinations"));
+  const webhooks = page.getByRole("region", {
+    name: t("inbox.webhooks.label", { name: formName }),
+  });
+  await expect(webhooks.getByText(t("inbox.webhooks.empty"))).toBeVisible();
+  await webhooks.getByRole("textbox", { name: t("inbox.webhooks.url") }).fill(receiver);
+  await webhooks.getByRole("button", { name: t("inbox.webhooks.add") }).click();
   const secret = webhooks.getByText(/^whsec_[\w-]{43}$/u);
   await expect(secret).toBeVisible();
-  await webhooks.getByRole("button", { name: "Masquer", exact: true }).click();
+  await webhooks
+    .getByRole("button", { name: t("inbox.webhooks.secret.hide"), exact: true })
+    .click();
   await expect(secret).toHaveCount(0);
-  await webhooksSection.click();
-  await webhooksSection.click();
+  // Leaving the page and coming back lists the webhook without its secret.
+  await openSection(page, t("inbox.sections.forms"));
+  await openSection(page, t("inbox.sections.destinations"));
   const webhook = webhooks.getByRole("listitem").filter({ hasText: receiver });
   await expect(webhook).toBeVisible();
   await expect(secret).toHaveCount(0);
 
-  await sectionToggle(page, "E-mails").click();
-  const emails = page.getByRole("region", {
-    name: `Destinations e-mail du formulaire ${formName}`,
-  });
-  await expect(emails.getByText("Aucune destination e-mail.")).toBeVisible();
-  await emails.getByRole("textbox", { name: "Destinataires, un par ligne" }).fill(email);
-  await emails.getByRole("button", { name: "Ajouter", exact: true }).click();
+  const emails = page.getByRole("region", { name: t("inbox.emails.label", { name: formName }) });
+  await expect(emails.getByText(t("inbox.emails.empty"))).toBeVisible();
+  await emails.getByRole("textbox", { name: t("inbox.emails.recipients") }).fill(email);
+  await emails.getByRole("button", { name: t("inbox.emails.add") }).click();
   const destination = emails.getByRole("listitem").filter({ hasText: email });
   await expect(destination).toBeVisible();
-  await destination.getByRole("button", { name: "Envoyer un essai" }).click();
-  await expect(destination.getByRole("status")).toHaveText(/Message d’essai livré/u);
+  await destination.getByRole("button", { name: sendTest }).click();
+  await expect(destination.getByRole("status")).toContainText(testDelivered);
 
   const site = await context.newPage();
   await openContact(site, externalOrigin, endpoint);
-  const message = "Demande avec historique de livraison";
+  const message = "Request with delivery history";
   expect((await submitContact(site, endpoint, message)).status()).toBe(202);
-  const reader = await openSubmission(page, "Accepté", message);
-  const history = reader.getByRole("region", { name: "Livraisons du message" });
+  const reader = await openSubmission(page, t("inbox.folders.accepted"), message);
+  const history = reader.getByRole("region", { name: t("inbox.deliveries.label") });
+  // Only a delivery names its destination. The attempts listed inside it do not.
   const webhookDelivery = history.getByRole("listitem").filter({ hasText: receiver });
-  const refresh = history.getByRole("button", { name: "Actualiser les livraisons" });
-  const retry = webhookDelivery.getByRole("button", { name: "Relancer la livraison" });
+  const refresh = history.getByRole("button", { name: t("inbox.deliveries.refresh") });
+  const retry = webhookDelivery.getByRole("button", { name: t("inbox.deliveries.retry") });
+  const delivered = t("status.deliveries.delivered");
   await expect(async () => {
     await refresh.click();
     await expect(retry).toBeVisible({ timeout: 500 });
   }).toPass({ timeout: 10_000 });
-  await expect(webhookDelivery).toContainText("Échec · 1 tentative");
-  await expect(webhookDelivery).toContainText("échec définitif");
+  await expect(
+    webhookDelivery.getByText(t("status.deliveries.failed"), { exact: true }),
+  ).toBeVisible();
   await expect(webhookDelivery).toContainText("400");
+  await webhookDelivery
+    .getByText(t("inbox.deliveries.attempts", { count: 1 }), { exact: true })
+    .click();
+  await expect(webhookDelivery.getByRole("listitem")).toContainText(
+    t("inbox.deliveries.outcomes.permanent-failure"),
+  );
   await retry.click();
   await expect(async () => {
     await refresh.click();
-    await expect(webhookDelivery).toContainText("Livrée · 2 tentatives", { timeout: 500 });
+    await expect(webhookDelivery.getByText(delivered, { exact: true })).toBeVisible({
+      timeout: 500,
+    });
   }).toPass({ timeout: 10_000 });
+  // The list of attempts is still open from the first look.
+  await expect(
+    webhookDelivery.getByText(t("inbox.deliveries.attempts", { count: 2 }), { exact: true }),
+  ).toBeVisible();
   await expect(webhookDelivery.getByRole("listitem")).toHaveCount(2);
   await expect(
-    webhookDelivery.getByRole("listitem").filter({ hasText: "Tentative 2" }),
-  ).toContainText("livrée");
+    webhookDelivery
+      .getByRole("listitem")
+      .filter({ hasText: t("inbox.deliveries.attempt", { number: 2 }) }),
+  ).toContainText(t("inbox.deliveries.outcomes.delivered"));
   await expect(retry).toHaveCount(0);
+  const emailDelivery = history
+    .getByRole("listitem")
+    .filter({ hasText: t("inbox.deliveries.email", { recipients: email }) });
+  await expect(emailDelivery.getByText(delivered, { exact: true })).toBeVisible();
   await expect(
-    history.getByRole("listitem").filter({ hasText: `E-mail à ${email}` }),
-  ).toContainText("Livrée · 1 tentative");
+    emailDelivery.getByText(t("inbox.deliveries.attempts", { count: 1 }), { exact: true }),
+  ).toBeVisible();
 
-  await webhook.getByRole("button", { name: "Envoyer un essai" }).click();
-  await expect(webhook.getByRole("status")).toHaveText(/Message d’essai livré/u);
+  await openSection(page, t("inbox.sections.destinations"));
+  await webhook.getByRole("button", { name: sendTest }).click();
+  await expect(webhook.getByRole("status")).toContainText(testDelivered);
+});
+
+test("see a new message in the processing status after refreshing it", async ({
+  dashboard: page,
+  context,
+  externalOrigin,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  await openSection(page, t("operations.title"), t("inbox.navigation.operations"));
+  const status = page.getByRole("region", {
+    name: t("operations.organization", { name: organizationName }),
+  });
+  const received = t("operations.lastDay.received");
+  await expect(status).toContainText(figure(received, 0));
+
+  const site = await context.newPage();
+  await openContact(site, externalOrigin, endpoint);
+  expect((await submitContact(site, endpoint, "Request counted in the status")).status()).toBe(202);
+  await page.getByRole("button", { name: t("common.refresh"), exact: true }).click();
+
+  await expect(status).toContainText(figure(received, 1));
+});
+
+test("keep the sidebar collapsed after a reload", async ({ dashboard: page }) => {
+  await createOrganization(page);
+  const collapsed = page.getByRole("button", { name: t("sidebar.toggle"), expanded: false });
+  await page.getByRole("button", { name: t("sidebar.toggle"), expanded: true }).click();
+  await expect(collapsed).toBeVisible();
+
+  await page.reload();
+
+  await expect(collapsed).toBeVisible();
+});
+
+test("open the navigation as a drawer on a narrow screen and close it by choosing a folder", async ({
+  dashboard: page,
+}) => {
+  await createOrganization(page);
+  await page.setViewportSize(narrowScreen);
+  const drawer = page.getByRole("dialog", { name: t("inbox.navigation.label") });
+
+  await page.getByRole("button", { name: t("sidebar.toggle"), exact: true }).click();
+  await expect(drawer).toBeVisible();
+  await folderButton(drawer, t("inbox.folders.accepted")).click();
+
+  await expect(drawer).toBeHidden();
+  await expect(page.getByRole("heading", { name: t("inbox.folders.accepted") })).toBeVisible();
+});
+
+test("show an open message in place of the list on a narrow screen, and the list again after going back", async ({
+  dashboard: page,
+  context,
+  externalOrigin,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  const site = await context.newPage();
+  await openContact(site, externalOrigin, endpoint);
+  const message = "Request read on a narrow screen";
+  expect((await submitContact(site, endpoint, message)).status()).toBe(202);
+  await page.setViewportSize(narrowScreen);
+  await page.getByRole("button", { name: t("sidebar.toggle"), exact: true }).click();
+  const drawer = page.getByRole("dialog", { name: t("inbox.navigation.label") });
+  await folderButton(drawer, t("inbox.folders.accepted")).click();
+  const list = page.getByRole("region", { name: t("inbox.list.label") });
+
+  const reader = await openMessage(page, message);
+  await expect(list).toBeHidden();
+  await reader.getByRole("button", { name: t("inbox.reader.back") }).click();
+
+  await expect(list).toBeVisible();
+});
+
+test("keep the language chosen in the account menu after a reload", async ({ dashboard: page }) => {
+  await createOrganization(page);
+  const frenchSettings = page.getByRole("navigation", {
+    name: frenchT("inbox.navigation.settings"),
+    exact: true,
+  });
+  await accountMenu(page).click();
+  await page.getByRole("menuitemradio", { name: t("languages.fr") }).click();
+  // The menu stays open after a choice and hides the page from the accessibility tree.
+  await page.keyboard.press("Escape");
+  await expect(frenchSettings).toBeVisible();
+
+  await page.reload();
+
+  await expect(frenchSettings).toBeVisible();
+});
+
+test("show the French language of an email destination after leaving the page and coming back", async ({
+  dashboard: page,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.destinations"));
+  const email = "equipe@example.test";
+  const emails = page.getByRole("region", { name: t("inbox.emails.label", { name: formName }) });
+  await emails.getByRole("textbox", { name: t("inbox.emails.recipients") }).fill(email);
+  await emails
+    .getByRole("combobox", { name: t("inbox.emails.language") })
+    .selectOption({ label: t("languages.fr") });
+  await emails.getByRole("button", { name: t("inbox.emails.add") }).click();
+  const destination = emails.getByRole("listitem").filter({ hasText: email });
+  await expect(destination).toBeVisible();
+
+  await openSection(page, t("inbox.sections.forms"));
+  await openSection(page, t("inbox.sections.destinations"));
+
+  await expect(
+    destination.getByText(t("inbox.emails.languageValue", { language: t("languages.fr") }), {
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+test.describe("in a browser that prefers French", () => {
+  test.use({ locale: "fr-FR" });
+
+  test("show the sign-in screen in French", async ({ page, dashboardOrigin }) => {
+    await page.goto(dashboardOrigin);
+
+    await expect(
+      page.getByRole("heading", { name: frenchT("authentication.signIn.title"), exact: true }),
+    ).toBeVisible();
+  });
 });

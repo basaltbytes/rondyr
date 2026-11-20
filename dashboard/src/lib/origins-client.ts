@@ -5,6 +5,7 @@ import { FormOrigin, OriginRequestError } from "@rondyr/forms/allowed-origin";
 import type { Inbox } from "./inbox-client.ts";
 
 export type AllowedOrigin = typeof FormOrigin.Type;
+export type OriginProblem = typeof OriginRequestError.Type;
 type Form = Inbox["forms"][number];
 
 /** A refused request, with the reason the API gives for a refused origin, if any. */
