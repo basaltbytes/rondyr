@@ -12,12 +12,14 @@ import { organizationDirectoryLive } from "./adapters/database/organization-dire
 import { outboxLive } from "./adapters/database/outbox.ts";
 import { storedMessagesLive } from "./adapters/database/stored-messages.ts";
 import { classificationQueueLive } from "./adapters/queues/classification-queue.ts";
+import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
 import { submissionRoutes } from "./http/submission-routes.ts";
 import { consumeSubmissions, publishPendingSubmissions } from "./jobs/submission-outbox.ts";
+import { BackgroundTasks } from "./ports/background-tasks.ts";
 
 const services = Layer.mergeAll(
   authenticationLive,
@@ -42,6 +44,7 @@ export const workerImplementation = Effect.gen(function* () {
   const context = yield* Layer.build(services);
   const router = yield* HttpRouter.toHttpEffect(routes);
   const fetch = router.pipe(
+    Effect.provideServiceEffect(BackgroundTasks, eventBackgroundTasks),
     Effect.provideContext(context),
     Effect.catchTags({
       HttpServerError: ({ reason }) =>

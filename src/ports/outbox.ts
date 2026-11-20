@@ -23,6 +23,11 @@ export class Outbox extends Context.Service<
       lease: OutboxLease,
       limit: number,
     ) => Effect.Effect<ReadonlyArray<SubmissionId>, StorageUnavailable>;
+    /** Lease the event of one submission under the conditions of `claimDue`. */
+    readonly claim: (
+      lease: OutboxLease,
+      submissionId: SubmissionId,
+    ) => Effect.Effect<ReadonlyArray<SubmissionId>, StorageUnavailable>;
     /** Record the publication of the events that `lease` still holds, and release them. */
     readonly markPublished: (
       lease: OutboxLease,

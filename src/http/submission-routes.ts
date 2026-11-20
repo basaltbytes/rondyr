@@ -8,6 +8,8 @@ import {
 
 import { SubmissionFields } from "../domain/submissions/submission-fields.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
+import { publishSubmission } from "../jobs/submission-outbox.ts";
+import { BackgroundTasks } from "../ports/background-tasks.ts";
 import { SubmissionIntake } from "../ports/intake.ts";
 
 const PublicFormPath = Schema.Struct({
@@ -47,6 +49,16 @@ const receive = Effect.gen(function* () {
   const fields = json ? yield* decodeJson(body) : yield* decodeUrlEncoded(body);
   const intake = yield* SubmissionIntake;
   const submissionId = yield* intake.receive(formId, fields);
+  // The cron publishes the event later if this attempt fails or never runs.
+  const tasks = yield* BackgroundTasks;
+  yield* tasks.run(
+    publishSubmission(submissionId).pipe(
+      Effect.tapError((error) =>
+        Effect.logWarning("Direct outbox publication failed", { tag: error._tag }),
+      ),
+      Effect.ignore,
+    ),
+  );
   const browser =
     request.headers.accept
       ?.split(",")

@@ -14,24 +14,43 @@ const encodeIds = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Submiss
 
 const unreadable = () => StorageUnavailable.make();
 
+// An event is due when nobody handed it off, its lease expired, and it was never
+// published or was published at or before the republication cutoff.
+const due = `handed_off_at IS NULL AND lease_until <= ? AND (published_at IS NULL OR published_at <= ?)`;
+
+const claimed = Effect.fnUntraced(function* (statement: D1PreparedStatement) {
+  const claims = yield* d1(() => statement.all());
+  const events = yield* decodeClaims(claims.results).pipe(Effect.mapError(unreadable));
+  return events.map(({ submission_id }) => submission_id);
+});
+
 const claimDue = Effect.fn("Outbox.claimDue")(function* (lease: OutboxLease, limit: number) {
   const db = yield* database;
-  const claims = yield* d1(() =>
+  return yield* claimed(
     db
       .prepare(`
     UPDATE outbox_events SET lease_until = ?
     WHERE submission_id IN (
-      SELECT submission_id FROM outbox_events WHERE handed_off_at IS NULL
-        AND lease_until <= ? AND (published_at IS NULL OR published_at <= ?)
+      SELECT submission_id FROM outbox_events WHERE ${due}
       ORDER BY lease_until, submission_id LIMIT ?
     )
     RETURNING submission_id
   `)
-      .bind(lease.until, lease.now, lease.republishBefore, limit)
-      .all(),
+      .bind(lease.until, lease.now, lease.republishBefore, limit),
   );
-  const events = yield* decodeClaims(claims.results).pipe(Effect.mapError(unreadable));
-  return events.map(({ submission_id }) => submission_id);
+});
+
+const claim = Effect.fn("Outbox.claim")(function* (lease: OutboxLease, submissionId: SubmissionId) {
+  const db = yield* database;
+  return yield* claimed(
+    db
+      .prepare(`
+    UPDATE outbox_events SET lease_until = ?
+    WHERE submission_id = ? AND ${due}
+    RETURNING submission_id
+  `)
+      .bind(lease.until, submissionId, lease.now, lease.republishBefore),
+  );
 });
 
 const markPublished = Effect.fn("Outbox.markPublished")(function* (
@@ -86,6 +105,7 @@ const markHandedOff = Effect.fn("Outbox.markHandedOff")(function* (
 
 export const outboxLive = Layer.succeed(Outbox, {
   claimDue,
+  claim,
   markPublished,
   pendingOrganization,
   markHandedOff,

@@ -23,7 +23,7 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Organisations et formulaires | Création seulement | #8, #11 |
 | Réception JSON et `application/x-www-form-urlencoded` | Fait, sauf JSON depuis un navigateur | #19 |
 | Limites à l’entrée | Taille, schéma, 30 par minute et par formulaire | #7 |
-| Enregistrement durable et outbox | Fait | #20 |
+| Enregistrement durable et outbox | Fait | |
 | Classification et quarantaine | Fait, seuils fixes | #6, #15 |
 | Inbox et revue humaine | Fait | #9 |
 | Livraison par e-mail et webhook | À faire | #5, #13, #14, #16 |
@@ -70,8 +70,10 @@ flowchart TD
   B -->|refus| C["400, 404, 413, 415, 429"]
   B --> D["Lot D1 : submissions + outbox_events"]
   D --> E["202 et submission-id"]
-  F["Cron, chaque minute"] --> G["Revendication des événements non remis"]
-  G --> H["classification-queue"]
+  D --> T["Publication en arrière-plan de la requête"]
+  T --> H["classification-queue"]
+  F["Cron, chaque minute"] --> G["Revendication des événements dus"]
+  G --> H
   H --> I["Consumer : commande RequestClassification"]
   I --> J["Agrégat Submission (Durable Object)"]
   J --> K["Saga ClassifySubmission"]
@@ -100,9 +102,10 @@ L’adaptateur D1 du port `SubmissionIntake` exécute un `db.batch` de deux inst
 
 ### Publication
 
-`outbox_events` contient une ligne par soumission, avec trois colonnes d’état : `lease_until`, `published_at` et `handed_off_at`. Chaque minute, le Cron revendique jusqu’à 100 événements non remis dont le bail a expiré et qui n’ont jamais été publiés, ou qui l’ont été depuis plus de 5 minutes. Il pose un bail de 60 secondes, envoie le lot à `classification-queue`, puis renseigne `published_at`.
+`outbox_events` contient une ligne par soumission, avec trois colonnes d’état : `lease_until`, `published_at` et `handed_off_at`. Un événement est dû quand il n’est pas remis, que son bail a expiré et qu’il n’a jamais été publié, ou l’a été depuis plus de 5 minutes. Deux chemins le publient avec la même revendication : ils posent un bail de 60 secondes sur l’événement dû, l’envoient à `classification-queue`, puis renseignent `published_at` et libèrent le bail. Tant que l’un tient le bail, l’autre ne peut pas revendiquer l’événement.
 
-Le Cron est aujourd’hui le seul éditeur : un message attend jusqu’à une minute avant d’entrer dans la file. #20 ajoute une publication dès la réponse `202`.
+- Après le lot D1, la route d’ingestion publie l’événement de sa soumission en arrière-plan, avec `waitUntil` derrière le port `BackgroundTasks`. La réponse `202` n’attend pas cette publication, et un échec n’apparaît que dans les journaux.
+- Chaque minute, le Cron revendique jusqu’à 100 événements dus. C’est le chemin de reprise : après un échec d’envoi, le bail reste posé et le Cron reprend l’événement à son expiration, soit au plus deux minutes plus tard.
 
 ### Remise au modèle
 
@@ -277,16 +280,18 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   ├── domain/submissions/         # agrégat, commandes, événements, politique, saga,
 │   │                               # projection, requêtes, ReviewApi, schémas partagés
 │   ├── ports/                      # authentication, intake, outbox, classification-queue,
-│   │                               # organization-directory, stored-messages, storage
+│   │                               # background-tasks, organization-directory,
+│   │                               # stored-messages, storage
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
 │   │   ├── database/               # schémas Drizzle, d1, intake, outbox, inbox,
 │   │   │                           # organization-directory, stored-messages
-│   │   └── queues/                 # classification-queue
+│   │   ├── queues/                 # classification-queue
+│   │   └── workers/                # background-tasks (waitUntil d’Alchemy)
 │   ├── http/                       # public, submission, authentication, review
 │   └── jobs/
-│       └── submission-outbox.ts    # publication par le Cron et consumer de file
+│       └── submission-outbox.ts    # publication (ingestion et Cron), consumer de file
 ├── dashboard/src/
 │   ├── routes/
 │   ├── features/                   # authentication, inbox
@@ -308,11 +313,12 @@ Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le 
 - Décodage des réponses de Jev et d’OpenAI Decisions, y compris les réponses invalides.
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.
 - Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
+- Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
 
 ### Couverture manquante
 
 - Réponses `400`, `413`, `415` et `429` de l’ingestion (#7).
-- Échec d’envoi vers la file, expiration d’un bail et contention sur l’outbox (#20, #10).
+- Événement que le consumer ne parvient jamais à remettre (#10).
 - Tout ce qui concerne les livraisons (#5, #13, #14).
 - Le dashboard n’a aucun test.
 

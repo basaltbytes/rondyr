@@ -4,22 +4,52 @@ import { RequestClassification } from "../domain/submissions/request-classificat
 import { Submission } from "../domain/submissions/submission.aggregate.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { ClassificationQueue } from "../ports/classification-queue.ts";
-import { Outbox } from "../ports/outbox.ts";
+import { Outbox, type OutboxLease } from "../ports/outbox.ts";
 
 const Message = Schema.Struct({ submissionId: SubmissionId });
 
 const decodeMessage = Schema.decodeUnknownEffect(Message);
 
-export const publishPendingSubmissions = Effect.fn("Outbox.publish")(function* () {
+// A claimed event stays leased for a minute; a published event that nobody has
+// handed off after five minutes is published again.
+const leaseFor = (now: number): OutboxLease => ({
+  now,
+  until: now + 60_000,
+  republishBefore: now - 300_000,
+});
+
+const publishClaimed = Effect.fnUntraced(function* (
+  lease: OutboxLease,
+  events: ReadonlyArray<SubmissionId>,
+) {
+  if (events.length === 0) return;
   const outbox = yield* Outbox;
   const queue = yield* ClassificationQueue;
-  const now = yield* Clock.currentTimeMillis;
-  const lease = { now, until: now + 60_000, republishBefore: now - 300_000 };
-  const events = yield* outbox.claimDue(lease, 100);
-  if (events.length === 0) return;
-
   yield* queue.send(events);
   yield* outbox.markPublished(lease, events);
+});
+
+/** Cron path: publish up to 100 due events. */
+export const publishPendingSubmissions = Effect.fn("Outbox.publish")(function* () {
+  const outbox = yield* Outbox;
+  const now = yield* Clock.currentTimeMillis;
+  const lease = leaseFor(now);
+  const events = yield* outbox.claimDue(lease, 100);
+  yield* publishClaimed(lease, events);
+});
+
+/**
+ * Direct path after intake: publish one submission's event with the cron's lease,
+ * so the two paths never publish the same event at the same time.
+ */
+export const publishSubmission = Effect.fn("Outbox.publishSubmission")(function* (
+  submissionId: SubmissionId,
+) {
+  const outbox = yield* Outbox;
+  const now = yield* Clock.currentTimeMillis;
+  const lease = leaseFor(now);
+  const events = yield* outbox.claim(lease, submissionId);
+  yield* publishClaimed(lease, events);
 });
 
 export const consumeSubmissions = Effect.fn("Outbox.consume")(function* (batch: MessageBatch) {
