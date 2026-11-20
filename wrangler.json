@@ -94,6 +94,10 @@
       {
         "name": "Submissions.ClassifySubmissionWorkflow",
         "class_name": "ClassifySubmissionWorkflow"
+      },
+      {
+        "name": "CronHeartbeatObject",
+        "class_name": "CronHeartbeatObject"
       }
     ]
   },
@@ -112,6 +116,10 @@
     {
       "tag": "deliveries",
       "new_sqlite_classes": ["DeliveryPolicy"]
+    },
+    {
+      "tag": "cron-heartbeat",
+      "new_sqlite_classes": ["CronHeartbeatObject"]
     }
   ],
   "workflows": [

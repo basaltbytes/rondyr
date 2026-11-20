@@ -157,6 +157,8 @@
               "inbox",
               "inbox-actions",
               "inbox-columns",
+              "operations",
+              "operations-metrics",
               "submission-list",
               "submission-reader"
             ]

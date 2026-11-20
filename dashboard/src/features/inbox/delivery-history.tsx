@@ -6,7 +6,9 @@ import type { Delivery } from "~/lib/deliveries-client";
 import { InboxRequestError } from "~/lib/inbox-client";
 import type { Inbox, Submission } from "~/lib/inbox-client";
 
-import { attemptOutcomeLabels, deliveryStatusLabels } from "./strings.ts";
+import { deliveryStatusLabels } from "~/lib/status-labels";
+
+import { attemptOutcomeLabels } from "./strings.ts";
 
 const date = new Intl.DateTimeFormat("fr", { dateStyle: "short", timeStyle: "medium" });
 

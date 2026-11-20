@@ -13,6 +13,17 @@ import {
 import { externalWorkers, workersAiBinding } from "./tests/integration/external-workers.ts";
 import wrangler from "./wrangler.json" with { type: "json" };
 
+// Collect actual console entries and uncaught exceptions from the built Worker.
+const workerLogFixture = `
+const entries = [];
+export default {
+  fetch: () => Response.json(entries),
+  tail(traces) {
+    for (const { logs, exceptions } of traces) entries.push(...logs, ...exceptions);
+  },
+};
+`;
+
 export default defineConfig({
   plugins: [
     cloudflareTest(async () => {
@@ -38,6 +49,7 @@ export default defineConfig({
             WEBHOOK_RECEIVER: "webhook-receiver-fixture",
             RESEND_FIXTURE: "resend-fixture",
             WORKERS_AI_FIXTURE: "workers-ai-fixture",
+            WORKER_LOGS: "worker-log-fixture",
           },
           bindings: {
             TEST_MIGRATIONS: await readD1Migrations({
@@ -54,6 +66,7 @@ export default defineConfig({
               modules,
               unsafeBindings: [workersAiBinding],
               outboundService: "webhook-receiver-fixture",
+              tails: ["worker-log-fixture"],
               bindings: {
                 ...wrangler.vars,
                 BETTER_AUTH_SECRET: "workerd-test-only-better-auth-secret-8ea101",
@@ -65,6 +78,12 @@ export default defineConfig({
               },
             },
             ...externalWorkers(wrangler.compatibility_date),
+            {
+              name: "worker-log-fixture",
+              modules: true,
+              script: workerLogFixture,
+              compatibilityDate: wrangler.compatibility_date,
+            },
           ],
         },
       };

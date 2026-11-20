@@ -8,15 +8,6 @@ export const statusLabels = {
   archived: "Archivé",
 } as const;
 
-export const reviewReasons = {
-  "probable-spam": "Indésirable probable",
-  ambiguous: "Classement incertain",
-  "low-relevance": "Peu lié à votre activité",
-  "classification-error": "Analyse indisponible",
-  honeypot: "Champ piège rempli",
-  repetition: "Envois répétés",
-} as const;
-
 export const destinationRefusals = {
   "invalid-url": "Cette adresse n’est pas une URL valide.",
   "not-https": "L’adresse doit commencer par https://.",
@@ -66,14 +57,6 @@ export const recipientRefusals = {
 
 export const missingEmailProvider =
   "L’envoi d’e-mails n’est pas configuré sur ce Worker : il faut RESEND_API_KEY et RONDYR_EMAIL_FROM.";
-
-export const deliveryStatusLabels = {
-  pending: "En attente",
-  processing: "Envoi en cours",
-  delivered: "Livrée",
-  retrying: "Nouvel essai prévu",
-  failed: "Échec",
-} as const;
 
 export const attemptOutcomeLabels = {
   delivered: "livrée",
