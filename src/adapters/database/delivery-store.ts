@@ -11,7 +11,7 @@ import {
   type DeliveryTransition,
 } from "../../domain/deliveries/delivery.ts";
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
-import type { SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { SubmissionId } from "../../domain/submissions/submission.id.ts";
 import {
   DeliveryStore,
   type AcceptedSubmission,
@@ -29,6 +29,10 @@ const Context = Schema.Struct({
   target_id: TargetId,
   type: TargetType,
   configuration: Schema.fromJsonString(NotificationTarget.fields.configuration),
+  submission_id: SubmissionId,
+  received_at: Schema.Int,
+  form_public_id: Schema.String,
+  form_name: Schema.String,
   fields: Schema.fromJsonString(SubmissionFields),
 });
 
@@ -176,9 +180,12 @@ const start = Effect.fn("DeliveryStore.start")(function* (
         .bind(deliveryId, lease.now, lease.until),
       db
         .prepare(`
-      SELECT t.id AS target_id, t.type, t.configuration, s.fields FROM deliveries d
+      SELECT t.id AS target_id, t.type, t.configuration, s.id AS submission_id, s.received_at,
+        f.public_id AS form_public_id, f.name AS form_name, s.fields
+      FROM deliveries d
         JOIN notification_targets t ON t.id = d.target_id
         JOIN submissions s ON s.id = d.submission_id
+        JOIN forms f ON f.id = s.form_id
       WHERE d.id = ?
     `)
         .bind(deliveryId),
@@ -191,6 +198,12 @@ const start = Effect.fn("DeliveryStore.start")(function* (
     deliveryId,
     attempt: attempt.attempt_count,
     target: { id: row.target_id, type: row.type, configuration: row.configuration },
+    submission: {
+      id: row.submission_id,
+      receivedAt: row.received_at,
+      formPublicId: row.form_public_id,
+      formName: row.form_name,
+    },
     fields: row.fields,
   });
 });
