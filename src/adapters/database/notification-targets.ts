@@ -256,6 +256,35 @@ const setStatus = Effect.fn("NotificationTargets.setStatus")(function* (
   return yield* summary(row);
 });
 
+const TestableRow = Schema.Struct({
+  id: TargetId,
+  type: Schema.Literals(["webhook", "email"]),
+  configuration: Schema.fromJsonString(Schema.Json),
+  public_id: Schema.String,
+  name: Schema.String,
+});
+const decodeTestable = Schema.decodeUnknownEffect(Schema.Array(TestableRow));
+
+const testable = Effect.fn("NotificationTargets.testable")(function* (target: TargetScope) {
+  const db = yield* database;
+  const found = yield* d1(() =>
+    db
+      .prepare(`
+    SELECT t.id, t.type, t.configuration, f.public_id, f.name
+    FROM notification_targets t JOIN forms f ON f.id = t.form_id AND f.organization_id = t.organization_id
+    WHERE ${scopedTarget} AND ${listedTypes}
+  `)
+      .bind(target.targetId, target.organizationId, target.userId)
+      .all(),
+  );
+  const [row] = yield* decodeTestable(found.results).pipe(Effect.mapError(unreadable));
+  if (row === undefined) return yield* TargetNotFound.make();
+  return {
+    target: { id: row.id, type: row.type, configuration: row.configuration },
+    form: { publicId: row.public_id, name: row.name },
+  };
+});
+
 export const notificationTargetsLive = Layer.effect(
   NotificationTargets,
   Effect.gen(function* () {
@@ -269,6 +298,7 @@ export const notificationTargetsLive = Layer.effect(
       createEmail: (form: FormScope, recipients: EmailRecipients) =>
         createEmail(form, recipients).pipe(Effect.provideService(EmailSender, email)),
       replaceRecipients,
+      testable,
       setStatus,
     };
   }),

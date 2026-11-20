@@ -7,6 +7,7 @@ import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
 import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
+import { deliveryHistoryLive } from "./adapters/database/delivery-history.ts";
 import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
 import { formOriginsLive } from "./adapters/database/form-origins.ts";
 import { formsLive } from "./adapters/database/forms.ts";
@@ -23,6 +24,7 @@ import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
 import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
+import { deliveryRoutes } from "./http/delivery-routes.ts";
 import { formRoutes } from "./http/form-routes.ts";
 import { originRoutes } from "./http/origin-routes.ts";
 import { publicRoutes } from "./http/public-routes.ts";
@@ -48,6 +50,7 @@ const services = Layer.mergeAll(
   outboxLive,
   classificationQueueLive,
   deliveries,
+  deliveryHistoryLive,
   Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
     Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
   ),
@@ -70,6 +73,7 @@ const routes = Layer.mergeAll(
   targetRoutes,
   originRoutes,
   formRoutes,
+  deliveryRoutes,
 );
 
 // One outbox failing does not keep the other from being published.

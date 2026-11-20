@@ -26,12 +26,13 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Enregistrement durable et outbox | Fait | |
 | Classification et quarantaine | Fait, seuils fixes | #6, #15 |
 | Inbox et revue humaine | Fait | #9 |
-| Livraisons : tables, file, tentatives et reprises | Fait | #16 |
-| Livraison par webhook signé | Fait | #16 |
+| Livraisons : tables, file, tentatives et reprises | Fait | |
+| Historique des livraisons, relance manuelle, envoi d’essai | Fait, dans le dashboard | #11 pour les rôles |
+| Livraison par webhook signé | Fait | |
 | Livraison par e-mail | Fait, par Resend | Adaptateur Cloudflare dans une issue à ouvrir |
 | Mesures et reprise après incident | À faire | #10 |
 
-Un formulaire peut avoir des destinations webhook et des destinations e-mail, configurées depuis le dashboard ou l’API d’administration. Une destination e-mail a de 1 à 10 destinataires ; le message part en texte brut par le fournisseur d’e-mail du stage, Resend pour l’instant. Un formulaire sans destination garde ses messages acceptés dans l’Inbox seulement.
+Un formulaire peut avoir des destinations webhook et des destinations e-mail, configurées depuis le dashboard ou l’API d’administration. Une destination e-mail a de 1 à 10 destinataires ; le message part en texte brut par le fournisseur d’e-mail du stage, Resend pour l’instant. Un formulaire sans destination garde ses messages acceptés dans l’Inbox seulement. Sous les champs d’un message accepté, le dashboard affiche ses livraisons et leurs tentatives, et permet de relancer une livraison en échec ; chaque destination peut recevoir un message d’essai.
 
 Un formulaire peut aussi avoir une liste d’origines autorisées. Une page servie depuis une autre origine peut alors l’appeler avec `fetch`, et un navigateur d’un site absent de la liste reçoit `403`. Une liste vide autorise toutes les origines.
 
@@ -155,6 +156,16 @@ Le destinataire peut donc recevoir deux fois la même livraison. Rondyr promet u
 
 La composition du Worker déclare deux fournisseurs, pour les types `webhook` et `email` ; la section 8 décrit leurs règles. Un type sans fournisseur échoue toujours sans reprise.
 
+#### Relance manuelle
+
+Une livraison `failed` peut être relancée depuis le dashboard. La relance garde l’identifiant de livraison et ouvre une nouvelle série de six tentatives. Une seule instruction D1 la fait passer de `failed` à `pending`, remet `attempt_count` à zéro, efface `last_error` et la rend due tout de suite ; elle ne touche pas `delivery_attempts`. Toute autre livraison répond `409`, et deux relances simultanées n’en font qu’une, puisque la seconde ne trouve plus le statut `failed`. La route publie ensuite la livraison avec la revendication habituelle, et le Cron la reprend si cette publication échoue. La relance passe donc par la même file et le même démarrage qu’une tentative automatique : si elle croise le Cron ou un message en double, une seule tentative démarre.
+
+`attempt_count` compte les tentatives de la série en cours ; il décide du délai de reprise et du passage à `failed`. Les lignes de `delivery_attempts` sont numérotées sur tout l’historique : la première tentative après une relance porte le numéro qui suit la dernière, et le nombre de tentatives affiché est le nombre de ces lignes. Pour l’e-mail, l’identifiant de livraison reste la clé d’idempotence de Resend, si bien qu’une relance moins de 24 heures après la première tentative, avec d’autres destinataires, reçoit `409 invalid_idempotent_request`.
+
+#### Envoi d’essai
+
+L’envoi d’essai passe par la méthode `sendTest` du port `NotificationProvider`, avec le fournisseur du type de la destination et les mêmes vérifications qu’une livraison : configuration, URL, secrets, fournisseur d’e-mail. Chaque essai reçoit un nouvel identifiant et ne crée ni soumission, ni livraison, ni tentative ; la route attend la réponse au plus 30 secondes, sans reprise. Le webhook reçoit la charge utile version 1 avec le type `test`, et l’e-mail porte « Message d’essai » dans son objet et son texte. Un seul essai à la fois par destination : la route garde en mémoire les destinations en cours d’essai, ce qui ne vaut que pour une instance du Worker.
+
 Le fournisseur `email` construit le message et appelle le port `EmailSender`, qui ne connaît aucun fournisseur d’e-mail : il reçoit l’expéditeur, les destinataires, le `Reply-To` éventuel, l’objet, le texte et la clé d’idempotence, et distingue un succès, un rejet définitif (`EmailRejected`) et un échec à réessayer (`EmailUnavailable`). `RONDYR_EMAIL_PROVIDER` choisit l’adaptateur du stage, `resend` par défaut et seule valeur pour l’instant ; un second adaptateur est une entrée de plus dans `src/adapters/email/email-sender.ts`. La clé d’idempotence est l’identifiant de livraison : Resend la garde 24 heures et ne renvoie pas un message déjà accepté, ce qui couvre les six tentatives d’une livraison, y compris après une tentative interrompue.
 
 ### Limites connues
@@ -163,7 +174,7 @@ Le fournisseur `email` construit le message et appelle le port `EmailSender`, qu
 - La DLQ de classification n’a pas de consumer (#10).
 - La saga n’enregistre que le résultat final ; les tentatives échouées ne laissent pas de trace dans les événements.
 - La DLQ de livraison n’a pas de consumer non plus. Elle ne reçoit un message qu’après des échecs de D1, et l’état de la livraison reste dans D1, d’où le Cron la republie (#10).
-- Une livraison `failed` ne se relance pas encore à la main (#16).
+- L’envoi d’essai n’est limité qu’à un à la fois par destination et par instance du Worker. Un membre peut en envoyer autant qu’il veut, et chacun compte dans le quota de Resend pour une destination e-mail (#7).
 
 ## 5. Classification intelligente
 
@@ -216,15 +227,15 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
 | `submission_inbox` | `submission_id`, `version`, `status`, `reason` ; écrite par la projection |
 | `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON lu par le fournisseur du type), `active`, `created_at`. Pour un webhook, `configuration` contient `url`, `secret` (chiffré) et `previousSecret` (`null`, ou le secret chiffré précédent et la fin de sa validité). Pour un e-mail, elle contient `recipients`, la liste des destinataires |
-| `deliveries` | `id` (UUID v4 stable), `submission_id`, `target_id`, `status`, `attempt_count`, `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at` ; unique sur `(submission_id, target_id)` |
-| `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error` |
+| `deliveries` | `id` (UUID v4 stable), `submission_id`, `target_id`, `status`, `attempt_count` (tentatives de la série en cours), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at` ; unique sur `(submission_id, target_id)` |
+| `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numérote les tentatives sur tout l’historique, relances manuelles comprises |
 | `auth_*` | Comptes, sessions, vérifications et limites de débit de Better Auth |
 
 La migration `form-administration` ajoute `status` et `success_url` par `ALTER TABLE` : les formulaires existants passent à `active` par la valeur par défaut. `status` n’a pas de contrainte `CHECK`, car l’ajouter reconstruirait la table, et la suppression de `forms` sur D1 se propagerait à `form_origins` ; les adaptateurs ne l’écrivent qu’avec les deux valeurs, et Effect Schema refuse une autre valeur à la lecture.
 
 Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire. La clé primaire `(form_id, origin)` de `form_origins` sert la vérification de l’origine à l’ingestion. Un index partiel sur `(next_attempt_at, lease_until)` sert la recherche des livraisons dues.
 
-Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. L’API d’administration crée les destinations webhook et e-mail ; la table `notification_targets` existante suffit, sans migration. L’adaptateur relit la liste des destinataires avec le même schéma qu’à la création : une ligne modifiée à la main qui ne respecte plus la règle fait échouer la livraison sans reprise.
+Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. Une relance manuelle ouvre une nouvelle série sur la même livraison sans effacer ses tentatives ; l’historique et la relance n’ont demandé aucune migration. L’API d’administration crée les destinations webhook et e-mail ; la table `notification_targets` existante suffit, sans migration. L’adaptateur relit la liste des destinataires avec le même schéma qu’à la création : une ligne modifiée à la main qui ne respecte plus la règle fait échouer la livraison sans reprise.
 
 ### Événements de l’agrégat `Submission`
 
@@ -318,17 +329,20 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `POST /api/organizations/:organizationId/targets/:targetId/rotate-secret` | Renvoie un nouveau secret de webhook |
 | `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Remplace les destinataires d’une destination e-mail (`{"recipients":[…]}`) |
 | `POST /api/organizations/:organizationId/targets/:targetId/activate` ou `/deactivate` | Active ou désactive la destination |
+| `POST /api/organizations/:organizationId/targets/:targetId/test` | Envoie un message d’essai et renvoie `{"testId","outcome","summary"}` ; `409` si un essai de cette destination est en cours |
+| `GET /api/organizations/:organizationId/submissions/:submissionId/deliveries` | Livraisons du message, chacune avec sa destination (URL du webhook ou destinataires), son statut, son nombre de tentatives, sa prochaine tentative si elle attend une reprise et ses tentatives horodatées |
+| `POST /api/organizations/:organizationId/submissions/:submissionId/deliveries/:deliveryId/retry` | Relance une livraison `failed` et renvoie la liste ; `409` pour un autre statut |
 | `GET /api/organizations/:organizationId/forms/:publicId/origins` | Origines autorisées du formulaire, `[{"origin", "createdAt"}]` |
 | `POST /api/organizations/:organizationId/forms/:publicId/origins` | Ajoute une origine (`{"origin":…}`) : `201`, ou `200` si elle est déjà dans la liste |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/origins?origin=…` | Retire une origine : `204`, `404` si elle n’est pas dans la liste, ou `409` avec `{"error":"origin-in-use"}` si c’est l’origine de l’URL de succès |
 
 `GET /api/organizations` renvoie pour chaque formulaire `name`, `publicId`, `status`, `businessContext` et `successUrl`, triés par nom. Les routes des formulaires renvoient le formulaire modifié avec les mêmes champs. Le nom a de 1 à 100 caractères et le contexte au plus 2 000, espaces de début et de fin retirés, comme à la création d’une organisation ; un corps invalide répond `400`.
 
-Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Les routes de destinations passent par le port `NotificationTargets`, celles des origines par le port `FormOrigins` et celles des formulaires par le port `Forms` ; leurs adaptateurs D1 joignent `organization_members` à chaque requête. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`, comme deux rotations simultanées du même secret.
+Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Les routes de livraisons passent par les ports `DeliveryHistory` (lecture), `DeliveryStore` (relance) et `NotificationTargets` (destination à tester) ; le résumé d’erreur qu’elles renvoient est celui de la base, sans les champs du message. Les routes de destinations passent par le port `NotificationTargets`, celles des origines par le port `FormOrigins` et celles des formulaires par le port `Forms` ; leurs adaptateurs D1 joignent `organization_members` à chaque requête. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`, comme deux rotations simultanées du même secret.
 
 Une URL de succès refusée répond `400` avec `{"error":"success-url-refused","reason":…}`. Une URL de webhook refusée répond `400` avec `{"error":"destination-refused","reason":…}`. Une origine refusée répond `400` avec `{"error":"origin-refused","reason":…}` ; `parseAllowedOrigin`, dans `src/domain/forms/allowed-origin.ts`, accepte HTTPS, et HTTP seulement pour `localhost`, `127.0.0.0/8` et `[::1]`, puis normalise l’origine. Elle refuse un chemin, des paramètres, une ancre, des identifiants et les caractères génériques (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Sans `RONDYR_SECRETS_KEY`, la création et la rotation répondent `503` avec `{"error":"secrets-key-missing"}` ; la liste et l’activation fonctionnent. Une liste de destinataires refusée répond `400` avec `{"error":"recipients-refused","reason":…}` (`no-recipients`, `too-many-recipients`, `invalid-address`, `duplicate-address`). Sans fournisseur d’e-mail sur le stage (`RESEND_API_KEY` ou `RONDYR_EMAIL_FROM` absente), la création d’une destination e-mail répond `503` avec `{"error":"email-provider-missing"}` ; la liste, la modification des destinataires et l’activation fonctionnent. Les réponses qui contiennent un secret portent `Cache-Control: no-store`, comme toutes celles de l’API d’administration. [docs/webhooks.md](docs/webhooks.md) documente le contrat pour les destinataires, et [docs/email.md](docs/email.md) la configuration de Resend et le format du message.
 
-Restent à ajouter : les membres et les rôles (#11), l’historique des livraisons et l’envoi d’essai (#16), la recherche et l’export (#9).
+Restent à ajouter : les membres et les rôles (#11), la recherche et l’export (#9).
 
 ## 8. Défenses et confidentialité
 
@@ -345,9 +359,9 @@ Les origines autorisées servent l’intégration navigateur et ne protègent pa
 - Les inscriptions publiques sont fermées. `/api/setup` exige `RONDYR_SETUP_TOKEN`, comparé en temps constant, et D1 refuse la création d’un second compte par ce chemin. Le jeton se retire après l’installation.
 - Les routes d’authentification et d’administration refusent toute requête dont l’origine diffère de `BETTER_AUTH_URL`. Le cookie de session est `Secure`, `HttpOnly` et `SameSite=Lax`.
 - Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
-- Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages, les destinations, les origines autorisées et les formulaires.
+- Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages, les destinations, les origines autorisées, les formulaires, l’historique des livraisons, la relance et l’envoi d’essai.
 
-Tout membre a aujourd’hui tous les droits sur son organisation, y compris l’ajout, la modification et la suspension de ses formulaires, et tout compte connecté peut en créer une (#11).
+Tout membre a aujourd’hui tous les droits sur son organisation, y compris l’ajout, la modification et la suspension de ses formulaires, et tout compte connecté peut en créer une (#11). Pour les livraisons, `deliveryOperator`, dans `src/http/delivery-routes.ts`, décide qui lit l’historique, relance et envoie un essai : c’est là que #11 vérifiera le rôle.
 
 L’URL de succès ne permet pas de redirection ouverte : elle vient de D1, son origine est une origine autorisée du formulaire, et seul un membre de l’organisation la modifie.
 
@@ -368,7 +382,7 @@ Le webhook et l’e-mail sont les deux sorties. `parseWebhookUrl`, dans `src/dom
 
 Le fournisseur envoie un `POST` avec `redirect: "manual"`. Une réponse `3xx` est un échec définitif, comme les `4xx` autres que `408`, `425` et `429` ; ces trois-là, les `5xx`, les erreurs réseau et l’absence de réponse en 30 secondes sont réessayés. Le corps de la réponse n’est jamais lu, et le résumé d’erreur ne contient que le statut. Le corps envoyé est borné à 64 Kio.
 
-Chaque requête porte `Rondyr-Delivery-Id`, `Rondyr-Timestamp` (secondes Unix) et `Rondyr-Signature` : `v1=` suivi du HMAC-SHA-256 en hexadécimal de `<horodatage>.<corps>`, calculé avec Web Crypto. Le corps est la version 1 du schéma `WebhookPayload` : `version`, `type`, `deliveryId`, `submission` (`id`, `receivedAt`, `fields`) et `form` (`id` public, `name`).
+Chaque requête porte `Rondyr-Delivery-Id`, `Rondyr-Timestamp` (secondes Unix) et `Rondyr-Signature` : `v1=` suivi du HMAC-SHA-256 en hexadécimal de `<horodatage>.<corps>`, calculé avec Web Crypto. Le corps est la version 1 du schéma `WebhookPayload` : `version`, `type` (`submission.accepted`, ou `test` pour un essai), `deliveryId`, `submission` (`id`, `receivedAt`, `fields`) et `form` (`id` public, `name`).
 
 Le secret de signature fait 32 octets aléatoires, préfixés de `whsec_`. Il n’apparaît que dans la réponse de création ou de rotation. D1 le stocke chiffré en AES-256-GCM avec la clé `RONDYR_SECRETS_KEY`, un secret facultatif du Worker, et l’identifiant de la destination comme donnée authentifiée : un secret copié sur une autre ligne ne se déchiffre pas. Après une rotation, l’ancien secret signe aussi pendant 24 heures, et l’en-tête contient alors deux signatures, la nouvelle en premier. Une livraison dont le secret ne se déchiffre pas échoue sans reprise. Les autres secrets de la plateforme sont des secrets du Worker, dont `RESEND_API_KEY`.
 
@@ -408,7 +422,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   │                               # stored-messages, storage, delivery-store,
 │   │                               # delivery-queue, notification-provider,
 │   │                               # notification-targets, secret-cipher, form-origins,
-│   │                               # forms, email-sender
+│   │                               # forms, email-sender, delivery-history
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
@@ -416,16 +430,17 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   │   ├── email/                  # choix du fournisseur par stage, Resend
 │   │   ├── database/               # schémas Drizzle, d1, intake, outbox, inbox,
 │   │   │                           # organization-directory, stored-messages, delivery-store,
-│   │   │                           # notification-targets, form-origins, forms
+│   │   │                           # notification-targets, form-origins, forms,
+│   │   │                           # delivery-history
 │   │   ├── notifications/          # fournisseurs par type, webhook, e-mail, adaptateur de test
 │   │   ├── queues/                 # classification-queue, delivery-queue
 │   │   └── workers/                # background-tasks (waitUntil d’Alchemy)
 │   ├── http/                       # public, submission, authentication, review, target, origin,
-│   │                               # form
+│   │                               # form, delivery
 │   └── jobs/
 │       ├── submission-outbox.ts    # publication (ingestion et Cron), consumer de file
 │       └── delivery-outbox.ts      # DeliveryScheduler, publication (politique et Cron),
-│                                   # consumer de livraison
+│                                   # consumer de livraison, relance, envoi d’essai
 ├── dashboard/src/
 │   ├── routes/
 │   ├── features/                   # authentication, inbox
@@ -460,6 +475,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 - Webhooks : signature vérifiée par l’exemple de `docs/examples/verify-webhook.ts`, refus d’une signature expirée, d’un autre secret ou d’un corps modifié ; `500` puis `200` avec le même identifiant de livraison ; `400` et redirection sans reprise, sans suivre `Location` ; URL privée et secret chiffré avec une autre clé refusés avant l’envoi ; deux signatures pendant la rotation, une seule après 24 heures ; création par l’API, envoi par la composition déployée et vérification de la requête reçue ; refus entre organisations pour la liste, la création, la rotation et la désactivation ; création et rotation refusées sans `RONDYR_SECRETS_KEY`. Un test vérifie que `docs/webhooks.md` contient l’exemple testé.
 - E-mail : une requête par livraison avec l’expéditeur, les destinataires, l’objet, le texte complet et la clé d’idempotence attendus ; `500` puis `200` et `429` puis `200` avec la même clé et le même corps ; `422`, `401` et `403` sans reprise ; `Reply-To` pris d’un champ `email` valide, absent pour une valeur sur plusieurs lignes, avec un nom affiché, deux adresses ou une valeur invalide ; tentative d’injection d’en-têtes par un nom ou une valeur de champ, sans effet sur les en-têtes ni sur l’objet ; sans clé ou sans expéditeur, création refusée et livraison en échec définitif sans requête ; un webhook et un e-mail du même formulaire livrés indépendamment, l’échec de l’un ne bloquant pas l’autre. Par le Worker construit : refus des destinataires avec leur motif, création, liste des deux types, remplacement des destinataires, désactivation et envoi par la composition déployée ; liste, création, modification et désactivation refusées en `404` pour une autre organisation ; création refusée en `503` sans fournisseur, liste et modification possibles.
 - Livraisons : création après une acceptation automatique et après une acceptation manuelle, jusqu’au consumer ; une seule livraison par destination malgré une politique exécutée deux fois ou un message de file en double ; aucune livraison sans destination active, pour une destination créée après l’acceptation ou pour une destination d’une autre organisation ; nouvel envoi avec le même identifiant après une panne entre l’envoi et l’enregistrement ; une destination en échec à côté d’une destination livrée ; six échecs réessayables jusqu’à `failed`, avec les délais de reprise.
+- Historique, relance et essai, par les routes : historique d’une livraison livrée, d’une livraison en reprise et d’une livraison en échec, avec destination, tentatives et résumés, sans aucun champ du message dans la réponse ; message sans livraison ; relance d’une livraison en échec, livrée ensuite avec le même identifiant, les deux tentatives et la même clé d’idempotence ; relance refusée en `409` pour une livraison livrée ou en reprise ; deux relances simultanées qui ne publient et ne démarrent qu’une tentative, Cron et message en double compris ; nouvelle série après six tentatives, numérotée à partir de 7 ; essai d’un webhook (signature vérifiée, type `test`) et d’une destination e-mail, refusé pour une URL privée, en échec pour un `400` ou un `500`, sans aucune ligne créée ; second essai simultané de la même destination refusé en `409` ; lecture, relance et essai refusés en `404` pour une autre organisation.
 
 ### Couverture manquante
 
@@ -494,13 +510,13 @@ Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épin
 
 ## 12. Ordre de réalisation
 
-Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). Le mécanisme de livraison (#5), le webhook signé (#13) et l’e-mail par Resend (#14) sont faits. La suite, dans l’ordre :
+Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). Le mécanisme de livraison (#5), le webhook signé (#13), l’e-mail par Resend (#14) et l’historique des livraisons avec relance et envoi d’essai (#16) sont faits. La suite, dans l’ordre :
 
 1. **Distribution.** Adaptateur pour le service d’envoi d’e-mails de Cloudflare, derrière le même port `EmailSender`, dans une issue distincte.
 2. **Intégration.** L’administration des formulaires (#8) et le JSON depuis un navigateur (#19) sont faits.
 3. **Protection.** Anti-abus et quotas (#7).
 4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
-5. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
+5. **Équipe et messages.** Rôles et invitations (#11), recherche, export et purge (#9).
 6. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12).
 
 ## 13. Décisions ouvertes

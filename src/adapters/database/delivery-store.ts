@@ -3,6 +3,7 @@ import { SecureRandom } from "effect/crypto";
 
 import {
   DeliveryId,
+  DeliveryStatus,
   interruptedSummary,
   NotificationTarget,
   TargetId,
@@ -13,9 +14,12 @@ import {
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
 import { SubmissionId } from "../../domain/submissions/submission.id.ts";
 import {
+  DeliveryNotFound,
+  DeliveryNotRetryable,
   DeliveryStore,
   type AcceptedSubmission,
   type AttemptLease,
+  type DeliveryScope,
   type StartedAttempt,
 } from "../../ports/delivery-store.ts";
 import type { OutboxLease } from "../../ports/outbox.ts";
@@ -25,6 +29,8 @@ import { d1, database } from "./d1.ts";
 const Target = Schema.Struct({ id: TargetId });
 const Claim = Schema.Struct({ id: DeliveryId });
 const Started = Schema.Struct({ attempt_count: Schema.Int });
+const Recorded = Schema.Struct({ attempt: Schema.Int });
+const Status = Schema.Struct({ status: DeliveryStatus });
 const Context = Schema.Struct({
   target_id: TargetId,
   type: TargetType,
@@ -39,6 +45,8 @@ const Context = Schema.Struct({
 const decodeTargets = Schema.decodeUnknownEffect(Schema.Array(Target));
 const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(Claim));
 const decodeStarted = Schema.decodeUnknownEffect(Schema.Array(Started));
+const decodeRecorded = Schema.decodeUnknownEffect(Schema.Array(Recorded));
+const decodeStatus = Schema.decodeUnknownEffect(Schema.Array(Status));
 const decodeContext = Schema.decodeUnknownEffect(Context);
 const encodeIds = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(DeliveryId)));
 
@@ -144,7 +152,7 @@ const start = Effect.fn("DeliveryStore.start")(function* (
 ) {
   const db = yield* database;
   const expired = `status = 'processing' AND next_attempt_at <= ?2`;
-  const [, , begun, , context] = yield* d1(() =>
+  const [, , begun, recorded, context] = yield* d1(() =>
     db.batch([
       // An expired attempt never recorded its result.
       db
@@ -170,12 +178,16 @@ const start = Effect.fn("DeliveryStore.start")(function* (
       RETURNING attempt_count
     `)
         .bind(deliveryId, lease.now, lease.until, lease.maxAttempts),
+      // Attempts are numbered across series. After the update above, an attempt
+      // without an outcome is one that another caller started at the same time.
       db
         .prepare(`
       INSERT INTO delivery_attempts (delivery_id, attempt, started_at)
-      SELECT id, attempt_count, ?2 FROM deliveries
+      SELECT id, (SELECT COUNT(*) FROM delivery_attempts WHERE delivery_id = ?1) + 1, ?2
+      FROM deliveries
       WHERE id = ?1 AND status = 'processing' AND next_attempt_at = ?3
-      ON CONFLICT (delivery_id, attempt) DO NOTHING
+        AND NOT EXISTS (SELECT 1 FROM delivery_attempts WHERE delivery_id = ?1 AND outcome IS NULL)
+      RETURNING attempt
     `)
         .bind(deliveryId, lease.now, lease.until),
       db
@@ -191,12 +203,17 @@ const start = Effect.fn("DeliveryStore.start")(function* (
         .bind(deliveryId),
     ]),
   );
-  const [attempt] = yield* decodeStarted(begun?.results ?? []).pipe(Effect.mapError(unreadable));
-  if (attempt === undefined) return Option.none<StartedAttempt>();
+  const [series] = yield* decodeStarted(begun?.results ?? []).pipe(Effect.mapError(unreadable));
+  if (series === undefined) return Option.none<StartedAttempt>();
+  const [attempt] = yield* decodeRecorded(recorded?.results ?? []).pipe(
+    Effect.mapError(unreadable),
+  );
+  if (attempt === undefined) return yield* StorageUnavailable.make();
   const row = yield* decodeContext(context?.results[0]).pipe(Effect.mapError(unreadable));
   return Option.some<StartedAttempt>({
     deliveryId,
-    attempt: attempt.attempt_count,
+    attempt: attempt.attempt,
+    seriesAttempt: series.attempt_count,
     target: { id: row.target_id, type: row.type, configuration: row.configuration },
     submission: {
       id: row.submission_id,
@@ -250,7 +267,7 @@ const finish = Effect.fn("DeliveryStore.finish")(function* (
     `)
         .bind(
           attempt.deliveryId,
-          attempt.attempt,
+          attempt.seriesAttempt,
           state.status,
           state.error,
           state.nextAttemptAt,
@@ -260,11 +277,51 @@ const finish = Effect.fn("DeliveryStore.finish")(function* (
   );
 });
 
+// The delivery belongs to the submission, in an organization of the account.
+const scopedDelivery = `
+  d.id = ?1 AND d.submission_id = ?2
+  AND EXISTS (
+    SELECT 1 FROM submissions s JOIN organization_members m ON m.organization_id = s.organization_id
+    WHERE s.id = d.submission_id AND s.organization_id = ?3 AND m.user_id = ?4
+  )
+`;
+
+const retry = Effect.fn("DeliveryStore.retry")(function* (delivery: DeliveryScope, now: number) {
+  const db = yield* database;
+  const scope = [
+    delivery.deliveryId,
+    delivery.submissionId,
+    delivery.organizationId,
+    delivery.userId,
+  ] as const;
+  // The new series is due at once, through the same publication as any attempt.
+  const [reset, current] = yield* d1(() =>
+    db.batch([
+      db
+        .prepare(`
+      UPDATE deliveries AS d
+      SET status = 'pending', attempt_count = 0, last_error = NULL, next_attempt_at = ?5,
+        lease_until = 0, published_at = NULL, updated_at = ?5
+      WHERE ${scopedDelivery} AND d.status = 'failed'
+      RETURNING id
+    `)
+        .bind(...scope, now),
+      db.prepare(`SELECT d.status FROM deliveries d WHERE ${scopedDelivery}`).bind(...scope),
+    ]),
+  );
+  const retried = yield* decodeClaims(reset?.results ?? []).pipe(Effect.mapError(unreadable));
+  if (retried.length > 0) return;
+  const [found] = yield* decodeStatus(current?.results ?? []).pipe(Effect.mapError(unreadable));
+  if (found === undefined) return yield* DeliveryNotFound.make();
+  return yield* DeliveryNotRetryable.make({ status: found.status });
+});
+
 export const deliveryStoreLive = Layer.succeed(DeliveryStore, {
   create,
   claimDue,
   claimSubmission,
   markPublished,
   start,
+  retry,
   finish,
 });

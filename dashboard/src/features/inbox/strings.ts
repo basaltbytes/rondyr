@@ -64,3 +64,18 @@ export const recipientRefusals = {
 
 export const missingEmailProvider =
   "L’envoi d’e-mails n’est pas configuré sur ce Worker : il faut RESEND_API_KEY et RONDYR_EMAIL_FROM.";
+
+export const deliveryStatusLabels = {
+  pending: "En attente",
+  processing: "Envoi en cours",
+  delivered: "Livrée",
+  retrying: "Nouvel essai prévu",
+  failed: "Échec",
+} as const;
+
+export const attemptOutcomeLabels = {
+  delivered: "livrée",
+  "retryable-failure": "échec temporaire",
+  "permanent-failure": "échec définitif",
+  interrupted: "interrompue avant son résultat",
+} as const;
