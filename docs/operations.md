@@ -11,6 +11,34 @@ Open **État** in the dashboard and select **Actualiser**. Check the last succes
 
 The Worker’s application logs use operation names, identifiers, status tags, and durations. Keep message fields and credentials out of incident notes and shared log exports.
 
+## Staging gate
+
+A push to `main` deploys `prod` in one of two modes. Check the summary of the CI run to see which one applied.
+
+- **Gate not configured**: the run shows the notice `The staging gate is not configured`, deploys `prod`, and leaves `staging` untouched. Nothing tests the release before production. This is the default until someone sets the gate up.
+- **Gate configured**: the run deploys `staging`, runs `scripts/smoke-staging.mjs` against it, and deploys `prod` only if the test passes.
+
+[Staging gate](./deployment.md#staging-gate) in the deployment guide lists the one-time setup: the staging account created with `scripts/setup-owner.sh`, an organization and a form with no destinations, then two variables and two secrets in GitHub.
+
+### When the gate fails
+
+The job `staging / Deploy staging` is red and `production` is skipped. Production keeps the version it had before the push. Open the failed step:
+
+- **Check deployment configuration** with `The staging smoke test is required but these settings are missing`: a smoke setting was deleted after the run started. Restore it or delete the other three.
+- The gate job **Staging gate configuration** with `The staging gate is partly configured`: nothing was deployed. Set the settings it names, or delete the others to deploy `prod` without the gate.
+- **Deploy through Alchemy**: staging itself did not deploy. Read the Alchemy output, and run `pnpm deploy:plan --stage staging` with the staging environment to see the drift.
+- **Verify staging health and submission processing**: staging deployed but did not pass the test. The step prints one line and no response body:
+  - `Staging returned HTTP <status>; expected 200 for /health` or `Staging health did not report ok.`: check the Worker’s logs and its D1 binding on staging.
+  - `expected 200 for /api/auth`: the sign-in failed. Check that the smoke secrets match the staging account, and that `BETTER_AUTH_SECRET_STAGING` has not changed since the account signed in.
+  - `expected 202 for /f/<form>`: the form refused the submission. Check that the form is still active and that its ID matches `RONDYR_SMOKE_FORM_ID_STAGING`.
+  - `expected 200 for /api/organizations`: the account cannot read the submission. Check `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` and the account’s membership.
+  - `Staging did not classify the smoke submission within three minutes.`: follow [Queue backlog](#queue-backlog) on staging.
+  - `Staging did not classify the smoke submission (classification-error).`: the classifier call failed. Check the `AI` binding, the `RONDYR_CLASSIFIER_STAGING` value, and the Worker’s logs.
+  - `Staging did not classify the smoke submission (honeypot).`: the test form’s honeypot field is `name` or `message`, which the test fills. Remove the honeypot field from the test form or rename it.
+  - `The smoke test requires the rondyr-staging workers.dev origin.`: `BETTER_AUTH_URL_STAGING` is not the staging `workers.dev` origin. The test refuses any other host.
+
+Once staging is fixed, re-run the failed jobs of the CI run, or push again. To ship a fix to production while staging stays broken, delete the four smoke settings: the next push deploys `prod` directly, with the notice. Restore them once staging works.
+
 ## Restore D1 with Time Travel
 
 A Cloudflare operator must carry out and verify the restore and rollback procedures. Rehearse them on staging with disposable data. Automated checks cover neither operation against a live Cloudflare account.
@@ -44,7 +72,7 @@ D1 Time Travel rewinds D1 alone. Durable Object event streams and workflow state
 
 ## Rotate secrets
 
-Use the secret store for the affected stage. Update the corresponding GitHub secret and any private local deployment environment used for that stage. The production deployment runs through the [staging gate](./deployment.md#github-actions).
+Use the secret store for the affected stage. Update the corresponding GitHub secret and any private local deployment environment used for that stage. When the [staging gate](#staging-gate) is configured, a push to `main` deploys staging first, so rotate the staging secret before the production one.
 
 ### `RONDYR_SECRETS_KEY`
 

@@ -95,7 +95,14 @@ Use a separate API key per stage, so you can revoke one without stopping the oth
 
 ## GitHub Actions
 
-A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, deploys `staging`, then checks `/health` and a submission through the authenticated inbox. The workflow deploys `prod` only after the staging check passes. Pull requests run the quality and build checks. Start the **Deploy** workflow to deploy staging manually, including for the first setup. Without `CLOUDFLARE_API_TOKEN`, the workflow skips cloud deployment.
+Pull requests run `pnpm check` and `pnpm deploy:dry`. A push to `main`, including a merge, runs the same checks and then deploys. What it deploys depends on the [staging gate](#staging-gate):
+
+- **Gate not configured** (the default): the workflow deploys `prod` and leaves `staging` alone. The run shows the notice `The staging gate is not configured`.
+- **Gate configured**: the workflow deploys `staging`, checks `/health` and a submission through the authenticated inbox, and deploys `prod` only if that check passes.
+
+To deploy by hand, start the **Deploy** workflow and choose `staging` (the default) or `prod`. A manual `prod` deployment runs only from `main`. A manual `staging` deployment runs the smoke test when the gate is configured and skips it with a notice otherwise. It never deploys `prod`. Use it for the first setup of staging.
+
+Without `CLOUDFLARE_API_TOKEN`, the workflow skips cloud deployment.
 
 | Name | Kind | Stage |
 | --- | --- | --- |
@@ -108,17 +115,33 @@ A push to `main`, including a merge, runs `pnpm check` and `pnpm deploy:dry`, de
 | `RESEND_API_KEY_PROD`, `RESEND_API_KEY_STAGING` | Secret, optional | One each |
 | `RONDYR_EMAIL_FROM_PROD`, `RONDYR_EMAIL_FROM_STAGING` | Variable, optional | One each |
 | `RONDYR_EMAIL_PROVIDER_PROD`, `RONDYR_EMAIL_PROVIDER_STAGING` | Variable, optional | One each |
-| `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` | Variable, required for promotion | ID of the staging test organization |
-| `RONDYR_SMOKE_FORM_ID_STAGING` | Variable, required for promotion | Public ID of the staging test form |
-| `RONDYR_SMOKE_EMAIL_STAGING`, `RONDYR_SMOKE_PASSWORD_STAGING` | Secret, required for promotion | Credentials of the staging-only test account |
+| `RONDYR_SMOKE_ORGANIZATION_ID_STAGING`, `RONDYR_SMOKE_FORM_ID_STAGING` | Variable, optional, [staging gate](#staging-gate) | Staging |
+| `RONDYR_SMOKE_EMAIL_STAGING`, `RONDYR_SMOKE_PASSWORD_STAGING` | Secret, optional, [staging gate](#staging-gate) | Staging |
 
 For the Basaltbytes repository, `BETTER_AUTH_URL_PROD` is `https://rondyr.basaltbytes.com`. Delete the setup token secret once the first account exists.
 
-### Staging smoke test setup
+### Staging gate
 
-Deploy staging manually and [create its first account](#first-account) if needed. Use staging-only credentials and create a dedicated organization and an active form with no notification destinations. A pottery workshop is suitable business context for the synthetic enquiry. With the staging account signed in, `/api/organizations` returns the organization’s `id` and the form’s `publicId`. Set the two smoke variables and the two smoke secrets in GitHub before merging a release.
+The gate is configured when all four smoke settings are set in GitHub. With none of them, a push to `main` deploys `prod` directly. With some but not all of them, the push fails before any deployment, and the error names the missing settings, never their values. Set the missing ones, or delete the others to go back to direct deployment.
 
-The test signs in, submits one synthetic message, checks the stored message, and waits up to three minutes for the normal classifier to accept it or place it in quarantine. A classifier error or intake quarantine fails the check. Keep the test form separate from forms used by people. Each successful intake leaves a message in staging, and no notification is sent with the form configured as above.
+To turn the gate on, once:
+
+1. Set `BETTER_AUTH_URL_STAGING` to `https://rondyr-staging.<subdomain>.workers.dev` and `BETTER_AUTH_SECRET_STAGING` to a value from `openssl rand -hex 32`. The smoke test refuses any other origin than the `rondyr-staging` `workers.dev` host.
+2. Set `RONDYR_SETUP_TOKEN_STAGING` to another value from `openssl rand -hex 32`, then start the **Deploy** workflow with stage `staging`.
+3. Create the staging account. The script asks for the setup token from step 2, then for a name, an email address and a password. Use an email address and a password that serve only on staging. The script creates only the first account of a stage: if staging already has one, use it only if no person relies on it.
+
+   ```sh
+   ./scripts/setup-owner.sh https://rondyr-staging.<subdomain>.workers.dev
+   ```
+
+4. Sign in at the staging origin. In **Boîte de réception**, create an organization and its form with **Créer une boîte de réception**. A pottery workshop is suitable business context for the synthetic enquiry. Leave the form active and add no webhook or email destination, so that the test sends no notification.
+5. While signed in, open `/api/organizations` on the staging origin. Note the organization’s `id` and the form’s `publicId`.
+6. In the repository settings, set the variables `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` (the `id`) and `RONDYR_SMOKE_FORM_ID_STAGING` (the `publicId`), and the secrets `RONDYR_SMOKE_EMAIL_STAGING` and `RONDYR_SMOKE_PASSWORD_STAGING` (the account from step 3). Set all four before the next push to `main`: a push that finds only some of them fails.
+7. Delete `RONDYR_SETUP_TOKEN_STAGING`, then start the **Deploy** workflow with stage `staging` again. The run deploys staging and runs the smoke test. When it passes, the next push to `main` goes through the gate.
+
+The smoke test signs in, submits one synthetic message, checks the stored message, and waits up to three minutes for the normal classifier to accept it or place it in quarantine. A classifier error or a quarantine at intake fails the check. Keep the test form separate from forms used by people. Each run leaves a message in staging.
+
+When the gate fails, the job `staging / Deploy staging` of the CI run is red, `production` is skipped, and production keeps its previous version. The step **Verify staging health and submission processing** prints one line, for example `Staging returned HTTP 401; expected 200 for /api/auth` or `Staging did not classify the smoke submission within three minutes.`, and never a response body or credential. A partial configuration fails the job **Staging gate configuration** instead, before any deployment. Fix staging or the settings, then push again or re-run the failed jobs. See [the runbook](./operations.md#staging-gate) for the diagnosis.
 
 ### API token
 
