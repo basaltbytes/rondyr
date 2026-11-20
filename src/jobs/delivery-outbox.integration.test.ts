@@ -367,6 +367,29 @@ it.effect(
   },
 );
 
+it.effect("stores the same bounded error on a delivery and its attempt", () => {
+  const summary = "Recipient failure. ".repeat(20);
+  const recipient = testNotificationProvider(() =>
+    Effect.fail(NotificationFailed.make({ retryable: false, summary })),
+  );
+  const { layer } = servicesWith(recipient.provider);
+  const submissionId = SubmissionId.make("f01869e3-b329-4699-a141-377eee81a7dc");
+  const scenario = Effect.gen(function* () {
+    yield* seedSubmission("bounded-error", "bounded-error-org", submissionId);
+    yield* seedTarget("bounded-error-test", "bounded-error-org", "bounded-error-form", "test");
+    yield* schedule(submissionId, "bounded-error-org");
+    const { id } = yield* deliveryFor(submissionId, "bounded-error-test");
+    yield* consumeDeliveries(deliveryBatch([id]).batch);
+
+    const error = `${summary.slice(0, 299)}…`;
+    const row = yield* deliveryFor(submissionId, "bounded-error-test");
+    assert.strictEqual(row.last_error, error);
+    const attempts = yield* attemptsOf(id);
+    assert.deepEqual(attempts, [{ attempt: 1, outcome: "permanent-failure", error }]);
+  });
+  return withServices(layer, scenario);
+});
+
 it.effect("retries a failing target after growing delays, then marks it failed", () => {
   const recipient = testNotificationProvider(unavailable);
   const { sent, layer } = servicesWith(recipient.provider);
