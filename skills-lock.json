@@ -7,6 +7,27 @@
       "sourceType": "github",
       "skillPath": "packages/domain/skills/alchemy-domain/SKILL.md",
       "computedHash": "66e7f4f4eb657013ec26be321f738351b1e6be81396aa951da85e086d6441f72"
+    },
+    "anti-slop-writing": {
+      "source": "basaltbytes/skills",
+      "commit": "4a23a1182fce61e65f9ab4fb9f11e6dbe63e3271",
+      "sourceType": "github",
+      "skillPath": "skills/anti-slop-writing/SKILL.md",
+      "computedHash": "ba40de206fcd7f91656f7c819d5acf293e5b3e60ec04e94e6102ed5ebc1fb997"
+    },
+    "coding-guidelines": {
+      "source": "basaltbytes/skills",
+      "commit": "4a23a1182fce61e65f9ab4fb9f11e6dbe63e3271",
+      "sourceType": "github",
+      "skillPath": "skills/coding-guidelines/SKILL.md",
+      "computedHash": "9ac7fa9f81419293a74a733dea295a54653d86aedb444a548c4678a47bbcbb3f"
+    },
+    "writing-tests": {
+      "source": "basaltbytes/skills",
+      "commit": "4a23a1182fce61e65f9ab4fb9f11e6dbe63e3271",
+      "sourceType": "github",
+      "skillPath": "skills/writing-tests/SKILL.md",
+      "computedHash": "c8e64725f26eb4a687a4ad5f154f6164fc7767c8398dbc96fae29685515175b3"
     }
   }
 }
