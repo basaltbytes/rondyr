@@ -109,14 +109,16 @@ it.live(
       const { "submission-id": submissionId } = yield* readAccepted(rawSubmissionId);
       const persisted = yield* Effect.promise(() =>
         env.DB.prepare(`
-        SELECT f.public_id, e.handed_off_at FROM submissions s
+        SELECT f.public_id FROM submissions s
           JOIN outbox_events e ON e.submission_id = s.id JOIN forms f ON f.id = s.form_id
         WHERE s.id = ?
       `)
           .bind(submissionId)
           .first(),
       );
-      assert.deepEqual(persisted, { public_id: form.publicId, handed_off_at: null });
+      // The outbox row exists with the submission. Its hand-off is checked below: intake
+      // publishes in the background, so the consumer can run at any time after the 202.
+      assert.deepEqual(persisted, { public_id: form.publicId });
 
       const listPath = `/api/organizations/${inbox.id}/submissions`;
       const path = `${listPath}/${submissionId}`;
