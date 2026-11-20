@@ -4,7 +4,7 @@ import * as DomainCloudflare from "@alchemy.run/domain/Cloudflare";
 import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 
-import { jevLive } from "./adapters/ai/jev.ts";
+import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
@@ -18,7 +18,9 @@ const services = Layer.mergeAll(
   authenticationLive,
   HttpServer.layerServices,
   Submissions.layer(submissionHandlers, { legacyData: false }).pipe(
-    Layer.provide(Layer.mergeAll(DomainCloudflare.layerDurableObjects(), jevLive, inboxStoreLive)),
+    Layer.provide(
+      Layer.mergeAll(DomainCloudflare.layerDurableObjects(), classifierLive, inboxStoreLive),
+    ),
   ),
 );
 const routes = Layer.mergeAll(publicRoutes, authenticationRoutes, submissionRoutes, reviewRoutes);
