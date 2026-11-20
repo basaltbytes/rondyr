@@ -119,6 +119,23 @@
       }
     },
     {
+      "files": ["src/http/**", "src/jobs/**"],
+      "excludeFiles": ["**/*.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**"],
+                "message": "Routes and jobs use ports. src/worker-implementation.ts provides the adapters."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
       "files": ["dashboard/src/**"],
       "rules": {
         "rondyr/web-import-direction": "error",

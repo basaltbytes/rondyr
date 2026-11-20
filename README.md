@@ -65,12 +65,12 @@ A `202` means D1 has stored the submission and the event that queues it for clas
 
 The body can be `application/json` or `application/x-www-form-urlencoded`, up to 16 KiB, with 1 to 32 text fields of at most 4,000 characters each. A form accepts 30 submissions per minute. Rondyr answers `400` for invalid fields, `404` for an unknown form, `413` for a large body, `415` for another content type, and `429` over the rate limit.
 
-Locally there is no Workers AI binding, so every message is quarantined with the reason **Analyse indisponible**. Click **Actualiser** about a minute after posting to see it; you can then open, accept, or archive it.
+Locally there is no Workers AI binding, so every message is quarantined with the reason **Analyse indisponible**. Click **Actualiser** a few seconds after posting to see it; you can then open, accept, or archive it.
 
 ## Features
 
-- Stores each submission and its outbox event atomically before answering. A cron job publishes pending events every minute and republishes any event that wasn't handed to the classifier within 5 minutes. A duplicate queue message produces one decision.
-- Scores spam and business relevance with Jev through Workers AI, or with OpenAI Decisions through Cloudflare AI Gateway. You choose one classifier per deployment.
+- Stores each submission and its outbox event atomically before answering, then publishes the event to the classification queue in the background of the same request. A cron job runs every minute as the recovery path: it publishes the events whose first publication failed, and republishes any event that wasn't handed to the classifier within 5 minutes. A duplicate queue message produces one decision.
+- Scores spam and business relevance with Jev through Workers AI, or with OpenAI Decisions through the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment.
 - Quarantines instead of deleting. Probable spam, ambiguous scores, off-topic messages, and classifier failures all go to human review, each with its reason.
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
 - Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
