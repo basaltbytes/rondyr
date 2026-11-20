@@ -1,6 +1,6 @@
 import { Context, Effect, Schema } from "effect";
 
-import type { TargetId } from "../domain/deliveries/delivery.ts";
+import type { NotificationTarget, TargetId } from "../domain/deliveries/delivery.ts";
 import type { EmailRecipients, EmailTarget } from "../domain/deliveries/email.ts";
 import type { DestinationTarget } from "../domain/deliveries/targets.ts";
 import type { WebhookUrl } from "../domain/deliveries/webhook-destination.ts";
@@ -35,6 +35,12 @@ export interface TargetScope {
 }
 
 export const TargetStatus = Schema.Literals(["active", "inactive"]);
+
+/** A target as its provider reads it, with the form that it belongs to. */
+export interface TestableTarget {
+  readonly target: typeof NotificationTarget.Type;
+  readonly form: { readonly publicId: string; readonly name: string };
+}
 
 /** The destinations of the forms of the account's organizations. */
 export class NotificationTargets extends Context.Service<
@@ -75,6 +81,10 @@ export class NotificationTargets extends Context.Service<
       target: TargetScope,
       recipients: EmailRecipients,
     ) => Effect.Effect<typeof EmailTarget.Type, TargetNotFound | StorageUnavailable>;
+    /** A webhook or email target, active or not, to send a test message to. */
+    readonly testable: (
+      target: TargetScope,
+    ) => Effect.Effect<TestableTarget, TargetNotFound | StorageUnavailable>;
     /** An inactive target gets no delivery for the messages accepted while it is inactive. */
     readonly setStatus: (
       target: TargetScope,
