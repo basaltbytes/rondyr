@@ -557,14 +557,26 @@ Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épin
 
 ## 12. Ordre de réalisation
 
-Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). Le mécanisme de livraison (#5), le webhook signé (#13), l’e-mail par Resend (#14) et l’historique des livraisons avec relance et envoi d’essai (#16) sont faits. La suite, dans l’ordre :
+En production le 20 novembre 2026 : ingestion fiable, classification par Jev ou OpenAI Decisions, quarantaine et revue, livraison par webhook signé et par e-mail (Resend), historique et relance des livraisons, JSON depuis un navigateur avec origines autorisées, administration des formulaires, limite par client et champ piège. `pnpm evaluate` mesure les classificateurs sur un corpus étiqueté.
 
-1. **Distribution.** Adaptateur pour le service d’envoi d’e-mails de Cloudflare, derrière le même port `EmailSender`, dans une issue distincte.
-2. **Intégration.** L’administration des formulaires (#8) et le JSON depuis un navigateur (#19) sont faits.
-3. **Protection.** La limite par client et le champ piège sont faits ; restent la vérification Turnstile et les quotas par organisation (#7).
-4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
-5. **Équipe et messages.** Rôles et invitations (#11), recherche, export et purge (#9).
-6. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12).
+Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la relation « blocked by » de GitHub. Une issue sans blocage ouvert peut démarrer.
+
+**File des migrations.** Une seule migration D1 à la fois (label `migration`), dans cet ordre :
+
+1. Répétition et entrée du classificateur (#31). La mesure du 20 novembre montre que c’est ce qui manque le plus au filtrage.
+2. Domaines de l’organisation (#39).
+3. Seuils par classificateur et politique par organisation (#6).
+4. Turnstile et plafonds par organisation (#7).
+5. Confirmation des destinataires e-mail (#36).
+6. Rôles et invitations (#11).
+7. Recherche, export et purge (#9).
+8. Traitements bloqués : outbox, files d’échec, reclassement (#10).
+
+**Après une étape de la file.** Question « démarchage commercial » après #31 (#40). Escalade vers un second modèle après #6 (#15).
+
+**Sans migration, à tout moment et en parallèle.** Défauts relevés en revue (#41), tests du dashboard dans un navigateur (#42), état d’exploitation, runbook et passage par `staging` (#43), adaptateur e-mail de Cloudflare (#33).
+
+**Demande une personne.** Guide d’installation sur un compte Cloudflare vierge (#12).
 
 ## 13. Décisions ouvertes
 
