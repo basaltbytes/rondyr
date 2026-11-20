@@ -1,14 +1,14 @@
 import { Effect, Layer, Schema } from "effect";
 
 import { InboxStore } from "../../domain/submissions/inbox-store.ts";
-import { InboxOrganization, InboxRow, SubmissionDetail } from "../../domain/submissions/inbox.ts";
+import { InboxRow, SubmissionDetail } from "../../domain/submissions/inbox.ts";
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
 import {
   InboxUnavailable,
   InvalidInboxCursor,
   SubmissionNotFound,
 } from "../../domain/submissions/submission.rejection.ts";
-import { SubmissionId, UserId } from "../../domain/submissions/submission.id.ts";
+import { SubmissionId } from "../../domain/submissions/submission.id.ts";
 import { d1, database } from "./d1.ts";
 
 const Cursor = Schema.fromJsonString(Schema.Tuple([Schema.Int, SubmissionId]));
@@ -21,7 +21,6 @@ const decodeDetail = Schema.decodeUnknownEffect(
     fields: Schema.fromJsonString(SubmissionFields),
   })),
 );
-const decodeOrganizations = Schema.decodeUnknownEffect(Schema.Array(InboxOrganization));
 
 const inboxUnavailable = () => InboxUnavailable.make();
 
@@ -34,22 +33,6 @@ const tables = `
   FROM submissions s JOIN forms f ON f.id = s.form_id
   LEFT JOIN submission_inbox i ON i.submission_id = s.id
 `;
-
-export const organizationsFor = Effect.fn("Inbox.organizationsFor")(function* (
-  userId: typeof UserId.Type,
-) {
-  const db = yield* database;
-  const rows = yield* d1(() =>
-    db
-      .prepare(`
-    SELECT o.id, o.name FROM organizations o JOIN organization_members m ON m.organization_id = o.id
-    WHERE m.user_id = ? ORDER BY o.name, o.id
-  `)
-      .bind(userId)
-      .all(),
-  );
-  return yield* decodeOrganizations(rows.results);
-}, Effect.mapError(inboxUnavailable));
 
 export const inboxStoreLive = Layer.succeed(InboxStore, {
   project: Effect.fn("Inbox.project")(function* ({ submissionId, version, status, reason }) {
