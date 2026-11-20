@@ -7,7 +7,7 @@ description: Work on Rondyr's Cloudflare Worker, Alchemy stack, D1 migrations, b
 
 `alchemy-run.ts` définit les ressources distantes. `wrangler.json` décrit les bindings locaux utilisés par Vite, la génération de types et Vitest. Vérifier les deux fichiers quand un binding change. Alchemy injecte son plugin Vite dans ses propres exécutions. Respecter le garde-fou `ALCHEMY_CLOUDFLARE_VITE_INJECTED` dans la configuration Vite.
 
-Garder les APIs Cloudflare dans les adaptateurs et les points d’entrée. Décrire les services consommés par le métier avec Effect et exposer les erreurs via son canal typé.
+Les en-têtes des assets du dashboard sont dans `public/_headers`. Vite le copie dans `dist/client`, et Alchemy comme Wrangler l’appliquent aux assets, pas aux réponses du Worker. Garder les APIs Cloudflare dans les adaptateurs et les points d’entrée. Décrire les services consommés par le métier avec Effect et exposer les erreurs via son canal typé.
 
 - `pnpm dev` démarre Vite et workerd. Après une modification D1, lancer `pnpm db:migrate` sur la base locale.
 - `pnpm dev:alchemy` exerce le graphe local et applique les migrations à la base Alchemy. L’état des stages distants est dans Cloudflare.

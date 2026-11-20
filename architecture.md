@@ -23,7 +23,7 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Organisations et formulaires | Création seulement | #8, #11 |
 | Réception JSON et `application/x-www-form-urlencoded` | Fait, sauf JSON depuis un navigateur | #19 |
 | Limites à l’entrée | Taille, schéma, 30 par minute et par formulaire | #7 |
-| Enregistrement durable et outbox | Fait | #20 |
+| Enregistrement durable et outbox | Fait | |
 | Classification et quarantaine | Fait, seuils fixes | #6, #15 |
 | Inbox et revue humaine | Fait | #9 |
 | Livraison par e-mail et webhook | À faire | #5, #13, #14, #16 |
@@ -44,7 +44,7 @@ Form builder, CRM, pièces jointes, automatisations visuelles, moteur de templat
 | Modèle de domaine | Alchemy Domain (`@alchemy.run/domain`) : agrégat, politique, saga et projection hébergés dans des Durable Objects |
 | Infrastructure as Code | Alchemy 2 (`alchemy-run.ts`) |
 | Persistance des messages et de la configuration | Cloudflare D1 |
-| Schéma et migrations | Drizzle Kit ; les requêtes d’exécution sont du SQL préparé décodé par Effect Schema (#23) |
+| Schéma et migrations | Drizzle Kit. Les requêtes d’exécution sont du SQL préparé, et Effect Schema décode chaque ligne lue |
 | Authentification du dashboard | Better Auth, sessions en D1 |
 | Asynchronisme | Cloudflare Queues et un Cron chaque minute |
 | Classificateur | Jev (`typesafe/jev`, binding Workers AI) ou OpenAI Decisions (`openai/decisions`, via AI Gateway), choisi par stage |
@@ -57,7 +57,7 @@ Les fichiers et dossiers du projet sont en kebab-case, sauf les noms imposés pa
 
 1. **Monolithe modulaire.** Un Worker, pas de microservices.
 2. **Domaine isolé de la plateforme.** `src/domain` n’importe ni `cloudflare:*`, ni Drizzle, ni l’IaC Alchemy ; une règle Oxlint le vérifie. Il dépend d’Effect et de l’API de modélisation d’Alchemy Domain.
-3. **Ports et adaptateurs.** Les ports déclarent les services Effect et les adaptateurs fournissent les layers, composés dans `src/worker-implementation.ts`. Ce principe n’est respecté que pour l’authentification et l’Inbox ; les routes et les jobs appellent encore les adaptateurs D1 directement (#23).
+3. **Ports et adaptateurs.** Les ports de `src/ports` déclarent les services Effect, les adaptateurs fournissent les layers, et `src/worker-implementation.ts` les compose. Les routes et les jobs n’utilisent que des ports : une règle Oxlint leur interdit d’importer `src/adapters`, sauf dans les tests. Le domaine déclare lui-même `InboxStore` et le système externe `Classifier`, puisqu’il ne peut pas importer `src/ports`.
 4. **IA non destructive.** Un doute, une erreur technique ou un message hors sujet mène à la quarantaine, jamais à une suppression.
 5. **Au moins une fois, avec idempotence.** Queues peut remettre deux fois le même message ; chaque consumer le tolère.
 6. **Coût borné.** Les protections s’appliquent avant l’appel au modèle. Les plafonds par organisation restent à faire (#7).
@@ -70,8 +70,10 @@ flowchart TD
   B -->|refus| C["400, 404, 413, 415, 429"]
   B --> D["Lot D1 : submissions + outbox_events"]
   D --> E["202 et submission-id"]
-  F["Cron, chaque minute"] --> G["Revendication des événements non remis"]
-  G --> H["classification-queue"]
+  D --> T["Publication en arrière-plan de la requête"]
+  T --> H["classification-queue"]
+  F["Cron, chaque minute"] --> G["Revendication des événements dus"]
+  G --> H
   H --> I["Consumer : commande RequestClassification"]
   I --> J["Agrégat Submission (Durable Object)"]
   J --> K["Saga ClassifySubmission"]
@@ -96,13 +98,14 @@ D1 et Queues ne partagent pas de transaction, et Queues remet les messages au mo
 
 ### Ingestion
 
-`receiveSubmission` exécute un `db.batch` de deux instructions : l’insertion dans `submissions`, conditionnée à l’existence du formulaire et au plafond de 30 messages par minute, puis l’insertion dans `outbox_events`. D1 exécute le lot comme une transaction. Un test force l’échec de la seconde insertion avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
+L’adaptateur D1 du port `SubmissionIntake` exécute un `db.batch` de deux instructions : l’insertion dans `submissions`, conditionnée à l’existence du formulaire et au plafond de 30 messages par minute, puis l’insertion dans `outbox_events`. D1 exécute le lot comme une transaction. Un test force l’échec de la seconde insertion avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
 
 ### Publication
 
-`outbox_events` contient une ligne par soumission, avec trois colonnes d’état : `lease_until`, `published_at` et `handed_off_at`. Chaque minute, le Cron revendique jusqu’à 100 événements non remis dont le bail a expiré et qui n’ont jamais été publiés, ou qui l’ont été depuis plus de 5 minutes. Il pose un bail de 60 secondes, envoie le lot à `classification-queue`, puis renseigne `published_at`.
+`outbox_events` contient une ligne par soumission, avec trois colonnes d’état : `lease_until`, `published_at` et `handed_off_at`. Un événement est dû quand il n’est pas remis, que son bail a expiré et qu’il n’a jamais été publié, ou l’a été depuis plus de 5 minutes. Deux chemins le publient avec la même revendication : ils posent un bail de 60 secondes sur l’événement dû, l’envoient à `classification-queue`, puis renseignent `published_at` et libèrent le bail. Tant que l’un tient le bail, l’autre ne peut pas revendiquer l’événement.
 
-Le Cron est aujourd’hui le seul éditeur : un message attend jusqu’à une minute avant d’entrer dans la file. #20 ajoute une publication dès la réponse `202`.
+- Après le lot D1, la route d’ingestion publie l’événement de sa soumission en arrière-plan, avec `waitUntil` derrière le port `BackgroundTasks`. La réponse `202` n’attend pas cette publication, et un échec n’apparaît que dans les journaux.
+- Chaque minute, le Cron revendique jusqu’à 100 événements dus. C’est le chemin de reprise : après un échec d’envoi, le bail reste posé et le Cron reprend l’événement à son expiration, soit au plus deux minutes plus tard.
 
 ### Remise au modèle
 
@@ -153,7 +156,7 @@ Chaque événement de décision enregistre les scores, l’identifiant du modèl
 - **Jev** reçoit les champs et le contexte dans un objet `state`, avec une ou deux questions de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
 - **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
 
-`RONDYR_AI_GATEWAY=true` crée un second gateway que le Worker n’utilise pas (#22). En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
+La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la première requête authentifiée du compte, avec la collecte de logs activée ; l’adaptateur OpenAI désactive donc la collecte et le cache à chaque appel, et un test vérifie ces options. Jev appelle Workers AI sans gateway. L’identifiant `default` est une constante de `src/adapters/ai/openai-decisions.ts`. En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
 
 ### Sécurité du pipeline IA
 
@@ -252,7 +255,16 @@ Ce plafond est commun à tous les visiteurs d’un formulaire, donc un seul clie
 - Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
 - Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Un test couvre la lecture et l’écriture depuis un compte d’une autre organisation.
 
-Tout membre a aujourd’hui tous les droits sur son organisation, et tout compte connecté peut en créer une (#11). Le dashboard est servi sans CSP ni protection contre l’inclusion dans une iframe (#24).
+Tout membre a aujourd’hui tous les droits sur son organisation, et tout compte connecté peut en créer une (#11).
+
+### En-têtes HTTP
+
+`public/_headers`, que Vite copie dans `dist/client`, fixe les en-têtes des assets du dashboard. Alchemy et Wrangler le lisent au déploiement et ne le publient pas comme fichier.
+
+- Une CSP sans script ni style en ligne : `default-src 'none'`, puis `'self'` pour les scripts, les styles, les images, les polices, le manifeste et les requêtes `fetch`, avec `base-uri 'none'`, `form-action 'self'` et `frame-ancestors 'none'`. Le build Vite de production ne contient ni script ni style en ligne, et le client Better Auth appelle `/api/auth/*` sur la même origine.
+- `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` et `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
+
+Ce fichier ne s’applique pas aux réponses du Worker (`/health`, `/f`, `/api`). Le Worker ajoute `X-Content-Type-Options: nosniff` à chacune d’elles, et un test workerd le vérifie. La connexion et la revue d’un message ont été vérifiées avec cette CSP dans Chrome, sur le build de production servi par `vite preview`.
 
 ### Sorties et secrets
 
@@ -266,7 +278,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 
 ```text
 .
-├── alchemy-run.ts                  # pile Alchemy : D1, files, consumer, gateway
+├── alchemy-run.ts                  # pile Alchemy : D1, files, consumer
 ├── wrangler.json                   # développement local, tests et dry-run
 ├── drizzle-config.ts
 ├── database/migrations/            # migrations et snapshots Drizzle
@@ -276,19 +288,24 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   ├── worker-implementation.ts    # composition des layers, fetch, queue, scheduled
 │   ├── domain/submissions/         # agrégat, commandes, événements, politique, saga,
 │   │                               # projection, requêtes, ReviewApi, schémas partagés
-│   ├── ports/
-│   │   └── authentication.ts
+│   ├── ports/                      # authentication, intake, outbox, classification-queue,
+│   │                               # background-tasks, organization-directory,
+│   │                               # stored-messages, storage
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
-│   │   └── database/               # schémas Drizzle, d1, intake, inbox, inbox-setup
+│   │   ├── database/               # schémas Drizzle, d1, intake, outbox, inbox,
+│   │   │                           # organization-directory, stored-messages
+│   │   ├── queues/                 # classification-queue
+│   │   └── workers/                # background-tasks (waitUntil d’Alchemy)
 │   ├── http/                       # public, submission, authentication, review
 │   └── jobs/
-│       └── submission-outbox.ts    # publication par le Cron et consumer de file
+│       └── submission-outbox.ts    # publication (ingestion et Cron), consumer de file
 ├── dashboard/src/
 │   ├── routes/
 │   ├── features/                   # authentication, inbox
 │   └── lib/                        # clients HTTP
+├── public/_headers                 # en-têtes HTTP des assets du dashboard
 ├── scripts/                        # doctor, worker-budget, setup-owner
 ├── tooling/oxlint/                 # règles de lint locales et leurs tests
 └── tests/integration/              # fixtures partagées
@@ -306,11 +323,13 @@ Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le 
 - Décodage des réponses de Jev et d’OpenAI Decisions, y compris les réponses invalides.
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.
 - Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
+- Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
+- Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
 
 ### Couverture manquante
 
-- Réponses `400`, `413`, `415` et `429` de l’ingestion (#7).
-- Échec d’envoi vers la file, expiration d’un bail et contention sur l’outbox (#20, #10).
+- Soumissions concurrentes à la frontière du plafond par formulaire (#7).
+- Événement que le consumer ne parvient jamais à remettre (#10).
 - Tout ce qui concerne les livraisons (#5, #13, #14).
 - Le dashboard n’a aucun test.
 
@@ -338,15 +357,14 @@ Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épin
 
 ## 12. Ordre de réalisation
 
-Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La suite, dans l’ordre :
+Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). La suite, dans l’ordre :
 
-1. **Consolidation.** Ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). À faire avant d’ajouter des tables et une seconde file.
-2. **Distribution.** Livraisons (#5), puis e-mail (#14) et webhook signé (#13). C’est ce qui manque le plus pour remplacer un service de formulaires.
-3. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
-4. **Protection.** Anti-abus et quotas (#7), en-têtes de sécurité (#24).
-5. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
-6. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
-7. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12), licence (#21).
+1. **Distribution.** Livraisons (#5), puis e-mail (#14) et webhook signé (#13). C’est ce qui manque le plus pour remplacer un service de formulaires.
+2. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
+3. **Protection.** Anti-abus et quotas (#7).
+4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
+5. **Équipe et messages.** Rôles et invitations (#11), historique des livraisons (#16), recherche, export et purge (#9).
+6. **Exploitation et publication.** Mesures et reprise (#10), guide d’installation (#12), licence (#21).
 
 ## 13. Décisions ouvertes
 
@@ -358,15 +376,15 @@ Les fondations, l’ingestion fiable, la classification initiale, l’authentifi
 | Durées de conservation par défaut, export et purge | #9 |
 | Origines autorisées quand la liste d’un formulaire est vide | #19 |
 | Champs répétés et `multipart/form-data` sans fichiers | #8 |
-| Query builder Drizzle ou SQL préparé pour les requêtes d’exécution | #23 |
-| Gateway IA : celui de la pile ou `default` | #22 |
 | Déploiement de `staging` avant `prod` dans la CI | #10 |
 | Licence : MIT, Apache-2.0 ou AGPL-3.0 | #21 |
 
 ### Décisions prises
 
 - Le statut d’une soumission est un flux d’événements dans un Durable Object, projeté dans D1 pour l’Inbox.
+- Les requêtes d’exécution restent du SQL préparé, dans les adaptateurs de `src/adapters/database`, et Effect Schema décode les lignes qu’elles renvoient. Drizzle sert au schéma, aux migrations et à Better Auth (#23).
 - Jev passe par le binding Workers AI ; OpenAI Decisions passe par AI Gateway avec la facturation unifiée. Le choix se fait par stage.
+- OpenAI Decisions utilise le gateway `default`, que AI Gateway crée lui-même, et la pile ne provisionne pas de gateway (#22).
 - Le premier compte se crée avec un jeton d’installation et `scripts/setup-owner.sh`.
 - Un envoi HTML reçoit une page de confirmation avec le statut `202`.
 

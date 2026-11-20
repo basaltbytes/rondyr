@@ -1,9 +1,11 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
-import { Effect, Schema } from "effect";
+import { Effect, Layer, Schema } from "effect";
 
 import { testOrigin as origin, testSetupToken } from "../../tests/integration/auth-fixture.ts";
+import { outboxLive } from "../adapters/database/outbox.ts";
+import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
 import { InboxPage, SubmissionDetail } from "../domain/submissions/inbox.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
@@ -15,6 +17,7 @@ const readInboxes = Schema.decodeUnknownEffect(Schema.Array(InboxOrganizationWit
 const readPage = Schema.decodeUnknownEffect(InboxPage);
 const readSubmission = Schema.decodeUnknownEffect(SubmissionDetail);
 const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
+const outboxLayer = Layer.mergeAll(outboxLive, classificationQueueLive);
 
 function request(path: string, init?: RequestInit) {
   return Effect.promise(() => env.TEST_WORKER.fetch(new URL(path, origin), init));
@@ -106,14 +109,16 @@ it.live(
       const { "submission-id": submissionId } = yield* readAccepted(rawSubmissionId);
       const persisted = yield* Effect.promise(() =>
         env.DB.prepare(`
-        SELECT f.public_id, e.handed_off_at FROM submissions s
+        SELECT f.public_id FROM submissions s
           JOIN outbox_events e ON e.submission_id = s.id JOIN forms f ON f.id = s.form_id
         WHERE s.id = ?
       `)
           .bind(submissionId)
           .first(),
       );
-      assert.deepEqual(persisted, { public_id: form.publicId, handed_off_at: null });
+      // The outbox row exists with the submission. Its hand-off is checked below: intake
+      // publishes in the background, so the consumer can run at any time after the 202.
+      assert.deepEqual(persisted, { public_id: form.publicId });
 
       const listPath = `/api/organizations/${inbox.id}/submissions`;
       const path = `${listPath}/${submissionId}`;
@@ -125,7 +130,8 @@ it.live(
           .bind(submissionId)
           .run(),
       );
-      yield* publishPendingSubmissions();
+      const outbox = yield* Layer.build(outboxLayer);
+      yield* publishPendingSubmissions().pipe(Effect.provideContext(outbox));
       yield* Effect.promise(() => env.CLASSIFICATION_QUEUE.send({ submissionId }));
 
       yield* Effect.promise(() =>

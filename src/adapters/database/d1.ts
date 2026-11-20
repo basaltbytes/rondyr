@@ -1,9 +1,6 @@
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
-export class StorageUnavailable extends Schema.TaggedError<
-  StorageUnavailable,
-  { readonly brand: unique symbol }
->()("StorageUnavailable", {}) {}
+import { StorageUnavailable } from "../../ports/storage.ts";
 
 export const database = Effect.promise(() => import("cloudflare:workers")).pipe(
   Effect.map(({ env }) => env.DB),

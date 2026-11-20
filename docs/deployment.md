@@ -20,7 +20,6 @@ Create one environment file per stage, for example `.env.staging`.
 | `BETTER_AUTH_URL` | Yes | The HTTPS origin of the Worker, with no path and no custom port |
 | `RONDYR_SETUP_TOKEN` | Only for the first account | A second value from `openssl rand -hex 32` |
 | `RONDYR_CLASSIFIER` | No | `jev` (default) or `openai` |
-| `RONDYR_AI_GATEWAY` | No | `true` creates an AI Gateway with log collection off. The Worker doesn't use it yet, see [#22](https://github.com/basaltbytes/rondyr/issues/22) |
 
 For the Worker `rondyr-staging`, the origin is `https://rondyr-staging.<subdomain>.workers.dev`. For `prod`, Alchemy attaches the hostname of `BETTER_AUTH_URL` to the Worker `rondyr-prod` as a custom domain, and Cloudflare manages its DNS record and TLS certificate.
 
@@ -37,6 +36,12 @@ pnpm run deploy --stage staging --env-file .env.staging
 On the first plan or deployment, Alchemy can offer to create its state Worker. Pass `--profile` to select another Cloudflare account configured in Alchemy. See [Alchemy accounts and profiles](https://alchemy.run/cloudflare/accounts-and-tokens/) and [shared state](https://alchemy.run/state-store/).
 
 The stack deploys the Worker with the Vite assets and the Durable Objects of the domain model. It applies the D1 migrations, and it configures the classification queue, its dead-letter queue, and the cron trigger that runs every minute. It also creates the delivery queue, which nothing uses until [#5](https://github.com/basaltbytes/rondyr/issues/5) is done.
+
+The dashboard assets get their security headers from `public/_headers`. After a deployment, check them on the stage origin:
+
+```sh
+curl -sI https://rondyr-staging.<subdomain>.workers.dev/ | grep -iE 'content-security-policy|strict-transport-security|x-frame-options|x-content-type-options|referrer-policy'
+```
 
 ## First account
 
@@ -55,6 +60,8 @@ If an organization already exists in SQL, give an account access by adding a row
 Jev is the default classifier, and the deployed Worker calls it through the Workers AI binding.
 
 To use OpenAI Decisions with GPT-6 Luna instead, set `RONDYR_CLASSIFIER=openai` in the stage environment and redeploy. The choice applies to every form of the stage. The Worker calls `openai/decisions` through the `AI` binding and the AI Gateway named `default`. With Cloudflare unified billing, the calls use the account's credits and Rondyr needs no OpenAI key. See the [Decisions model](https://developers.cloudflare.com/ai/models/openai/decisions/) and [unified billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/).
+
+The stack doesn't create the `default` gateway. When an account has no gateway with that name, AI Gateway creates it on the first authenticated request, with log collection on; see [Manage gateways](https://developers.cloudflare.com/ai-gateway/configuration/manage-gateway/). The Worker turns log collection and caching off on each OpenAI Decisions call, so these requests aren't logged even with the gateway's default settings. Other callers of the same gateway on the account keep its settings. Jev doesn't go through AI Gateway.
 
 Both classifiers use the same thresholds today, although their scores haven't been compared on a test corpus ([#6](https://github.com/basaltbytes/rondyr/issues/6)).
 
