@@ -21,15 +21,13 @@ Après une modification du schéma, lancez `pnpm db:generate --name nom-de-la-mi
 
 Rondyr utilise Better Auth avec des sessions en D1. Les inscriptions publiques sont fermées. Pour créer le premier compte, générez deux valeurs distinctes avec `openssl rand -hex 32`. Renseignez `BETTER_AUTH_SECRET` et `RONDYR_SETUP_TOKEN` dans `.env` en local ou dans les secrets du stage pour Cloudflare.
 
-Envoyez une requête au point d’installation depuis un terminal où `RONDYR_SETUP_TOKEN` contient la même valeur que le Worker. Utilisez son URL HTTPS pour un stage distant.
+Lancez le script depuis la racine du dépôt avec Node et `curl`. Pour un stage distant, passez l’origine HTTPS du Worker.
 
 ```sh
-curl --fail-with-body --json @- \
-  --header "Authorization: Bearer ${RONDYR_SETUP_TOKEN}" \
-  http://localhost:5173/api/setup
+./scripts/setup-owner.sh http://localhost:5173
 ```
 
-Saisissez sur l’entrée standard un objet JSON avec les champs `name`, `email` et `password`, puis terminez avec `Ctrl+D`. Le mot de passe doit contenir de 12 à 128 caractères. Après la réponse `201`, connectez-vous sur `/`. Retirez le jeton d’installation de la configuration et redémarrez ou redéployez le Worker. D1 refuse toute deuxième création via ce point d’installation.
+Le script lit `RONDYR_SETUP_TOKEN` dans l’environnement ou le demande dans le terminal. Utilisez la même valeur que celle configurée sur le Worker. Le script vous demande aussi le nom, l’adresse e-mail et le mot de passe du compte. Le mot de passe doit contenir de 12 à 128 caractères. Après la réponse `201`, connectez-vous sur `/`. Retirez le jeton d’installation de la configuration et redémarrez ou redéployez le Worker. D1 refuse toute deuxième création via ce point d’installation.
 
 ## Recevoir un premier message
 
@@ -79,7 +77,7 @@ Un push sur `main`, y compris un merge, lance le déploiement `prod` après `pnp
 
 Ajoutez `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_ACCOUNT_ID` aux secrets du dépôt. Pour `prod`, ajoutez le secret `BETTER_AUTH_SECRET_PROD` et la variable `BETTER_AUTH_URL_PROD` avec l’origine HTTPS de `rondyr-prod`, `https://rondyr.basaltbytes.com` pour le dépôt Basaltbytes. Le domaine doit appartenir à une zone active du même compte Cloudflare. Pour la préproduction, utilisez `BETTER_AUTH_SECRET_STAGING` et `BETTER_AUTH_URL_STAGING`. Le jeton d’installation est facultatif et se configure via `RONDYR_SETUP_TOKEN_PROD` ou `RONDYR_SETUP_TOKEN_STAGING`.
 
-Créez un jeton Cloudflare de compte dédié à la CI. Sur le compte du Worker, attribuez `Workers Scripts Write`, `D1 Write`, `Queues Write`, `Secrets Store Read` et `Account Settings Read`. Pour la zone du domaine personnalisé, attribuez `Zone Read` et `Workers Routes Write`. Les noms correspondent aux groupes de permissions de l’API Cloudflare.
+Créez un jeton Cloudflare de compte dédié à la CI. Sur le compte du Worker, attribuez `Workers Scripts Write`, `D1 Write`, `Queues Write`, `Account Settings Read` et la permission **Account Secrets Store Edit** (`Secrets Store Write` dans Alchemy). Pour la zone du domaine personnalisé, attribuez `Zone Read` et `Workers Routes Write`. La permission d’édition du Secrets Store permet à Alchemy de lier le secret d’état à son Worker de prévisualisation. [Permissions Secrets Store](https://developers.cloudflare.com/secrets-store/access-control/)
 
 Initialisez une fois le stockage d’état Alchemy sur le compte Cloudflare avant le premier déploiement non interactif.
 
