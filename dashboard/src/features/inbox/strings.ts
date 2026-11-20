@@ -35,6 +35,22 @@ export const originRefusals = {
     "Retirez le chemin, les paramètres et l’ancre : gardez le schéma, l’hôte et le port.",
 } as const;
 
+export const formStatusLabels = {
+  active: "Actif",
+  suspended: "Suspendu",
+} as const;
+
+export const successUrlRefusals = {
+  "invalid-url": "Saisissez une adresse complète, par exemple https://www.example.com/merci.",
+  "not-https": "L’adresse doit commencer par https://.",
+  credentials: "Retirez l’identifiant et le mot de passe de l’adresse.",
+  "origin-not-listed":
+    "Ajoutez d’abord l’origine de cette adresse aux origines autorisées du formulaire.",
+} as const;
+
+export const originInUse =
+  "La redirection après envoi de ce formulaire pointe vers cette origine. Retirez d’abord la redirection.";
+
 export const missingSecretsKey =
   "Le Worker n’a pas de clé RONDYR_SECRETS_KEY : impossible de créer un webhook ou de renouveler son secret.";
 
