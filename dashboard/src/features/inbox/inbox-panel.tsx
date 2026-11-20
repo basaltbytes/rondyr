@@ -4,6 +4,7 @@ import { createInbox, listInboxes, listSubmissions } from "~/lib/inbox-client";
 import type { Inbox, Page, Status, Submission } from "~/lib/inbox-client";
 
 import { AllowedOrigins } from "./allowed-origins.tsx";
+import { EmailTargets } from "./email-targets.tsx";
 import { statusLabels } from "./strings.ts";
 import { SubmissionReader } from "./submission-reader.tsx";
 import { WebhookTargets } from "./webhook-targets.tsx";
@@ -56,6 +57,7 @@ function InboxView({ inbox }: InboxViewProps) {
   const [selected, setSelected] = useState<Submission["submissionId"] | null>(null);
   const [failed, setFailed] = useState(false);
   const [webhooksOpen, setWebhooksOpen] = useState(false);
+  const [emailsOpen, setEmailsOpen] = useState(false);
   const [originsOpen, setOriginsOpen] = useState(false);
 
   function refresh() {
@@ -94,6 +96,15 @@ function InboxView({ inbox }: InboxViewProps) {
           {webhooksOpen &&
             inbox.forms.map((form) => (
               <WebhookTargets key={form.publicId} inboxId={inbox.id} form={form} />
+            ))}
+        </details>
+      )}
+      {inbox.forms.length > 0 && (
+        <details onToggle={(event) => setEmailsOpen(event.currentTarget.open)}>
+          <summary>E-mails</summary>
+          {emailsOpen &&
+            inbox.forms.map((form) => (
+              <EmailTargets key={form.publicId} inboxId={inbox.id} form={form} />
             ))}
         </details>
       )}
