@@ -11,7 +11,7 @@ import {
 import { ClassifierName, classifiers } from "./classifiers.ts";
 import { type Corpus, type CorpusEntry, EntryId, Family, Label, weight } from "./corpus.ts";
 import type { ClassifierRun, EntryResult, Outcome } from "./evaluate.ts";
-import { Decision, reasonAt, thresholdGrid } from "./thresholds.ts";
+import { Decision, thresholdGrid } from "./thresholds.ts";
 import { Transport } from "./workers-ai.ts";
 
 /** A count of corpus lines, and of the submissions they stand for once `duplicates` is applied. */
@@ -264,11 +264,13 @@ function sweepPoint(
 ): SweepPoint {
   const pick = (
     label: CorpusEntry["label"],
-    keep: (reason: ReturnType<typeof reasonAt>) => boolean,
+    keep: (reason: ReturnType<typeof reviewReason>) => boolean,
   ) =>
     count(
       scored
-        .filter(({ entry, scores }) => entry.label === label && keep(reasonAt(thresholds, scores)))
+        .filter(
+          ({ entry, scores }) => entry.label === label && keep(reviewReason(scores, thresholds)),
+        )
         .map(({ entry }) => entry),
     );
   return {

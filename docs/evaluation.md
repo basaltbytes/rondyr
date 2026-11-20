@@ -128,7 +128,7 @@ The report also gives the returned model ids and their counts, `rulesVersion`, t
 
 ### Threshold sweep
 
-The sweep recomputes decisions from the recorded scores without new calls. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. All of these points keep the solicitation threshold at 0.50. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
+The sweep recomputes decisions from the recorded scores without new calls, with `reviewReason` and the thresholds of each point. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. All of these points keep the solicitation threshold at 0.50. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
 
 The solicitation sweep tests thresholds from 0 to 1 in steps of 0.05 while holding the spam and relevance thresholds fixed. A solicitation score must exceed the threshold. The report counts all legitimate lines quarantined among scored calls and shows how many legitimate and spam lines get the `solicitation` reason. The Markdown has one table for each threshold.
 
@@ -143,4 +143,4 @@ The Worker quarantines a message whose solicitation score is above 0.50. On 20 N
 
 ## Tests
 
-`pnpm check` runs the harness tests in Node, as the `evals` Vitest project, without network: corpus validation with invalid lines, the decisions at each threshold, a comparison of the sweep rules with `reviewReason`, the report counts with `duplicates`, the cache key, the REST request against a fake Cloudflare API, retries, and a dry run of the synthetic corpus that checks that no field value appears in the reports. The REST path has not been checked against the live API yet.
+`pnpm check` runs the harness tests in Node, as the `evals` Vitest project, without network: corpus validation with invalid lines, the decisions at each threshold, the report counts with `duplicates`, the cache key, the REST request against a fake Cloudflare API, retries, and a dry run of the synthetic corpus that checks that no field value appears in the reports. The REST path has not been checked against the live API yet.

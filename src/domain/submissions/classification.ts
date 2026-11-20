@@ -45,7 +45,7 @@ export const ClassificationResult = Schema.Union([
   Schema.TaggedStruct("ClassificationError", {}),
 ]);
 
-export const rulesVersion = 4;
+export const rulesVersion = 5;
 
 export const ClassificationThresholds = Schema.Struct({
   probableSpam: Score,
