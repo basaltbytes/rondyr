@@ -134,7 +134,7 @@ To turn the gate on, once:
    ./scripts/setup-owner.sh https://rondyr-staging.<subdomain>.workers.dev
    ```
 
-4. Sign in at the staging origin. In **Boîte de réception**, create an organization and its form with **Créer une boîte de réception**. A pottery workshop is suitable business context for the synthetic enquiry. Leave the form active and add no webhook or email destination, so that the test sends no notification.
+4. Sign in at the staging origin. Create an organization and its first form with **Create organization**. A pottery workshop is suitable business context for the synthetic enquiry. Leave the form active and add no webhook or email destination, so that the test sends no notification.
 5. While signed in, open `/api/organizations` on the staging origin. Note the organization’s `id` and the form’s `publicId`.
 6. In the repository settings, set the variables `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` (the `id`) and `RONDYR_SMOKE_FORM_ID_STAGING` (the `publicId`), and the secrets `RONDYR_SMOKE_EMAIL_STAGING` and `RONDYR_SMOKE_PASSWORD_STAGING` (the account from step 3). Set all four before the next push to `main`: a push that finds only some of them fails.
 7. Delete `RONDYR_SETUP_TOKEN_STAGING`, then start the **Deploy** workflow with stage `staging` again. The run deploys staging and runs the smoke test. When it passes, the next push to `main` goes through the gate.

@@ -1,7 +1,11 @@
 import { Effect, Layer, Schema } from "effect";
 
 import { InboxStore } from "../../domain/submissions/inbox-store.ts";
-import { SubmissionDetail, SubmissionStatus } from "../../domain/submissions/inbox.ts";
+import {
+  previewFields,
+  SubmissionDetail,
+  SubmissionStatus,
+} from "../../domain/submissions/inbox.ts";
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
 import {
   InboxUnavailable,
@@ -80,7 +84,9 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
           .all(),
       );
       const decoded = yield* decodeRows(rows.results);
-      const entries = decoded.slice(0, take);
+      const entries = decoded
+        .slice(0, take)
+        .map(({ fields, ...row }) => ({ ...row, preview: previewFields(fields) }));
       const last = entries.at(-1);
       return {
         entries,

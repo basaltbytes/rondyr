@@ -94,7 +94,7 @@ it.live("leaves the submissions of another organization out of the counts", () =
   }),
 );
 
-it.live("lists a submission with the fields that the visitor sent", () =>
+it.live("lists a submission with a preview of the fields that the visitor sent", () =>
   Effect.gen(function* () {
     yield* seedOrganization("list-fields");
     yield* receive(
@@ -106,7 +106,7 @@ it.live("lists a submission with the fields that the visitor sent", () =>
 
     const page = yield* inbox.list(OrganizationId.make("list-fields"), undefined, 25, undefined);
 
-    assert.deepEqual(page.entries[0]?.fields, {
+    assert.deepEqual(page.entries[0]?.preview, {
       email: "ada@example.test",
       message: "Bonjour.",
     });

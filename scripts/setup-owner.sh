@@ -17,28 +17,28 @@ const loopback =
 if (url !== null && url.href === `${url.origin}/` && (url.protocol === "https:" || loopback)) {
   process.stdout.write(url.origin);
 } else {
-  console.error("Indiquez une origine HTTPS ou une adresse HTTP locale, sans chemin ni identifiants.");
+  console.error("Give an HTTPS origin or a local HTTP address, without a path or credentials.");
   process.exitCode = 2;
 }
 NODE
 )
 
 if [[ -z "$setup_token" ]]; then
-  printf "Jeton d'installation Rondyr : " >&2
+  printf 'Rondyr setup token: ' >&2
   IFS= read -rs setup_token
   printf '\n' >&2
 fi
 
 if [[ ${#setup_token} -lt 32 || "$setup_token" == *$'\n'* || "$setup_token" == *$'\r'* ]]; then
-  printf 'Le jeton doit contenir au moins 32 caractères sur une seule ligne.\n' >&2
+  printf 'The token must have at least 32 characters on one line.\n' >&2
   exit 1
 fi
 
-printf 'Nom du compte : ' >&2
+printf 'Account name: ' >&2
 IFS= read -r owner_name
-printf 'Adresse e-mail : ' >&2
+printf 'Email address: ' >&2
 IFS= read -r owner_email
-printf 'Mot de passe (12 à 128 caractères) : ' >&2
+printf 'Password (12 to 128 characters): ' >&2
 IFS= read -rs owner_password
 printf '\n' >&2
 
@@ -56,8 +56,8 @@ status=$(
 )
 
 if [[ "$status" != 201 ]]; then
-  printf 'Installation refusée (HTTP %s).\n' "$status" >&2
+  printf 'Setup refused (HTTP %s).\n' "$status" >&2
   exit 1
 fi
 
-printf 'Premier compte créé (HTTP 201).\n'
+printf 'First account created (HTTP 201).\n'

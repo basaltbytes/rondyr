@@ -8,6 +8,7 @@ import {
 
 import { TargetId } from "../domain/deliveries/delivery.ts";
 import {
+  defaultEmailLanguage,
   EmailTarget,
   parseEmailRecipients,
   ReplaceEmailRecipients,
@@ -109,7 +110,11 @@ const createEmail = Effect.fnUntraced(function* (
   const recipients = parseEmailRecipients(input.recipients);
   if (Result.isFailure(recipients)) return yield* recipientsRefused(recipients.failure);
   const targets = yield* NotificationTargets;
-  const created = yield* targets.createEmail(form, recipients.success);
+  const created = yield* targets.createEmail(
+    form,
+    recipients.success,
+    input.language ?? defaultEmailLanguage,
+  );
   return yield* emailTargetJson(created, { status: 201, ...jsonOptions });
 });
 
@@ -131,6 +136,7 @@ const replaceRecipients = Effect.gen(function* () {
   const target = yield* targets.replaceRecipients(
     { userId, organizationId, targetId },
     recipients.success,
+    input.language,
   );
   return yield* emailTargetJson(target, jsonOptions);
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));

@@ -2,6 +2,7 @@ import { cn } from "cn";
 import { PanelLeft } from "lucide-react";
 import { createContext, use, useEffect, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "~/components/ui/sheet";
@@ -132,13 +133,15 @@ export function Sidebar({ label, children }: SidebarProps) {
 
 /** Opens the drawer on a narrow screen, and collapses the sidebar to icons on a wide one. */
 export function SidebarTrigger({ className }: Pick<ComponentProps<"button">, "className">) {
-  const { isMobile, toggleSidebar } = useSidebar();
+  const { t } = useTranslation();
+  const { collapsed, isMobile, openMobile, toggleSidebar } = useSidebar();
   const trigger = (
     <Button
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      aria-label="Afficher ou masquer le menu"
+      aria-label={t("sidebar.toggle")}
+      aria-expanded={isMobile ? openMobile : !collapsed}
       className={className}
       onClick={toggleSidebar}
     >
@@ -150,7 +153,7 @@ export function SidebarTrigger({ className }: Pick<ComponentProps<"button">, "cl
     <Tooltip>
       <TooltipTrigger render={trigger} />
       <TooltipContent side="bottom">
-        Menu <kbd className="font-sans opacity-70">{modifierLabel()}B</kbd>
+        {t("sidebar.menu")} <kbd className="font-sans opacity-70">{modifierLabel()}B</kbd>
       </TooltipContent>
     </Tooltip>
   );

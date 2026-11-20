@@ -8,7 +8,7 @@ Rondyr est un backend de formulaires auto-hébergé sur Cloudflare. Lire [archit
 - Utiliser Effect 4 et Effect Schema pour le métier, les erreurs et les frontières de données. Composer les layers à l’entrée du Worker. Garder les fichiers en kebab-case, sauf conventions des outils et fichiers générés.
 - Réserver les migrations à l’outillage de développement et au déploiement. Versionner les migrations et snapshots Drizzle dans `database/migrations`.
 - Pour l’ingestion, une réponse `202` implique la persistance atomique de la soumission et de son événement outbox. Les futurs consumers doivent tolérer les événements dupliqués.
-- Utiliser des noms et commentaires de code en anglais. Écrire le README et `docs/` en anglais. Écrire `architecture.md`, les issues et les textes de l’interface en français.
+- Utiliser des noms et commentaires de code en anglais. Écrire le README et `docs/` en anglais. Écrire en anglais d’abord tout ce que lit un utilisateur du produit : textes du dashboard, page de confirmation, e-mails, invites des scripts. Le dashboard, la page de confirmation et les e-mails existent aussi en français : un texte du dashboard est une clé i18next présente dans `dashboard/src/locales/en` et `dashboard/src/locales/fr`, jamais une chaîne dans un composant. Écrire `architecture.md` et les issues en français.
 
 ## Travail sur une issue
 

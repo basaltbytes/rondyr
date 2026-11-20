@@ -1,31 +1,48 @@
 import { cn } from "cn";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
-import type { Counts, Inbox, Submission } from "~/lib/inbox-client";
+import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
+import { productName } from "~/lib/product";
 
-import { InboxSettings } from "./inbox-settings.tsx";
 import { InboxSetup } from "./inbox-setup.tsx";
+import { countsAfterMove, totalOf } from "./folder-counts.ts";
+import type { Folder } from "./folder-counts.ts";
 import { InboxSidebar } from "./inbox-sidebar.tsx";
-import type { Folder, Section } from "./inbox-sidebar.tsx";
+import type { Section } from "./inbox-sidebar.tsx";
 import { MessageList } from "./message-list.tsx";
 import { SubmissionReader } from "./submission-reader.tsx";
 
+// The settings are not part of the first paint, so their code loads when one of them opens.
+const InboxSettings = lazy(async () => {
+  const { InboxSettings: Settings } = await import("./inbox-settings.tsx");
+  return { default: Settings };
+});
+
+/**
+ * Holds the place of a page while its code loads. It has the bar and the menu
+ * button that every page starts with, so nothing moves when the page arrives.
+ */
+function PageFallback() {
+  const { t } = useTranslation();
+  return (
+    <div className="min-w-0 lg:col-span-2">
+      <div className="flex h-14 items-center px-1">
+        <SidebarTrigger />
+      </div>
+      <output className="sr-only">{t("common.loading")}</output>
+    </div>
+  );
+}
+
 interface Listing {
-  readonly entries: readonly Submission[];
+  readonly entries: readonly SubmissionEntry[];
   readonly cursor: string | null;
   /** When the first page was read. */
   readonly readAt: number;
-}
-
-function totalOf(counts: Counts | null, folder: Folder) {
-  if (counts === null) return null;
-  if (folder !== "all") return counts[folder];
-  return (
-    counts.received + counts.classifying + counts.accepted + counts.quarantined + counts.archived
-  );
 }
 
 interface InboxViewProps {
@@ -49,11 +66,12 @@ function InboxView({
   onFormsChanged,
   onOrganizationCreated,
 }: InboxViewProps) {
+  const { t } = useTranslation();
   const [folder, setFolder] = useState<Folder>("quarantined");
   const [section, setSection] = useState<Section | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
-  const [opened, setOpened] = useState<Submission | null>(null);
+  const [opened, setOpened] = useState<SubmissionEntry | null>(null);
   const [revision, setRevision] = useState(0);
   const [failed, setFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -73,7 +91,7 @@ function InboxView({
       },
     );
     return () => request.abort();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh or a decision initiates a new API request.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh initiates a new API request. A decision changes the list without one.
   }, [inbox.id, status, revision]);
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the folder counts with the Rondyr API.
@@ -82,14 +100,18 @@ function InboxView({
     // The folders work without their counts, so a failure leaves the last known ones.
     void countSubmissions(inbox.id, request.signal).then(setCounts, () => undefined);
     return () => request.abort();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh or a decision initiates a new API request.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh initiates a new API request. A decision changes the counts without one.
   }, [inbox.id, revision]);
 
   // The row of the list has the latest status of the open message.
-  const current =
-    opened === null
-      ? null
-      : (listing?.entries.find((entry) => entry.submissionId === opened.submissionId) ?? opened);
+  const index =
+    opened === null || listing === null
+      ? -1
+      : listing.entries.findIndex((entry) => entry.submissionId === opened.submissionId);
+  const current = listing?.entries[index] ?? opened;
+  const above = listing?.entries[index - 1];
+  const below = index < 0 ? undefined : listing?.entries[index + 1];
+  const total = counts === null ? null : totalOf(counts, folder);
 
   function openFolder(next: Folder) {
     setSection(null);
@@ -123,23 +145,26 @@ function InboxView({
 
   function reviewed(updated: Submission) {
     if (listing !== null) {
-      const index = listing.entries.findIndex(
-        (entry) => entry.submissionId === updated.submissionId,
-      );
+      const at = listing.entries.findIndex((entry) => entry.submissionId === updated.submissionId);
+      const before = listing.entries[at];
+      if (before !== undefined) {
+        // The API counts every message of the organization, so the counts follow the decision here.
+        setCounts((known) =>
+          known === null ? null : countsAfterMove(known, before.status, updated.status),
+        );
+      }
       if (folder === "all") {
-        setListing({
-          ...listing,
-          entries: listing.entries.map((entry, position) => (position === index ? updated : entry)),
-        });
-        setOpened(updated);
+        // The row keeps its preview and takes the new status.
+        const decided = (entry: SubmissionEntry) =>
+          entry === before ? { ...entry, status: updated.status, reason: updated.reason } : entry;
+        setListing({ ...listing, entries: listing.entries.map(decided) });
       } else {
         // Like a mail client: the decided message leaves the folder and the next one opens.
-        const entries = listing.entries.filter((_, position) => position !== index);
+        const entries = listing.entries.filter((entry) => entry !== before);
         setListing({ ...listing, entries });
-        setOpened(entries[index] ?? entries[index - 1] ?? null);
+        setOpened(entries[at] ?? entries[at - 1] ?? null);
       }
     }
-    setRevision((value) => value + 1);
   }
 
   return (
@@ -164,7 +189,7 @@ function InboxView({
             <MessageList
               folder={folder}
               entries={listing?.entries ?? null}
-              total={totalOf(counts, folder)}
+              total={total}
               selected={current?.submissionId ?? null}
               hasMore={listing !== null && listing.cursor !== null}
               loadingMore={loadingMore}
@@ -176,7 +201,7 @@ function InboxView({
               onRefresh={() => setRevision((value) => value + 1)}
             />
             <section
-              aria-label="Message ouvert"
+              aria-label={t("inbox.reader.label")}
               className={cn(
                 "flex min-h-0 min-w-0 flex-col bg-card",
                 current === null && "max-lg:hidden",
@@ -188,23 +213,31 @@ function InboxView({
                 <SubmissionReader
                   key={current.submissionId}
                   inboxId={inbox.id}
-                  submission={current}
+                  entry={current}
                   revision={revision}
+                  position={index < 0 ? null : index + 1}
+                  total={total ?? listing?.entries.length ?? 0}
+                  onPrevious={above === undefined ? null : () => setOpened(above)}
+                  onNext={below === undefined ? null : () => setOpened(below)}
                   onReviewed={reviewed}
                   onClose={() => setOpened(null)}
                 />
               )}
             </section>
           </>
-        ) : section === "operations" ? (
-          operations
         ) : (
-          <InboxSettings
-            section={section}
-            inbox={inbox}
-            onFormsChanged={onFormsChanged}
-            onOrganizationCreated={onOrganizationCreated}
-          />
+          <Suspense fallback={<PageFallback />}>
+            {section === "operations" ? (
+              operations
+            ) : (
+              <InboxSettings
+                section={section}
+                inbox={inbox}
+                onFormsChanged={onFormsChanged}
+                onOrganizationCreated={onOrganizationCreated}
+              />
+            )}
+          </Suspense>
         )}
       </SidebarInset>
     </SidebarProvider>
@@ -217,6 +250,7 @@ interface ReaderPlaceholderProps {
 }
 
 function ReaderPlaceholder({ waiting }: ReaderPlaceholderProps) {
+  const { t } = useTranslation();
   return (
     <>
       {/* The rule under the list's header continues across the empty reader. */}
@@ -224,13 +258,10 @@ function ReaderPlaceholder({ waiting }: ReaderPlaceholderProps) {
       {waiting !== null && (
         <div className="grid gap-2 px-5 py-6">
           <h2 className="text-base font-semibold text-balance">
-            {waiting === 0 ? "Rien à vérifier" : "Aucun message ouvert"}
+            {waiting === 0 ? t("inbox.reader.nothingToReview") : t("inbox.reader.noOpenMessage")}
           </h2>
           <p className="max-w-prose text-pretty text-muted-foreground">
-            {waiting === 0 && "Le filtre n’a mis aucun message de côté."}
-            {waiting === 1 && "1 message attend votre décision. Ouvrez-le dans la liste."}
-            {waiting > 1 &&
-              `${waiting} messages attendent votre décision. Ouvrez-en un dans la liste.`}
+            {t("inbox.reader.waiting", { count: waiting })}
           </p>
         </div>
       )}
@@ -248,6 +279,7 @@ interface InboxPanelProps {
 }
 
 export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
+  const { t } = useTranslation();
   const [inboxes, setInboxes] = useState<readonly Inbox[] | null>(null);
   const [active, setActive] = useState("");
   const [failed, setFailed] = useState(false);
@@ -294,14 +326,16 @@ export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
 
   return (
     <main className="mx-auto grid max-w-xl gap-5 px-5 py-12">
-      <h1 className="text-lg font-semibold">Rondyr</h1>
+      <h1 className="text-lg font-semibold">{productName}</h1>
       {failed && (
         <p role="alert" className="text-sm text-destructive">
-          Impossible de charger les organisations.
+          {t("inbox.organizations.loadFailed")}
         </p>
       )}
       {inboxes === null && !failed && (
-        <output className="text-sm text-muted-foreground">Chargement des organisations…</output>
+        <output className="text-sm text-muted-foreground">
+          {t("inbox.organizations.loading")}
+        </output>
       )}
       {inboxes !== null && <InboxSetup onCreated={created} />}
       {signOut}

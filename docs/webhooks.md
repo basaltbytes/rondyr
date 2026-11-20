@@ -8,7 +8,7 @@ A quarantined message is sent only once someone accepts it. A webhook created af
 
 The Worker needs `RONDYR_SECRETS_KEY` to store signing secrets; [deployment.md](./deployment.md#webhook-secrets) explains how to set it. Without it, creating a webhook or rotating its secret answers `503` with `{"error":"secrets-key-missing"}`, and the rest of Rondyr works as before.
 
-In the dashboard, open **Webhooks** under the inbox, enter the URL of the recipient next to the form, and click **Ajouter**. Rondyr generates a signing secret and shows it once: copy it into the recipient's configuration before you leave the page. **Renouveler le secret** issues a new one, **Désactiver** stops deliveries for messages accepted from then on, and **Envoyer un essai** sends a [test request](#test-requests) and shows the answer.
+In the dashboard, open **Destinations**, pick the form, enter the URL of the recipient under **Webhooks**, and click **Add webhook**. Rondyr generates a signing secret and shows it once: copy it into the recipient's configuration before you leave the page. **Rotate secret** issues a new one, **Deactivate** stops deliveries for messages accepted from then on, and **Envoyer un essai** sends a [test request](#test-requests) and shows the answer.
 
 The dashboard calls these routes, which need a session cookie and the `Origin` of the Worker:
 
@@ -162,7 +162,7 @@ export default {
 
 ## Test requests
 
-**Envoyer un essai** in the dashboard, or the `test` route, sends one request to the webhook. Rondyr checks the URL with the [destination rules](#destination-rules) and signs the request with the current secrets, as for a delivery. The body is version 1 of the payload with the type `test`:
+**Send a test** in the dashboard, or the `test` route, sends one request to the webhook. Rondyr checks the URL with the [destination rules](#destination-rules) and signs the request with the current secrets, as for a delivery. The body is version 1 of the payload with the type `test`:
 
 ```json
 {
@@ -173,7 +173,7 @@ export default {
     "id": "4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60",
     "receivedAt": "2026-11-20T15:42:07.000Z",
     "fields": {
-      "message": "Message d’essai envoyé depuis le dashboard Rondyr. Aucun visiteur ne l’a envoyé."
+      "message": "Test message sent from the Rondyr dashboard. No visitor sent it."
     }
   },
   "form": { "id": "YOUR_PUBLIC_ID", "name": "Classes" }
@@ -192,7 +192,7 @@ Rondyr sends a test request once, never retries it, and waits up to 30 seconds f
 
 ## Secret rotation
 
-**Renouveler le secret**, or the `rotate-secret` route, returns a new secret. For the next 24 hours Rondyr signs each request with both secrets, the new one first:
+**Rotate secret**, or the `rotate-secret` route, returns a new secret. For the next 24 hours Rondyr signs each request with both secrets, the new one first:
 
 ```http
 Rondyr-Signature: v1=<signature with the new secret>,v1=<signature with the previous secret>
@@ -218,9 +218,9 @@ A failure that no retry can fix also ends the delivery at once: an invalid store
 
 ## Delivery history and manual retry
 
-Under the fields of an accepted message, the dashboard lists its deliveries: the destination, the status, the number of attempts, the time of the next attempt while a retry waits, and each attempt with its start and end times, its result and its error summary. The summary is the one Rondyr stored, so it contains a status code and never the message fields. **Actualiser les livraisons** reloads the list.
+Under the fields of an accepted message, the dashboard lists its deliveries: the destination, the status, the number of attempts, the time of the next attempt while a retry waits, and each attempt with its start and end times, its result and its error summary. The summary is the one Rondyr stored, so it contains a status code and never the message fields. **Refresh deliveries** reloads the list.
 
-A failed delivery has a **Relancer la livraison** button. The retry keeps the delivery ID, so the recipient gets the same `Rondyr-Delivery-Id` and can drop the request if it processed it already. It starts a new series of up to 6 attempts with the delays above, and the attempts before it stay in the history, numbered on from the last one. The retry goes through the delivery queue like any attempt: two retries clicked at the same time, or a retry while the cron job runs, start one attempt. Only a failed delivery can be retried; any other status, and the second of two simultaneous retries, answers `409`.
+A failed delivery has a **Retry delivery** button. The retry keeps the delivery ID, so the recipient gets the same `Rondyr-Delivery-Id` and can drop the request if it processed it already. It starts a new series of up to 6 attempts with the delays above, and the attempts before it stay in the history, numbered on from the last one. The retry goes through the delivery queue like any attempt: two retries clicked at the same time, or a retry while the cron job runs, start one attempt. Only a failed delivery can be retried; any other status, and the second of two simultaneous retries, answers `409`.
 
 | Route | Effect |
 | --- | --- |

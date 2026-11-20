@@ -1,4 +1,5 @@
 import { useActionState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { FormProblem, TextAreaField, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -11,42 +12,46 @@ interface InboxSetupProps {
 
 /** Creates an organization and its first form. */
 export function InboxSetup({ onCreated }: InboxSetupProps) {
-  const [error, action, pending] = useActionState(async (_: string | null, form: FormData) => {
+  const { t } = useTranslation();
+  const [failed, action, pending] = useActionState(async (_: boolean, form: FormData) => {
     try {
       await createInbox(form);
       onCreated();
-      return null;
+      return false;
     } catch {
-      return "La boîte n’a pas pu être créée. Vérifiez les champs et réessayez.";
+      return true;
     }
-  }, null);
+  }, false);
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Nouvelle organisation</CardTitle>
-        <CardDescription>
-          Une organisation a sa boîte de réception, ses formulaires et ses destinations.
-        </CardDescription>
+        <CardTitle>{t("inbox.sections.organization")}</CardTitle>
+        <CardDescription>{t("inbox.setup.description")}</CardDescription>
       </CardHeader>
       <CardContent>
         <form action={action} className="grid gap-4">
-          <TextField label="Organisation" name="organizationName" required maxLength={100} />
           <TextField
-            label="Nom du premier formulaire"
+            label={t("inbox.setup.organization")}
+            name="organizationName"
+            required
+            maxLength={100}
+          />
+          <TextField
+            label={t("inbox.setup.firstForm")}
             name="formName"
             required
             maxLength={100}
-            placeholder="Contact"
+            placeholder={t("inbox.setup.firstFormPlaceholder")}
           />
           <TextAreaField
-            label="Activité de l’organisation"
+            label={t("inbox.business.label")}
             name="businessContext"
             maxLength={2000}
-            hint="Facultatif. Le filtre s’en sert pour juger si un message concerne votre activité."
+            hint={t("inbox.business.hint")}
           />
-          <FormProblem>{error}</FormProblem>
+          <FormProblem>{failed ? t("inbox.setup.failed") : null}</FormProblem>
           <Button type="submit" variant="default" className="justify-self-start" disabled={pending}>
-            {pending ? "Création en cours…" : "Créer l’organisation"}
+            {pending ? t("inbox.setup.pending") : t("inbox.setup.submit")}
           </Button>
         </form>
       </CardContent>

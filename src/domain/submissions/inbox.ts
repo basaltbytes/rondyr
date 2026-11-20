@@ -27,9 +27,38 @@ export const SubmissionDetail = InboxRow.mapFields((fields) => ({
   fields: SubmissionFields,
 }));
 
-/** A page of the inbox. Each entry has its fields, so a list shows who wrote and what. */
+/** The longest field value of a list entry, in characters as a reader counts them. */
+export const previewValueLength = 240;
+
+const characters = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+function previewValue(value: string) {
+  // A value this short in UTF-16 units cannot have more characters than the limit.
+  if (value.length <= previewValueLength) return value;
+  const cut = [...characters.segment(value)][previewValueLength];
+  return cut === undefined ? value : `${value.slice(0, cut.index)}…`;
+}
+
+/**
+ * The fields of a submission for a list: every field, each value cut to
+ * `previewValueLength` characters, with an ellipsis when it is cut. A page of
+ * long messages then stays small, and the detail route has the full values.
+ */
+export function previewFields(fields: typeof SubmissionFields.Type): typeof SubmissionFields.Type {
+  return Object.fromEntries(
+    Object.entries(fields).map(([name, value]) => [name, previewValue(value)]),
+  );
+}
+
+/** A submission in a page of the inbox, with `preview` in place of its full fields. */
+export const InboxEntry = InboxRow.mapFields((fields) => ({
+  ...fields,
+  preview: SubmissionFields,
+}));
+
+/** A page of the inbox. Each entry has a preview, so a list shows who wrote and what. */
 export const InboxPage = Schema.Struct({
-  entries: Schema.Array(SubmissionDetail),
+  entries: Schema.Array(InboxEntry),
   cursor: Schema.NullOr(Schema.String),
 });
 

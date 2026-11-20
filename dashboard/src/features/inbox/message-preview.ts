@@ -1,5 +1,6 @@
 import type { Submission } from "~/lib/inbox-client";
 
+// The full fields of a message, or the preview of a list entry: both are records of text.
 type Fields = Submission["fields"];
 type Field = readonly [name: string, value: string];
 
@@ -77,21 +78,18 @@ export function excerptOf(fields: Fields) {
   return text.replaceAll(/\s+/gu, " ").trim();
 }
 
-const timeOfDay = new Intl.DateTimeFormat("fr", { hour: "2-digit", minute: "2-digit" });
-const dayOfYear = new Intl.DateTimeFormat("fr", { day: "numeric", month: "short" });
-const dayAndTime = new Intl.DateTimeFormat("fr", { dateStyle: "long", timeStyle: "short" });
+export type ListDay = "today" | "yesterday" | "earlier";
 
-/** When a message arrived, for a list read at `now`: the time today, then "hier", then the date. */
-export function listTime(receivedAt: number, now: number) {
+/**
+ * The day a message arrived, for a list read at `now`. The list shows a time
+ * for today, the word for yesterday, and a date for an earlier day.
+ */
+export function listDay(receivedAt: number, now: number): ListDay {
   const midnight = new Date(now);
   const today = midnight.setHours(0, 0, 0, 0);
-  if (receivedAt >= today) return timeOfDay.format(receivedAt);
+  if (receivedAt >= today) return "today";
   // The calendar day before, which lasts 23 or 25 hours when the clocks change.
   const yesterday = midnight.setDate(midnight.getDate() - 1);
-  if (receivedAt >= yesterday) return "hier";
-  return dayOfYear.format(receivedAt);
-}
-
-export function fullTime(receivedAt: number) {
-  return dayAndTime.format(receivedAt);
+  if (receivedAt >= yesterday) return "yesterday";
+  return "earlier";
 }

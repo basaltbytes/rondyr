@@ -128,7 +128,7 @@ const addEmailTarget = Effect.fnUntraced(function* (
   addresses: ReadonlyArray<string>,
 ) {
   const targets = yield* NotificationTargets;
-  return yield* targets.createEmail(form, recipientsOf(addresses));
+  return yield* targets.createEmail(form, recipientsOf(addresses), "en");
 });
 
 const deliverAccepted = Effect.fnUntraced(function* (form: FormScope, submissionId: SubmissionId) {
@@ -213,26 +213,49 @@ it.effect("sends one plain text email with the delivery ID as its idempotency ke
     assert.deepEqual(json, {
       from: "forms@rondyr.test",
       to: ["mailed-team@example.com", "owner@example.com"],
-      subject: "Nouveau message : Form mailed",
+      subject: "New message: Form mailed",
       reply_to: ["customer@example.test"],
       text: [
-        "Nouveau message reçu par le formulaire « Form mailed ».",
+        "New message received through the form “Form mailed”.",
         "",
-        "email :",
+        "email:",
         "customer@example.test",
         "",
-        "message :",
+        "message:",
         "Is there room in the pottery class?",
         "",
         "-- ",
-        "Formulaire : Form mailed",
-        "Reçu le : 1 janvier 1970 à 00:00:00 UTC",
-        `Identifiant de livraison : ${row?.id ?? ""}`,
+        "Form: Form mailed",
+        "Received: 1 January 1970 at 00:00:00 UTC",
+        `Delivery ID: ${row?.id ?? ""}`,
         "",
-        "Rondyr peut envoyer deux fois la même livraison. Deux messages qui portent le même identifiant de livraison sont des doublons.",
+        "Rondyr may send the same delivery twice. Two messages with the same delivery ID are duplicates.",
         "",
       ].join("\n"),
     });
+  });
+  return withServices(services(configured), scenario);
+});
+
+it.effect("writes in French the email of a target stored before the language setting", () => {
+  const submissionId = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b20");
+  const scenario = Effect.gen(function* () {
+    const form = yield* seedForm("legacy", submissionId, contact);
+    yield* Effect.promise(() =>
+      env.DB.prepare(
+        `INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, created_at)
+         VALUES ('legacy-email', 'legacy-org', 'legacy-form', 'email', ?, 0)`,
+      )
+        .bind('{"recipients":["legacy-team@example.com"]}')
+        .run(),
+    );
+    yield* deliverAccepted(form, submissionId);
+    yield* consume(submissionId);
+
+    const [request] = yield* sentTo("legacy-team@example.com");
+    const email = yield* readEmail(request?.body);
+
+    assert.strictEqual(email.subject, "Nouveau message : Form legacy");
   });
   return withServices(services(configured), scenario);
 });
@@ -363,14 +386,14 @@ it.effect("keeps visitor input out of the headers and the subject", () => {
       // No Reply-To, no custom header, and a subject built from the form name only.
       assert.notProperty(email, "reply_to");
       assert.notProperty(email, "headers");
-      assert.strictEqual(email.subject, `Nouveau message : Form injection-${index}`);
+      assert.strictEqual(email.subject, `New message: Form injection-${index}`);
       assert.deepEqual(email.to, [`injection-${index}@example.com`]);
       // Field names stay on one line of the body; values keep their line breaks as \n.
       assert.include(
         email.text,
-        "Subject: urgent Bcc: victim@example.com :\nvalue\nBcc: victim@example.com",
+        "Subject: urgent Bcc: victim@example.com:\nvalue\nBcc: victim@example.com",
       );
-      assert.include(email.text, "message :\nLine one\nLine two\nLine three");
+      assert.include(email.text, "message:\nLine one\nLine two\nLine three");
       assert.notInclude(email.text, "\r");
     }
   });
@@ -395,7 +418,7 @@ it.effect("refuses an email target and fails its deliveries when no provider is 
           formPublicId: "unconfigured",
         };
         const error = yield* Effect.flip(
-          targets.createEmail(form, recipientsOf(["a@example.com"])),
+          targets.createEmail(form, recipientsOf(["a@example.com"]), "en"),
         );
         return error._tag;
       }),
