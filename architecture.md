@@ -492,7 +492,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │                                   # consumer de livraison, relance, envoi d’essai
 ├── dashboard/src/
 │   ├── routes/
-│   ├── features/                   # authentication, inbox
+│   ├── features/                   # authentication, inbox, operations
 │   ├── components/                 # text-field, et ui/ : composants shadcn/ui (Base UI) adaptés au thème
 │   ├── hooks/                      # use-mobile
 │   ├── lib/                        # clients HTTP
@@ -517,7 +517,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 
 ### Couverture actuelle
 
-- `pnpm test:e2e` exerce le dashboard dans Chromium, dans un job CI dédié. La suite couvre le cycle de session, la création d’une organisation, la gestion des formulaires et des origines, les envois HTML avec confirmation ou redirection, le refus CORS d’un envoi JSON et la revue d’un message au champ piège rempli. Elle couvre aussi la création de destinations, les essais et la relance d’un webhook en échec. Playwright vérifie la CSP de `public/_headers` sur le dashboard compilé et surveille la console du navigateur.
+- `pnpm test:e2e` exerce le dashboard dans Chromium, dans un job CI dédié. La suite couvre le cycle de session, la création d’une organisation, la gestion des formulaires et des origines, les envois HTML avec confirmation ou redirection, le refus CORS d’un envoi JSON et la revue d’un message au champ piège rempli. Elle couvre aussi la création de destinations, les essais et la relance d’un webhook en échec. Un dernier test ouvre la page État. Playwright vérifie la CSP de `public/_headers` sur le dashboard compilé et surveille la console du navigateur.
 - Stories du modèle : seuils, doublon de `RequestClassification`, trois échecs du classificateur, revue autorisée et refusée ; quarantaine d’entrée sans appel au classificateur, doublon de `QuarantineAtIntake` avec le même `commandId` ou un autre, `RequestClassification` ignoré après elle, quarantaine d’entrée ignorée pendant une classification, acceptation et archivage d’un message mis en quarantaine à l’entrée.
 - Décodage des réponses de Jev et d’OpenAI Decisions, y compris les réponses invalides.
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.

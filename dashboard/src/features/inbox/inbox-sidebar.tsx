@@ -1,4 +1,5 @@
 import {
+  Activity,
   Archive,
   CircleCheck,
   FileText,
@@ -140,6 +141,24 @@ export function InboxSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
             ))}
+          </SidebarMenu>
+        </SidebarGroup>
+        <SidebarGroup aria-label="Exploitation">
+          <SidebarGroupLabel>Exploitation</SidebarGroupLabel>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                active={section === "operations"}
+                tooltip={sectionLabels.operations}
+                onClick={() => {
+                  onSection("operations");
+                  setOpenMobile(false);
+                }}
+              >
+                <Activity aria-hidden="true" className="size-4 shrink-0" />
+                <SidebarMenuLabel>{sectionLabels.operations}</SidebarMenuLabel>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
       </SidebarContent>

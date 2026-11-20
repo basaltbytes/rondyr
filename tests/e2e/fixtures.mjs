@@ -127,7 +127,8 @@ export const test = base.extend({
     // Password inputs have no implicit ARIA role.
     await page.getByLabel("Mot de passe").fill(owner.password);
     await page.getByRole("button", { name: "Se connecter", exact: true }).click();
-    await expect(page.getByRole("heading", { name: "Boîte de réception" })).toBeVisible();
+    // The account has no organization yet, so the dashboard opens on its first run.
+    await expect(page.getByRole("heading", { name: "Nouvelle organisation" })).toBeVisible();
     await use(page);
     expect(violations).toEqual([]);
   },

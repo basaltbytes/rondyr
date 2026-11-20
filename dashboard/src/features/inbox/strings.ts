@@ -20,6 +20,7 @@ export const sectionLabels = {
   destinations: "Destinations",
   origins: "Origines autorisées",
   organization: "Nouvelle organisation",
+  operations: "État",
 } as const;
 
 export const destinationRefusals = {

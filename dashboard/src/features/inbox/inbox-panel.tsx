@@ -32,6 +32,8 @@ interface InboxViewProps {
   readonly inboxes: readonly Inbox[];
   readonly inbox: Inbox;
   readonly account: ReactNode;
+  /** The page of the processing status, which another feature owns. */
+  readonly operations: ReactNode;
   readonly onInbox: (id: string) => void;
   /** Reload the organizations after a change to their forms. */
   readonly onFormsChanged: () => Promise<void>;
@@ -42,6 +44,7 @@ function InboxView({
   inboxes,
   inbox,
   account,
+  operations,
   onInbox,
   onFormsChanged,
   onOrganizationCreated,
@@ -193,6 +196,8 @@ function InboxView({
               )}
             </section>
           </>
+        ) : section === "operations" ? (
+          operations
         ) : (
           <InboxSettings
             section={section}
@@ -238,9 +243,11 @@ interface InboxPanelProps {
   readonly account: ReactNode;
   /** A sign-out button for the first run, which has no sidebar. */
   readonly signOut: ReactNode;
+  /** The page of the processing status, opened from the sidebar. */
+  readonly operations: ReactNode;
 }
 
-export function InboxPanel({ account, signOut }: InboxPanelProps) {
+export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
   const [inboxes, setInboxes] = useState<readonly Inbox[] | null>(null);
   const [active, setActive] = useState("");
   const [failed, setFailed] = useState(false);
@@ -277,6 +284,7 @@ export function InboxPanel({ account, signOut }: InboxPanelProps) {
         inboxes={inboxes}
         inbox={inbox}
         account={account}
+        operations={operations}
         onInbox={setActive}
         onFormsChanged={reload}
         onOrganizationCreated={created}

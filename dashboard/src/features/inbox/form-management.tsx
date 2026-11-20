@@ -109,7 +109,7 @@ export function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
   );
 
   return (
-    <div className="grid gap-4" aria-label={`Réglages du formulaire ${form.name}`}>
+    <section className="grid gap-4" aria-label={`Réglages du formulaire ${form.name}`}>
       <Card>
         <CardHeader>
           <CardTitle>Adresse d’envoi</CardTitle>
@@ -333,7 +333,7 @@ export function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </section>
   );
 }
 

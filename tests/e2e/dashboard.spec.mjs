@@ -6,13 +6,17 @@ const formName = "Contact visiteurs";
 
 async function createOrganization(page) {
   await page.getByRole("textbox", { name: "Organisation", exact: true }).fill("Atelier Rondyr");
-  await page.getByRole("textbox", { name: "Nom du formulaire" }).fill(formName);
-  await page.getByRole("button", { name: "Créer une boîte de réception" }).click();
-  await expect(page.getByRole("option", { name: "Atelier Rondyr" })).toBeAttached();
+  await page.getByRole("textbox", { name: "Nom du premier formulaire" }).fill(formName);
+  await page.getByRole("button", { name: "Créer l’organisation" }).click();
+  await expect(page.getByRole("button", { name: /^Organisation : Atelier Rondyr/u })).toBeVisible();
 }
 
-function sectionToggle(page, name) {
-  return page.getByRole("group", { name, exact: true }).getByText(name, { exact: true });
+/** Open a page from a group of the sidebar, such as "Formulaires" in "Réglages". */
+async function openSection(page, name, group = "Réglages") {
+  await page
+    .getByRole("navigation", { name: group, exact: true })
+    .getByRole("button", { name, exact: true })
+    .click();
 }
 
 function settingsFor(page, name) {
@@ -45,7 +49,7 @@ async function submitContact(site, endpoint, message) {
 
 async function addOrigin(region, origin) {
   await region.getByRole("textbox", { name: "Origine", exact: true }).fill(origin);
-  await region.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await region.getByRole("button", { name: "Ajouter l’origine" }).click();
   await expect(region.getByText(origin, { exact: true })).toBeVisible();
 }
 
@@ -65,14 +69,20 @@ async function sendJson(site, endpoint) {
   }, endpoint.href);
 }
 
-async function openSubmission(page, status, message) {
-  const row = page.getByRole("button", { name: new RegExp(`^${formName} .+ ${status}$`, "u") });
+/** Open a message from a folder of the sidebar, once the list shows it. */
+async function openSubmission(page, folder, message) {
+  await page
+    .getByRole("navigation", { name: "Messages", exact: true })
+    .getByRole("button", { name: new RegExp(`^${folder}`, "u") })
+    .click();
+  const list = page.getByRole("region", { name: "Liste des messages" });
+  const row = list.getByRole("button").filter({ hasText: message });
   await expect(async () => {
-    await page.getByRole("button", { name: "Actualiser", exact: true }).click();
+    await list.getByRole("button", { name: "Actualiser", exact: true }).click();
     await expect(row).toBeVisible({ timeout: 500 });
   }).toPass({ timeout: 10_000 });
   await row.click();
-  const reader = page.getByRole("region", { name: "Message sélectionné" });
+  const reader = page.getByRole("region", { name: "Message ouvert" });
   await expect(reader.getByText(message, { exact: true })).toBeVisible();
   return reader;
 }
@@ -83,15 +93,14 @@ test("se connecter, créer une organisation et gérer ses formulaires, puis se d
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
+  await openSection(page, "Formulaires");
   const addedName = "Demandes de devis";
   const renamed = "Devis professionnels";
+  await page.getByRole("button", { name: "Nouveau", exact: true }).click();
   await page.getByRole("textbox", { name: "Nom du formulaire" }).fill(addedName);
   await page.getByRole("button", { name: "Ajouter le formulaire" }).click();
   const beforeRename = await publicFormUrl(page, addedName);
-  await settingsFor(page, addedName)
-    .getByRole("button", { name: "Modifier le nom ou l’activité" })
-    .click();
+  await settingsFor(page, addedName).getByRole("button", { name: "Modifier", exact: true }).click();
   const edit = settingsFor(page, addedName);
   await edit.getByRole("textbox", { name: "Nom du formulaire" }).fill(renamed);
   await edit.getByRole("button", { name: "Enregistrer", exact: true }).click();
@@ -110,11 +119,12 @@ test("se connecter, créer une organisation et gérer ses formulaires, puis se d
   await openContact(site, externalOrigin, endpoint);
   expect((await submitContact(site, endpoint, "Demande après la réactivation")).status()).toBe(202);
 
-  await page.getByRole("button", { name: "Se déconnecter", exact: true }).click();
+  await page.getByRole("button", { name: /^Compte /u }).click();
+  await page.getByRole("menuitem", { name: "Se déconnecter" }).click();
   await expect(page.getByRole("heading", { name: "Connexion" })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Connexion" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Boîte de réception" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Messages" })).toHaveCount(0);
 });
 
 test("confirmer et rediriger les envois HTML, puis refuser le JSON depuis une origine retirée", async ({
@@ -124,7 +134,7 @@ test("confirmer et rediriger les envois HTML, puis refuser le JSON depuis une or
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
+  await openSection(page, "Formulaires");
   const endpoint = await publicFormUrl(page, formName);
   const site = await context.newPage();
   await openContact(site, externalOrigin, endpoint);
@@ -133,17 +143,18 @@ test("confirmer et rediriger les envois HTML, puis refuser le JSON depuis une or
   await expect(site.getByRole("heading", { name: "Message reçu" })).toBeVisible();
   await expect(site).toHaveURL(endpoint.href);
 
-  await sectionToggle(page, "Origines autorisées").click();
+  await openSection(page, "Origines autorisées");
   const origins = page.getByRole("region", {
     name: `Origines autorisées du formulaire ${formName}`,
   });
-  await expect(origins.getByText("Aucune origine.")).toBeVisible();
+  await expect(origins.getByText("Aucune origine : tous les sites sont autorisés.")).toBeVisible();
   // An empty allowlist admits all origins, so leave another entry in the list.
   await addOrigin(origins, dashboardOrigin);
   await addOrigin(origins, externalOrigin);
 
   const successUrl = `${externalOrigin}/merci`;
   const settings = settingsFor(page, formName);
+  await openSection(page, "Formulaires");
   await settings.getByRole("textbox", { name: "Adresse de redirection" }).fill(successUrl);
   await settings.getByRole("button", { name: "Enregistrer la redirection" }).click();
   await expect(settings.getByText(successUrl, { exact: true })).toBeVisible();
@@ -156,6 +167,7 @@ test("confirmer et rediriger les envois HTML, puis refuser le JSON depuis une or
 
   await settings.getByRole("button", { name: "Retirer la redirection" }).click();
   await expect(settings.getByText(successUrl, { exact: true })).toHaveCount(0);
+  await openSection(page, "Origines autorisées");
   const externalEntry = origins.getByRole("listitem").filter({ hasText: externalOrigin });
   await externalEntry.getByRole("button", { name: "Retirer", exact: true }).click();
   await expect(externalEntry).toHaveCount(0);
@@ -171,7 +183,7 @@ test("mettre en quarantaine un message au champ piège rempli et le revoir", asy
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
+  await openSection(page, "Formulaires");
   const endpoint = await publicFormUrl(page, formName);
   const settings = settingsFor(page, formName);
   await settings.getByRole("textbox", { name: "Nom du champ piège" }).fill("societe");
@@ -184,10 +196,15 @@ test("mettre en quarantaine un message au champ piège rempli et le revoir", asy
   expect((await submitContact(site, endpoint, message)).status()).toBe(202);
   await expect(site.getByRole("heading", { name: "Message reçu" })).toBeVisible();
   const reader = await openSubmission(page, "À vérifier", message);
-  await expect(reader.getByText("À vérifier · Champ piège rempli")).toBeVisible();
-  await reader.getByRole("button", { name: "Accepter le message" }).click();
-  await expect(reader.getByText("Accepté", { exact: true })).toBeVisible();
-  await expect(reader.getByRole("button", { name: "Accepter le message" })).toHaveCount(0);
+  await expect(reader.getByText("Champ piège rempli", { exact: true })).toBeVisible();
+  // The filled trap stays visible, since it is why the message waits.
+  await expect(reader.getByText("societe", { exact: true })).toBeVisible();
+  await reader.getByRole("button", { name: "Accepter et envoyer" }).click();
+  // An accepted message leaves the folder of the messages to review.
+  await expect(reader.getByText(message, { exact: true })).toHaveCount(0);
+  const accepted = await openSubmission(page, "Acceptés", message);
+  await expect(accepted.getByText("Accepté", { exact: true })).toBeVisible();
+  await expect(accepted.getByRole("button", { name: "Accepter et envoyer" })).toHaveCount(0);
 });
 
 test("ajouter des destinations, envoyer un essai et relancer un webhook en échec", async ({
@@ -196,33 +213,32 @@ test("ajouter des destinations, envoyer un essai et relancer un webhook en éche
   externalOrigin,
 }) => {
   await createOrganization(page);
-  await sectionToggle(page, "Formulaires").click();
+  await openSection(page, "Formulaires");
   const endpoint = await publicFormUrl(page, formName);
   const receiver = "https://webhooks.example.test/bad-request-once";
   const email = "equipe@example.test";
-  const webhooksSection = sectionToggle(page, "Webhooks");
-  await webhooksSection.click();
+  await openSection(page, "Destinations");
   const webhooks = page.getByRole("region", { name: `Webhooks du formulaire ${formName}` });
-  await expect(webhooks.getByText("Aucun webhook.")).toBeVisible();
+  await expect(webhooks.getByText("Aucun webhook pour ce formulaire.")).toBeVisible();
   await webhooks.getByRole("textbox", { name: "URL du webhook" }).fill(receiver);
-  await webhooks.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await webhooks.getByRole("button", { name: "Ajouter le webhook" }).click();
   const secret = webhooks.getByText(/^whsec_[\w-]{43}$/u);
   await expect(secret).toBeVisible();
   await webhooks.getByRole("button", { name: "Masquer", exact: true }).click();
   await expect(secret).toHaveCount(0);
-  await webhooksSection.click();
-  await webhooksSection.click();
+  // Leaving the page and coming back lists the webhook without its secret.
+  await openSection(page, "Formulaires");
+  await openSection(page, "Destinations");
   const webhook = webhooks.getByRole("listitem").filter({ hasText: receiver });
   await expect(webhook).toBeVisible();
   await expect(secret).toHaveCount(0);
 
-  await sectionToggle(page, "E-mails").click();
   const emails = page.getByRole("region", {
     name: `Destinations e-mail du formulaire ${formName}`,
   });
-  await expect(emails.getByText("Aucune destination e-mail.")).toBeVisible();
+  await expect(emails.getByText("Aucune destination e-mail pour ce formulaire.")).toBeVisible();
   await emails.getByRole("textbox", { name: "Destinataires, un par ligne" }).fill(email);
-  await emails.getByRole("button", { name: "Ajouter", exact: true }).click();
+  await emails.getByRole("button", { name: "Ajouter la destination" }).click();
   const destination = emails.getByRole("listitem").filter({ hasText: email });
   await expect(destination).toBeVisible();
   await destination.getByRole("button", { name: "Envoyer un essai" }).click();
@@ -232,32 +248,50 @@ test("ajouter des destinations, envoyer un essai et relancer un webhook en éche
   await openContact(site, externalOrigin, endpoint);
   const message = "Demande avec historique de livraison";
   expect((await submitContact(site, endpoint, message)).status()).toBe(202);
-  const reader = await openSubmission(page, "Accepté", message);
+  const reader = await openSubmission(page, "Acceptés", message);
   const history = reader.getByRole("region", { name: "Livraisons du message" });
-  const webhookDelivery = history.getByRole("listitem").filter({ hasText: receiver });
+  const deliveries = history.getByRole("list").first().locator("> li");
+  const webhookDelivery = deliveries.filter({ hasText: receiver });
   const refresh = history.getByRole("button", { name: "Actualiser les livraisons" });
   const retry = webhookDelivery.getByRole("button", { name: "Relancer la livraison" });
   await expect(async () => {
     await refresh.click();
     await expect(retry).toBeVisible({ timeout: 500 });
   }).toPass({ timeout: 10_000 });
-  await expect(webhookDelivery).toContainText("Échec · 1 tentative");
-  await expect(webhookDelivery).toContainText("échec définitif");
+  await expect(webhookDelivery.getByText("Échec", { exact: true })).toBeVisible();
   await expect(webhookDelivery).toContainText("400");
+  await webhookDelivery.getByText("1 tentative", { exact: true }).click();
+  await expect(webhookDelivery.getByRole("listitem")).toContainText("échec définitif");
   await retry.click();
   await expect(async () => {
     await refresh.click();
-    await expect(webhookDelivery).toContainText("Livrée · 2 tentatives", { timeout: 500 });
+    await expect(webhookDelivery.getByText("Livrée", { exact: true })).toBeVisible({
+      timeout: 500,
+    });
   }).toPass({ timeout: 10_000 });
+  // The list of attempts is still open from the first look.
+  await expect(webhookDelivery.getByText("2 tentatives", { exact: true })).toBeVisible();
   await expect(webhookDelivery.getByRole("listitem")).toHaveCount(2);
   await expect(
     webhookDelivery.getByRole("listitem").filter({ hasText: "Tentative 2" }),
   ).toContainText("livrée");
   await expect(retry).toHaveCount(0);
-  await expect(
-    history.getByRole("listitem").filter({ hasText: `E-mail à ${email}` }),
-  ).toContainText("Livrée · 1 tentative");
+  const emailDelivery = deliveries.filter({ hasText: `E-mail à ${email}` });
+  await expect(emailDelivery.getByText("Livrée", { exact: true })).toBeVisible();
+  await expect(emailDelivery.getByText("1 tentative", { exact: true })).toBeVisible();
 
+  await openSection(page, "Destinations");
   await webhook.getByRole("button", { name: "Envoyer un essai" }).click();
   await expect(webhook.getByRole("status")).toHaveText(/Message d’essai livré/u);
+});
+
+test("voir l’état du traitement de l’organisation", async ({ dashboard: page }) => {
+  await createOrganization(page);
+  await openSection(page, "État", "Exploitation");
+  const status = page.getByRole("region", { name: "État de Atelier Rondyr" });
+  await expect(status.getByText("Événements non remis")).toBeVisible();
+  await expect(status.getByText("Envois répétés")).toBeVisible();
+  await expect(page.getByText("Dernière exécution réussie du Cron")).toBeVisible();
+  await page.getByRole("button", { name: "Actualiser", exact: true }).click();
+  await expect(status.getByText("Événements non remis")).toBeVisible();
 });
