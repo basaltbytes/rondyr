@@ -23,6 +23,7 @@
     "test": "pnpm build && vitest run",
     "knip": "knip",
     "doctor": "node scripts/doctor.mjs",
+    "evaluate": "node evals/cli.ts",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm test:lint && pnpm knip && pnpm db:check && pnpm run doctor",
     "test:lint": "node --test \"tooling/oxlint/**/*.test.mjs\""
   },
