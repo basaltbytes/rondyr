@@ -228,7 +228,7 @@ La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la premiè
 
 ### Sécurité du pipeline IA
 
-Le texte d’un visiteur est transmis comme donnée à évaluer, dans un champ distinct des instructions, et il n’a aucun moyen de modifier les seuils. La taille du corps (16 Kio) borne l’entrée du modèle. Le contexte métier est limité à 2 000 unités UTF-16 sans couper de caractère. L’adaptateur OpenAI désactive la collecte de logs et le cache du gateway à chaque appel. Un message au champ piège rempli n’est jamais transmis au modèle, et un champ piège vide est retiré avant l’enregistrement. Les plafonds d’appels par organisation restent à faire (#7).
+Le texte d’un visiteur est transmis comme donnée à évaluer, dans un champ distinct des instructions, et il n’a aucun moyen de modifier les seuils. La taille du corps (16 Kio) borne l’entrée du modèle. Le contexte métier est limité à 2 000 unités UTF-16 sans couper de caractère. Jev et OpenAI Decisions désactivent la collecte de logs et le cache du gateway à chaque appel. Un message au champ piège rempli n’est jamais transmis au modèle, et un champ piège vide est retiré avant l’enregistrement. Les plafonds d’appels par organisation restent à faire (#7).
 
 ## 6. Modèle de données
 
