@@ -23,6 +23,8 @@ const DeliveryRow = Schema.Struct({
 });
 const readDeliveries = Schema.decodeUnknownEffect(Schema.Array(DeliveryRow));
 const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
+const privateFieldName = "workerd-private-field-name-44cd68";
+const privateFieldValue = "workerd-private-field-value-ca31b7";
 const invalidConfiguration = "The webhook target configuration is invalid.";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
@@ -141,7 +143,11 @@ it.live(
       );
 
       // The workerd Workers AI fixture accepts this message.
-      const automatic = yield* submit(form.publicId, { ...contact, "fixture-verdict": "accept" });
+      const automatic = yield* submit(form.publicId, {
+        ...contact,
+        "fixture-verdict": "accept",
+        [privateFieldName]: privateFieldValue,
+      });
       const manual = yield* submit(form.publicId, contact);
 
       yield* Effect.promise(() =>
@@ -191,6 +197,27 @@ it.live(
       assert.deepEqual(
         rows.map(({ target_id, attempt_count }) => [target_id, attempt_count]),
         [["studio-webhook", 1]],
+      );
+      const deliveryId = yield* Effect.promise(() =>
+        env.DB.prepare("SELECT id FROM deliveries WHERE submission_id = ?")
+          .bind(automatic)
+          .first<string>("id"),
+      );
+      assert.isNotNull(deliveryId);
+
+      yield* Effect.promise(() =>
+        vi.waitFor(
+          () =>
+            env.WORKER_LOGS.fetch(`${origin}/`)
+              .then((response) => response.text())
+              .then((logs) => {
+                assert.include(logs, "Delivery attempt finished");
+                assert.include(logs, deliveryId);
+                assert.notInclude(logs, privateFieldName);
+                assert.notInclude(logs, privateFieldValue);
+              }),
+          { timeout: 5_000, interval: 100 },
+        ),
       );
     }),
   45_000,

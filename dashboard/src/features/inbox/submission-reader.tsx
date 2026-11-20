@@ -5,7 +5,9 @@ import { getSubmission, InboxRequestError, reviewSubmission } from "~/lib/inbox-
 import type { Inbox, Submission } from "~/lib/inbox-client";
 
 import { DeliveryHistory } from "./delivery-history.tsx";
-import { statusLabels, reviewReasons } from "./strings.ts";
+import { reviewReasons } from "~/lib/status-labels";
+
+import { statusLabels } from "./strings.ts";
 
 interface SubmissionReaderProps {
   readonly inboxId: Inbox["id"];
