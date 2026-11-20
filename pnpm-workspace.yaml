@@ -22,3 +22,5 @@ peerDependencyRules:
   allowedVersions:
     "capnp-es@0.0.16>typescript": "7.0.2"
     "@cloudflare/unenv-preset@2.16.2>unenv": "2.0.0-rc.25"
+patchedDependencies:
+  "@alchemy.run/domain@2.0.0-beta.87": patches/@alchemy.run__domain@2.0.0-beta.87.patch
