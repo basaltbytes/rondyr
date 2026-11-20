@@ -21,8 +21,9 @@ export const ClassificationReason = Schema.Literals([
  * records the reason with the submission, in the same transaction, so every
  * hand-off of the submission carries the same reason.
  * `honeypot`: the form's honeypot field has a value.
+ * `repetition`: intake counted enough recent submissions from the same sender or with the same content.
  */
-export const IntakeReason = Schema.Literals(["honeypot"]);
+export const IntakeReason = Schema.Literals(["honeypot", "repetition"]);
 export type IntakeReason = typeof IntakeReason.Type;
 
 /** Why a submission is quarantined: a classification rule or an intake check. */
@@ -36,7 +37,7 @@ export const ClassificationResult = Schema.Union([
   Schema.TaggedStruct("ClassificationError", {}),
 ]);
 
-export const rulesVersion = 1;
+export const rulesVersion = 2;
 
 export function reviewReason(scores: typeof ClassificationScores.Type) {
   if (scores.spam >= 0.7) return "probable-spam";

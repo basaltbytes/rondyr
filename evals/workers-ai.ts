@@ -3,6 +3,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import type { scoreWithJev } from "../src/adapters/ai/jev.ts";
 import type { scoreWithOpenAi } from "../src/adapters/ai/openai-decisions.ts";
+import { ClassifierInput } from "../src/domain/submissions/classifier-input.ts";
 
 type JevBinding = Parameters<typeof scoreWithJev>[0];
 type DecisionsBinding = Parameters<typeof scoreWithOpenAi>[0];
@@ -13,15 +14,13 @@ export type ClassifierModel =
   | Parameters<DecisionsBinding["run"]>[0];
 
 /** The input that one of the adapters sends. */
-export type ClassifierInput =
-  | Parameters<JevBinding["run"]>[1]
-  | Parameters<DecisionsBinding["run"]>[1];
+export type ModelInput = Parameters<JevBinding["run"]>[1] | Parameters<DecisionsBinding["run"]>[1];
 
 /** The part of the Workers AI binding that both adapters call. */
 export interface ModelBinding {
   readonly run: (
     model: ClassifierModel,
-    input: ClassifierInput,
+    input: ModelInput,
     options: AiOptions,
   ) => ReturnType<Ai["run"]>;
 }
@@ -56,7 +55,7 @@ export class WorkersAi extends Context.Service<
     readonly transport: Transport;
     readonly run: (
       model: ClassifierModel,
-      input: ClassifierInput,
+      input: ModelInput,
       options: AiOptions,
     ) => Effect.Effect<Schema.JsonObject, WorkersAiFailure | UnsupportedGatewayOptions>;
   }
@@ -133,7 +132,7 @@ export const workersAiOverHttp = Layer.effect(
 
     const run = Effect.fn("WorkersAi.run")(function* (
       model: ClassifierModel,
-      input: ClassifierInput,
+      input: ModelInput,
       options: AiOptions,
     ) {
       const { headers, unsupported } = gatewayHeaders(options);
@@ -199,10 +198,11 @@ function pseudoScore(text: string) {
   return Math.round((hash / 0x1_0000_0000) * 1000) / 1000;
 }
 
-function dryAnswer(model: ClassifierModel, input: ClassifierInput): Schema.JsonObject {
+const encodeDryInput = Schema.encodeEffect(Schema.fromJsonString(ClassifierInput));
+
+const dryAnswer = Effect.fnUntraced(function* (model: ClassifierModel, input: ModelInput) {
   if ("state" in input) {
-    const { submission_fields: fields, business_context: context } = input.state;
-    const text = [...Object.entries(fields).flat(), context].join("\u0000");
+    const text = yield* encodeDryInput(input.state).pipe(Effect.orDie);
     const answers: Record<string, Schema.JsonObject> = {};
     for (const name of Object.keys(input.questions)) {
       answers[name] = { type: "noul", noul: pseudoScore(`${model}\u0000${name}\u0000${text}`) };
@@ -219,7 +219,7 @@ function dryAnswer(model: ClassifierModel, input: ClassifierInput): Schema.JsonO
     answers,
     usage: { input_tokens: input.input.length, output_tokens: 0 },
   };
-}
+});
 
 /** Answers like Workers AI with stable fake scores, so the whole run works without credentials. */
 export const workersAiDry = Layer.succeed(WorkersAi, {
@@ -228,6 +228,6 @@ export const workersAiDry = Layer.succeed(WorkersAi, {
     const { unsupported } = gatewayHeaders(options);
     if (unsupported.length > 0)
       return yield* UnsupportedGatewayOptions.make({ options: unsupported });
-    return dryAnswer(model, input);
+    return yield* dryAnswer(model, input);
   }),
 });

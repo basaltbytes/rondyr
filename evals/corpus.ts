@@ -1,5 +1,6 @@
-import { Effect, FileSystem, Path, Schema } from "effect";
+import { DateTime, Effect, FileSystem, Option, Path, Schema } from "effect";
 
+import { classifierContext } from "../src/domain/submissions/classifier-input.ts";
 import { SubmissionFields } from "../src/domain/submissions/submission-fields.ts";
 
 export const Label = Schema.Literals(["legitimate", "spam", "ambiguous", "off-topic"]);
@@ -18,6 +19,15 @@ export const Family = Schema.String.check(
   Schema.isPattern(/^[a-z0-9][a-z0-9-]{0,63}$/u, { message: "Expected a kebab-case family" }),
 );
 
+const ReceivedDate = Schema.String.check(
+  Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u),
+  Schema.makeFilter(
+    (value) =>
+      Option.exists(DateTime.make(value), (date) => DateTime.formatIsoDateUtc(date) === value) ||
+      "Expected a valid calendar date",
+  ),
+);
+
 /** One line of a corpus file. `duplicates` is the number of identical submissions it stands for. */
 export const CorpusEntry = Schema.Struct({
   id: EntryId,
@@ -27,7 +37,7 @@ export const CorpusEntry = Schema.Struct({
   note: Schema.optionalKey(Schema.String),
   /** Where the submission came from, and the day it was received (`YYYY-MM-DD`). Never sent to a classifier. */
   source: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
-  received: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))),
+  received: Schema.optionalKey(ReceivedDate),
   fields: SubmissionFields,
 });
 
@@ -57,11 +67,6 @@ const decodeLine = Schema.decodeUnknownEffect(Schema.fromJsonString(CorpusEntry)
 
 export function weight(entry: CorpusEntry) {
   return entry.duplicates ?? 1;
-}
-
-// Same normalization as src/adapters/ai/classifier.ts applies to a form's business context.
-export function classifierContext(raw: string) {
-  return raw.trim().slice(0, 2000);
 }
 
 /**

@@ -1,8 +1,8 @@
 # Classifier evaluation
 
-`pnpm evaluate` runs a corpus of labeled submissions through the two classifiers of the Worker, Jev and OpenAI Decisions, and reports how each one decides. It runs in Node, outside the Worker, and calls the adapters of `src/adapters/ai` with the gateway options of `src/adapters/ai/gateway.ts`, then applies `reviewReason` from `src/domain/submissions/classification.ts` to the scores. A result is the decision the Worker would take with the same fields, the same business context and rules version `rulesVersion`.
+`pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `src/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
 
-No measurement has been recorded yet. The thresholds are still the first estimate described in [architecture.md](../architecture.md#5-classification-intelligente), and issue [#6](https://github.com/basaltbytes/rondyr/issues/6) sets them per classifier from these reports.
+The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31). The model score thresholds still come from the first estimate described in [architecture.md](../architecture.md#5-classification-intelligente). Issue [#6](https://github.com/basaltbytes/rondyr/issues/6) tracks thresholds per classifier.
 
 The harness isn't part of the Worker: nothing in `src/` imports `evals/`, and `pnpm deploy:dry` checks the bundle size as before.
 
@@ -19,7 +19,7 @@ A corpus is a JSON Lines file: one submission per line, blank lines ignored.
 | `id` | Yes | Unique in the file. Letters, digits, `.`, `_` and `-`, up to 100 characters, such as `bb-spam-001`. |
 | `label` | Yes | `legitimate`, `spam`, `ambiguous` or `off-topic`. |
 | `family` | No | A kebab-case group, such as `price-probe` or `lead-gen-callback`, to read the misses by kind. |
-| `duplicates` | No | How many identical submissions the line stands for. Defaults to 1. |
+| `duplicates` | No | How many identical submissions arrived on the line's date. Defaults to 1. Each occurrence counts towards the history of the next. |
 | `note` | No | Free text for whoever edits the corpus. Reports never include it. |
 | `source` | No | Where the submission came from. Reports never include it. |
 | `received` | No | The day it was received, as `YYYY-MM-DD`. |
@@ -29,6 +29,8 @@ A corpus is a JSON Lines file: one submission per line, blank lines ignored.
 
 Any other key is an error, so a typo such as `familly` doesn't go unnoticed. The loader checks every line and lists each invalid one with its line number and the failing key, without the value.
 
+Dated lines are replayed by `received`, with ties resolved by file order. Undated lines share a separate history in file order, without date expiration. When the dates of duplicate submissions span several days, record them as separate lines so the 30-day window applies to each date.
+
 ### Business context
 
 The business context of the form is in a second file next to the corpus, with the same name and `.context.txt` in place of `.jsonl`: `evals/corpus/synthetic.jsonl` goes with `evals/corpus/synthetic.context.txt`. The harness trims it and keeps the first 2,000 characters, as the Worker does. An empty file means the form has no business context; the classifiers are then asked about spam only, and no message can be quarantined for low relevance.
@@ -37,7 +39,7 @@ A separate file keeps the corpus lines in the shape the issue describes, so an e
 
 ### Synthetic corpus
 
-`evals/corpus/synthetic.jsonl` is committed. It contains 40 lines written for a fictional pottery workshop in Lyon: 15 legitimate, 5 off-topic, 5 ambiguous and 15 spam, in French, English, German, Spanish, Latin, Basque and Hawaiian. The legitimate messages are hard on purpose: a one-line question without a greeting, "merci pour samedi !!", a message in capitals, a link to a photo, a shop that wants to sell the workshop's mugs, a journalist asking for an interview. The spam follows the families observed on a real contact form (see the comment on #6), including promotions sent from an address on the workshop's own domain and links placed in the `name` field. People appear by first name only, and every address and link uses the reserved `.example` domain.
+`evals/corpus/synthetic.jsonl` contains 47 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The corpus includes terse questions, links in the `name` field and promotions sent from the workshop's own domain. People appear by first name only, and every address and link uses the reserved `.example` domain.
 
 It's small: a result on it says whether the pipeline works and gives a first idea, not a measure of the classifiers.
 
@@ -96,7 +98,7 @@ A call has 12 seconds, as in the Worker. A failure that the adapter marks retrya
 
 ### Cache
 
-Each scored call is appended to `evals/out/cache.jsonl` as soon as it returns, so an interrupted run resumes where it stopped and a second run doesn't pay again. The key is the transport (`workers-ai` or `dry`), the classifier, the model name the adapter asks for, `rulesVersion`, the line id and a SHA-256 of the fields and the business context. Editing a line or the context scores that line again; a new rules version scores everything again. Failures aren't cached.
+Each scored call is appended to `evals/out/cache.jsonl` as soon as it returns, so an interrupted run can resume. The key is the transport (`workers-ai` or `dry`), the classifier, the requested model, `rulesVersion`, the line ID and a SHA-256 of the full classifier input. Editing an earlier submission can change the facts and invalidate later cache entries. Failures aren't cached.
 
 The model name in the key is the one the adapter requests, such as `typesafe/jev`. The model that answers can change behind that name (`jev-1.13.0`, then a later version); the report lists the models that answered, and `--refresh` scores everything with the current one.
 
@@ -109,7 +111,7 @@ For each classifier, in this order:
 - **Legitimate messages quarantined.** The false positives, by id, with the reason and the scores. A real message in quarantine waits for someone to find it, which is the failure that matters most.
 - **Off-topic messages quarantined.** Genuine messages that a person has to read and archive. Today's rules quarantine them for low relevance on purpose; a spam reason is the worse outcome.
 - **Spam accepted**, by id and family.
-- **Expected label and decision.** One row per label and one column per decision: `accepted`, `probable-spam`, `ambiguous`, `low-relevance`, or `classification-error` for a call that failed three times, as the Worker would record it. Each cell gives the lines, then in parentheses the submissions once `duplicates` is applied.
+- **Expected label and decision.** The table includes `repetition` for submissions in quarantine before a model call. Each cell counts distinct corpus lines and the submissions those lines represent. A line can appear in more than one cell when its occurrences get different decisions. The decision list identifies the first occurrence and number of submissions in each result.
 - **Quarantine of spam.** Spam is the positive class; legitimate and off-topic lines are the negatives; ambiguous lines and failed calls are left out. Precision is the share of quarantined lines that are spam, and recall the share of spam that is quarantined, for any reason. Both are given for lines and for submissions.
 - **Latency**: p50, p90, p95, p99 and max of the scored calls, in milliseconds, from the client. Results from the cache keep the latency of the run that recorded them.
 - **Cost**: the token usage of the answers times the per-million prices of the model pages, checked on 2026-11-20 and kept in `evals/classifiers.ts`. If an answer has no usage, the cost is reported as unavailable. Calls that failed may also be billed and aren't counted.
@@ -119,7 +121,7 @@ The report also gives the returned model ids and their counts, `rulesVersion`, t
 
 ### Threshold sweep
 
-The sweep recomputes the decisions from the recorded scores with other thresholds, without new calls, so you can compare thresholds per classifier. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
+The sweep recomputes decisions from the recorded scores without new calls. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
 
 The Markdown shows the same grid as three tables. Whether a message is accepted depends only on the lower spam threshold, called `ambiguous`; the `probable-spam` reason depends only on the upper one.
 

@@ -1,11 +1,12 @@
 import { applyD1Migrations } from "cloudflare:test";
-import { env } from "cloudflare:workers";
-import { assert, beforeAll, it } from "@effect/vitest";
-import { Clock, Effect, Layer, Schema } from "effect";
+import { env, withEnv } from "cloudflare:workers";
+import { assert, beforeAll, it, vi } from "@effect/vitest";
+import { Clock, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
 import wrangler from "../../wrangler.json" with { type: "json" };
+import { submissionIntakeLive } from "../adapters/database/intake.ts";
 import { outboxLive } from "../adapters/database/outbox.ts";
 import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { BackgroundTasks } from "../ports/background-tasks.ts";
@@ -48,6 +49,92 @@ const submit = (name: string, contentType: string | null, body: BodyInit) =>
       body,
     }),
   );
+
+it.live(
+  "stores an admitted submission, its repetition facts and its outbox event in one D1 call",
+  () =>
+    Effect.gen(function* () {
+      const publicId = "intake-repetition-round-trip";
+      yield* seedForm(publicId);
+      const db = env.DB;
+      const batch = vi.fn(db.batch.bind(db));
+      const prepare = vi.fn((sql: string) => {
+        const statement = db.prepare(sql);
+        const bind = statement.bind.bind(statement);
+        vi.spyOn(statement, "bind").mockImplementation((...values) => {
+          const bound = bind(...values);
+          for (const method of ["all", "first", "raw", "run"] as const) {
+            vi.spyOn(bound, method).mockImplementation(() => {
+              assert.fail(`Intake sent a separate D1 call via ${method}`);
+            });
+          }
+          return bound;
+        });
+        return statement;
+      });
+      const receive = SubmissionIntake.use((intake) =>
+        intake.receive(
+          publicId,
+          { email: "roundtrip@example.test", message: "One D1 call" },
+          Option.none(),
+        ),
+      );
+      const services = yield* Layer.build(submissionIntakeLive);
+      const context = yield* Effect.context<never>();
+      const run = Effect.runPromiseWith(context);
+      yield* Effect.promise(() =>
+        Promise.resolve(
+          withEnv({ ...env, DB: { batch, prepare } }, () =>
+            run(receive.pipe(Effect.provideContext(services))),
+          ),
+        ),
+      );
+      assert.strictEqual(batch.mock.calls.length, 1);
+      const row = yield* Effect.promise(() =>
+        db
+          .prepare(`
+      SELECT s.prior_same_sender, s.prior_same_content, o.submission_id = s.id AS has_outbox
+      FROM submissions s JOIN outbox_events o ON o.submission_id = s.id
+      WHERE s.form_id = ?
+    `)
+          .bind(`${publicId}-form`)
+          .first(),
+      );
+      assert.deepEqual(row, { prior_same_sender: 0, prior_same_content: 0, has_outbox: 1 });
+    }),
+);
+
+it.live("counts concurrent posts in D1 transaction order", () =>
+  Effect.gen(function* () {
+    const publicId = "intake-repetition-concurrent";
+    yield* seedForm(publicId);
+    const responses = yield* Effect.forEach(
+      ["one", "two", "three"],
+      (name) =>
+        encode({ name, message: "Same concurrent message" }).pipe(
+          Effect.flatMap((body) => submit(publicId, "application/json", body)),
+        ),
+      { concurrency: "unbounded" },
+    );
+    assert.deepEqual(
+      responses.map(({ status }) => status),
+      [202, 202, 202],
+    );
+    const { results } = yield* Effect.promise(() =>
+      env.DB.prepare(`
+      SELECT prior_same_content, intake_reason FROM submissions
+      WHERE form_id = ? ORDER BY prior_same_content
+    `)
+        .bind(`${publicId}-form`)
+        .all(),
+    );
+    assert.deepEqual(results, [
+      { prior_same_content: 0, intake_reason: null },
+      { prior_same_content: 1, intake_reason: null },
+      { prior_same_content: 2, intake_reason: "repetition" },
+    ]);
+  }),
+);
 
 /** An `application/x-www-form-urlencoded` body of exactly `bytes` ASCII bytes. */
 function urlEncodedBody(bytes: number) {

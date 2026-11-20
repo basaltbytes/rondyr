@@ -26,6 +26,7 @@ const EntryDecision = Schema.Struct({
   label: Label,
   family: Schema.optionalKey(Family),
   duplicates: Schema.Int,
+  firstOccurrence: Schema.Int,
   decision: Decision,
   scores: Schema.optionalKey(ClassificationScores),
 });
@@ -36,6 +37,7 @@ const Failure = Schema.Struct({
   id: EntryId,
   label: Label,
   attempts: Schema.Int,
+  firstOccurrence: Schema.optionalKey(Schema.Int),
   retryable: Schema.Boolean,
   httpStatus: Schema.optionalKey(Schema.Int),
   summary: Schema.optionalKey(Schema.String),
@@ -106,7 +108,7 @@ export type ClassifierReport = typeof ClassifierReport.Type;
 
 /** The JSON report. It contains ids, labels, families, scores and decisions, never field values. */
 export const Report = Schema.Struct({
-  format: Schema.Literal("rondyr-classifier-evaluation/1"),
+  format: Schema.Literal("rondyr-classifier-evaluation/2"),
   generatedAt: Schema.String,
   transport: Transport,
   corpus: Schema.Struct({
@@ -143,17 +145,19 @@ function byDecision<A>(value: (decision: Decision) => A) {
     ambiguous: value("ambiguous"),
     "low-relevance": value("low-relevance"),
     "classification-error": value("classification-error"),
+    repetition: value("repetition"),
   };
 }
 
 export function decisionOf(outcome: Outcome): Decision {
   if (outcome._tag === "Failed") return "classification-error";
+  if (outcome._tag === "Repetition") return "repetition";
   return reviewReason(outcome.call.scores) ?? "accepted";
 }
 
 function count(entries: readonly CorpusEntry[]): Count {
   return {
-    entries: entries.length,
+    entries: new Set(entries.map(({ id }) => id)).size,
     submissions: entries.reduce((total, entry) => total + weight(entry), 0),
   };
 }
@@ -173,12 +177,12 @@ function sum(left: Count, right: Count): Count {
   };
 }
 
-function entryDecision(result: EntryResult): EntryDecision {
-  const { entry, outcome } = result;
+function entryDecision({ entry, outcome, firstOccurrence = 1 }: EntryResult): EntryDecision {
   const decision = {
     id: entry.id,
     label: entry.label,
     duplicates: weight(entry),
+    firstOccurrence,
     decision: decisionOf(outcome),
   };
   const withFamily = entry.family === undefined ? decision : { ...decision, family: entry.family };
@@ -285,13 +289,13 @@ function sweep(results: readonly EntryResult[]) {
   return { spam, relevance };
 }
 
-/** Quarantined on the scores, as opposed to accepted or quarantined after a failed call. */
-function scoredQuarantine(decision: Decision) {
+/** Quarantined by a rule. Failed model calls are excluded from these metrics. */
+function quarantinedByRule(decision: Decision) {
   return decision !== "accepted" && decision !== "classification-error";
 }
 
 function byId(left: EntryDecision, right: EntryDecision) {
-  return left.id.localeCompare(right.id);
+  return left.id.localeCompare(right.id) || left.firstOccurrence - right.firstOccurrence;
 }
 
 export function classifierReport(run: ClassifierRun): ClassifierReport {
@@ -305,13 +309,18 @@ export function classifierReport(run: ClassifierRun): ClassifierReport {
     ),
   );
 
-  const spamQuarantined = count(entriesWith("spam", scoredQuarantine).map(({ entry }) => entry));
+  const spamQuarantined = count(entriesWith("spam", quarantinedByRule).map(({ entry }) => entry));
   const spamAccepted = count(
     entriesWith("spam", (decision) => decision === "accepted").map(({ entry }) => entry),
   );
   const othersQuarantined = sum(
-    count(entriesWith("legitimate", scoredQuarantine).map(({ entry }) => entry)),
-    count(entriesWith("off-topic", scoredQuarantine).map(({ entry }) => entry)),
+    count(entriesWith("legitimate", quarantinedByRule).map(({ entry }) => entry)),
+    count(entriesWith("off-topic", quarantinedByRule).map(({ entry }) => entry)),
+  );
+  const spamDecided = count(
+    entriesWith("spam", (decision) => decision !== "classification-error").map(
+      ({ entry }) => entry,
+    ),
   );
 
   const returned = new Map<string, number>();
@@ -332,18 +341,19 @@ export function classifierReport(run: ClassifierRun): ClassifierReport {
       failed: run.results.filter(({ outcome }) => outcome._tag === "Failed").length,
     },
     falsePositives: decisions
-      .filter(({ label, decision }) => label === "legitimate" && scoredQuarantine(decision))
+      .filter(({ label, decision }) => label === "legitimate" && quarantinedByRule(decision))
       .toSorted(byId),
     offTopicQuarantined: decisions
-      .filter(({ label, decision }) => label === "off-topic" && scoredQuarantine(decision))
+      .filter(({ label, decision }) => label === "off-topic" && quarantinedByRule(decision))
       .toSorted(byId),
     spamAccepted: decisions
       .filter(({ label, decision }) => label === "spam" && decision === "accepted")
       .toSorted(byId),
-    failures: run.results.flatMap(({ entry, outcome }) => {
-      if (outcome._tag === "Scored") return [];
+    failures: run.results.flatMap(({ entry, outcome, firstOccurrence }) => {
+      if (outcome._tag !== "Failed") return [];
       const { _tag, ...failure } = outcome;
-      return [{ id: entry.id, label: entry.label, ...failure }];
+      const row = { id: entry.id, label: entry.label, ...failure };
+      return [firstOccurrence === undefined ? row : { ...row, firstOccurrence }];
     }),
     confusion,
     quarantineSpam: {
@@ -351,7 +361,7 @@ export function classifierReport(run: ClassifierRun): ClassifierReport {
       spamAccepted,
       othersQuarantined,
       precision: rate(spamQuarantined, sum(spamQuarantined, othersQuarantined)),
-      recall: rate(spamQuarantined, sum(spamQuarantined, spamAccepted)),
+      recall: rate(spamQuarantined, spamDecided),
     },
     latencyMs: latency(run.results),
     cost: cost(run),
@@ -367,7 +377,7 @@ export function buildReport(
   generatedAt: string,
 ): Report {
   return {
-    format: "rondyr-classifier-evaluation/1",
+    format: "rondyr-classifier-evaluation/2",
     generatedAt,
     transport,
     corpus: {

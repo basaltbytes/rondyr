@@ -16,14 +16,14 @@ import wrangler from "./wrangler.json" with { type: "json" };
 // spam and high relevance scores from Jev, or a low relevance score when the
 // business context contains `fixture-relevance: low`; any other answer does
 // not decode, so the classifier quarantines it with `classification-error`, as
-// it does without an AI binding. It records the submission fields of every
-// call, which tests read back from GET /__calls.
+// it does without an AI binding. Tests can read the fields or the complete
+// classifier inputs from GET /__calls or GET /__states.
 const workersAiFixture = `
 import { WorkerEntrypoint } from "cloudflare:workers";
 const calls = [];
 export class Ai extends WorkerEntrypoint {
   run(model, input) {
-    calls.push(input?.state?.submission_fields ?? null);
+    calls.push(input?.state ?? null);
     if (model !== "typesafe/jev" || input?.state?.submission_fields?.["fixture-verdict"] !== "accept") {
       return {};
     }
@@ -36,8 +36,10 @@ export class Ai extends WorkerEntrypoint {
 export default {
   fetch: (request) =>
     new URL(request.url).pathname === "/__calls"
-      ? Response.json(calls)
-      : new Response(null, { status: 404 }),
+      ? Response.json(calls.map((state) => state?.submission_fields ?? null))
+      : new URL(request.url).pathname === "/__states"
+        ? Response.json(calls)
+        : new Response(null, { status: 404 }),
 };
 `;
 
