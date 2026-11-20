@@ -65,10 +65,14 @@ const publishOutboxes = Effect.gen(function* () {
 
 const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
-  if (batch.queue === env.CLASSIFICATION_QUEUE_NAME) return yield* consumeSubmissions(batch);
   if (batch.queue === env.DELIVERY_QUEUE_NAME) return yield* consumeDeliveries(batch);
-  yield* Effect.logError("Queue batch from an unknown queue", { queue: batch.queue });
-  batch.retryAll();
+  // Classification is the default, as it was when the Worker had one consumer: a wrong
+  // queue name in the environment is logged and cannot stop classification. A message
+  // of another queue does not decode there and is retried, then dead-lettered.
+  if (batch.queue !== env.CLASSIFICATION_QUEUE_NAME) {
+    yield* Effect.logError("Queue batch from an unknown queue", { queue: batch.queue });
+  }
+  return yield* consumeSubmissions(batch);
 });
 
 export const workerImplementation = Effect.gen(function* () {
