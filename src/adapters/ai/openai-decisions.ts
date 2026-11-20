@@ -3,6 +3,7 @@ import { Effect, Schema } from "effect";
 import { Score } from "../../domain/submissions/classification.ts";
 import { ClassificationFailed } from "../../domain/submissions/classifier.external.ts";
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
+import { mapBindingError } from "./binding-error.ts";
 import { aiGatewayOptions } from "./gateway.ts";
 
 const Decision = Schema.Struct({
@@ -66,7 +67,7 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
         { input, questions: hasContext ? [spam, relevance] : [spam] },
         aiGatewayOptions,
       ),
-    catch: () => ClassificationFailed.make({ retryable: true }),
+    catch: mapBindingError,
   });
   const decision = yield* decodeDecision(response).pipe(
     Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
