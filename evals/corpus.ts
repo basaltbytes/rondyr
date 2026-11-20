@@ -25,6 +25,9 @@ export const CorpusEntry = Schema.Struct({
   family: Schema.optionalKey(Family),
   duplicates: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1e6 }))),
   note: Schema.optionalKey(Schema.String),
+  /** Where the submission came from, and the day it was received (`YYYY-MM-DD`). Never sent to a classifier. */
+  source: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(200))),
+  received: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u))),
   fields: SubmissionFields,
 });
 
