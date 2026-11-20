@@ -6,5 +6,5 @@
     "exports": "off",
     "types": "off"
   },
-  "ignoreDependencies": ["@effect/language-service"]
+  "ignoreDependencies": ["@effect/language-service", "tailwindcss"]
 }

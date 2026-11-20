@@ -8,6 +8,20 @@ export const statusLabels = {
   archived: "Archivé",
 } as const;
 
+export const folderLabels = {
+  quarantined: "À vérifier",
+  accepted: "Acceptés",
+  archived: "Archivés",
+  all: "Tous les messages",
+} as const;
+
+export const sectionLabels = {
+  forms: "Formulaires",
+  destinations: "Destinations",
+  origins: "Origines autorisées",
+  organization: "Nouvelle organisation",
+} as const;
+
 export const destinationRefusals = {
   "invalid-url": "Cette adresse n’est pas une URL valide.",
   "not-https": "L’adresse doit commencer par https://.",

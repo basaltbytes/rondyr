@@ -1,221 +1,249 @@
-import { useActionState, useEffect, useState } from "react";
+import { cn } from "cn";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
-import { createInbox, listInboxes, listSubmissions } from "~/lib/inbox-client";
-import type { Inbox, Page, Status, Submission } from "~/lib/inbox-client";
+import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
+import type { Counts, Inbox, Submission } from "~/lib/inbox-client";
 
-import { AllowedOrigins } from "./allowed-origins.tsx";
-import { EmailTargets } from "./email-targets.tsx";
-import { FormManagement } from "./form-management.tsx";
-import { statusLabels } from "./strings.ts";
+import { InboxSettings } from "./inbox-settings.tsx";
+import { InboxSetup } from "./inbox-setup.tsx";
+import { InboxSidebar } from "./inbox-sidebar.tsx";
+import type { Folder, Section } from "./inbox-sidebar.tsx";
+import { MessageList } from "./message-list.tsx";
 import { SubmissionReader } from "./submission-reader.tsx";
-import { WebhookTargets } from "./webhook-targets.tsx";
 
-const date = new Intl.DateTimeFormat("fr", { dateStyle: "short", timeStyle: "short" });
-
-interface InboxSetupProps {
-  readonly onCreated: () => void;
+interface Listing {
+  readonly entries: readonly Submission[];
+  readonly cursor: string | null;
+  /** When the first page was read. */
+  readonly readAt: number;
 }
 
-function InboxSetup({ onCreated }: InboxSetupProps) {
-  const [error, action, pending] = useActionState(async (_: string | null, form: FormData) => {
-    try {
-      await createInbox(form);
-      onCreated();
-      return null;
-    } catch {
-      return "La boîte n’a pas pu être créée. Vérifiez les champs et réessayez.";
-    }
-  }, null);
+function totalOf(counts: Counts | null, folder: Folder) {
+  if (counts === null) return null;
+  if (folder !== "all") return counts[folder];
   return (
-    <form className="auth-form" action={action}>
-      <label>
-        Organisation <input name="organizationName" required maxLength={100} />
-      </label>
-      <label>
-        Nom du formulaire <input name="formName" required maxLength={100} />
-      </label>
-      <label>
-        Activité de l’organisation{" "}
-        <textarea name="businessContext" maxLength={2000} placeholder="Facultatif" />
-      </label>
-      {error !== null && <p role="alert">{error}</p>}
-      <button type="submit" disabled={pending}>
-        Créer une boîte de réception
-      </button>
-    </form>
+    counts.received + counts.classifying + counts.accepted + counts.quarantined + counts.archived
   );
 }
 
 interface InboxViewProps {
+  readonly inboxes: readonly Inbox[];
   readonly inbox: Inbox;
+  readonly account: ReactNode;
+  readonly onInbox: (id: string) => void;
   /** Reload the organizations after a change to their forms. */
   readonly onFormsChanged: () => Promise<void>;
+  readonly onOrganizationCreated: () => void;
 }
 
-function InboxView({ inbox, onFormsChanged }: InboxViewProps) {
-  const [status, setStatus] = useState<Status | "">("");
-  const [cursor, setCursor] = useState<string | null>(null);
+function InboxView({
+  inboxes,
+  inbox,
+  account,
+  onInbox,
+  onFormsChanged,
+  onOrganizationCreated,
+}: InboxViewProps) {
+  const [folder, setFolder] = useState<Folder>("quarantined");
+  const [section, setSection] = useState<Section | null>(null);
+  const [listing, setListing] = useState<Listing | null>(null);
+  const [counts, setCounts] = useState<Counts | null>(null);
+  const [opened, setOpened] = useState<Submission | null>(null);
   const [revision, setRevision] = useState(0);
-  const [page, setPage] = useState<Page | null>(null);
-  const [selected, setSelected] = useState<Submission["submissionId"] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [formsOpen, setFormsOpen] = useState(false);
-  const [webhooksOpen, setWebhooksOpen] = useState(false);
-  const [emailsOpen, setEmailsOpen] = useState(false);
-  const [originsOpen, setOriginsOpen] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  function refresh() {
+  const status = folder === "all" ? "" : folder;
+
+  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the list of messages with the Rondyr API.
+  useEffect(() => {
+    const request = new AbortController();
+    void listSubmissions(inbox.id, status, null, request.signal).then(
+      ({ entries, cursor }) => {
+        setFailed(false);
+        setListing({ entries, cursor, readAt: Date.now() });
+      },
+      () => {
+        if (!request.signal.aborted) setFailed(true);
+      },
+    );
+    return () => request.abort();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh or a decision initiates a new API request.
+  }, [inbox.id, status, revision]);
+
+  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the folder counts with the Rondyr API.
+  useEffect(() => {
+    const request = new AbortController();
+    // The folders work without their counts, so a failure leaves the last known ones.
+    void countSubmissions(inbox.id, request.signal).then(setCounts, () => undefined);
+    return () => request.abort();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh or a decision initiates a new API request.
+  }, [inbox.id, revision]);
+
+  // The row of the list has the latest status of the open message.
+  const current =
+    opened === null
+      ? null
+      : (listing?.entries.find((entry) => entry.submissionId === opened.submissionId) ?? opened);
+
+  function openFolder(next: Folder) {
+    setSection(null);
+    setOpened(null);
+    if (next === folder) return;
+    setFolder(next);
+    setListing(null);
     setFailed(false);
+  }
+
+  async function loadMore() {
+    if (listing === null || listing.cursor === null) return;
+    setLoadingMore(true);
+    try {
+      const page = await listSubmissions(
+        inbox.id,
+        status,
+        listing.cursor,
+        new AbortController().signal,
+      );
+      setListing({
+        ...listing,
+        entries: [...listing.entries, ...page.entries],
+        cursor: page.cursor,
+      });
+    } catch {
+      setFailed(true);
+    }
+    setLoadingMore(false);
+  }
+
+  function reviewed(updated: Submission) {
+    if (listing !== null) {
+      const index = listing.entries.findIndex(
+        (entry) => entry.submissionId === updated.submissionId,
+      );
+      if (folder === "all") {
+        setListing({
+          ...listing,
+          entries: listing.entries.map((entry, position) => (position === index ? updated : entry)),
+        });
+        setOpened(updated);
+      } else {
+        // Like a mail client: the decided message leaves the folder and the next one opens.
+        const entries = listing.entries.filter((_, position) => position !== index);
+        setListing({ ...listing, entries });
+        setOpened(entries[index] ?? entries[index - 1] ?? null);
+      }
+    }
     setRevision((value) => value + 1);
   }
 
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the inbox with the Rondyr API.
-  useEffect(() => {
-    const request = new AbortController();
-    void listSubmissions(inbox.id, status, cursor, request.signal).then(setPage, () => {
-      if (!request.signal.aborted) setFailed(true);
-    });
-    return () => request.abort();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- The refresh event initiates a new API request.
-  }, [inbox.id, status, cursor, revision]);
-
   return (
-    <>
-      <details
-        aria-label="Formulaires"
-        onToggle={(event) => setFormsOpen(event.currentTarget.open)}
-      >
-        <summary>Formulaires</summary>
-        {formsOpen && <FormManagement inbox={inbox} onChanged={onFormsChanged} />}
-      </details>
-      {inbox.forms.length > 0 && (
-        <details
-          aria-label="Webhooks"
-          onToggle={(event) => setWebhooksOpen(event.currentTarget.open)}
-        >
-          <summary>Webhooks</summary>
-          {webhooksOpen &&
-            inbox.forms.map((form) => (
-              <WebhookTargets key={form.publicId} inboxId={inbox.id} form={form} />
-            ))}
-        </details>
-      )}
-      {inbox.forms.length > 0 && (
-        <details aria-label="E-mails" onToggle={(event) => setEmailsOpen(event.currentTarget.open)}>
-          <summary>E-mails</summary>
-          {emailsOpen &&
-            inbox.forms.map((form) => (
-              <EmailTargets key={form.publicId} inboxId={inbox.id} form={form} />
-            ))}
-        </details>
-      )}
-      {inbox.forms.length > 0 && (
-        <details
-          aria-label="Origines autorisées"
-          onToggle={(event) => setOriginsOpen(event.currentTarget.open)}
-        >
-          <summary>Origines autorisées</summary>
-          {originsOpen &&
-            inbox.forms.map((form) => (
-              <AllowedOrigins key={form.publicId} inboxId={inbox.id} form={form} />
-            ))}
-        </details>
-      )}
-      <div className="inbox-actions">
-        <label>
-          Statut{" "}
-          <select
-            value={status}
-            onChange={(event) => {
-              const next = Object.keys(statusLabels).find(
-                (value): value is Status =>
-                  Object.hasOwn(statusLabels, value) && value === event.target.value,
-              );
-              setStatus(next ?? "");
-              setPage(null);
-              setCursor(null);
-              refresh();
-            }}
-          >
-            <option value="">Tous les messages</option>
-            {Object.entries(statusLabels).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="button" onClick={refresh}>
-          Actualiser
-        </button>
-      </div>
-      <div className="inbox-columns">
-        <div>
-          {failed && <p role="alert">Impossible de charger les messages.</p>}
-          {page === null && !failed && <output>Chargement des messages…</output>}
-          {page?.entries.length === 0 && <p>Aucun message.</p>}
-          {page !== null && page.entries.length > 0 && (
-            <ul className="submission-list">
-              {page.entries.map((row) => (
-                <li key={row.submissionId}>
-                  <button
-                    type="button"
-                    aria-pressed={row.submissionId === selected}
-                    onClick={() => setSelected(row.submissionId)}
-                  >
-                    <strong>{row.formName}</strong>
-                    <span>
-                      {date.format(row.receivedAt)} · {statusLabels[row.status]}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="inbox-actions">
-            {cursor !== null && (
-              <button
-                type="button"
-                onClick={() => {
-                  setPage(null);
-                  setCursor(null);
-                }}
-              >
-                Première page
-              </button>
-            )}
-            {page?.cursor != null && (
-              <button
-                type="button"
-                onClick={() => {
-                  setCursor(page.cursor);
-                  setPage(null);
-                }}
-              >
-                Page suivante
-              </button>
-            )}
-          </div>
-        </div>
-        {selected !== null && (
-          <SubmissionReader
-            key={selected}
-            inboxId={inbox.id}
-            submissionId={selected}
-            revision={revision}
-            onReview={refresh}
+    <SidebarProvider className="lg:h-dvh lg:overflow-hidden">
+      <InboxSidebar
+        inboxes={inboxes}
+        inbox={inbox}
+        counts={counts}
+        folder={folder}
+        section={section}
+        account={account}
+        onInbox={onInbox}
+        onFolder={openFolder}
+        onSection={(next) => {
+          setSection(next);
+          setOpened(null);
+        }}
+      />
+      <SidebarInset className="lg:grid lg:h-dvh lg:inbox-panes">
+        {section === null ? (
+          <>
+            <MessageList
+              folder={folder}
+              entries={listing?.entries ?? null}
+              total={totalOf(counts, folder)}
+              selected={current?.submissionId ?? null}
+              hasMore={listing !== null && listing.cursor !== null}
+              loadingMore={loadingMore}
+              failed={failed}
+              now={listing?.readAt ?? 0}
+              collapsed={current !== null}
+              onOpen={setOpened}
+              onMore={() => void loadMore()}
+              onRefresh={() => setRevision((value) => value + 1)}
+            />
+            <section
+              aria-label="Message ouvert"
+              className={cn(
+                "flex min-h-0 min-w-0 flex-col bg-card",
+                current === null && "max-lg:hidden",
+              )}
+            >
+              {current === null ? (
+                <ReaderPlaceholder waiting={counts?.quarantined ?? null} />
+              ) : (
+                <SubmissionReader
+                  key={current.submissionId}
+                  inboxId={inbox.id}
+                  submission={current}
+                  revision={revision}
+                  onReviewed={reviewed}
+                  onClose={() => setOpened(null)}
+                />
+              )}
+            </section>
+          </>
+        ) : (
+          <InboxSettings
+            section={section}
+            inbox={inbox}
+            onFormsChanged={onFormsChanged}
+            onOrganizationCreated={onOrganizationCreated}
           />
         )}
-      </div>
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
+interface ReaderPlaceholderProps {
+  /** How many messages wait for a decision, when the counts are known. */
+  readonly waiting: number | null;
+}
+
+function ReaderPlaceholder({ waiting }: ReaderPlaceholderProps) {
+  return (
+    <>
+      {/* The rule under the list's header continues across the empty reader. */}
+      <div className="h-14 shrink-0 hairline-b" />
+      {waiting !== null && (
+        <div className="grid gap-2 px-5 py-6">
+          <h2 className="text-base font-semibold text-balance">
+            {waiting === 0 ? "Rien à vérifier" : "Aucun message ouvert"}
+          </h2>
+          <p className="max-w-prose text-pretty text-muted-foreground">
+            {waiting === 0 && "Le filtre n’a mis aucun message de côté."}
+            {waiting === 1 && "1 message attend votre décision. Ouvrez-le dans la liste."}
+            {waiting > 1 &&
+              `${waiting} messages attendent votre décision. Ouvrez-en un dans la liste.`}
+          </p>
+        </div>
+      )}
     </>
   );
 }
 
-export function InboxPanel() {
+interface InboxPanelProps {
+  /** The signed-in account and its menu, shown at the foot of the sidebar. */
+  readonly account: ReactNode;
+  /** A sign-out button for the first run, which has no sidebar. */
+  readonly signOut: ReactNode;
+}
+
+export function InboxPanel({ account, signOut }: InboxPanelProps) {
   const [inboxes, setInboxes] = useState<readonly Inbox[] | null>(null);
   const [active, setActive] = useState("");
   const [failed, setFailed] = useState(false);
-  const [setupOpen, setSetupOpen] = useState(false);
   const [revision, setRevision] = useState(0);
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Loads the signed-in user's organizations from the Rondyr API.
@@ -236,47 +264,39 @@ export function InboxPanel() {
     }
   }
 
+  function created() {
+    setFailed(false);
+    setRevision((value) => value + 1);
+  }
+
   const inbox = inboxes?.find(({ id }) => id === active) ?? inboxes?.[0];
+  if (inbox !== undefined && inboxes !== null) {
+    return (
+      <InboxView
+        key={inbox.id}
+        inboxes={inboxes}
+        inbox={inbox}
+        account={account}
+        onInbox={setActive}
+        onFormsChanged={reload}
+        onOrganizationCreated={created}
+      />
+    );
+  }
+
   return (
-    <section className="inbox">
-      <h2>Boîte de réception</h2>
-      {failed && <p role="alert">Impossible de charger les organisations.</p>}
-      {inboxes === null && !failed && <output>Chargement des organisations…</output>}
-      {inboxes !== null && (
-        <>
-          <div className="inbox-actions">
-            {inbox !== undefined && (
-              <label>
-                Organisation{" "}
-                <select value={inbox.id} onChange={(event) => setActive(event.target.value)}>
-                  {inboxes.map(({ id, name }) => (
-                    <option key={id} value={id}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {inboxes.length > 0 && (
-              <button type="button" onClick={() => setSetupOpen(!setupOpen)}>
-                Nouvelle organisation
-              </button>
-            )}
-          </div>
-          {(setupOpen || inboxes.length === 0) && (
-            <InboxSetup
-              onCreated={() => {
-                setSetupOpen(false);
-                setFailed(false);
-                setRevision((value) => value + 1);
-              }}
-            />
-          )}
-          {inbox !== undefined && (
-            <InboxView key={inbox.id} inbox={inbox} onFormsChanged={reload} />
-          )}
-        </>
+    <main className="mx-auto grid max-w-xl gap-5 px-5 py-12">
+      <h1 className="text-lg font-semibold">Rondyr</h1>
+      {failed && (
+        <p role="alert" className="text-sm text-destructive">
+          Impossible de charger les organisations.
+        </p>
       )}
-    </section>
+      {inboxes === null && !failed && (
+        <output className="text-sm text-muted-foreground">Chargement des organisations…</output>
+      )}
+      {inboxes !== null && <InboxSetup onCreated={created} />}
+      {signOut}
+    </main>
   );
 }

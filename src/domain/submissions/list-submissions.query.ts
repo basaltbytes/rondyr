@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect";
 
 import { InboxStore } from "./inbox-store.ts";
 import { Inbox } from "./inbox.projection.ts";
-import { InboxRow, SubmissionStatus } from "./inbox.ts";
+import { SubmissionDetail, SubmissionStatus } from "./inbox.ts";
 import { CurrentReviewer, ReviewSession } from "./review-session.middleware.ts";
 import {
   InboxUnavailable,
@@ -16,7 +16,7 @@ export class ListSubmissions extends Domain.Query(
   "ListSubmissions",
   {
     input: { organizationId: OrganizationId, status: Schema.optionalKey(SubmissionStatus) },
-    success: InboxRow,
+    success: SubmissionDetail,
     paged: true,
     waitsFor: [Inbox],
     middleware: [ReviewSession],

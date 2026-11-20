@@ -1,12 +1,18 @@
 import { Schema } from "effect";
 
 import { InboxOrganizationWithForms, SetupInbox } from "@rondyr/contracts/inbox-setup";
-import { InboxPage, SubmissionDetail, SubmissionStatus } from "@rondyr/contracts/inbox";
+import {
+  InboxCounts,
+  InboxPage,
+  SubmissionDetail,
+  SubmissionStatus,
+} from "@rondyr/contracts/inbox";
 
 export type Inbox = typeof InboxOrganizationWithForms.Type;
 export type Page = typeof InboxPage.Type;
 export type Submission = typeof SubmissionDetail.Type;
 export type Status = typeof SubmissionStatus.Type;
+export type Counts = typeof InboxCounts.Type;
 
 export class InboxRequestError extends Schema.TaggedError<
   InboxRequestError,
@@ -24,6 +30,7 @@ const submissions = (id: Inbox["id"]) => `${organizations}/${encodeURIComponent(
 const decodeInboxes = Schema.decodeUnknownPromise(Schema.Array(InboxOrganizationWithForms));
 const decodePage = Schema.decodeUnknownPromise(InboxPage);
 const decodeSubmission = Schema.decodeUnknownPromise(SubmissionDetail);
+const decodeCounts = Schema.decodeUnknownPromise(InboxCounts);
 
 export async function listInboxes(signal?: AbortSignal) {
   const response = await send(organizations, signal === undefined ? {} : { signal });
@@ -50,6 +57,14 @@ export async function listSubmissions(
   if (cursor !== null) params.set("after", cursor);
   const response = await send(`${submissions(id)}?${params}`, { signal });
   return decodePage(await response.json());
+}
+
+/** How many messages of the organization have each status. */
+export async function countSubmissions(id: Inbox["id"], signal: AbortSignal) {
+  const response = await send(`${organizations}/${encodeURIComponent(id)}/submission-counts`, {
+    signal,
+  });
+  return decodeCounts(await response.json());
 }
 
 export async function getSubmission(

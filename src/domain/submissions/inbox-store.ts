@@ -1,6 +1,6 @@
 import { Context, Effect } from "effect";
 
-import { InboxPage, InboxRow, SubmissionDetail, SubmissionStatus } from "./inbox.ts";
+import { InboxCounts, InboxPage, InboxRow, SubmissionDetail, SubmissionStatus } from "./inbox.ts";
 import {
   InboxUnavailable,
   InvalidInboxCursor,
@@ -25,6 +25,9 @@ export class InboxStore extends Context.Service<
       take: number,
       after: string | undefined,
     ) => Effect.Effect<typeof InboxPage.Type, InboxUnavailable | InvalidInboxCursor>;
+    readonly counts: (
+      organizationId: OrganizationId,
+    ) => Effect.Effect<typeof InboxCounts.Type, InboxUnavailable>;
     readonly detail: (
       organizationId: OrganizationId,
       submissionId: SubmissionId,

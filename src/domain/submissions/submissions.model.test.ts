@@ -33,6 +33,8 @@ const storyStart = 1_767_225_600_000;
 const store = Layer.succeed(InboxStore, {
   project: () => Effect.void,
   list: () => Effect.succeed({ entries: [], cursor: null }),
+  counts: () =>
+    Effect.succeed({ received: 0, classifying: 0, accepted: 0, quarantined: 0, archived: 0 }),
   detail: () => Effect.fail(SubmissionNotFound.make()),
 });
 
