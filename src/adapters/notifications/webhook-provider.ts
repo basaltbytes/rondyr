@@ -3,11 +3,19 @@ import { Hex } from "effect/encoding";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import { parseWebhookUrl } from "../../domain/deliveries/webhook-destination.ts";
-import { WebhookPayload, webhookHeaders } from "../../domain/deliveries/webhook.ts";
+import type { DeliveryId, NotificationTarget, TargetId } from "../../domain/deliveries/delivery.ts";
+import {
+  testWebhookFields,
+  WebhookPayload,
+  WebhookTestPayload,
+  webhookHeaders,
+} from "../../domain/deliveries/webhook.ts";
+import { SubmissionId } from "../../domain/submissions/submission.id.ts";
 import {
   NotificationFailed,
   type Notification,
   type NotificationProvider,
+  type TestNotification,
 } from "../../ports/notification-provider.ts";
 import { SecretCipher } from "../../ports/secret-cipher.ts";
 import { WebhookConfiguration } from "./webhook-configuration.ts";
@@ -18,6 +26,7 @@ const maxBodyBytes = 65_536;
 const encoder = new TextEncoder();
 const decodeConfiguration = Schema.decodeUnknownEffect(WebhookConfiguration);
 const encodePayload = Schema.encodeEffect(Schema.fromJsonString(WebhookPayload));
+const encodeTestPayload = Schema.encodeEffect(Schema.fromJsonString(WebhookTestPayload));
 
 const WorkerEnvironment = Schema.Struct({ BETTER_AUTH_URL: Schema.optionalKey(Schema.String) });
 
@@ -30,6 +39,10 @@ const workerOrigin = Effect.promise(() => import("cloudflare:workers")).pipe(
 
 function permanent(summary: string) {
   return NotificationFailed.make({ retryable: false, summary });
+}
+
+function unencodable() {
+  return permanent("The webhook body cannot be encoded.");
 }
 
 function retryable(summary: string) {
@@ -83,11 +96,10 @@ export const webhookProvider = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient;
 
   const signingSecrets = Effect.fnUntraced(function* (
-    notification: Notification,
+    owner: typeof TargetId.Type,
     configuration: typeof WebhookConfiguration.Type,
     now: number,
   ) {
-    const owner = notification.target.id;
     const current = yield* cipher
       .open(configuration.secret, owner)
       .pipe(
@@ -108,12 +120,13 @@ export const webhookProvider = Effect.gen(function* () {
     return Option.match(older, { onNone: () => [current], onSome: (value) => [current, value] });
   });
 
-  const send = Effect.fn("WebhookProvider.send")(function* (notification: Notification) {
-    yield* Effect.annotateCurrentSpan({
-      deliveryId: notification.deliveryId,
-      targetId: notification.target.id,
-    });
-    const configuration = yield* decodeConfiguration(notification.target.configuration).pipe(
+  /** Check the target, then sign and send the body that `bodyAt` encodes at the signing time. */
+  const post = Effect.fnUntraced(function* (
+    id: DeliveryId,
+    target: typeof NotificationTarget.Type,
+    bodyAt: (now: number) => Effect.Effect<string, NotificationFailed>,
+  ) {
+    const configuration = yield* decodeConfiguration(target.configuration).pipe(
       Effect.mapError(() => permanent("The webhook target configuration is invalid.")),
     );
     const origin = yield* workerOrigin;
@@ -122,19 +135,9 @@ export const webhookProvider = Effect.gen(function* () {
       return yield* permanent(`The webhook URL is refused: ${destination.failure}.`);
     }
     const now = yield* Clock.currentTimeMillis;
-    const secrets = yield* signingSecrets(notification, configuration, now);
+    const secrets = yield* signingSecrets(target.id, configuration, now);
 
-    const body = yield* encodePayload({
-      version: 1,
-      type: "submission.accepted",
-      deliveryId: notification.deliveryId,
-      submission: {
-        id: notification.submission.id,
-        receivedAt: DateTime.makeUnsafe(notification.submission.receivedAt),
-        fields: notification.fields,
-      },
-      form: { id: notification.submission.formPublicId, name: notification.submission.formName },
-    }).pipe(Effect.mapError(() => permanent("The webhook body cannot be encoded.")));
+    const body = yield* bodyAt(now);
     const bytes = encoder.encode(body);
     if (bytes.byteLength > maxBodyBytes) {
       return yield* permanent(`The webhook body is larger than ${maxBodyBytes} bytes.`);
@@ -146,7 +149,7 @@ export const webhookProvider = Effect.gen(function* () {
     const request = HttpClientRequest.post(destination.success).pipe(
       HttpClientRequest.setHeaders({
         "user-agent": "Rondyr-Webhook/1",
-        [webhookHeaders.deliveryId]: notification.deliveryId,
+        [webhookHeaders.deliveryId]: id,
         [webhookHeaders.timestamp]: timestamp,
         [webhookHeaders.signature]: signatures.join(","),
       }),
@@ -162,5 +165,42 @@ export const webhookProvider = Effect.gen(function* () {
     if (Option.isSome(failure)) return yield* failure.value;
   });
 
-  return { send } satisfies NotificationProvider["Service"];
+  const send = Effect.fn("WebhookProvider.send")(function* (notification: Notification) {
+    yield* Effect.annotateCurrentSpan({
+      deliveryId: notification.deliveryId,
+      targetId: notification.target.id,
+    });
+    yield* post(notification.deliveryId, notification.target, () =>
+      encodePayload({
+        version: 1,
+        type: "submission.accepted",
+        deliveryId: notification.deliveryId,
+        submission: {
+          id: notification.submission.id,
+          receivedAt: DateTime.makeUnsafe(notification.submission.receivedAt),
+          fields: notification.fields,
+        },
+        form: { id: notification.submission.formPublicId, name: notification.submission.formName },
+      }).pipe(Effect.mapError(unencodable)),
+    );
+  });
+
+  const sendTest = Effect.fn("WebhookProvider.sendTest")(function* (test: TestNotification) {
+    yield* Effect.annotateCurrentSpan({ testId: test.testId, targetId: test.target.id });
+    yield* post(test.testId, test.target, (now) =>
+      encodeTestPayload({
+        version: 1,
+        type: "test",
+        deliveryId: test.testId,
+        submission: {
+          id: SubmissionId.make(test.testId),
+          receivedAt: DateTime.makeUnsafe(now),
+          fields: testWebhookFields,
+        },
+        form: { id: test.form.publicId, name: test.form.name },
+      }).pipe(Effect.mapError(unencodable)),
+    );
+  });
+
+  return { send, sendTest } satisfies NotificationProvider["Service"];
 });

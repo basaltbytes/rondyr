@@ -17,6 +17,21 @@ export const WebhookPayload = Schema.Struct({
   form: Schema.Struct({ id: Schema.String, name: Schema.String }),
 });
 
+/**
+ * The body of a test request sent from the dashboard: the fields of version 1,
+ * with the type `test`. `deliveryId` and `submission.id` are the same new UUID,
+ * and no submission has it.
+ */
+export const WebhookTestPayload = WebhookPayload.mapFields((fields) => ({
+  ...fields,
+  type: Schema.Literal("test"),
+}));
+
+/** The fields of a test request. No visitor sent them. */
+export const testWebhookFields = {
+  message: "Message d’essai envoyé depuis le dashboard Rondyr. Aucun visiteur ne l’a envoyé.",
+};
+
 export const webhookHeaders = {
   deliveryId: "rondyr-delivery-id",
   timestamp: "rondyr-timestamp",

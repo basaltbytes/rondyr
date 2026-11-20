@@ -1,11 +1,17 @@
-import { Effect, Schema } from "effect";
+import { Clock, Effect, Schema } from "effect";
 
-import { emailContent } from "../../domain/deliveries/email-message.ts";
+import type { DeliveryId, NotificationTarget } from "../../domain/deliveries/delivery.ts";
+import {
+  emailContent,
+  testEmailContent,
+  type EmailContent,
+} from "../../domain/deliveries/email-message.ts";
 import { EmailSender } from "../../ports/email-sender.ts";
 import {
   NotificationFailed,
   type Notification,
   type NotificationProvider,
+  type TestNotification,
 } from "../../ports/notification-provider.ts";
 import { EmailConfiguration } from "./email-configuration.ts";
 
@@ -25,25 +31,19 @@ const notConfigured =
 export const emailProvider = Effect.gen(function* () {
   const email = yield* EmailSender;
 
-  const send = Effect.fn("EmailProvider.send")(function* (notification: Notification) {
-    yield* Effect.annotateCurrentSpan({
-      deliveryId: notification.deliveryId,
-      targetId: notification.target.id,
-    });
-    const configuration = yield* decodeConfiguration(notification.target.configuration).pipe(
+  /** Send `content` to the recipients of `target`, with `key` as the idempotency key. */
+  const mail = Effect.fnUntraced(function* (
+    target: typeof NotificationTarget.Type,
+    key: DeliveryId,
+    content: Effect.Effect<EmailContent>,
+  ) {
+    const configuration = yield* decodeConfiguration(target.configuration).pipe(
       Effect.mapError(() => permanent("The email target configuration is invalid.")),
     );
     const from = yield* email.sender.pipe(Effect.mapError(() => permanent(notConfigured)));
-    const content = emailContent(notification);
+    const { replyTo, subject, text } = yield* content;
     yield* email
-      .send({
-        from,
-        to: configuration.recipients,
-        replyTo: content.replyTo,
-        subject: content.subject,
-        text: content.text,
-        idempotencyKey: notification.deliveryId,
-      })
+      .send({ from, to: configuration.recipients, replyTo, subject, text, idempotencyKey: key })
       .pipe(
         Effect.catchTags({
           EmailRejected: ({ summary }) => Effect.fail(permanent(summary)),
@@ -54,5 +54,28 @@ export const emailProvider = Effect.gen(function* () {
       );
   });
 
-  return { send } satisfies NotificationProvider["Service"];
+  const send = Effect.fn("EmailProvider.send")(function* (notification: Notification) {
+    yield* Effect.annotateCurrentSpan({
+      deliveryId: notification.deliveryId,
+      targetId: notification.target.id,
+    });
+    yield* mail(
+      notification.target,
+      notification.deliveryId,
+      Effect.sync(() => emailContent(notification)),
+    );
+  });
+
+  const sendTest = Effect.fn("EmailProvider.sendTest")(function* (test: TestNotification) {
+    yield* Effect.annotateCurrentSpan({ testId: test.testId, targetId: test.target.id });
+    yield* mail(
+      test.target,
+      test.testId,
+      Effect.map(Clock.currentTimeMillis, (sentAt) =>
+        testEmailContent({ testId: test.testId, formName: test.form.name, sentAt }),
+      ),
+    );
+  });
+
+  return { send, sendTest } satisfies NotificationProvider["Service"];
 });
