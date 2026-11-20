@@ -28,9 +28,41 @@ jobs:
       - run: pnpm check
       - run: pnpm deploy:dry
 
-  staging:
+  gate:
+    name: Staging gate configuration
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      configured: ${{ steps.gate.outputs.configured }}
+    steps:
+      - id: gate
+        name: Check the staging smoke test settings
+        env:
+          RONDYR_SMOKE_ORGANIZATION_ID_STAGING: ${{ vars.RONDYR_SMOKE_ORGANIZATION_ID_STAGING }}
+          RONDYR_SMOKE_FORM_ID_STAGING: ${{ vars.RONDYR_SMOKE_FORM_ID_STAGING }}
+          RONDYR_SMOKE_EMAIL_STAGING: ${{ secrets.RONDYR_SMOKE_EMAIL_STAGING }}
+          RONDYR_SMOKE_PASSWORD_STAGING: ${{ secrets.RONDYR_SMOKE_PASSWORD_STAGING }}
+        run: |
+          # Print setting names only, never their values.
+          missing=()
+          for name in RONDYR_SMOKE_ORGANIZATION_ID_STAGING RONDYR_SMOKE_FORM_ID_STAGING RONDYR_SMOKE_EMAIL_STAGING RONDYR_SMOKE_PASSWORD_STAGING; do
+            if [[ -z "${!name}" ]]; then missing+=("$name"); fi
+          done
+          if [[ ${#missing[@]} -eq 0 ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          elif [[ ${#missing[@]} -eq 4 ]]; then
+            echo "::notice title=Staging gate::The staging gate is not configured: prod deploys without deploying or testing staging. To enable it, set the variables RONDYR_SMOKE_ORGANIZATION_ID_STAGING and RONDYR_SMOKE_FORM_ID_STAGING and the secrets RONDYR_SMOKE_EMAIL_STAGING and RONDYR_SMOKE_PASSWORD_STAGING. See docs/deployment.md#staging-gate."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error title=Staging gate::The staging gate is partly configured, so nothing was deployed. Missing: ${missing[*]}. Set them, or remove the other smoke settings to deploy prod without the gate. See docs/deployment.md#staging-gate."
+            exit 1
+          fi
+
+  staging:
+    if: needs.gate.outputs.configured == 'true'
+    needs: gate
     uses: ./.github/workflows/deploy.yml
     with:
       stage: staging
@@ -38,8 +70,12 @@ jobs:
     secrets: inherit
 
   production:
-    if: needs.staging.outputs.verified == 'true'
-    needs: staging
+    # Deploy prod after a passing staging gate, or directly when the gate is not configured.
+    if: >-
+      !cancelled() && needs.gate.result == 'success' &&
+      ((needs.gate.outputs.configured == 'true' && needs.staging.result == 'success' && needs.staging.outputs.verified == 'true') ||
+      (needs.gate.outputs.configured == 'false' && needs.staging.result == 'skipped'))
+    needs: [gate, staging]
     uses: ./.github/workflows/deploy.yml
     with:
       stage: prod
