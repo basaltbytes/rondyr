@@ -1,20 +1,9 @@
 import * as Domain from "@alchemy.run/domain";
-import { Schema } from "effect";
 
-import {
-  ClassificationReason,
-  ClassificationResult,
-  ClassificationScores,
-} from "./classification.ts";
+import { ClassificationResult } from "./classification.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
-import { OrganizationId, SubmissionId } from "./submission.id.ts";
-
-export class SubmissionQuarantined extends Domain.Event("SubmissionQuarantined", {
-  organizationId: OrganizationId,
-  reason: ClassificationReason,
-  scores: Schema.optionalKey(ClassificationScores),
-  rulesVersion: Schema.Int,
-}) {}
+import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
+import { SubmissionId } from "./submission.id.ts";
 
 export class RecordClassification extends Domain.Command(
   "RecordClassification",

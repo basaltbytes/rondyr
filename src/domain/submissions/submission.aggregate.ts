@@ -4,13 +4,15 @@ import { Effect, Schema } from "effect";
 import { ApproveSubmission } from "./approve-submission.command.ts";
 import { reviewReason, rulesVersion } from "./classification.ts";
 import { DismissSubmission, SubmissionDismissed } from "./dismiss-submission.command.ts";
-import { RecordClassification, SubmissionQuarantined } from "./record-classification.command.ts";
+import { QuarantineAtIntake } from "./quarantine-at-intake.command.ts";
+import { RecordClassification } from "./record-classification.command.ts";
 import {
   RequestClassification,
   ClassificationRequested,
 } from "./request-classification.command.ts";
 import { CurrentReviewer } from "./review-session.middleware.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
+import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import { SubmissionNotFound, SubmissionNotReviewable } from "./submission.rejection.ts";
 import { OrganizationId, SubmissionId } from "./submission.id.ts";
 
@@ -38,10 +40,22 @@ export class Submission extends Domain.Aggregate(
     id: SubmissionId,
     state: State,
     initial: { _tag: "Unrecorded" },
-    commands: [RequestClassification, RecordClassification, ApproveSubmission, DismissSubmission],
+    commands: [
+      RequestClassification,
+      QuarantineAtIntake,
+      RecordClassification,
+      ApproveSubmission,
+      DismissSubmission,
+    ],
     decide: {
+      // The hand-off of a received submission is either a classification request or
+      // a quarantine at intake. Only the first one that reaches the submission counts.
       RequestClassification: (state, { organizationId }) =>
         state._tag === "Unrecorded" ? [ClassificationRequested.make({ organizationId })] : [],
+      QuarantineAtIntake: (state, { organizationId, reason }) =>
+        state._tag === "Unrecorded"
+          ? [SubmissionQuarantined.make({ organizationId, reason, rulesVersion })]
+          : [],
       RecordClassification: (state, { result }) => {
         if (state._tag !== "Classifying") return [];
         const { organizationId } = state;
@@ -80,7 +94,9 @@ export class Submission extends Domain.Aggregate(
       ClassificationRequested: (state, { organizationId }) =>
         state._tag === "Unrecorded" ? { _tag: "Classifying" as const, organizationId } : state,
       SubmissionQuarantined: (state, { organizationId }) =>
-        state._tag === "Classifying" ? { _tag: "Quarantined" as const, organizationId } : state,
+        state._tag === "Unrecorded" || state._tag === "Classifying"
+          ? { _tag: "Quarantined" as const, organizationId }
+          : state,
       SubmissionAccepted: (state, { organizationId }) =>
         state._tag === "Classifying" || state._tag === "Quarantined"
           ? { _tag: "Accepted" as const, organizationId }

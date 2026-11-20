@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { ClassificationReason } from "./classification.ts";
+import { QuarantineReason } from "./classification.ts";
 import { SubmissionFields } from "./submission-fields.ts";
 import { FormId, OrganizationId, SubmissionId } from "./submission.id.ts";
 
@@ -19,7 +19,7 @@ export const InboxRow = Schema.Struct({
   formName: Schema.String,
   receivedAt: Schema.Int,
   status: SubmissionStatus,
-  reason: Schema.NullOr(ClassificationReason),
+  reason: Schema.NullOr(QuarantineReason),
 });
 
 export const InboxPage = Schema.Struct({
