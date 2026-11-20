@@ -138,8 +138,8 @@ Both limits answer `429` with `Retry-After: 60` and store nothing. A page on an 
 ## Features
 
 - Stores each submission and its outbox event atomically before answering, then publishes the event to the classification queue in the background of the same request. A cron job runs every minute as the recovery path: it publishes the events whose first publication failed, and republishes any event that wasn't handed to the classifier within 5 minutes. A duplicate queue message produces one decision.
-- Scores spam, unsolicited sales outreach, and business relevance with Jev or OpenAI Decisions. Both use Workers AI and the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment. The outreach score will affect quarantine once its threshold is measured.
-- Quarantines instead of deleting. Probable spam, ambiguous scores, off-topic messages, and classifier failures all go to human review, each with its reason.
+- Scores spam, unsolicited sales outreach, and business relevance with Jev or OpenAI Decisions. Both use Workers AI and the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment.
+- Quarantines instead of deleting. Probable spam, ambiguous scores, sales pitches, off-topic messages, and classifier failures all go to human review, each with its reason.
 - Limits each client per form with Cloudflare's Rate Limiting binding before anything is stored, without keeping IP addresses. A form can have a honeypot field: a filled one sends the message to quarantine without a classifier call, and the visitor gets the usual answer.
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
 - Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
@@ -171,8 +171,8 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 - An **organization** owns forms and an inbox. An account sees only the organizations it is a member of.
 - A **form** has a public URL, `/f/<public-id>`, and an optional **business context** that describes what the organization does. A form is **active** or **suspended**; a suspended form refuses new submissions and keeps the ones it has.
 - A **submission** is one message: a set of text fields sent to a form.
-- The **classifier** returns a spam score and, when the form has a business context, a relevance score. Both are between 0 and 1.
-- A submission is **accepted** when its spam score is under 0.30 and its relevance score, if it has one, is at least 0.35. Otherwise it is **quarantined** with a reason: probable spam (0.70 and above), ambiguous, low relevance, or classifier error. A submission with a filled honeypot field is quarantined with the reason honeypot, and the classifier doesn't score it.
+- The **classifier** returns a spam score, a sales outreach score and, when the form has a business context, a relevance score. Each one is between 0 and 1. The outreach score measures whether the sender is trying to sell or pitch something of their own to the organization. A customer asking for a quote, a shop that wants to stock the organization's products, a journalist, or a peer proposing a partnership doesn't count as outreach.
+- A submission is **accepted** when its spam score is under 0.30, its outreach score is 0.50 or less, and its relevance score, if it has one, is at least 0.35. Otherwise it is **quarantined** with the first reason that applies, in this order: probable spam (0.70 and above), ambiguous, unsolicited sales outreach, low relevance. A failed or incomplete classifier answer gives the reason classifier error. A submission with a filled honeypot field is quarantined with the reason honeypot, and the classifier doesn't score it.
 - A **review** is a person's decision on a quarantined submission: accept it, or archive it.
 - A **destination** receives the accepted submissions of a form: a **webhook**, or an **email** destination with a list of recipients. Each accepted submission creates one **delivery** per active destination.
 

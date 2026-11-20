@@ -48,24 +48,31 @@ const withBody = (response: Response) =>
 
 const credentials = { email: "forms@example.test", password: "form-routes-password" };
 
-/** The cookie of the file's account. The first call creates the account. */
-const signIn = Effect.gen(function* () {
-  const setup = yield* call(
-    "POST",
-    "/api/setup",
-    { name: "Forms", ...credentials },
-    { authorization: `Bearer ${testSetupToken}` },
-  );
-  // 201 the first time; the setup endpoint answers 404 once an account exists.
-  assert.oneOf(setup.status, [201, 404]);
-  const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
-  assert.strictEqual(session.status, 200);
-  const cookie = session.headers
-    .getSetCookie()
-    .map((value) => value.split(";", 1)[0])
-    .join("; ");
-  return { cookie, origin };
-});
+/**
+ * The cookie of the file's account. The first call creates the account. The tests reuse one
+ * session, so their sign-ins stay within the rate limit window.
+ */
+const signIn = Effect.runSync(
+  Effect.cached(
+    Effect.gen(function* () {
+      const setup = yield* call(
+        "POST",
+        "/api/setup",
+        { name: "Forms", ...credentials },
+        { authorization: `Bearer ${testSetupToken}` },
+      );
+      // 201 the first time; the setup endpoint answers 404 once an account exists.
+      assert.oneOf(setup.status, [201, 404]);
+      const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
+      assert.strictEqual(session.status, 200);
+      const cookie = session.headers
+        .getSetCookie()
+        .map((value) => value.split(";", 1)[0])
+        .join("; ");
+      return { cookie, origin };
+    }),
+  ),
+);
 
 /** Create an organization with its first form, and return the organization. */
 const createInbox = Effect.fnUntraced(function* (
@@ -450,6 +457,62 @@ it.live(
       assert.deepEqual([quarantined.status, quarantined.reason], ["quarantined", "low-relevance"]);
       const storedAfter = yield* storedCount;
       assert.strictEqual(storedAfter, 2);
+    }),
+  45_000,
+);
+
+/** Post a message to the form, wait for the classifier, and read the submission back. */
+const classified = Effect.fnUntraced(function* (
+  headers: HeadersInit,
+  organizationId: string,
+  publicId: string,
+  fields: Record<string, string>,
+) {
+  const sent = yield* call("POST", `/f/${publicId}`, fields);
+  assert.strictEqual(sent.status, 202);
+  const { "submission-id": submissionId } = yield* json(sent).pipe(Effect.flatMap(readAccepted));
+  yield* decided(submissionId);
+  return yield* request(`/api/organizations/${organizationId}/submissions/${submissionId}`, {
+    headers,
+  }).pipe(Effect.flatMap(json), Effect.flatMap(readSubmission));
+});
+
+it.live(
+  "quarantines a sales pitch for solicitation after the spam rules and before low relevance",
+  () =>
+    Effect.gen(function* () {
+      const headers = yield* signIn;
+      const { inbox, form } = yield* createInbox(
+        headers,
+        "Outreach",
+        "Pottery workshops. fixture-relevance: low",
+      );
+      const pitch = {
+        message: "Who handles your website? I have an idea to send them.",
+        "fixture-verdict": "solicitation",
+      };
+      const spammyPitch = {
+        message: "We send ceramics studios twenty workshop leads a month. Can I call you?",
+        "fixture-verdict": "ambiguous-solicitation",
+      };
+
+      const solicited = yield* classified(headers, inbox.id, form.publicId, pitch);
+      const ambiguous = yield* classified(headers, inbox.id, form.publicId, spammyPitch);
+
+      // The relevance score is low for both, and the ambiguous spam score takes precedence.
+      assert.deepEqual([solicited.status, solicited.reason], ["quarantined", "solicitation"]);
+      assert.deepEqual(solicited.fields, pitch);
+      assert.deepEqual([ambiguous.status, ambiguous.reason], ["quarantined", "ambiguous"]);
+      const page = yield* request(`/api/organizations/${inbox.id}/submissions?status=quarantined`, {
+        headers,
+      }).pipe(Effect.flatMap(json), Effect.flatMap(readPage));
+      assert.sameDeepMembers(
+        page.entries.map(({ submissionId, reason }) => [submissionId, reason]),
+        [
+          [solicited.submissionId, "solicitation"],
+          [ambiguous.submissionId, "ambiguous"],
+        ],
+      );
     }),
   45_000,
 );

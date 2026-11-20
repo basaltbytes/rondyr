@@ -2,7 +2,7 @@
 
 `pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `src/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
 
-The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31). The model score thresholds still come from the first estimate described in [architecture.md](../architecture.md#5-classification-intelligente). Issue [#6](https://github.com/basaltbytes/rondyr/issues/6) tracks thresholds per classifier.
+The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31). The spam and relevance thresholds still come from the first estimate described in [architecture.md](../architecture.md#5-classification-intelligente). The solicitation threshold comes from the measurement in [#40](https://github.com/basaltbytes/rondyr/issues/40). Issue [#6](https://github.com/basaltbytes/rondyr/issues/6) tracks thresholds per classifier.
 
 The harness isn't part of the Worker: nothing in `src/` imports `evals/`, and `pnpm deploy:dry` checks the bundle size as before.
 
@@ -45,7 +45,7 @@ The replay checks the submission's `email` field against the declared domains an
 
 ### Synthetic corpus
 
-`evals/corpus/synthetic.jsonl` contains 57 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. Unsolicited SEO, lead generation, and subcontracting offers use the `spam` label. A quote request, a delivery question from an existing supplier, and a proposal from a peer use the `legitimate` label. People appear by first name only, and every address and link uses the reserved `.example` domain.
+`evals/corpus/synthetic.jsonl` contains 60 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. Unsolicited SEO, lead generation, and subcontracting offers use the `spam` label, as does a message that asks who handles the workshop's social media so the sender can send them an idea. A quote request, a delivery question from an existing supplier, a proposal from a peer, a shop that wants to resell the workshop's pieces, and a podcast recording request use the `legitimate` label; the last two read a little like a pitch, which makes them the boundary cases of the solicitation question. People appear by first name only, and every address and link uses the reserved `.example` domain.
 
 It's small: a result on it says whether the pipeline works and gives a first idea, not a measure of the classifiers.
 
@@ -128,11 +128,11 @@ The report also gives the returned model ids and their counts, `rulesVersion`, t
 
 ### Threshold sweep
 
-The sweep recomputes decisions from the recorded scores without new calls. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
+The sweep recomputes decisions from the recorded scores without new calls. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. All of these points keep the solicitation threshold at 0.50. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
 
 The solicitation sweep tests thresholds from 0 to 1 in steps of 0.05 while holding the spam and relevance thresholds fixed. A solicitation score must exceed the threshold. The report counts all legitimate lines quarantined among scored calls and shows how many legitimate and spam lines get the `solicitation` reason. The Markdown has one table for each threshold.
 
-Run both classifiers on the same corpus before and after adding the question. Compare the solicitation sweep for both classifiers, then use the full report to confirm that the chosen threshold leaves every `legitimate` entry out of quarantine, including entries quarantined at intake or after a failed call. The Worker keeps the solicitation threshold disabled until there is a live measurement.
+The Worker quarantines a message whose solicitation score is above 0.50. On 20 November 2026, with Jev, no `legitimate` or `off-topic` line of the synthetic corpus scored above 0.32 and the four `syn-solicitation-*` lines scored between 0.94 and 0.98. OpenAI Decisions kept every `legitimate` line at 0.04 or below and scored the same four lines between 0.96 and 1. Scores vary by a few hundredths from one run to the next. When you change the solicitation question or its threshold, run both classifiers on the same corpus before and after the change, and use the full report to check that every `legitimate` entry stays out of quarantine, including entries quarantined at intake or after a failed call.
 
 ## Privacy
 

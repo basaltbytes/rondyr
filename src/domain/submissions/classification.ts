@@ -50,14 +50,14 @@ export const rulesVersion = 4;
 export const ClassificationThresholds = Schema.Struct({
   probableSpam: Score,
   ambiguous: Score,
-  solicitation: Schema.NullOr(Score),
+  solicitation: Score,
   lowRelevance: Score,
 });
 
 export const classificationThresholds: typeof ClassificationThresholds.Type = {
   probableSpam: 0.7,
   ambiguous: 0.3,
-  solicitation: null,
+  solicitation: 0.5,
   lowRelevance: 0.35,
 };
 
@@ -68,9 +68,7 @@ export function reviewReason(
   if (scores.solicitation === undefined) return "classification-error";
   if (scores.spam >= thresholds.probableSpam) return "probable-spam";
   if (scores.spam >= thresholds.ambiguous) return "ambiguous";
-  if (thresholds.solicitation !== null && scores.solicitation > thresholds.solicitation) {
-    return "solicitation";
-  }
+  if (scores.solicitation > thresholds.solicitation) return "solicitation";
   if (scores.relevance !== undefined && scores.relevance < thresholds.lowRelevance) {
     return "low-relevance";
   }
