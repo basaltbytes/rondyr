@@ -169,6 +169,7 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 | Stages, secrets, API token permissions, CI deployment | [docs/deployment.md](./docs/deployment.md) |
 | Webhook payload, signature, verification, retries | [docs/webhooks.md](./docs/webhooks.md) |
 | Email setup with Resend, limits, message format, retries | [docs/email.md](./docs/email.md) |
+| Evaluating the classifiers on a labeled corpus | [docs/evaluation.md](./docs/evaluation.md) |
 | Development setup, pull requests, license of contributions | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Rules for contributors and coding agents | [AGENTS.md](./AGENTS.md) (French) |
 | Local lint rules and where they come from | [tooling/oxlint/README.md](./tooling/oxlint/README.md) |
@@ -180,7 +181,7 @@ pnpm check         # lint, format, types, tests in workerd, Knip, migrations
 pnpm deploy:dry    # build, validate the bundle with Wrangler, check its size budget
 ```
 
-CI runs both commands without Cloudflare credentials. The tests build the Worker first and run it in workerd with D1, the queues, and the Durable Objects emulated.
+CI runs both commands without Cloudflare credentials. The tests build the Worker first and run it in workerd with D1, the queues, and the Durable Objects emulated. The tests of the classifier evaluation harness in `evals/` run in Node; `pnpm evaluate --dry evals/corpus/synthetic.jsonl` runs it without credentials, and [docs/evaluation.md](./docs/evaluation.md) covers real runs.
 
 After a schema change in `src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `database/migrations`. `pnpm dev:alchemy` runs the Alchemy stack locally with its own state and D1 database, as an alternative to `pnpm dev`.
 

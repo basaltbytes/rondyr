@@ -194,7 +194,7 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 | Aucun motif | Acceptation automatique |
 | Classificateur en échec | Quarantaine, motif `classification-error` |
 
-Ces seuils viennent d’une première estimation, pas d’une mesure. Les deux classificateurs les partagent alors que rien ne montre que leurs scores sont comparables. #6 ajoute un corpus de test, des seuils par classificateur et une politique par organisation ; #15 ajoute l’escalade facultative des cas `ambiguous` vers un second modèle.
+Ces seuils viennent d’une première estimation, pas d’une mesure. Les deux classificateurs les partagent alors que rien ne montre que leurs scores sont comparables. Le harnais d’évaluation de #6 existe : `pnpm evaluate` soumet un corpus étiqueté aux deux adaptateurs, hors du Worker, et calcule les décisions avec `reviewReason`. Aucune mesure n’est encore enregistrée ; les seuils par classificateur et la politique par organisation viendront de ses rapports. #15 ajoute l’escalade facultative des cas `ambiguous` vers un second modèle.
 
 Chaque événement de décision enregistre les scores, l’identifiant du modèle et la version des règles.
 
@@ -445,7 +445,8 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   ├── routes/
 │   ├── features/                   # authentication, inbox
 │   └── lib/                        # clients HTTP
-├── docs/                           # déploiement, webhooks, e-mail, exemple de vérification testé
+├── docs/                           # déploiement, webhooks, e-mail, évaluation, exemple de vérification testé
+├── evals/                          # harnais d’évaluation des classificateurs, corpus synthétique
 ├── public/_headers                 # en-têtes HTTP des assets du dashboard
 ├── scripts/                        # doctor, worker-budget, setup-owner
 ├── tooling/oxlint/                 # règles de lint locales et leurs tests
@@ -486,7 +487,11 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 
 ### Évaluation du filtrage
 
-Aucune mesure n’existe. #6 constitue le corpus et mesure les faux positifs, la précision, le rappel, la latence et le coût. Le critère qui prime est de ne perdre aucune demande réelle.
+Aucune mesure n’est encore enregistrée. Le critère qui prime est de ne perdre aucune demande réelle.
+
+`pnpm evaluate`, dans `evals/`, lit un corpus JSON Lines étiqueté (`legitimate`, `spam`, `ambiguous`, `off-topic`) et le contexte métier du formulaire, dans un fichier `.context.txt` à côté. Il appelle `scoreWithJev` et `scoreWithOpenAi` par l’API REST de Workers AI (`POST /ai/run`), avec les options de `src/adapters/ai/gateway.ts` transmises en en-têtes `cf-aig-*`, puis applique `reviewReason`. Le rapport donne par classificateur les messages légitimes mis en quarantaine, le spam accepté, la matrice entre étiquette et décision, pondérée ou non par `duplicates`, la précision et le rappel de la quarantaine du spam, la latence, le coût estimé, les échecs et un balayage des seuils calculé sur les scores enregistrés. Il ne contient aucune valeur de champ. Un cache par classificateur, modèle, version des règles, ligne et empreinte de l’entrée évite de payer deux fois le même appel.
+
+Le corpus synthétique `evals/corpus/synthetic.jsonl`, versionné, couvre les quatre étiquettes en plusieurs langues. Les corpus réels restent dans `evals/corpus/local/`, ignoré par Git ; le contenu des messages part chez le fournisseur du modèle, comme en production. Le mode `--dry` remplace Workers AI par des scores factices ; les tests du harnais tournent dans Node, sans réseau, dans le projet Vitest `evals`. Le chemin REST n’a pas encore été vérifié contre l’API réelle. Voir [docs/evaluation.md](docs/evaluation.md).
 
 ## 11. Déploiement et exploitation
 
