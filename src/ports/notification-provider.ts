@@ -1,6 +1,10 @@
 import { Context, Effect, Schema } from "effect";
 
-import type { DeliveryId, NotificationTarget } from "../domain/deliveries/delivery.ts";
+import type {
+  DeliveredSubmission,
+  DeliveryId,
+  NotificationTarget,
+} from "../domain/deliveries/delivery.ts";
 import type { SubmissionFields } from "../domain/submissions/submission-fields.ts";
 
 /**
@@ -17,6 +21,7 @@ export interface Notification {
   /** The same on every attempt of a delivery, so the recipient can drop duplicates. */
   readonly deliveryId: DeliveryId;
   readonly target: typeof NotificationTarget.Type;
+  readonly submission: typeof DeliveredSubmission.Type;
   readonly fields: typeof SubmissionFields.Type;
 }
 
