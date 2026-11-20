@@ -15,6 +15,24 @@ const decision = {
     { type: "predicate", name: "spam", probability: 0.03 },
   ],
 };
+const complete = {
+  ...decision,
+  answers: [...decision.answers, { type: "predicate", name: "solicitation", probability: 0.05 }],
+};
+
+it.effect("rejects a response with spam and relevance but no solicitation score", () =>
+  Effect.gen(function* () {
+    const failure = yield* Effect.flip(
+      scoreWithOpenAi(
+        { run: () => Promise.resolve(decision) },
+        classifierInput(fields, "Pottery classes", counts),
+      ),
+    );
+
+    assert.strictEqual(failure._tag, "ClassificationFailed");
+    assert.isFalse(failure.retryable);
+  }),
+);
 
 it.effect("routes Decisions through the default gateway and reads answers by name", () =>
   Effect.gen(function* () {
@@ -36,16 +54,28 @@ it.effect("routes Decisions through the default gateway and reads answers by nam
             request.questions.map(({ name, type }) => ({ name, type })),
             [
               { name: "spam", type: "predicate" },
+              { name: "solicitation", type: "predicate" },
               { name: "relevance", type: "predicate" },
             ],
           );
-          return Promise.resolve(decision);
+          return Promise.resolve({
+            ...decision,
+            answers: [
+              ...decision.answers,
+              { type: "predicate", name: "solicitation", probability: 0.75 },
+            ],
+          });
         },
       },
       classifierInput(fields, "Pottery classes", counts),
     );
 
-    assert.deepEqual(scores, { model: "gpt-6-luna", spam: 0.03, relevance: 0.9 });
+    assert.deepEqual(scores, {
+      model: "gpt-6-luna",
+      spam: 0.03,
+      solicitation: 0.75,
+      relevance: 0.9,
+    });
   }),
 );
 
@@ -56,13 +86,16 @@ it.effect("omits relevance without context and unwraps a completed Gateway respo
         run: (_model, request) => {
           assert.deepEqual(
             request.questions.map(({ name }) => name),
-            ["spam"],
+            ["spam", "solicitation"],
           );
           return Promise.resolve({
             state: "Completed",
             result: {
               model: "gpt-6-luna",
-              answers: [{ type: "predicate", name: "spam", probability: 0.03 }],
+              answers: [
+                { type: "predicate", name: "spam", probability: 0.03 },
+                { type: "predicate", name: "solicitation", probability: 0 },
+              ],
             },
           });
         },
@@ -70,7 +103,7 @@ it.effect("omits relevance without context and unwraps a completed Gateway respo
       withoutContext,
     );
 
-    assert.deepEqual(scores, { model: "gpt-6-luna", spam: 0.03 });
+    assert.deepEqual(scores, { model: "gpt-6-luna", spam: 0.03, solicitation: 0 });
   }),
 );
 
@@ -85,7 +118,7 @@ it.effect("sends Decisions a same-domain fact without the matching email address
             request.questions.find(({ name }) => name === "spam")?.instructions,
             "sender_matches_organization_domain",
           );
-          return Promise.resolve(decision);
+          return Promise.resolve(complete);
         },
       },
       classifierInput({ ...fields, email: "team@sub.studio.example" }, "Pottery classes", counts, [
@@ -105,7 +138,7 @@ it.effect("omits the domain fact and its instruction for an address outside the 
           assert.include(request.input, '"email":"team@notstudio.example"');
           for (const { instructions } of request.questions)
             assert.notInclude(instructions, "sender_matches_organization_domain");
-          return Promise.resolve(decision);
+          return Promise.resolve(complete);
         },
       },
       classifierInput({ ...fields, email: "team@notstudio.example" }, "Pottery classes", counts, [

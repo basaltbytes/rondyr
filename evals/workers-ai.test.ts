@@ -96,10 +96,10 @@ it.effect("posts the adapter's model and input to /ai/run and unwraps the API en
   Effect.gen(function* () {
     const { score, requests } = yield* workersAiAnswering(
       200,
-      '{"success":true,"errors":[],"messages":[],"result":{"model":"jev-1.13.0","answers":{"spam":{"type":"noul","noul":0.1}}}}',
+      '{"success":true,"errors":[],"messages":[],"result":{"model":"jev-1.13.0","answers":{"spam":{"type":"noul","noul":0.1},"solicitation":{"type":"noul","noul":0.2}}}}',
     );
     const scores = yield* score;
-    assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.1 });
+    assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.1, solicitation: 0.2 });
 
     const [request] = yield* Ref.get(requests);
     assert(request !== undefined);
@@ -117,7 +117,7 @@ it.effect("posts the adapter's model and input to /ai/run and unwraps the API en
     const sent = yield* decodeSent(request.body);
     assert.strictEqual(sent.model, "typesafe/jev");
     assert.deepEqual(sent.input.state, modelInput);
-    assert.deepEqual(Object.keys(sent.input.questions), ["spam"]);
+    assert.deepEqual(Object.keys(sent.input.questions), ["spam", "solicitation"]);
   }),
 );
 
@@ -125,10 +125,10 @@ it.effect("accepts a bare model answer and reports a refusal with its status onl
   Effect.gen(function* () {
     const bare = yield* workersAiAnswering(
       200,
-      '{"model":"jev-1.13.0","answers":{"spam":{"type":"noul","noul":0.8}},"usage":{"input_tokens":120,"output_tokens":0}}',
+      '{"model":"jev-1.13.0","answers":{"spam":{"type":"noul","noul":0.8},"solicitation":{"type":"noul","noul":0}},"usage":{"input_tokens":120,"output_tokens":0}}',
     );
     const scores = yield* bare.score;
-    assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.8 });
+    assert.deepEqual(scores, { model: "jev-1.13.0", spam: 0.8, solicitation: 0 });
 
     const refused = yield* workersAiAnswering(
       429,
