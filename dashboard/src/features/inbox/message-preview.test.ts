@@ -9,41 +9,105 @@ import {
   subjectOf,
 } from "./message-preview.ts";
 
-it("reads the sender from the usual field names", () => {
-  assert.deepEqual(senderOf({ prenom: "Hugo", nom: "Lambert", email: "hugo@example.org" }), {
-    name: "Hugo Lambert",
-    email: "hugo@example.org",
-    label: "Hugo Lambert",
-  });
-  assert.deepEqual(senderOf({ name: "Ada", courriel: " ada@example.org " }), {
-    name: "Ada",
-    email: "ada@example.org",
-    label: "Ada",
-  });
+// Local time, in the Europe/Paris zone of dashboard/vitest.config.ts.
+const at = (year: number, month: number, day: number, hour: number, minute: number) =>
+  new Date(year, month - 1, day, hour, minute).getTime();
+
+it("names the sender with the first name and the name", () => {
+  const sender = senderOf({ prenom: "Hugo", nom: "Lambert" });
+
+  assert.strictEqual(sender.name, "Hugo Lambert");
 });
 
-it("falls back to the address, then to no sender", () => {
-  assert.strictEqual(
-    senderOf({ adresse: "ada@example.org", message: "Bonjour" }).label,
-    "ada@example.org",
-  );
-  assert.deepEqual(senderOf({ message: "rappelez-moi" }), { name: null, email: null, label: null });
+it("names the sender with the only name field", () => {
+  const sender = senderOf({ name: "Ada Lovelace" });
+
+  assert.strictEqual(sender.name, "Ada Lovelace");
 });
 
-it("separates the body of a message from its other fields", () => {
-  const fields = { nom: "Ada", sujet: "Stage", message: "Bonjour,\n\nune question." };
-  assert.deepEqual(splitFields(fields), {
-    body: ["message", "Bonjour,\n\nune question."],
+it("finds the address of the sender by its value, under any field name", () => {
+  const sender = senderOf({ courriel: "ada@example.org" });
+
+  assert.strictEqual(sender.email, "ada@example.org");
+});
+
+it("removes the spaces around the address of the sender", () => {
+  const sender = senderOf({ email: " ada@example.org " });
+
+  assert.strictEqual(sender.email, "ada@example.org");
+});
+
+it("labels the sender with the name when there is a name and an address", () => {
+  const sender = senderOf({ nom: "Ada", email: "ada@example.org" });
+
+  assert.strictEqual(sender.label, "Ada");
+});
+
+it("labels the sender with the address when there is no name", () => {
+  const sender = senderOf({ email: "ada@example.org", message: "Bonjour" });
+
+  assert.strictEqual(sender.label, "ada@example.org");
+});
+
+it("has no label for a sender without a name or an address", () => {
+  const sender = senderOf({ message: "rappelez-moi" });
+
+  assert.strictEqual(sender.label, null);
+});
+
+it("takes the message field as the body and keeps the other fields in order", () => {
+  const split = splitFields({ nom: "Ada", message: "Bonjour.", telephone: "06 12 34 56 78" });
+
+  assert.deepEqual(split, {
+    body: ["message", "Bonjour."],
     details: [
       ["nom", "Ada"],
-      ["sujet", "Stage"],
+      ["telephone", "06 12 34 56 78"],
     ],
   });
-  assert.strictEqual(subjectOf(fields), "Stage");
-  assert.strictEqual(excerptOf(fields), "Bonjour, une question.");
 });
 
-it("shows each field of a message once", () => {
+it("takes the only field as the body, whatever its name", () => {
+  const split = splitFields({ note: "rappelez-moi" });
+
+  assert.deepEqual(split.body, ["note", "rappelez-moi"]);
+});
+
+it("has no body when several fields have no message name", () => {
+  const split = splitFields({ quantite: "250", couleur: "Blanc" });
+
+  assert.strictEqual(split.body, null);
+});
+
+it("reads the subject from the subject field", () => {
+  assert.strictEqual(
+    subjectOf({ sujet: "Stage de juillet", message: "Bonjour." }),
+    "Stage de juillet",
+  );
+});
+
+it("has no subject without a subject field", () => {
+  assert.strictEqual(subjectOf({ message: "Bonjour." }), null);
+});
+
+it("puts the body on one line for the excerpt", () => {
+  const excerpt = excerptOf({ message: "Bonjour,\n\nune   question." });
+
+  assert.strictEqual(excerpt, "Bonjour, une question.");
+});
+
+it("builds the excerpt from the other fields, without the sender, when there is no body", () => {
+  const excerpt = excerptOf({
+    nom: "Ada",
+    email: "ada@example.org",
+    quantite: "250",
+    couleur: "Blanc",
+  });
+
+  assert.strictEqual(excerpt, "250 · Blanc");
+});
+
+it("leaves out of the details the fields that the heading and the body show", () => {
   const message = readMessage({
     prenom: "Hugo",
     nom: "Lambert",
@@ -52,40 +116,46 @@ it("shows each field of a message once", () => {
     site_web: "http://spam.example",
     message: "Bonjour.",
   });
-  assert.strictEqual(message.sender.label, "Hugo Lambert");
-  assert.strictEqual(message.subject, "Stage");
-  assert.strictEqual(message.body, "Bonjour.");
-  // The honeypot field is not part of the heading, so it stays visible.
+
+  // A filled honeypot field is in neither, so the reviewer still sees it.
   assert.deepEqual(message.details, [["site_web", "http://spam.example"]]);
 });
 
-it("keeps every field that is not in the heading", () => {
-  const message = readMessage({ societe: "Maison Verdier", quantite: "250", couleur: "Blanc" });
-  assert.strictEqual(message.sender.label, null);
-  assert.strictEqual(message.body, null);
+it("keeps every field as a detail when none is a sender, a subject or a body", () => {
+  const message = readMessage({ societe: "Maison Verdier", quantite: "250" });
+
   assert.deepEqual(message.details, [
     ["societe", "Maison Verdier"],
     ["quantite", "250"],
-    ["couleur", "Blanc"],
   ]);
 });
 
-it("uses the only field as the body", () => {
-  assert.deepEqual(splitFields({ note: "rappelez-moi" }), {
-    body: ["note", "rappelez-moi"],
-    details: [],
-  });
+it("shows the time of a message received today", () => {
+  assert.strictEqual(listTime(at(2026, 11, 20, 9, 5), at(2026, 11, 20, 17, 30)), "09:05");
 });
 
-it("builds an excerpt without the sender when no field is a body", () => {
-  const fields = { nom: "Ada", email: "ada@example.org", quantite: "250", couleur: "Blanc" };
-  assert.strictEqual(splitFields(fields).body, null);
-  assert.strictEqual(excerptOf(fields), "250 · Blanc");
+it("shows the time of a message received at midnight today", () => {
+  assert.strictEqual(listTime(at(2026, 11, 20, 0, 0), at(2026, 11, 20, 17, 30)), "00:00");
 });
 
-it("shows the time today, then the day", () => {
-  const now = new Date(2026, 10, 20, 17, 30).getTime();
-  assert.strictEqual(listTime(new Date(2026, 10, 20, 9, 5).getTime(), now), "09:05");
-  assert.strictEqual(listTime(new Date(2026, 10, 19, 23, 59).getTime(), now), "hier");
-  assert.strictEqual(listTime(new Date(2026, 10, 14, 12, 0).getTime(), now), "14 nov.");
+it("shows “hier” for a message received in the last minute of yesterday", () => {
+  assert.strictEqual(listTime(at(2026, 11, 19, 23, 59), at(2026, 11, 20, 17, 30)), "hier");
+});
+
+it("shows “hier” for a message received at midnight yesterday", () => {
+  assert.strictEqual(listTime(at(2026, 11, 19, 0, 0), at(2026, 11, 20, 17, 30)), "hier");
+});
+
+it("shows the date of a message received in the last minute of the day before yesterday", () => {
+  assert.strictEqual(listTime(at(2026, 11, 18, 23, 59), at(2026, 11, 20, 17, 30)), "18 nov.");
+});
+
+it("shows the date of a message from two days ago when yesterday had 23 hours", () => {
+  // Clocks went forward on 29 March 2026, so that day was an hour short.
+  assert.strictEqual(listTime(at(2026, 3, 28, 23, 30), at(2026, 3, 30, 10, 0)), "28 mars");
+});
+
+it("shows “hier” for a message at midnight yesterday when yesterday had 25 hours", () => {
+  // Clocks went back on 25 October 2026, so that day was an hour long.
+  assert.strictEqual(listTime(at(2026, 10, 25, 0, 0), at(2026, 10, 26, 10, 0)), "hier");
 });
