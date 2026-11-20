@@ -76,7 +76,11 @@ export const AddFormOrigin = Schema.Struct({
   origin: Schema.String.check(Schema.isMaxLength(maxOriginLength)),
 });
 
-export const OriginRequestError = Schema.Struct({
-  error: Schema.Literal("origin-refused"),
-  reason: OriginRefusalReason,
-});
+export const OriginRequestError = Schema.Union([
+  Schema.Struct({
+    error: Schema.Literal("origin-refused"),
+    reason: OriginRefusalReason,
+  }),
+  // The form's success URL is on this origin: clear the success URL first.
+  Schema.Struct({ error: Schema.Literal("origin-in-use") }),
+]);

@@ -10,6 +10,12 @@ export class FormOriginNotFound extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("FormOriginNotFound", {}) {}
 
+/** The form's success URL is on this origin, so the origin stays on the list. */
+export class OriginInUse extends Schema.TaggedError<
+  OriginInUse,
+  { readonly brand: unique symbol }
+>()("OriginInUse", {}) {}
+
 export interface AddedOrigin {
   readonly origin: typeof FormOrigin.Type;
   /** False when the origin was already on the list. */
@@ -31,9 +37,10 @@ export class FormOrigins extends Context.Service<
       form: FormScope,
       origin: AllowedOrigin,
     ) => Effect.Effect<AddedOrigin, FormOriginNotFound | StorageUnavailable>;
+    /** Remove an origin. The origin of the form's success URL cannot be removed. */
     readonly remove: (
       form: FormScope,
       origin: AllowedOrigin,
-    ) => Effect.Effect<void, FormOriginNotFound | StorageUnavailable>;
+    ) => Effect.Effect<void, FormOriginNotFound | OriginInUse | StorageUnavailable>;
   }
 >()("rondyr/ports/form-origins/FormOrigins") {}
