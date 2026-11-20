@@ -59,6 +59,10 @@
         "class_name": "ClassificationPolicy"
       },
       {
+        "name": "Submissions.DeliveryPolicy",
+        "class_name": "DeliveryPolicy"
+      },
+      {
         "name": "Submissions.InboxProjection",
         "class_name": "InboxProjection"
       },
@@ -83,6 +87,10 @@
         "InboxProjectionRun",
         "ClassifySubmissionWorkflow"
       ]
+    },
+    {
+      "tag": "deliveries",
+      "new_sqlite_classes": ["DeliveryPolicy"]
     }
   ],
   "workflows": [
