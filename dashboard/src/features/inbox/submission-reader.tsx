@@ -4,6 +4,7 @@ import { useActionState, useEffect, useState } from "react";
 import { getSubmission, InboxRequestError, reviewSubmission } from "~/lib/inbox-client";
 import type { Inbox, Submission } from "~/lib/inbox-client";
 
+import { DeliveryHistory } from "./delivery-history.tsx";
 import { statusLabels, reviewReasons } from "./strings.ts";
 
 interface SubmissionReaderProps {
@@ -72,6 +73,9 @@ export function SubmissionReader({
           </div>
         ))}
       </dl>
+      {submission.status === "accepted" && (
+        <DeliveryHistory inboxId={inboxId} submissionId={submissionId} revision={revision} />
+      )}
       {problem !== null && <output>{problem}</output>}
       {submission.status === "quarantined" && (
         <form action={decide} className="inbox-actions">

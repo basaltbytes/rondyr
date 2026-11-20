@@ -7,6 +7,7 @@
     "tests/**/*.ts",
     "tooling/oxlint/**/*.ts",
     "docs/examples/**/*.ts",
+    "evals/**/*.ts",
     "worker-configuration.d.ts"
   ],
   "compilerOptions": {
@@ -40,7 +41,11 @@
           "effect/ByteSize",
           "effect/rpc",
           "effect/workflow",
-          "@effect/vitest"
+          "@effect/vitest",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/cli",
+          "@effect/platform-node"
         ],
         "diagnosticSeverity": {
           "abortControllerInEffect": "error",

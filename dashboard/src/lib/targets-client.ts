@@ -1,6 +1,7 @@
 import { Schema } from "effect";
 
 import { EmailTarget } from "@rondyr/deliveries/email";
+import { TargetTestResult } from "@rondyr/deliveries/history";
 import { DestinationTarget, TargetRequestError } from "@rondyr/deliveries/targets";
 import { IssuedWebhookSecret, WebhookTarget } from "@rondyr/deliveries/webhook";
 
@@ -11,6 +12,7 @@ export type Webhook = typeof WebhookTarget.Type;
 export type EmailDestination = typeof EmailTarget.Type;
 export type IssuedSecret = typeof IssuedWebhookSecret.Type;
 export type TargetProblem = typeof TargetRequestError.Type;
+export type TestResult = typeof TargetTestResult.Type;
 type Form = Inbox["forms"][number];
 
 export const isWebhook = Schema.is(WebhookTarget);
@@ -31,6 +33,7 @@ const decodeTarget = Schema.decodeUnknownPromise(DestinationTarget);
 const decodeEmailTarget = Schema.decodeUnknownPromise(EmailTarget);
 const decodeIssued = Schema.decodeUnknownPromise(IssuedWebhookSecret);
 const decodeProblem = Schema.decodeUnknownOption(TargetRequestError);
+const decodeTestResult = Schema.decodeUnknownPromise(TargetTestResult);
 
 async function send(path: string, init?: RequestInit) {
   const response = await fetch(path, init);
@@ -99,4 +102,10 @@ export async function setTargetActive(
 ) {
   const response = await send(`${target(id, targetId)}/${action}`, { method: "POST" });
   return decodeTarget(await response.json());
+}
+
+/** Send a test message to a target and wait for the answer of its recipient. */
+export async function testTarget(id: Inbox["id"], targetId: Target["id"]) {
+  const response = await send(`${target(id, targetId)}/test`, { method: "POST" });
+  return decodeTestResult(await response.json());
 }
