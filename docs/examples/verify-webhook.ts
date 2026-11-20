@@ -8,7 +8,7 @@ function hexBytes(hex: string) {
 
 /**
  * Returns the raw body of a Rondyr webhook request when one of its signatures
- * matches `secret` and its timestamp is less than five minutes away from `now`,
+ * matches `secret` and its timestamp is at most five minutes away from `now`,
  * in milliseconds. Returns null otherwise.
  */
 export async function verifyRondyrWebhook(request: Request, secret: string, now = Date.now()) {
