@@ -5,7 +5,7 @@ covers always-valid domain modeling (section 1), functional-core architecture,
 error discipline, workflow/idempotency, observability, testing, and hygiene.
 [SKILL.md](SKILL.md) is the trigger that pulls agents into the charter on demand;
 language mappings for section 1 live in [PYTHON.md](PYTHON.md) (pydantic v2 strict)
-and [TYPESCRIPT.md](TYPESCRIPT.md) (Effect Schema).
+and [TYPESCRIPT.md](TYPESCRIPT.md) (Zod).
 
 ## Sources, inspiration, literature
 
@@ -67,5 +67,5 @@ school, Design by Contract, and the refactoring smell catalog.
 
 ### Tooling
 
-- [Effect Schema](https://effect.website/docs/schema/introduction/) — parse-don't-validate for TypeScript boundaries, branded types.
+- [Zod](https://zod.dev) — parse-don't-validate for TypeScript boundaries, branded types.
 - [pydantic v2](https://docs.pydantic.dev) — strict-mode validated construction for Python.
