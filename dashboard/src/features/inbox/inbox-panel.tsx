@@ -5,6 +5,7 @@ import type { Inbox, Page, Status, Submission } from "~/lib/inbox-client";
 
 import { statusLabels } from "./strings.ts";
 import { SubmissionReader } from "./submission-reader.tsx";
+import { WebhookTargets } from "./webhook-targets.tsx";
 
 const date = new Intl.DateTimeFormat("fr", { dateStyle: "short", timeStyle: "short" });
 
@@ -53,6 +54,7 @@ function InboxView({ inbox }: InboxViewProps) {
   const [page, setPage] = useState<Page | null>(null);
   const [selected, setSelected] = useState<Submission["submissionId"] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [webhooksOpen, setWebhooksOpen] = useState(false);
 
   function refresh() {
     setFailed(false);
@@ -82,6 +84,15 @@ function InboxView({ inbox }: InboxViewProps) {
               </li>
             ))}
           </ul>
+        </details>
+      )}
+      {inbox.forms.length > 0 && (
+        <details onToggle={(event) => setWebhooksOpen(event.currentTarget.open)}>
+          <summary>Webhooks</summary>
+          {webhooksOpen &&
+            inbox.forms.map((form) => (
+              <WebhookTargets key={form.publicId} inboxId={inbox.id} form={form} />
+            ))}
         </details>
       )}
       <div className="inbox-actions">

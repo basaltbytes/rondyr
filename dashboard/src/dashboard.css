@@ -52,6 +52,7 @@ main {
 }
 
 .inbox button,
+.inbox input,
 .inbox select,
 .inbox textarea {
   font: inherit;

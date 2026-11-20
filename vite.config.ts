@@ -26,6 +26,7 @@ export default defineConfig({
     tsconfigPaths: true,
     alias: {
       "@rondyr/contracts": fileURLToPath(new URL("./src/domain/submissions", import.meta.url)),
+      "@rondyr/deliveries": fileURLToPath(new URL("./src/domain/deliveries", import.meta.url)),
     },
   },
 });
