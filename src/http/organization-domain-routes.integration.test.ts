@@ -171,7 +171,7 @@ it.live("returns 404 for all domain operations on an organization outside the ac
 );
 
 it.live(
-  "sends the boolean for exact and child domains, invalid addresses and lookalike domains",
+  "sends the fact for exact and child domains and omits it for every other sender",
   () =>
     Effect.gen(function* () {
       const headers = yield* signIn;
@@ -184,6 +184,7 @@ it.live(
       const added = yield* call("POST", domainsOf(inbox.id), { domain: "studio.example" }, headers);
       assert.strictEqual(added.status, 201);
 
+      // [form, message, submitted email, fact present in the model input, email in the model input]
       const messages = [
         [form.publicId, "Exact domain", "lea@studio.example", true, ""],
         [form.publicId, "Subdomain", "ops+forms@Team.Studio.Example", true, ""],
@@ -202,15 +203,29 @@ it.live(
           "lea@other-studio.example",
         ],
         [
+          form.publicId,
+          "Misleading suffix",
+          "lea@notstudio.example",
+          false,
+          "lea@notstudio.example",
+        ],
+        [form.publicId, "Missing email", undefined, false, undefined],
+        [
           otherForm.publicId,
           "Other organization",
           "lea@studio.example",
-          undefined,
+          false,
           "lea@studio.example",
         ],
       ] as const;
       yield* Effect.forEach(messages, ([publicId, message, email]) =>
-        call("POST", `/f/${publicId}`, { message, email, "fixture-verdict": "accept" }).pipe(
+        call(
+          "POST",
+          `/f/${publicId}`,
+          email === undefined
+            ? { message, "fixture-verdict": "accept" }
+            : { message, email, "fixture-verdict": "accept" },
+        ).pipe(
           Effect.tap((response) => Effect.sync(() => assert.strictEqual(response.status, 202))),
         ),
       );
@@ -228,7 +243,8 @@ it.live(
                   );
                   if (state === undefined) return assert.fail(`No model call for ${message}`);
                   return {
-                    fact: state.facts.sender_matches_organization_domain,
+                    // readStates only accepts `true` for this key.
+                    fact: Object.hasOwn(state.facts, "sender_matches_organization_domain"),
                     email: state.submission_fields.email,
                   };
                 }),

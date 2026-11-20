@@ -41,7 +41,7 @@ A separate file keeps the corpus lines in the shape the issue describes, so an e
 
 Declare domains in an optional `<name>.domains.txt` next to the corpus. Use one lowercase ASCII hostname per line, up to ten distinct domains. Blank lines are ignored. A missing or empty file means the organization has no declared domains.
 
-The replay checks the submission's `email` field against the declared domains and their subdomains. With at least one declared domain, both classifiers receive `sender_matches_organization_domain` as a boolean. A matching email field is blank in the model input.
+The replay checks the submission's `email` field against the declared domains and their subdomains. On a match, both classifiers receive `sender_matches_organization_domain: true` and a blank email field. Otherwise the fact is left out, so a message from any other sender gets the same input as with no declared domains.
 
 ### Synthetic corpus
 
