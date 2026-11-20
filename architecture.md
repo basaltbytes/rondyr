@@ -26,10 +26,11 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Enregistrement durable et outbox | Fait | |
 | Classification et quarantaine | Fait, seuils fixes | #6, #15 |
 | Inbox et revue humaine | Fait | #9 |
-| Livraison par e-mail et webhook | À faire | #5, #13, #14, #16 |
+| Livraisons : tables, file, tentatives et reprises | Fait, sans fournisseur d’envoi | #16 |
+| Livraison par e-mail et webhook | À faire | #13, #14 |
 | Mesures et reprise après incident | À faire | #10 |
 
-Tant que #5 n’est pas livré, un message accepté n’est consultable que dans l’Inbox.
+Aucune destination ne peut encore être configurée : #13 et #14 ajoutent les destinations webhook et e-mail avec leur fournisseur. D’ici là, un message accepté n’est consultable que dans l’Inbox.
 
 ### Hors périmètre de la v0.1
 
@@ -85,7 +86,11 @@ flowchart TD
   P -->|accepter| N
   P -->|archiver| Q["SubmissionDismissed"]
   J --> R["Projection Inbox vers D1"]
-  N -.->|à faire, #5| S["Livraisons : e-mail, webhook"]
+  N --> S["Politique Delivery : une livraison par destination active"]
+  S --> U["delivery-queue"]
+  F --> U
+  U --> V["Consumer : NotificationProvider"]
+  V -.->|à faire, #13, #14| W["Webhook, e-mail"]
 ```
 
 `202 Accepted` signifie que D1 a enregistré la soumission et son événement outbox dans la même transaction. La réponse ne dit rien de la classification ni d’une livraison. Une requête refusée avant cet enregistrement n’entre pas dans la garantie, y compris un `429`.
@@ -117,15 +122,40 @@ Deux mécanismes absorbent les doublons : Alchemy Domain ignore une commande don
 
 La politique `Classification` démarre la saga `ClassifySubmission` à chaque `ClassificationRequested`. La saga appelle le classificateur jusqu’à 3 fois, avec 10 puis 30 secondes d’attente et un délai maximal de 12 secondes par appel. Une erreur non réessayable ou l’épuisement des tentatives produit `SubmissionQuarantined` avec le motif `classification-error`. Les étapes sont des activités durables : un redémarrage du Durable Object reprend la saga là où elle s’est arrêtée.
 
+### Livraison
+
+La politique `Delivery` du modèle `Submissions` réagit à chaque `SubmissionAccepted`, que l’acceptation soit automatique ou manuelle. Elle appelle le système externe `DeliveryScheduler`, dont l’adaptateur fait deux choses dans l’ordre :
+
+1. Il crée dans `deliveries` une ligne par destination active du formulaire, de la même organisation que la soumission, et créée au plus tard à l’acceptation. La contrainte d’unicité sur `(submission_id, target_id)` rend la création idempotente ; chaque livraison reçoit un UUID v4, son identifiant stable.
+2. Il publie ces livraisons dans `delivery-queue` avec la même revendication que l’outbox de soumission (bail de 60 secondes, puis `published_at`). Un échec de publication est journalisé ; le Cron reprend la livraison.
+
+Sans destination active, la politique ne crée rien et ne publie rien. Une politique Alchemy Domain ne traite que les nouveaux événements : un déploiement ne rejoue pas les acceptations passées, et une destination ajoutée plus tard ne reçoit pas les messages acceptés avant sa création, même si la politique s’exécute une seconde fois. Une projection aurait été rejouée par le backfill, ce qui aurait envoyé d’anciens messages. Si D1 échoue, l’exécution de la politique échoue et la plateforme la relance (30 secondes, puis un délai doublé, puis toutes les heures).
+
+Chaque minute, le Cron publie jusqu’à 100 livraisons dues : en attente, en reprise dont le délai est écoulé, ou en cours dont le bail a expiré. Une livraison publiée qu’aucune tentative n’a prise après 5 minutes est republiée.
+
+Le consumer lit des lots de 10 messages et traite chaque livraison séparément. Pour une livraison, il exécute un lot D1 qui démarre la tentative : il passe la livraison à `processing`, incrémente `attempt_count`, pose un bail de 2 minutes et insère la tentative dans `delivery_attempts`. Une livraison terminée, en attente de reprise ou déjà en cours n’est pas démarrée, et le message est acquitté. Le consumer appelle ensuite le port `NotificationProvider` avec la destination, les champs du message et l’identifiant de livraison, avec un délai maximal de 30 secondes, puis enregistre le résultat :
+
+| Résultat | Effet |
+| --- | --- |
+| Succès | `delivered` |
+| Échec permanent | `failed`, avec le résumé d’erreur |
+| Échec réessayable | `retrying`, nouvelle tentative après 1 min, 5 min, 30 min, 2 h puis 6 h ; `failed` après la sixième |
+| Pas de réponse en 30 secondes | Échec réessayable |
+| Aucun fournisseur pour le type de destination | Échec permanent : `No notification provider for target type "…".` |
+
+Si le Worker s’arrête entre l’envoi et l’enregistrement du résultat, la tentative reste ouverte. À l’expiration de son bail, le Cron republie la livraison ; la tentative suivante marque la précédente `interrupted` et renvoie le message avec le même identifiant. Une tentative interrompue compte dans les six ; si c’était la dernière, la livraison passe à `failed`. Le consumer ne relance un message de file que si D1 échoue ; après 3 reprises, Queues le place dans la DLQ de livraison.
+
+Le destinataire peut donc recevoir deux fois la même livraison. Rondyr promet une reprise fiable et un identifiant de déduplication, pas un envoi unique de bout en bout. Le résumé d’erreur, borné à 300 caractères, vient du fournisseur, qui ne doit pas y mettre les champs du message ; les journaux du consumer ne contiennent que les identifiants, le type de destination et le résultat.
+
+Aucun fournisseur n’existe encore : la composition du Worker n’en déclare aucun, et les tests utilisent un adaptateur de test. #13 ajoute le webhook et #14 l’e-mail.
+
 ### Limites connues
 
 - L’outbox ne compte pas ses tentatives. Un événement que le consumer ne parvient jamais à remettre est republié toutes les 5 minutes sans alerte (#10).
 - La DLQ de classification n’a pas de consumer (#10).
 - La saga n’enregistre que le résultat final ; les tentatives échouées ne laissent pas de trace dans les événements.
-
-### Livraison
-
-`delivery-queue` est provisionnée et liée au Worker, sans producteur ni consumer. #5 applique le même schéma : une ligne `deliveries` par message et par destination, un identifiant stable transmis au destinataire, une mise en file rejouée depuis D1. Un webhook ou un fournisseur d’e-mail peut recevoir deux tentatives après une coupure réseau ; Rondyr promet une reprise fiable et un identifiant de déduplication, pas un envoi unique de bout en bout.
+- La DLQ de livraison n’a pas de consumer non plus. Elle ne reçoit un message qu’après des échecs de D1, et l’état de la livraison reste dans D1, d’où le Cron la republie (#10).
+- Une livraison `failed` ne se relance pas encore à la main (#16).
 
 ## 5. Classification intelligente
 
@@ -176,9 +206,14 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at` |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
 | `submission_inbox` | `submission_id`, `version`, `status`, `reason` ; écrite par la projection |
+| `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON lu par le fournisseur du type), `active`, `created_at` |
+| `deliveries` | `id` (UUID v4 stable), `submission_id`, `target_id`, `status`, `attempt_count`, `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at` ; unique sur `(submission_id, target_id)` |
+| `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error` |
 | `auth_*` | Comptes, sessions, vérifications et limites de débit de Better Auth |
 
-Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire.
+Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire. Un index partiel sur `(next_attempt_at, lease_until)` sert la recherche des livraisons dues.
+
+Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. Aucune API ne crée encore de destination (#13, #14).
 
 ### Événements de l’agrégat `Submission`
 
@@ -193,11 +228,10 @@ L’agrégat passe de `Unrecorded` à `Classifying`, puis à `Quarantined` ou `A
 
 Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. `classification-error` est un motif de quarantaine, pas un statut.
 
-Le contenu des messages n’existe que dans `submissions.fields`. Les événements ne contiennent que des identifiants, des scores et l’identifiant du relecteur, ce qui limite une purge aux lignes D1 (#9).
+Le contenu des messages n’existe que dans `submissions.fields`. Les événements ne contiennent que des identifiants, des scores et l’identifiant du relecteur, et les livraisons que des identifiants, des états et des résumés d’erreur, ce qui limite une purge aux lignes D1 (#9). Supprimer une soumission supprime ses livraisons et leurs tentatives.
 
 ### Tables à venir
 
-- `notification_targets` et `deliveries` (#5).
 - `form_origins` (#19).
 - Rôle dans `organization_members` et invitations (#11).
 - Statut des formulaires (#8), quotas (#7) et durées de conservation (#9).
@@ -238,7 +272,7 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 
 Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`.
 
-Restent à ajouter : l’administration des formulaires (#8), les membres et les rôles (#11), les destinations et l’historique des livraisons (#5, #16), la recherche et l’export (#9).
+Restent à ajouter : l’administration des formulaires (#8), les membres et les rôles (#11), les destinations (#13, #14) et l’historique des livraisons (#16), la recherche et l’export (#9).
 
 ## 8. Défenses et confidentialité
 
@@ -278,7 +312,7 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 
 ```text
 .
-├── alchemy-run.ts                  # pile Alchemy : D1, files, consumer
+├── alchemy-run.ts                  # pile Alchemy : D1, files, consumers
 ├── wrangler.json                   # développement local, tests et dry-run
 ├── drizzle-config.ts
 ├── database/migrations/            # migrations et snapshots Drizzle
@@ -286,21 +320,26 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   ├── worker.ts                   # entrée Wrangler et workerd
 │   ├── alchemy-worker.ts           # ressource Worker et bindings par stage
 │   ├── worker-implementation.ts    # composition des layers, fetch, queue, scheduled
-│   ├── domain/submissions/         # agrégat, commandes, événements, politique, saga,
+│   ├── domain/submissions/         # agrégat, commandes, événements, politiques, saga,
 │   │                               # projection, requêtes, ReviewApi, schémas partagés
+│   ├── domain/deliveries/          # identifiants, statuts et règles de reprise
 │   ├── ports/                      # authentication, intake, outbox, classification-queue,
 │   │                               # background-tasks, organization-directory,
-│   │                               # stored-messages, storage
+│   │                               # stored-messages, storage, delivery-store,
+│   │                               # delivery-queue, notification-provider
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
 │   │   ├── database/               # schémas Drizzle, d1, intake, outbox, inbox,
-│   │   │                           # organization-directory, stored-messages
-│   │   ├── queues/                 # classification-queue
+│   │   │                           # organization-directory, stored-messages, delivery-store
+│   │   ├── notifications/          # fournisseurs par type, adaptateur de test
+│   │   ├── queues/                 # classification-queue, delivery-queue
 │   │   └── workers/                # background-tasks (waitUntil d’Alchemy)
 │   ├── http/                       # public, submission, authentication, review
 │   └── jobs/
-│       └── submission-outbox.ts    # publication (ingestion et Cron), consumer de file
+│       ├── submission-outbox.ts    # publication (ingestion et Cron), consumer de file
+│       └── delivery-outbox.ts      # DeliveryScheduler, publication (politique et Cron),
+│                                   # consumer de livraison
 ├── dashboard/src/
 │   ├── routes/
 │   ├── features/                   # authentication, inbox
@@ -315,7 +354,7 @@ Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le 
 
 ## 10. Tests et critères de qualité
 
-`pnpm check` enchaîne le lint, le format, le typage, les tests, Knip, la vérification des migrations et `scripts/doctor.mjs`. Les tests d’intégration tournent dans workerd contre le Worker construit, avec D1, les files et les Durable Objects émulés.
+`pnpm check` enchaîne le lint, le format, le typage, les tests, Knip, la vérification des migrations et `scripts/doctor.mjs`. Les tests d’intégration tournent dans workerd contre le Worker construit, avec D1, les files et les Durable Objects émulés. Un faux Workers AI, déclaré dans `vitest.config.ts`, renvoie des scores d’acceptation pour un message qui contient `fixture-verdict: accept` et une réponse invalide pour les autres, que le classificateur met en quarantaine avec le motif `classification-error`.
 
 ### Couverture actuelle
 
@@ -325,12 +364,13 @@ Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts`. Le 
 - Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
 - Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
 - Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
+- Livraisons : création après une acceptation automatique et après une acceptation manuelle, jusqu’au consumer ; une seule livraison par destination malgré une politique exécutée deux fois ou un message de file en double ; aucune livraison sans destination active, pour une destination créée après l’acceptation ou pour une destination d’une autre organisation ; nouvel envoi avec le même identifiant après une panne entre l’envoi et l’enregistrement ; une destination en échec à côté d’une destination livrée ; six échecs réessayables jusqu’à `failed`, avec les délais de reprise.
 
 ### Couverture manquante
 
 - Soumissions concurrentes à la frontière du plafond par formulaire (#7).
 - Événement que le consumer ne parvient jamais à remettre (#10).
-- Tout ce qui concerne les livraisons (#5, #13, #14).
+- L’envoi réel par webhook et par e-mail (#13, #14).
 - Le dashboard n’a aucun test.
 
 ### Évaluation du filtrage
@@ -339,7 +379,7 @@ Aucune mesure n’existe. #6 constitue le corpus et mesure les faux positifs, la
 
 ## 11. Déploiement et exploitation
 
-Alchemy crée et relie le Worker, D1, les deux files, la DLQ de classification, le consumer, le Cron, les Durable Objects et le Workflow de backfill d’Alchemy Domain. Les migrations D1 sont versionnées dans `database/migrations` et appliquées au déploiement.
+Alchemy crée et relie le Worker, D1, les deux files et leurs DLQ, les deux consumers, le Cron, les Durable Objects et le Workflow de backfill d’Alchemy Domain. Les noms des files sont générés par stage ; la pile les transmet au Worker (`CLASSIFICATION_QUEUE_NAME`, `DELIVERY_QUEUE_NAME`), et le handler `queue` choisit le consumer d’après le nom de la file du lot. Les migrations D1 sont versionnées dans `database/migrations` et appliquées au déploiement.
 
 Chaque stage a ses propres ressources. `prod` utilise un domaine personnalisé dérivé de `BETTER_AUTH_URL` ; les autres stages utilisent `workers.dev`. Un push sur `main` lance `pnpm check` et `pnpm deploy:dry`, puis déploie `prod`. `staging` se déploie à la main depuis le workflow **Deploy**, ce qui laisse la production sans étape de validation préalable (#10).
 
@@ -357,9 +397,9 @@ Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épin
 
 ## 12. Ordre de réalisation
 
-Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). La suite, dans l’ordre :
+Les fondations, l’ingestion fiable, la classification initiale, l’authentification et la revue dans l’Inbox sont en production. La consolidation qui précède l’ajout de tables et d’une seconde file est faite : ports pour l’accès D1 (#23), publication dès le `202` (#20), gateway IA (#22). Le mécanisme de livraison est fait (#5), sans fournisseur d’envoi. La suite, dans l’ordre :
 
-1. **Distribution.** Livraisons (#5), puis e-mail (#14) et webhook signé (#13). C’est ce qui manque le plus pour remplacer un service de formulaires.
+1. **Distribution.** E-mail (#14) et webhook signé (#13), chacun avec la configuration de ses destinations. C’est ce qui manque le plus pour remplacer un service de formulaires.
 2. **Intégration.** JSON depuis un navigateur (#19) et administration des formulaires (#8).
 3. **Protection.** Anti-abus et quotas (#7).
 4. **Qualité du filtrage.** Corpus, seuils et politique par organisation (#6), puis escalade (#15).
