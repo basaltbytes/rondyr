@@ -5,6 +5,7 @@
 <p align="center">
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-red">
   <a href="https://github.com/basaltbytes/rondyr/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/basaltbytes/rondyr/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="./LICENSE"><img alt="License: AGPL-3.0" src="https://img.shields.io/badge/license-AGPL--3.0-blue"></a>
 </p>
 
 > [!WARNING]
@@ -142,6 +143,7 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 | What is built, what is planned, and why | [architecture.md](./architecture.md) (French) |
 | Stages, secrets, API token permissions, CI deployment | [docs/deployment.md](./docs/deployment.md) |
 | Webhook payload, signature, verification, retries | [docs/webhooks.md](./docs/webhooks.md) |
+| Development setup, pull requests, license of contributions | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Rules for contributors and coding agents | [AGENTS.md](./AGENTS.md) (French) |
 | Local lint rules and where they come from | [tooling/oxlint/README.md](./tooling/oxlint/README.md) |
 
@@ -158,7 +160,7 @@ After a schema change in `src/adapters/database`, run `pnpm db:generate --name y
 
 ## License
 
-No license has been chosen yet, so all rights are reserved for now. The choice is tracked in [#21](https://github.com/basaltbytes/rondyr/issues/21).
+Rondyr is licensed under the [GNU Affero General Public License v3.0](./LICENSE). You can run it, change it, and deploy it for your own forms. If you offer Rondyr, or software that includes it, to others over a network, you have to publish the complete source of that software under the same license.
 
 ## Author
 
