@@ -167,54 +167,125 @@ it.live("returns 401 for unknown or revoked credentials even with a valid cookie
   }),
 );
 
-it.live(
-  "lists just the token's organization and returns 404 for another token's organization",
-  () =>
-    Effect.gen(function* () {
-      const { cookie } = yield* signIn;
-      const own = yield* createInbox("Token organization", { cookie });
-      const other = yield* createInbox("Other token organization", { cookie });
-      const { token } = yield* createToken(own.id, cookie);
-      yield* createToken(other.id, cookie);
+it.live("lists just the token's organization", () =>
+  Effect.gen(function* () {
+    const { cookie } = yield* signIn;
+    const own = yield* createInbox("Token organization", { cookie });
+    yield* createInbox("Other token organization", { cookie });
+    const { token } = yield* createToken(own.id, cookie);
 
-      const listed = yield* tokenRequest("GET", "/api/organizations", token);
-      const foreign = yield* tokenRequest(
-        "GET",
-        `/api/organizations/${other.id}/submission-counts`,
-        token,
-        cookie,
-      );
+    const listed = yield* tokenRequest("GET", "/api/organizations", token, cookie);
 
-      assert.strictEqual(listed.status, 200);
-      const inboxes = yield* json(listed).pipe(Effect.flatMap(readInboxes));
-      assert.deepEqual(inboxes, [own]);
-      assert.strictEqual(foreign.status, 404);
-    }),
+    assert.strictEqual(listed.status, 200);
+    const inboxes = yield* json(listed).pipe(Effect.flatMap(readInboxes));
+    assert.deepEqual(inboxes, [own]);
+  }),
 );
 
-it.live("confines token access to the explicit review routes even with a member's cookie", () =>
+it.live(
+  "returns 404 to a token for every review route of another organization and its messages",
+  () =>
+    Effect.gen(function* () {
+      const session = yield* signIn;
+      const own = yield* createInbox("Token organization", session);
+      const other = yield* createInbox("Other token organization", session);
+      const otherForm = other.forms[0];
+      if (otherForm === undefined) return assert.fail("Expected the contact form");
+      const honeypot = yield* call(
+        "PUT",
+        `/api/organizations/${other.id}/forms/${otherForm.publicId}/honeypot`,
+        { field: "_hp" },
+        session,
+      );
+      assert.strictEqual(honeypot.status, 200);
+      const foreignId = yield* quarantine(otherForm.publicId);
+      const { token } = yield* createToken(own.id, session.cookie);
+      yield* createToken(other.id, session.cookie);
+      const otherPath = `/api/organizations/${other.id}/submissions`;
+      const ownPath = `/api/organizations/${own.id}/submissions`;
+
+      const requests = [
+        ["GET", otherPath],
+        ["GET", `/api/organizations/${other.id}/submission-counts`],
+        ["GET", `${otherPath}/${foreignId}`],
+        ["POST", `${otherPath}/${foreignId}/approve`],
+        ["POST", `${otherPath}/${foreignId}/dismiss`],
+        ["GET", `${ownPath}/${foreignId}`],
+        ["POST", `${ownPath}/${foreignId}/approve`],
+        ["POST", `${ownPath}/${foreignId}/dismiss`],
+      ] as const;
+      const statuses = yield* Effect.forEach(requests, ([method, path]) =>
+        tokenRequest(method, path, token, session.cookie).pipe(
+          Effect.map(({ status }) => [method, path, status]),
+        ),
+      );
+
+      assert.deepEqual(
+        statuses,
+        requests.map(([method, path]) => [method, path, 404]),
+      );
+      const status = yield* Effect.promise(() =>
+        env.DB.prepare("SELECT status FROM submission_inbox WHERE submission_id = ?")
+          .bind(foreignId)
+          .first("status"),
+      );
+      assert.strictEqual(status, "quarantined");
+    }),
+  35_000,
+);
+
+it.live("returns 403 to a token on every other API route, even with a member's cookie", () =>
   Effect.gen(function* () {
     const { cookie } = yield* signIn;
     const { id, forms } = yield* createInbox("Forbidden token routes", { cookie });
     const form = forms[0];
     if (form === undefined) return assert.fail("Expected the contact form");
     const orgPath = `/api/organizations/${id}`;
+    const formPath = `${orgPath}/forms/${form.publicId}`;
+    const targetPath = `${orgPath}/targets/example-target`;
+    const deliveriesPath = `${orgPath}/submissions/example/deliveries`;
     const { token } = yield* createToken(id, cookie);
 
     const requests = [
-      ["POST", "/api/organizations"],
-      ["GET", "/api/operations"],
       ["GET", "/api/auth/get-session"],
+      ["POST", "/api/auth/sign-in/email"],
+      ["POST", "/api/auth/sign-out"],
       ["POST", "/api/setup"],
-      ["POST", `${orgPath}/forms`],
-      ["GET", `${orgPath}/forms/${form.publicId}/targets`],
-      ["PUT", `${orgPath}/forms/${form.publicId}/turnstile`],
-      ["GET", `${orgPath}/domains`],
-      ["GET", `${orgPath}/quotas`],
-      ["GET", `${orgPath}/classification-policy`],
+      ["GET", "/api/operations"],
+      ["POST", "/api/organizations"],
       ["GET", tokensPath(id)],
       ["POST", tokensPath(id)],
       ["DELETE", tokensPath(id)],
+      ["GET", `${orgPath}/domains`],
+      ["POST", `${orgPath}/domains`],
+      ["DELETE", `${orgPath}/domains`],
+      ["GET", `${orgPath}/classification-policy`],
+      ["PUT", `${orgPath}/classification-policy`],
+      ["DELETE", `${orgPath}/classification-policy`],
+      ["GET", `${orgPath}/quotas`],
+      ["PUT", `${orgPath}/quotas`],
+      ["POST", `${orgPath}/forms`],
+      ["PATCH", formPath],
+      ["POST", `${formPath}/suspend`],
+      ["POST", `${formPath}/reactivate`],
+      ["PUT", `${formPath}/success-url`],
+      ["DELETE", `${formPath}/success-url`],
+      ["PUT", `${formPath}/honeypot`],
+      ["DELETE", `${formPath}/honeypot`],
+      ["GET", `${formPath}/turnstile`],
+      ["PUT", `${formPath}/turnstile`],
+      ["DELETE", `${formPath}/turnstile`],
+      ["GET", `${formPath}/origins`],
+      ["POST", `${formPath}/origins`],
+      ["DELETE", `${formPath}/origins`],
+      ["GET", `${formPath}/targets`],
+      ["POST", `${formPath}/targets`],
+      ["POST", `${targetPath}/rotate-secret`],
+      ["PUT", `${targetPath}/recipients`],
+      ["POST", `${targetPath}/activate`],
+      ["POST", `${targetPath}/test`],
+      ["GET", deliveriesPath],
+      ["POST", `${deliveriesPath}/example-delivery/retry`],
       ["POST", `${orgPath}/submissions/example/disallowed-decision`],
     ] as const;
     const statuses = yield* Effect.forEach(requests, ([method, path]) =>
