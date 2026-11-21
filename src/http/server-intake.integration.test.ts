@@ -2,18 +2,26 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env, withEnv } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Clock, Effect, Layer, Option, Redacted, Schema } from "effect";
-import { FetchHttpClient } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
 import { call, createInbox, json, signIn } from "../../tests/integration/organization-fixture.ts";
 import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
 import { submissionIntakeLive } from "../adapters/database/intake.ts";
+import { outboxLive } from "../adapters/database/outbox.ts";
+import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { turnstileVerifierLive } from "../adapters/workers/siteverify.ts";
 import { CreatedApiToken } from "../domain/organizations/api-token.ts";
 import { turnstileField } from "../domain/forms/turnstile.ts";
 import { IdempotencyKey } from "../domain/submissions/idempotency-key.ts";
 import { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
+import { ApiTokens } from "../ports/api-tokens.ts";
+import { BackgroundTasks } from "../ports/background-tasks.ts";
+import { ClientRateLimit } from "../ports/client-rate-limit.ts";
 import { SubmissionIntake } from "../ports/intake.ts";
+import { StorageUnavailable } from "../ports/storage.ts";
+import { apiTokenAuthentication, organizationPath } from "./api-token-authentication.ts";
+import { submissionRoutes } from "./submission-routes.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
@@ -180,13 +188,21 @@ it.live("refuses an unknown, revoked or foreign token without storing anything",
 
     const unknown = Redacted.make(`rdr_${"A".repeat(43)}`);
     yield* expectStatus(serverPost(site.publicId, unknown), 401);
-    // Any Bearer credential makes a server intake: it never falls back to the public path.
-    const malformed = yield* post(
-      site.publicId,
-      { message: "Hello" },
-      { authorization: "Bearer x" },
-    );
-    assert.strictEqual(malformed.status, 401);
+    // Any Authorization header makes a server intake, whatever its scheme or
+    // value: it never falls back to the public path.
+    const token = Redacted.value(site.token);
+    const credentials = [
+      "Bearer x",
+      "Bearer",
+      `Basic ${btoa("site:password")}`,
+      `Token ${token}`,
+      token,
+      `Bearer ${token}, Bearer ${token}`,
+    ];
+    for (const [index, authorization] of credentials.entries()) {
+      const refused = yield* post(site.publicId, { message: "Hello" }, { authorization });
+      assert.strictEqual(refused.status, 401, `credential ${index}`);
+    }
     yield* expectStatus(serverPost(site.publicId, other.token), 404);
 
     const revoked = yield* call(
@@ -210,6 +226,149 @@ it.live("answers a replayed key with the first submission and stores nothing", (
     assert.strictEqual(replay, first);
     yield* expectStored(publicId, 1);
   }),
+);
+
+const usage = (organizationId: string) =>
+  Effect.promise(() =>
+    env.DB.prepare(
+      "SELECT submissions, classifications, junk FROM organization_daily_usage WHERE organization_id = ?",
+    )
+      .bind(organizationId)
+      .first(),
+  );
+
+it.live("answers a replay while the form cap is reached, without taking a slot", () =>
+  Effect.gen(function* () {
+    const { publicId, token } = yield* siteWithToken("Server intake replay at the cap");
+    const ids: Array<SubmissionId> = [];
+    for (let index = 0; index < 30; index += 1) {
+      const body = { email: `sender-${index}@example.test`, message: `Message number ${index}` };
+      const key = { "idempotency-key": `cap-${index}` };
+      const id = yield* accept(serverPost(publicId, token, body, key));
+      ids.push(id);
+    }
+    const fresh = yield* serverPost(publicId, token, undefined, { "idempotency-key": "cap-new" });
+    assert.strictEqual(fresh.status, 429);
+    assert.strictEqual(fresh.headers.get("retry-after"), "60");
+    const replay = yield* accept(
+      serverPost(publicId, token, undefined, { "idempotency-key": "cap-0" }),
+    );
+    assert.strictEqual(replay, ids[0]);
+    yield* expectStored(publicId, 30);
+  }),
+);
+
+it.live("applies the organization's daily quota, and a replay takes no slot", () =>
+  Effect.gen(function* () {
+    const { cookie, organization, publicId, token } = yield* siteWithToken("Server intake quota");
+    const quotas = yield* call(
+      "PUT",
+      `/api/organizations/${organization.id}/quotas`,
+      { submissions: 1, classifications: 1000 },
+      { cookie },
+    );
+    assert.strictEqual(quotas.status, 200);
+    const first = yield* accept(
+      serverPost(publicId, token, undefined, { "idempotency-key": "quota-first" }),
+    );
+    const refused = yield* serverPost(
+      publicId,
+      token,
+      { email: "another@example.test", message: "Another message" },
+      { "idempotency-key": "quota-second" },
+    );
+    assert.strictEqual(refused.status, 429);
+    const retryAfter = Number(refused.headers.get("retry-after"));
+    assert.isTrue(retryAfter > 0 && retryAfter <= 86_400, `Retry-After: ${retryAfter}`);
+    const replay = yield* accept(
+      serverPost(publicId, token, undefined, { "idempotency-key": "quota-first" }),
+    );
+    assert.strictEqual(replay, first);
+    const counters = yield* usage(organization.id);
+    assert.deepEqual(counters, { submissions: 1, classifications: 1, junk: 0 });
+    yield* expectStored(publicId, 1);
+  }),
+);
+
+it.live("refuses a suspended form with 403 and stores nothing", () =>
+  Effect.gen(function* () {
+    const { cookie, organization, publicId, token } =
+      yield* siteWithToken("Server intake suspended");
+    const suspended = yield* call(
+      "POST",
+      `/api/organizations/${organization.id}/forms/${publicId}/suspend`,
+      undefined,
+      { cookie },
+    );
+    assert.strictEqual(suspended.status, 200);
+    yield* expectStatus(serverPost(publicId, token), 403);
+    yield* expectStored(publicId, 0);
+  }),
+);
+
+it.live("answers 503 when the token can't be checked, and 401 to an empty header", () =>
+  Effect.gen(function* () {
+    const unavailableTokens = Layer.succeed(ApiTokens, {
+      verify: () => Effect.fail(StorageUnavailable.make()),
+      list: () => Effect.fail(StorageUnavailable.make()),
+      create: () => Effect.fail(StorageUnavailable.make()),
+      revoke: () => Effect.fail(StorageUnavailable.make()),
+    });
+    const reached: Array<string> = [];
+    const intake = Layer.succeed(SubmissionIntake, {
+      receive: () => Effect.sync(() => reached.push("receive")).pipe(Effect.andThen(Effect.never)),
+      receiveFromServer: () =>
+        Effect.sync(() => reached.push("receiveFromServer")).pipe(Effect.andThen(Effect.never)),
+      matchOrigin: () =>
+        Effect.sync(() => reached.push("matchOrigin")).pipe(Effect.andThen(Effect.never)),
+    });
+    const services = yield* Layer.build(
+      Layer.mergeAll(
+        intake,
+        Layer.succeed(BackgroundTasks, { run: () => Effect.void }),
+        Layer.succeed(ClientRateLimit, { admit: () => Effect.succeed(true) }),
+        // Never called: nothing is stored, so nothing is published.
+        outboxLive,
+        classificationQueueLive,
+      ),
+    );
+    const organizations = HttpRouter.add(
+      "GET",
+      organizationPath,
+      Effect.sync(() => {
+        reached.push("organizations");
+        return HttpServerResponse.empty({ status: 200 });
+      }),
+    );
+    const { handler, dispose } = HttpRouter.toWebHandler(
+      Layer.mergeAll(submissionRoutes, organizations).pipe(
+        Layer.provide(apiTokenAuthentication.pipe(Layer.provide(unavailableTokens))),
+        Layer.provide(HttpServer.layerServices),
+      ),
+      { disableLogger: true },
+    );
+    const authorization = `Bearer rdr_${"A".repeat(43)}`;
+    const requests = [
+      new Request(new URL("/f/tokens-down", origin), {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization },
+        body: '{"message":"Hello"}',
+      }),
+      new Request(new URL(organizationPath, origin), { headers: { authorization } }),
+      // An empty header is still a server intake. It is refused before any lookup.
+      new Request(new URL("/f/tokens-down", origin), {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "" },
+        body: '{"message":"Hello"}',
+      }),
+    ];
+    const statuses = yield* Effect.forEach(requests, (request) =>
+      Effect.promise(() => handler(request, services)).pipe(Effect.map(({ status }) => status)),
+    );
+    assert.deepEqual(statuses, [503, 503, 401]);
+    assert.deepEqual(reached, []);
+    yield* Effect.promise(dispose);
+  }).pipe(Effect.scoped),
 );
 
 it.live("stores one submission for two concurrent requests with the same key", () =>

@@ -48,9 +48,9 @@ curl --fail-with-body -X POST \
   "https://rondyr.example.com/f/${FORM_PUBLIC_ID}"
 ```
 
-A request with a Bearer credential on this route is a server intake, whatever the credential:
+A request with an `Authorization` header on this route is a server intake, whatever its scheme or value:
 
-- An unknown, malformed or revoked token gets `401`. A token of another organization gets `404`, as an unknown form does. Nothing is stored in either case, and the request never falls back to the browser path.
+- A header that isn't `Bearer` followed by an active token gets `401`: another scheme, a malformed or unknown token, a revoked token. A token of another organization gets `404`, as an unknown form does. Nothing is stored in either case, and the request never falls back to the browser path.
 - The form's allowed origins and the limit of 5 submissions per minute per client don't apply: every request from your server comes from the same address. The form's cap of 30 submissions per minute and the organization's daily quotas still apply, with `429` and `Retry-After`.
 - The form's honeypot field applies as for a browser. Turnstile doesn't: your server has checked the visitor itself, and the message goes through classification as usual.
 - The body is a flat JSON object of 1 to 32 string fields, at most 16 KiB. Another content type gets `415`.
@@ -69,7 +69,7 @@ So a client that times out after Rondyr stored the message can send the same req
 | Status | Meaning |
 | --- | --- |
 | `400` | A malformed idempotency key, an invalid body, or no field left once the empty honeypot field is removed |
-| `401` | A credential that isn't an active token |
+| `401` | An `Authorization` header that isn't `Bearer` with an active token |
 | `403` | The form is suspended |
 | `404` | The form doesn't exist or belongs to another organization |
 | `413` | A body larger than 16 KiB |
