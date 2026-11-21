@@ -67,16 +67,47 @@ const acceptedId = Effect.fnUntraced(function* (response: Response) {
   return id;
 });
 
-/** Assert a refusal by a daily quota: `429`, readable by a page, until midnight UTC. */
-const assertRefusedUntilMidnight = Effect.fnUntraced(function* (response: Response) {
+/** D1's clock, in Unix seconds. Intake takes the time of a refusal from it. */
+const d1Clock = Effect.promise(() =>
+  env.DB.prepare("SELECT unixepoch() AS now").first<number>("now"),
+).pipe(Effect.map((now) => now ?? assert.fail("Expected the time from D1")));
+
+interface Interval {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** Run `request` between two readings of D1's clock, which bound when intake decided. */
+const timed = <A, E, R>(request: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const start = yield* d1Clock;
+    const result = yield* request;
+    const end = yield* d1Clock;
+    return { result, during: { start, end } satisfies Interval };
+  });
+
+const secondsToMidnight = (at: number) => 86_400 - (at % 86_400);
+
+/**
+ * Assert a refusal by a daily quota: `429`, readable by a page, with `Retry-After` set to the
+ * seconds from the refusal to the next midnight UTC. The refusal happened `during` the request,
+ * so the header is between the seconds left at its end and the seconds left at its start.
+ */
+function assertRefusedUntilMidnight(response: Response, during: Interval) {
   assert.strictEqual(response.status, 429);
   assert.match(response.headers.get("access-control-expose-headers") ?? "", /retry-after/u);
-  const seconds = yield* Effect.promise(() =>
-    env.DB.prepare("SELECT 86400 - unixepoch() % 86400 AS seconds").first<number>("seconds"),
+  const retryAfter = Number(response.headers.get("retry-after"));
+  const atStart = secondsToMidnight(during.start);
+  const atEnd = secondsToMidnight(during.end);
+  // Across midnight UTC, the request ends with more seconds left than it started with.
+  const sameDay = atEnd <= atStart;
+  assert.isTrue(
+    sameDay
+      ? atEnd <= retryAfter && retryAfter <= atStart
+      : retryAfter <= atStart || atEnd <= retryAfter,
+    `Retry-After is ${retryAfter}; the seconds to midnight UTC went from ${atStart} to ${atEnd} during the request`,
   );
-  if (seconds === null) return assert.fail("Expected the remaining seconds in the UTC day");
-  assert.closeTo(Number(response.headers.get("retry-after")), seconds, 2);
-});
+}
 
 const storedReasons = (organizationId: string) =>
   Effect.promise(() =>
@@ -184,9 +215,10 @@ it.live("enforces the exact submission quota across concurrent posts on differen
     const first = yield* submit(form, "Storage quota first");
     assert.strictEqual(first.status, 202);
 
-    const responses = yield* Effect.all(
-      [submit(form, "Storage quota left"), submit(sibling, "Storage quota right")],
-      { concurrency: "unbounded" },
+    const { result: responses, during } = yield* timed(
+      Effect.all([submit(form, "Storage quota left"), submit(sibling, "Storage quota right")], {
+        concurrency: "unbounded",
+      }),
     );
 
     assert.sameMembers(
@@ -195,7 +227,7 @@ it.live("enforces the exact submission quota across concurrent posts on differen
     );
     const refused = responses.find(({ status }) => status === 429);
     if (refused === undefined) return assert.fail("Expected one refused submission");
-    yield* assertRefusedUntilMidnight(refused);
+    assertRefusedUntilMidnight(refused, during);
     assert.deepEqual((yield* usage(path, headers)).used, {
       submissions: 2,
       classifications: 2,
@@ -250,14 +282,16 @@ it.live(
         [202, 202, 202, 202, 202],
       );
 
-      const junk = yield* post({ message: "Junk over budget", [honeypotField]: "Robot", ...token });
+      const junk = yield* timed(
+        post({ message: "Junk over budget", [honeypotField]: "Robot", ...token }),
+      );
       const real = yield* post({
         message: "A real question after the wave",
         "fixture-verdict": "accept",
         ...token,
       });
 
-      yield* assertRefusedUntilMidnight(junk);
+      assertRefusedUntilMidnight(junk.result, junk.during);
       const id = yield* acceptedId(real);
       assert.strictEqual((yield* classified(organization.id, id, headers)).status, "accepted");
       assert.deepEqual((yield* usage(path, headers)).used, {
@@ -283,16 +317,16 @@ it.live(
       });
       yield* trap(organization.id, form, headers);
       assert.strictEqual((yield* submit(form, "Budget first")).status, 202);
-      const full = yield* submit(form, "Budget refused");
-      yield* assertRefusedUntilMidnight(full);
+      const full = yield* timed(submit(form, "Budget refused"));
+      assertRefusedUntilMidnight(full.result, full.during);
 
       const kept = yield* submitJunk(form, "Junk within its budget");
-      const refused = yield* submitJunk(form, "Junk over its budget");
+      const refused = yield* timed(submitJunk(form, "Junk over its budget"));
 
       const id = yield* acceptedId(kept);
       const detail = yield* classified(organization.id, id, headers);
       assert.deepEqual([detail.status, detail.reason], ["quarantined", "honeypot"]);
-      yield* assertRefusedUntilMidnight(refused);
+      assertRefusedUntilMidnight(refused.result, refused.during);
       assert.deepEqual((yield* usage(path, headers)).used, {
         submissions: 1,
         classifications: 1,
@@ -318,9 +352,10 @@ it.live("enforces the exact junk budget across concurrent posts on different for
     yield* trap(organization.id, sibling, headers);
     assert.strictEqual((yield* submitJunk(form, "Junk budget first")).status, 202);
 
-    const responses = yield* Effect.all(
-      [submitJunk(form, "Junk budget left"), submitJunk(sibling, "Junk budget right")],
-      { concurrency: "unbounded" },
+    const { result: responses, during } = yield* timed(
+      Effect.all([submitJunk(form, "Junk budget left"), submitJunk(sibling, "Junk budget right")], {
+        concurrency: "unbounded",
+      }),
     );
 
     assert.sameMembers(
@@ -329,7 +364,7 @@ it.live("enforces the exact junk budget across concurrent posts on different for
     );
     const refused = responses.find(({ status }) => status === 429);
     if (refused === undefined) return assert.fail("Expected one refused submission");
-    yield* assertRefusedUntilMidnight(refused);
+    assertRefusedUntilMidnight(refused, during);
     assert.deepEqual((yield* usage(path, headers)).used, {
       submissions: 0,
       classifications: 0,
