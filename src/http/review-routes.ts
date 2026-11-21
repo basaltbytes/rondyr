@@ -8,10 +8,10 @@ import {
 
 import { InboxOrganizationWithForms, SetupInbox } from "../domain/submissions/inbox-setup.ts";
 import {
-  InboxCounts,
+  InboxFilter,
   InboxPage,
+  OrganizationCounts,
   SubmissionDetail,
-  SubmissionStatus,
 } from "../domain/submissions/inbox.ts";
 import { ReviewApi } from "../domain/submissions/review.api.ts";
 import {
@@ -34,7 +34,8 @@ const ReviewPath = SubmissionPath.mapFields((fields) => ({
 }));
 const ListParams = OrganizationPath.mapFields((fields) => ({
   ...fields,
-  status: Schema.optionalKey(SubmissionStatus),
+  status: InboxFilter.fields.status,
+  form: InboxFilter.fields.formPublicId,
   after: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(160))),
 }));
 
@@ -107,8 +108,11 @@ const create = Effect.gen(function* () {
 
 const list = Effect.gen(function* () {
   const client = yield* reviewClient;
-  const { after, ...input } = yield* HttpRouter.schemaParams(ListParams);
-  const page = yield* client.ListSubmissions(input, after === undefined ? {} : { after });
+  const { after, form, ...input } = yield* HttpRouter.schemaParams(ListParams);
+  const page = yield* client.ListSubmissions(
+    form === undefined ? input : { ...input, formPublicId: form },
+    after === undefined ? {} : { after },
+  );
   return yield* HttpServerResponse.schemaJson(InboxPage)(page, jsonOptions);
 });
 
@@ -116,7 +120,7 @@ const counts = Effect.gen(function* () {
   const client = yield* reviewClient;
   const input = yield* HttpRouter.schemaPathParams(OrganizationPath);
   const totals = yield* client.CountSubmissions(input);
-  return yield* HttpServerResponse.schemaJson(InboxCounts)(totals, jsonOptions);
+  return yield* HttpServerResponse.schemaJson(OrganizationCounts)(totals, jsonOptions);
 });
 
 const detail = Effect.gen(function* () {

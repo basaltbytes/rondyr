@@ -368,8 +368,8 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `DELETE /api/organizations/:organizationId/forms/:publicId/success-url` | Retire l’URL de succès |
 | `PUT /api/organizations/:organizationId/forms/:publicId/honeypot` | Nomme le champ piège (`{"field":…}`) |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/honeypot` | Retire le champ piège |
-| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `after`), 25 messages par page, chacun avec un aperçu de ses champs (`preview`) : chaque valeur est coupée à 240 caractères, pour qu’une page de longs messages reste légère |
-| `GET /api/organizations/:organizationId/submission-counts` | Nombre de messages de l’organisation par statut |
+| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `form`, `after`), 25 messages par page, chacun avec un aperçu de ses champs (`preview`) : chaque valeur est coupée à 240 caractères, pour qu’une page de longs messages reste légère. `form` est l’identifiant public d’un formulaire et réduit la liste à ses messages |
+| `GET /api/organizations/:organizationId/submission-counts` | Nombre de messages de l’organisation par statut, et dans `forms` le même décompte pour chaque formulaire qui a au moins un message (`[{"publicId", "counts"}]`) |
 | `GET /api/organizations/:organizationId/submissions/:submissionId` | Détail d’un message |
 | `POST /api/organizations/:organizationId/submissions/:submissionId/approve` ou `/dismiss` | Décision de revue |
 | `GET /api/organizations/:organizationId/forms/:publicId/targets` | Destinations webhook et e-mail du formulaire, chacune avec son `type`, sans les secrets |
@@ -526,7 +526,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 
 ### Couverture actuelle
 
-- `pnpm test:e2e` exerce le dashboard dans Chromium, dans un job CI dédié. La suite couvre le cycle de session, la création d’une organisation, la gestion des formulaires et des origines, les envois HTML avec confirmation ou redirection, le refus CORS d’un envoi JSON et la revue d’un message au champ piège rempli. Elle couvre aussi la création de destinations, les essais et la relance d’un webhook en échec. Un dernier test vérifie que la page État compte un nouveau message après son actualisation. Playwright vérifie la CSP de `public/_headers` sur le dashboard compilé et surveille la console du navigateur.
+- `pnpm test:e2e` exerce le dashboard dans Chromium, dans un job CI dédié. La suite couvre le cycle de session, la création d’une organisation, la gestion des formulaires et des origines, les envois HTML avec confirmation ou redirection, le refus CORS d’un envoi JSON et la revue d’un message au champ piège rempli. Elle couvre aussi la création de destinations, les essais et la relance d’un webhook en échec, ainsi que le filtre d’un dossier par formulaire. Un dernier test vérifie que la page État compte un nouveau message après son actualisation. Playwright vérifie la CSP de `public/_headers` sur le dashboard compilé et surveille la console du navigateur.
 - Stories du modèle : seuils, ordre des règles de spam, de démarchage et de pertinence, quarantaine d’un démarchage avec ses scores puis acceptation par un relecteur, doublon de `RequestClassification`, trois échecs du classificateur, revue autorisée et refusée ; quarantaine d’entrée sans appel au classificateur, doublon de `QuarantineAtIntake` avec le même `commandId` ou un autre, `RequestClassification` ignoré après elle, quarantaine d’entrée ignorée pendant une classification, acceptation et archivage d’un message mis en quarantaine à l’entrée.
 - Décodage des réponses de Jev et d’OpenAI Decisions, y compris les réponses invalides.
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.

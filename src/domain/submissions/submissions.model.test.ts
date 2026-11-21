@@ -34,7 +34,14 @@ const store = Layer.succeed(InboxStore, {
   project: () => Effect.void,
   list: () => Effect.succeed({ entries: [], cursor: null }),
   counts: () =>
-    Effect.succeed({ received: 0, classifying: 0, accepted: 0, quarantined: 0, archived: 0 }),
+    Effect.succeed({
+      received: 0,
+      classifying: 0,
+      accepted: 0,
+      quarantined: 0,
+      archived: 0,
+      forms: [],
+    }),
   detail: () => Effect.fail(SubmissionNotFound.make()),
 });
 

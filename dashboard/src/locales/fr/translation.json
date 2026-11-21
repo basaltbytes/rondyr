@@ -98,6 +98,7 @@
       "all": "Tous les messages"
     },
     "folderTotal": "{{folder}} · {{total}}",
+    "folderForms": "Formulaires de « {{folder}} »",
     "sections": {
       "forms": "Formulaires",
       "destinations": "Destinations",
@@ -159,6 +160,17 @@
         "all": {
           "title": "Aucun message reçu",
           "note": "Les messages envoyés depuis vos formulaires arrivent ici. L’adresse de chaque formulaire est dans Formulaires."
+        }
+      },
+      "form": {
+        "remove": "Retirer le filtre sur {{name}}",
+        "empty": {
+          "title": "Aucun message de {{name}}",
+          "others_zero": "Les autres formulaires n’en ont pas ici non plus.",
+          "others_one": "Les autres formulaires ont {{count}} message ici.",
+          "others_many": "Les autres formulaires ont {{count}} messages ici.",
+          "others_other": "Les autres formulaires ont {{count}} messages ici.",
+          "showAll": "Afficher tous les formulaires"
         }
       }
     },
