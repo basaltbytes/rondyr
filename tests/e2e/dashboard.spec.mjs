@@ -171,6 +171,8 @@ test("edit classification thresholds and off-topic handling, then restore the de
   });
   const save = page.getByRole("button", { name: frenchT("inbox.policy.save") });
   await expect(relevance).toHaveValue("0.5");
+  await expect(relevance).toHaveAccessibleDescription(frenchT("inbox.policy.hints.lowRelevance"));
+  await expect(ambiguous).toHaveAccessibleDescription(frenchT("inbox.policy.hints.ambiguous"));
   await mode.selectOption({ label: frenchT("inbox.policy.custom") });
   await ambiguous.fill("0.9");
   await save.click();
