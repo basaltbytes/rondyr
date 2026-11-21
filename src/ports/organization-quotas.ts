@@ -1,6 +1,11 @@
 import { Context, Effect, Schema } from "effect";
 
-import type { DailyQuotas, DailyUsage } from "../domain/organizations/organization-quotas.ts";
+import type {
+  ClassificationReservation,
+  DailyQuotas,
+  DailyUsage,
+} from "../domain/organizations/organization-quotas.ts";
+import type { OrganizationId } from "../domain/submissions/submission.id.ts";
 import type { OrganizationScope } from "./organization-directory.ts";
 import type { StorageUnavailable } from "./storage.ts";
 
@@ -19,5 +24,13 @@ export class OrganizationQuotas extends Context.Service<
       scope: OrganizationScope,
       limits: DailyQuotas,
     ) => Effect.Effect<typeof DailyUsage.Type, Failure>;
+    /**
+     * Count one more classification for the organization's current UTC day if
+     * the day's count is under its daily limit, in one D1 write. A missing
+     * organization has no room either.
+     */
+    readonly reserveClassification: (
+      organizationId: OrganizationId,
+    ) => Effect.Effect<ClassificationReservation, StorageUnavailable>;
   }
 >()("rondyr/ports/organization-quotas/OrganizationQuotas") {}

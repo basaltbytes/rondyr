@@ -5,11 +5,15 @@ import { ClassificationPolicy, ClassifierProvider } from "../submissions/classif
 export const OrganizationClassificationPolicy = ClassificationPolicy.mapFields((fields) => ({
   thresholds: Schema.optionalKey(fields.thresholds),
   offTopic: Schema.optionalKey(fields.offTopic),
+  escalation: fields.escalation,
 }))
   .check(
     Schema.makeFilter(
-      ({ thresholds, offTopic }) =>
-        thresholds !== undefined || offTopic !== undefined || "Specify at least one override.",
+      ({ thresholds, offTopic, escalation }) =>
+        thresholds !== undefined ||
+        offTopic !== undefined ||
+        escalation !== undefined ||
+        "Specify at least one override.",
     ),
   )
   .pipe(Schema.brand("OrganizationClassificationPolicy"));
@@ -17,6 +21,8 @@ export type OrganizationClassificationPolicy = typeof OrganizationClassification
 
 export const OrganizationClassificationSettings = Schema.Struct({
   classifier: ClassifierProvider,
+  /** The second classifier that the stage offers for escalation, if any. */
+  escalationClassifier: Schema.NullOr(ClassifierProvider),
   defaults: ClassificationPolicy,
   override: Schema.NullOr(OrganizationClassificationPolicy),
 });
