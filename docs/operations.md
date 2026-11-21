@@ -18,7 +18,7 @@ The Cron publishes the event of a new submission until the classification consum
 To find stuck submissions:
 
 - On **Status**, the **Stuck** figure of each organization, and under it the list of stuck submissions, oldest first: form, arrival time and submission ID, without the message.
-- `GET /api/organizations/:organizationId/stuck-submissions` with a dashboard session, which returns the same list.
+- `GET /api/organizations/:organizationId/stuck-submissions` with the dashboard session of an admin of the organization, which returns the same list. A reviewer sees neither the **Status** page nor this list.
 - In **Workers Logs** of the stage’s Worker, the error `Outbox event stuck`, logged once per event with its submission ID.
 
 To find the cause, search the Worker logs for the submission ID:
@@ -35,7 +35,7 @@ Each queue has a dead-letter queue with its own consumer. The consumer logs `Que
 
 ### Messages that the filter could not analyze
 
-A classifier outage puts messages in **To review** with the reason **Analysis unavailable** (`classification-error`). Check the `AI` binding, `RONDYR_CLASSIFIER`, and the Worker logs of the outage. Once the model answers again, open each message and select **Reclassify**: the message goes back to classification, as if it had just arrived, and leaves **To review** if the filter accepts it. Each reclassification calls the model again, so it uses one slot of the organization's daily classification quota. When the day's quota is used up, Reclassify answers `429` with `{"error":"classification-quota-reached"}`, the dashboard says so, and the message stays in **To review**: try again after midnight UTC, or raise the limit in **Settings → Daily quotas**. Only a message quarantined for this reason can be reclassified; any other reason is the filter’s or intake’s answer, and Reclassify answers `409`. An API token cannot reclassify.
+A classifier outage puts messages in **To review** with the reason **Analysis unavailable** (`classification-error`). Check the `AI` binding, `RONDYR_CLASSIFIER`, and the Worker logs of the outage. Once the model answers again, open each message and select **Reclassify**: the message goes back to classification, as if it had just arrived, and leaves **To review** if the filter accepts it. Each reclassification calls the model again, so it uses one slot of the organization's daily classification quota; a request that Rondyr refuses gives its slot back. A reviewer can reclassify, as for an acceptance. When the day's quota is used up, Reclassify answers `429` with `{"error":"classification-quota-reached"}`, the dashboard says so, and the message stays in **To review**: try again after midnight UTC, or raise the limit in **Settings → Daily quotas**. Only a message quarantined for this reason can be reclassified; any other reason is the filter’s or intake’s answer, and Reclassify answers `409`. An API token cannot reclassify.
 
 ## Production health check
 

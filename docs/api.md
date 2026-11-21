@@ -58,7 +58,7 @@ A request with an `Authorization` header on this route is a server intake, whate
 
 ### Idempotency key
 
-Send an `Idempotency-Key` header to make retries safe. The key has 1 to 128 printable ASCII characters; another value gets `400`. Its scope is the form, and it never expires: it lives as long as the submission it names.
+Send an `Idempotency-Key` header to make retries safe. The key has 1 to 128 printable ASCII characters; another value gets `400`. Its scope is the form, and it never expires: it lives as long as the submission it names. Deleting that submission, by hand or through the organization's retention period, frees the key: a later request with the same key stores a new submission. An export never contains the key.
 
 The first request with a key stores the message and answers `202`. A later request with the same key on the same form answers `202` with the ID of the first submission: Rondyr stores nothing, publishes nothing, and doesn't compare the bodies. Two requests with the same key at the same moment store a single submission, and both get its ID. The same key on another form is a different key.
 

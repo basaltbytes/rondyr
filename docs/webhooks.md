@@ -36,7 +36,7 @@ Rondyr checks the URL when the webhook is created and again before each attempt.
 
 The URL parser normalizes hosts first, so `https://2130706433/` and `https://0x7f.1/` are refused as `127.0.0.1`.
 
-A Worker can't resolve a hostname before it calls `fetch`, so these rules only see the URL. A public hostname whose DNS record points to a private address passes them. Any member of an organization can make the Worker send requests to such a hostname, so add members you trust.
+A Worker can't resolve a hostname before it calls `fetch`, so these rules only see the URL. A public hostname whose DNS record points to a private address passes them. Any admin of an organization can make the Worker send requests to such a hostname, so give the admin role to people you trust.
 
 The API answers `400` with `{"error":"destination-refused","reason":"…"}` and one of these reasons: `invalid-url`, `not-https`, `credentials`, `custom-port`, `local-hostname`, `reserved-address`, `worker-origin`. A stored URL that fails the check before an attempt ends the delivery as failed, with the reason in its error summary.
 
