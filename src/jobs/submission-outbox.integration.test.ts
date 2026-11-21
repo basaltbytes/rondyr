@@ -300,3 +300,56 @@ it.live(
     }),
   30_000,
 );
+
+it.live(
+  "counts no publication while the queue is down, so an outage makes no event stuck",
+  () =>
+    Effect.gen(function* () {
+      const services = yield* Layer.build(adapters);
+      const queue = Context.get(services, ClassificationQueue);
+      yield* seedForm("outbox-outage");
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
+        "outbox-outage",
+        contact,
+        Option.none(),
+      );
+      const down = publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, {
+          send: () => Effect.fail(QueueUnavailable.make()),
+        }),
+        Effect.provideContext(services),
+        Effect.flip,
+      );
+      // A failed publication keeps the lease for a minute; the next Cron pass after it
+      // tries again.
+      const expireLease = Effect.promise(() =>
+        env.DB.prepare("UPDATE outbox_events SET lease_until = 1 WHERE submission_id = ?")
+          .bind(submissionId)
+          .run(),
+      );
+
+      for (let pass = 1; pass <= maxPublications + 1; pass += 1) {
+        yield* expireLease;
+        const failure = yield* down;
+        assert.strictEqual(failure._tag, "QueueUnavailable");
+        const row = yield* outboxRow(submissionId);
+        assert.strictEqual(row.publication_count, 0);
+        assert.isNull(row.published_at);
+        assert.isNull(row.stuck_at);
+      }
+
+      // Once the queue is back, the next pass publishes the event and counts it.
+      const sent: Array<SubmissionId> = [];
+      yield* expireLease;
+      yield* publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, recording(queue, sent)),
+        Effect.provideContext(services),
+      );
+      assert.include(sent, submissionId);
+      const published = yield* outboxRow(submissionId);
+      assert.strictEqual(published.publication_count, 1);
+      assert.isNull(published.stuck_at);
+      yield* waitForOneClassification(submissionId);
+    }),
+  30_000,
+);

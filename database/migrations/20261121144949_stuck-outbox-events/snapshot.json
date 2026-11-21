@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "75819098-969d-49b7-bb86-08bcfd26334f",
+  "id": "c5bd5a50-2f5b-4ef2-90dd-2993a89839c8",
   "prevIds": [
     "2472e7b2-bda3-4477-9104-14e76811f586"
   ],
@@ -1465,6 +1465,20 @@
       ],
       "isUnique": false,
       "where": "\"outbox_events\".\"handed_off_at\" IS NULL AND \"outbox_events\".\"stuck_at\" IS NULL",
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "outbox_events",
+      "name": "outbox_stuck_idx",
+      "columns": [
+        {
+          "value": "stuck_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"outbox_events\".\"handed_off_at\" IS NULL AND \"outbox_events\".\"stuck_at\" IS NOT NULL",
       "origin": "manual",
       "entityType": "indexes"
     },
