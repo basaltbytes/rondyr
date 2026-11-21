@@ -46,9 +46,9 @@ export const turnstileVerifierLive = Layer.effect(
   Effect.gen(function* () {
     const cipher = yield* SecretCipher;
     const http = yield* HttpClient.HttpClient;
-    const client = HttpClient.filterStatusOk(http);
-    // Siteverify answers an unknown secret key with HTTP 400 and `invalid-input-secret`.
-    const checkClient = HttpClient.filterStatus(http, (status) => status === 200 || status === 400);
+    // Siteverify answers an unknown secret key with HTTP 400 and `invalid-input-secret`, and
+    // does not document the status of other refusals, so the decision comes from the body.
+    const client = HttpClient.filterStatus(http, (status) => status === 200 || status === 400);
     const verify = Effect.fn("Turnstile.verify")(function* (
       ...[publicId, sealed, token]: Parameters<TurnstileVerifier["Service"]["verify"]>
     ) {
@@ -65,7 +65,7 @@ export const turnstileVerifierLive = Layer.effect(
     const checkSecret = Effect.fn("Turnstile.checkSecret")(function* (
       secret: Redacted.Redacted<string>,
     ) {
-      const reply = yield* siteverify(checkClient, Redacted.value(secret), dummyToken);
+      const reply = yield* siteverify(client, Redacted.value(secret), dummyToken);
       const errors = reply["error-codes"] ?? [];
       if (errors.includes("internal-error")) return yield* unavailable();
       const known =
