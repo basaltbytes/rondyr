@@ -38,6 +38,28 @@ export const emailsTo = Effect.fnUntraced(function* (recipient: string) {
   return (yield* readEmails(body)).map((entry) => entry.body);
 });
 
+/** The emails of a recipient whose body matches `pattern`, once `count` of them arrived. */
+export const emailsMatching = Effect.fnUntraced(function* (
+  recipient: string,
+  pattern: RegExp,
+  count = 1,
+) {
+  const emails = yield* Effect.promise(() =>
+    vi.waitFor(
+      () =>
+        received(recipient).then((body) => {
+          const matching = Array.isArray(body)
+            ? body.filter((entry) => pattern.test(String(entry.body)))
+            : [];
+          assert.isAtLeast(matching.length, count);
+          return matching;
+        }),
+      { timeout: 10_000, interval: 100 },
+    ),
+  );
+  return (yield* readEmails(emails)).map((entry) => entry.body);
+});
+
 const linkPattern = /\/confirm-recipient#([A-Za-z0-9_-]{43})/u;
 
 /** The secret of the last confirmation link that a recipient got, once `count` links arrived. */
