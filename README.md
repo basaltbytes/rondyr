@@ -201,7 +201,7 @@ pnpm deploy:plan --stage staging --env-file .env.staging
 pnpm run deploy --stage staging --env-file .env.staging
 ```
 
-The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues and consumers, the cron trigger, the Durable Objects, and the client rate limit. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, the email settings, and deployment from GitHub Actions.
+The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues and consumers, the cron trigger, the Durable Objects, and the client rate limit. Plan on Workers Paid: [Costs and plan limits](./docs/deployment.md#costs-and-plan-limits) lists what each Cloudflare product costs, and the [fresh account checklist](./docs/deployment.md#fresh-account-checklist) walks through a first installation. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, the email settings, and deployment from GitHub Actions.
 
 ## Documentation
 
