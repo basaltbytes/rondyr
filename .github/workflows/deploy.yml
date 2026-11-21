@@ -7,7 +7,7 @@ on:
         type: string
         required: true
       verify:
-        description: Require the staging smoke test, and fail if its settings are missing
+        description: Fail when the staging submission check is partly configured
         type: boolean
         default: false
     outputs:
@@ -45,10 +45,8 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets[format('BETTER_AUTH_SECRET_{0}', inputs.stage == 'prod' && 'PROD' || 'STAGING')] }}
           STAGE: ${{ inputs.stage }}
           VERIFY: ${{ inputs.verify && 'true' || 'false' }}
-          RONDYR_SMOKE_ORGANIZATION_ID_STAGING: ${{ vars.RONDYR_SMOKE_ORGANIZATION_ID_STAGING }}
           RONDYR_SMOKE_FORM_ID_STAGING: ${{ vars.RONDYR_SMOKE_FORM_ID_STAGING }}
-          RONDYR_SMOKE_EMAIL_STAGING: ${{ secrets.RONDYR_SMOKE_EMAIL_STAGING }}
-          RONDYR_SMOKE_PASSWORD_STAGING: ${{ secrets.RONDYR_SMOKE_PASSWORD_STAGING }}
+          RONDYR_SMOKE_API_TOKEN_STAGING: ${{ secrets.RONDYR_SMOKE_API_TOKEN_STAGING }}
         run: |
           if [[ -z "$CLOUDFLARE_API_TOKEN" ]]; then
             echo "::notice::Cloudflare deployment skipped because CLOUDFLARE_API_TOKEN is unset."
@@ -61,18 +59,18 @@ jobs:
           if [[ "$STAGE" == staging ]]; then
             # Print setting names only, never their values.
             missing=()
-            for name in RONDYR_SMOKE_ORGANIZATION_ID_STAGING RONDYR_SMOKE_FORM_ID_STAGING RONDYR_SMOKE_EMAIL_STAGING RONDYR_SMOKE_PASSWORD_STAGING; do
+            for name in RONDYR_SMOKE_FORM_ID_STAGING RONDYR_SMOKE_API_TOKEN_STAGING; do
               if [[ -z "${!name}" ]]; then missing+=("$name"); fi
             done
             if [[ ${#missing[@]} -eq 0 ]]; then
-              echo "smoke=true" >> "$GITHUB_OUTPUT"
+              echo "submission=true" >> "$GITHUB_OUTPUT"
+            elif [[ ${#missing[@]} -eq 2 ]]; then
+              echo "::notice title=Staging gate::The staging check covers /health only, because RONDYR_SMOKE_FORM_ID_STAGING and RONDYR_SMOKE_API_TOKEN_STAGING are not set. See docs/deployment.md#staging-gate."
             elif [[ "$VERIFY" == true ]]; then
-              echo "::error title=Staging gate::The staging smoke test is required but these settings are missing: ${missing[*]}. See docs/deployment.md#staging-gate."
+              echo "::error title=Staging gate::The staging submission check is partly configured. Missing: ${missing[*]}. See docs/deployment.md#staging-gate."
               exit 1
-            elif [[ ${#missing[@]} -eq 4 ]]; then
-              echo "::notice title=Staging gate::Staging smoke test skipped because the staging gate is not configured. See docs/deployment.md#staging-gate."
             else
-              echo "::warning title=Staging gate::Staging smoke test skipped because the staging gate is partly configured. Missing: ${missing[*]}. See docs/deployment.md#staging-gate."
+              echo "::warning title=Staging gate::The staging check covers /health only, because the submission check is partly configured. Missing: ${missing[*]}. See docs/deployment.md#staging-gate."
             fi
           fi
           echo "ready=true" >> "$GITHUB_OUTPUT"
@@ -112,14 +110,13 @@ jobs:
           if [[ -z "$RESEND_API_KEY" ]]; then unset RESEND_API_KEY; fi
           pnpm run deploy --stage "$STAGE" --yes --no-input
       - id: smoke
-        if: steps.credentials.outputs.smoke == 'true'
+        if: steps.credentials.outputs.ready == 'true' && inputs.stage == 'staging'
         name: Verify staging health and submission processing
         env:
           BETTER_AUTH_URL_STAGING: ${{ vars.BETTER_AUTH_URL_STAGING }}
-          RONDYR_SMOKE_ORGANIZATION_ID_STAGING: ${{ vars.RONDYR_SMOKE_ORGANIZATION_ID_STAGING }}
-          RONDYR_SMOKE_FORM_ID_STAGING: ${{ vars.RONDYR_SMOKE_FORM_ID_STAGING }}
-          RONDYR_SMOKE_EMAIL_STAGING: ${{ secrets.RONDYR_SMOKE_EMAIL_STAGING }}
-          RONDYR_SMOKE_PASSWORD_STAGING: ${{ secrets.RONDYR_SMOKE_PASSWORD_STAGING }}
+          # Without these two, the script checks /health only.
+          RONDYR_SMOKE_FORM_ID_STAGING: ${{ steps.credentials.outputs.submission == 'true' && vars.RONDYR_SMOKE_FORM_ID_STAGING || '' }}
+          RONDYR_SMOKE_API_TOKEN_STAGING: ${{ steps.credentials.outputs.submission == 'true' && secrets.RONDYR_SMOKE_API_TOKEN_STAGING || '' }}
         run: |
           node scripts/smoke-staging.mjs
           echo "verified=true" >> "$GITHUB_OUTPUT"

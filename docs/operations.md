@@ -15,29 +15,29 @@ The Worker’s application logs use operation names, identifiers, status tags, a
 
 A push to `main` deploys `prod` in one of two modes. Check the summary of the CI run to see which one applied.
 
-- **Gate not configured**: the run shows the notice `The staging gate is not configured`, deploys `prod`, and leaves `staging` untouched. Nothing tests the release before production. This is the default until someone sets the gate up.
-- **Gate configured**: the run deploys `staging`, runs `scripts/smoke-staging.mjs` against it, and deploys `prod` only if the test passes.
+- **Staging not configured**: the run shows the notice `Staging is not configured`, deploys `prod`, and leaves `staging` untouched. Nothing tests the release before production.
+- **Staging configured**: the run deploys `staging`, runs `scripts/smoke-staging.mjs` against it, and deploys `prod` only if the script passes. The script checks `/health`, then, when the [submission check](./deployment.md#submission-check) is set up, the classification of one test submission. Without the submission check, the run shows the notice `Staging is deployed and its /health checked before prod, without a test submission`.
 
-[Staging gate](./deployment.md#staging-gate) in the deployment guide lists the one-time setup: the staging account created with `scripts/setup-owner.sh`, an organization and a form with no destinations, then two variables and two secrets in GitHub.
+[Staging gate](./deployment.md#staging-gate) in the deployment guide lists the setup.
 
 ### When the gate fails
 
 The job `staging / Deploy staging` is red and `production` is skipped. Production keeps the version it had before the push. Open the failed step:
 
-- **Check deployment configuration** with `The staging smoke test is required but these settings are missing`: a smoke setting was deleted after the run started. Restore it or delete the other three.
-- The gate job **Staging gate configuration** with `The staging gate is partly configured`: nothing was deployed. Set the settings it names, or delete the others to deploy `prod` without the gate.
+- The gate job **Staging gate configuration** with `Staging is partly configured` or `The staging submission check is partly configured`: nothing was deployed. Set the setting it names, or delete the other one of the pair.
+- **Check deployment configuration** with `The staging submission check is partly configured`: a smoke setting was deleted after the run started. Restore it or delete the other one.
 - **Deploy through Alchemy**: staging itself did not deploy. Read the Alchemy output, and run `pnpm deploy:plan --stage staging` with the staging environment to see the drift.
 - **Verify staging health and submission processing**: staging deployed but did not pass the test. The step prints one line and no response body:
-  - `Staging returned HTTP <status>; expected 200 for /health` or `Staging health did not report ok.`: check the Worker’s logs and its D1 binding on staging.
-  - `expected 200 for /api/auth`: the sign-in failed. Check that the smoke secrets match the staging account, and that `BETTER_AUTH_SECRET_STAGING` has not changed since the account signed in.
-  - `expected 202 for /f/<form>`: the form refused the submission. Check that the form is still active and that its ID matches `RONDYR_SMOKE_FORM_ID_STAGING`.
-  - `expected 200 for /api/organizations`: the account cannot read the submission. Check `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` and the account’s membership.
+  - `Staging returned HTTP <status>; expected 200 for /health` or `Staging health did not report ok.`: the script tried four times over 15 seconds. Check the Worker's logs and its D1 binding on staging.
+  - `Staging returned HTTP 401; expected 200 for /api/organizations`: the API token is unknown or revoked. Create a new one in **Settings → API tokens** of the test organization and update `RONDYR_SMOKE_API_TOKEN_STAGING`.
+  - `The smoke form does not belong to the API token's organization.`: `RONDYR_SMOKE_FORM_ID_STAGING` is not the public ID of a form of the token's organization.
+  - `expected 202 for /f/<form>`: the form refused the submission. Check that the form is still active.
   - `Staging did not classify the smoke submission within three minutes.`: follow [Queue backlog](#queue-backlog) on staging.
-  - `Staging did not classify the smoke submission (classification-error).`: the classifier call failed. Check the `AI` binding, the `RONDYR_CLASSIFIER_STAGING` value, and the Worker’s logs.
-  - `Staging did not classify the smoke submission (honeypot).`: the test form’s honeypot field is `name` or `message`, which the test fills. Remove the honeypot field from the test form or rename it.
+  - `Staging did not classify the smoke submission (classification-error).`: the classifier call failed. Check the `AI` binding, the `RONDYR_CLASSIFIER_STAGING` value, and the Worker's logs.
+  - `Staging did not classify the smoke submission (honeypot).`: the test form's honeypot field is `name` or `message`, which the test fills. Remove the honeypot field from the test form or rename it.
   - `The smoke test requires the rondyr-staging workers.dev origin.`: `BETTER_AUTH_URL_STAGING` is not the staging `workers.dev` origin. The test refuses any other host.
 
-Once staging is fixed, re-run the failed jobs of the CI run, or push again. To ship a fix to production while staging stays broken, delete the four smoke settings: the next push deploys `prod` directly, with the notice. Restore them once staging works.
+Once staging is fixed, re-run the failed jobs of the CI run, or push again. To ship a fix to production while staging stays broken, delete `BETTER_AUTH_URL_STAGING` and the two smoke settings: the next push deploys `prod` directly, with the notice. Restore them once staging works. Keep `BETTER_AUTH_SECRET_STAGING`: staging sessions depend on it.
 
 ## Restore D1 with Time Travel
 
