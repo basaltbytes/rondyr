@@ -2,6 +2,7 @@ import { Result, Schema } from "effect";
 
 import { isSubmittedFieldName } from "../submissions/submission-fields.ts";
 import { AllowedOrigin } from "./allowed-origin.ts";
+import { TurnstileSiteKey, turnstileField } from "./turnstile.ts";
 
 /** A suspended form refuses submissions and keeps its messages, destinations and public URL. */
 export const FormStatus = Schema.Literals(["active", "suspended"]);
@@ -21,7 +22,7 @@ export const HoneypotField = Schema.Trim.check(
   Schema.isMaxLength(100),
   Schema.makeFilter(
     (name) =>
-      isSubmittedFieldName(name) ||
+      (isSubmittedFieldName(name) && name !== turnstileField) ||
       "Expected a field name without control characters, line breaks or reserved names",
   ),
 );
@@ -36,6 +37,7 @@ export const ManagedForm = Schema.Struct({
   businessContext: Schema.NullOr(Schema.String),
   successUrl: Schema.NullOr(Schema.String),
   honeypotField: Schema.NullOr(Schema.String),
+  turnstileSiteKey: Schema.NullOr(TurnstileSiteKey),
 });
 
 export const CreateForm = Schema.Struct({
@@ -101,7 +103,9 @@ export function successUrlOrigin(url: SuccessUrl) {
   return AllowedOrigin.make(new URL(url).origin);
 }
 
-export const FormRequestError = Schema.Struct({
-  error: Schema.Literal("success-url-refused"),
-  reason: SuccessUrlRefusalReason,
-});
+export const FormRequestError = Schema.Union([
+  Schema.Struct({ error: Schema.Literal("success-url-refused"), reason: SuccessUrlRefusalReason }),
+  Schema.Struct({ error: Schema.Literal("secrets-key-missing") }),
+  Schema.Struct({ error: Schema.Literal("turnstile-secret-refused") }),
+  Schema.Struct({ error: Schema.Literal("siteverify-unavailable") }),
+]);

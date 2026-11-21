@@ -19,7 +19,7 @@ Create one environment file per stage, for example `.env.staging`.
 | `BETTER_AUTH_SECRET` | Yes | At least 32 characters. Generate it with `openssl rand -hex 32` |
 | `BETTER_AUTH_URL` | Yes | The HTTPS origin of the Worker, with no path and no custom port |
 | `RONDYR_SETUP_TOKEN` | Only for the first account | A second value from `openssl rand -hex 32` |
-| `RONDYR_SECRETS_KEY` | Only for webhooks | 32 bytes in base64, from `openssl rand -base64 32`. See [Webhook secrets](#webhook-secrets) |
+| `RONDYR_SECRETS_KEY` | Only for webhooks and Turnstile | 32 bytes in base64, from `openssl rand -base64 32`. See [Encryption key](#encryption-key) |
 | `RONDYR_CLASSIFIER` | No | `jev` (default) or `openai` |
 | `RESEND_API_KEY` | Only for Resend | A Resend API key with sending access. See [Email](#email) |
 | `RONDYR_EMAIL_FROM` | Only for email | A bare sender address on a domain configured with the selected provider, such as `forms@notifications.example.com` |
@@ -71,9 +71,9 @@ The stack doesn't create the `default` gateway. When an account has no gateway w
 
 Both classifiers use the same thresholds today, although their scores haven't been compared on a test corpus ([#6](https://github.com/basaltbytes/rondyr/issues/6)).
 
-## Webhook secrets
+## Encryption key
 
-`RONDYR_SECRETS_KEY` is the AES-256-GCM key that encrypts the signing secret of each webhook in D1. It is optional: without it, the dashboard and the API refuse to create a webhook or rotate its secret, and everything else works. Set it on a stage before its first webhook:
+`RONDYR_SECRETS_KEY` is the AES-256-GCM key that encrypts two kinds of secrets in D1: the signing secret of each webhook and the Turnstile secret key of each form. It is optional. Without it, the dashboard and the API refuse to create a webhook, rotate its secret, or save a form's Turnstile keys, and everything else works. Set it on a stage before its first webhook or Turnstile widget:
 
 ```sh
 openssl rand -base64 32
@@ -81,7 +81,7 @@ openssl rand -base64 32
 
 Add the value to the stage environment file, or to the `RONDYR_SECRETS_KEY_STAGING` or `RONDYR_SECRETS_KEY_PROD` GitHub secret, and redeploy.
 
-Keep the key once webhooks exist. If you remove or change it, every delivery to an existing webhook fails without a retry, because its secret no longer decrypts. To recover with a new key, rotate the secret of each webhook and give the new secret to its recipient. A value that isn't 32 bytes of base64 counts as missing.
+Keep the key once webhooks or Turnstile keys exist. If you remove or change it, every delivery to an existing webhook fails without a retry, because its secret no longer decrypts. To recover with a new key, rotate the secret of each webhook and give the new secret to its recipient. Stored Turnstile secret keys don't decrypt either: intake logs a warning and sends the form's messages to classification without checking their Turnstile token, until you save the form's Turnstile keys again. A value that isn't 32 bytes of base64 counts as missing.
 
 [docs/webhooks.md](./webhooks.md) covers the payload, the signature, and the destination rules.
 

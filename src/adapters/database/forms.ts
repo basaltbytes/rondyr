@@ -10,10 +10,14 @@ import {
   type SuccessUrl,
   type UpdateForm,
 } from "../../domain/forms/form.ts";
+import type { SetTurnstile } from "../../domain/forms/turnstile.ts";
 import { Forms, OrganizationFormNotFound, SuccessOriginNotListed } from "../../ports/forms.ts";
 import type { OrganizationScope } from "../../ports/forms.ts";
 import type { FormScope } from "../../ports/notification-targets.ts";
+import { SecretCipher } from "../../ports/secret-cipher.ts";
+import type { SealedSecret } from "../../ports/secret-cipher.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
+import { TurnstileVerifier, turnstileSecretOwner } from "../../ports/turnstile-verifier.ts";
 import { d1, database } from "./d1.ts";
 
 const decodeForms = Schema.decodeUnknownEffect(Schema.Array(ManagedForm));
@@ -23,7 +27,7 @@ const unreadable = () => StorageUnavailable.make();
 
 export const managedFormColumns = `
   name, public_id AS publicId, status, business_context AS businessContext,
-  success_url AS successUrl, honeypot_field AS honeypotField
+  success_url AS successUrl, honeypot_field AS honeypotField, turnstile_site_key AS turnstileSiteKey
 `;
 
 // ?1 is the account, ?2 the organization and ?3 the public ID of the form.
@@ -176,12 +180,73 @@ const clearHoneypotField = Effect.fn("Forms.clearHoneypotField")(function* (form
   return yield* writeHoneypotField(form, null);
 });
 
-export const formsLive = Layer.succeed(Forms, {
-  create,
-  update,
-  setStatus,
-  setSuccessUrl,
-  clearSuccessUrl,
-  setHoneypotField,
-  clearHoneypotField,
+/** Fail with `OrganizationFormNotFound` unless the form is one of the account's. */
+const findForm = Effect.fnUntraced(function* (form: FormScope) {
+  const db = yield* database;
+  const found = yield* d1(() =>
+    db.prepare(scopedForm).bind(form.userId, form.organizationId, form.formPublicId).all(),
+  );
+  const forms = yield* decodeFormIds(found.results).pipe(Effect.mapError(unreadable));
+  if (forms.length === 0) return yield* OrganizationFormNotFound.make();
 });
+
+/** Set both Turnstile keys, or clear them with null. */
+const writeTurnstile = Effect.fnUntraced(function* (
+  form: FormScope,
+  keys: { readonly siteKey: string; readonly secret: SealedSecret } | null,
+) {
+  const db = yield* database;
+  const updated = yield* d1(() =>
+    db
+      .prepare(`
+    UPDATE forms SET turnstile_site_key = ?4, turnstile_secret = ?5
+    WHERE id IN (${scopedForm})
+    RETURNING ${managedFormColumns}
+  `)
+      .bind(
+        form.userId,
+        form.organizationId,
+        form.formPublicId,
+        keys?.siteKey ?? null,
+        keys?.secret ?? null,
+      )
+      .all(),
+  );
+  return yield* returned(updated.results);
+});
+
+const clearTurnstile = Effect.fn("Forms.clearTurnstile")(function* (form: FormScope) {
+  return yield* writeTurnstile(form, null);
+});
+
+export const formsLive = Layer.effect(
+  Forms,
+  Effect.gen(function* () {
+    const cipher = yield* SecretCipher;
+    const verifier = yield* TurnstileVerifier;
+    const setTurnstile = Effect.fn("Forms.setTurnstile")(function* (
+      form: FormScope,
+      settings: typeof SetTurnstile.Type,
+    ) {
+      const secret = yield* cipher.seal(
+        settings.secretKey,
+        turnstileSecretOwner(form.formPublicId),
+      );
+      // Another account's form gets 404 before any call to Siteverify.
+      yield* findForm(form);
+      yield* verifier.checkSecret(settings.secretKey);
+      return yield* writeTurnstile(form, { siteKey: settings.siteKey, secret });
+    });
+    return {
+      create,
+      update,
+      setStatus,
+      setSuccessUrl,
+      clearSuccessUrl,
+      setHoneypotField,
+      clearHoneypotField,
+      setTurnstile,
+      clearTurnstile,
+    };
+  }),
+);

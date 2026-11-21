@@ -13,7 +13,7 @@ import type { Inbox } from "./inbox-client.ts";
 export type Form = typeof ManagedForm.Type;
 export type FormProblem = typeof FormRequestError.Type;
 
-/** A refused request, with the reason the API gives for a refused success URL, if any. */
+/** A refused request, with the reason the API gives, if any. */
 export class FormRequestFailed extends Schema.TaggedError<
   FormRequestFailed,
   { readonly brand: unique symbol }
@@ -88,4 +88,17 @@ export async function setHoneypotField(id: Inbox["id"], publicId: Form["publicId
 
 export async function clearHoneypotField(id: Inbox["id"], publicId: Form["publicId"]) {
   return send(`${form(id, publicId)}/honeypot`, { method: "DELETE" });
+}
+
+export async function setTurnstile(
+  id: Inbox["id"],
+  publicId: Form["publicId"],
+  settings: { readonly siteKey: string; readonly secretKey: string } | null,
+) {
+  return send(
+    `${form(id, publicId)}/turnstile`,
+    settings === null
+      ? { method: "DELETE" }
+      : { method: "PUT", headers: json, body: JSON.stringify(settings) },
+  );
 }

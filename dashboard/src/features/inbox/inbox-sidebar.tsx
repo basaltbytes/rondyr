@@ -5,6 +5,7 @@ import {
   ChevronRight,
   CircleCheck,
   CirclePause,
+  Gauge,
   FileText,
   Globe,
   Inbox as InboxIcon,
@@ -47,6 +48,7 @@ export type Section =
   | "origins"
   | "domains"
   | "classification"
+  | "quotas"
   | "organization"
   | "operations";
 
@@ -62,6 +64,7 @@ const settings = [
   ["origins", Globe],
   ["domains", Network],
   ["classification", ScanSearch],
+  ["quotas", Gauge],
 ] as const;
 
 interface InboxSidebarProps {
