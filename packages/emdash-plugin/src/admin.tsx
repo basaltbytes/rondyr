@@ -28,8 +28,11 @@ const Failure = z.enum([
   "conflict",
   "unexpected",
   "token-missing",
+  "token-malformed",
   "failed",
 ]) satisfies z.ZodType<Failure>;
+
+const TokenProblem = z.enum(["token-missing", "token-malformed"]).nullable();
 
 /** A plugin route that did not answer with its data. */
 class AdminError extends Error {
@@ -80,9 +83,10 @@ function formatDate(milliseconds: number): string {
 }
 
 const Status = z.object({
-  token: z.boolean(),
+  tokenProblem: TokenProblem,
   webhookSecret: z.boolean(),
   queue: z.object({ pending: z.number(), failed: z.number(), unlinked: z.number() }),
+  unqueued: z.object({ count: z.number(), since: z.number().nullable() }),
 });
 type Status = z.infer<typeof Status>;
 
@@ -99,11 +103,16 @@ function ErrorBanner({ failure }: { readonly failure: Failure }) {
   return <Banner variant="error" description={text.errors[failure]} />;
 }
 
-/** Missing secrets, and what waits in the queue, with Retry for the failed entries. */
+/**
+ * Missing secrets, what waits in the queue with Retry for the failed entries,
+ * and the submissions that could not be queued. When the queue can't be read,
+ * the page says so rather than showing nothing.
+ */
 function StatusBanners({ onRetried }: { readonly onRetried: () => void }) {
   const text = useStrings();
-  const [status, setStatus] = React.useState<Status | null>(null);
+  const [status, setStatus] = React.useState<Loaded<Status> | null>(null);
   const [retrying, setRetrying] = React.useState(false);
+  const [retryFailure, setRetryFailure] = React.useState<Failure | null>(null);
   const [version, setVersion] = React.useState(0);
 
   React.useEffect(() => {
@@ -111,9 +120,14 @@ function StatusBanners({ onRetried }: { readonly onRetried: () => void }) {
     void (async () => {
       try {
         const next = await call(pluginApi, "status", JSON.stringify({ version }), Status);
-        if (current) setStatus(next);
-      } catch {
-        if (current) setStatus(null);
+        if (current) setStatus({ key: "status", value: next });
+      } catch (error) {
+        if (current) {
+          setStatus({
+            key: "status",
+            failure: error instanceof Error ? failureOf(error) : "failed",
+          });
+        }
       }
     })();
     return () => {
@@ -122,14 +136,25 @@ function StatusBanners({ onRetried }: { readonly onRetried: () => void }) {
   }, [version]);
 
   if (status === null) return null;
-  const { pending, failed, unlinked } = status.queue;
+  if ("failure" in status) {
+    return (
+      <Banner
+        variant="error"
+        title={text.queue.statusUnavailable}
+        description={text.errors[status.failure]}
+      />
+    );
+  }
+  const { pending, failed, unlinked } = status.value.queue;
+  const { unqueued, tokenProblem, webhookSecret } = status.value;
   const retry = async () => {
     setRetrying(true);
+    setRetryFailure(null);
     try {
       await call(pluginApi, "queue/retry", "{}", Retried);
       onRetried();
-    } catch {
-      // The banner shows the queue again below; a failed retry leaves it as it was.
+    } catch (error) {
+      setRetryFailure(error instanceof Error ? failureOf(error) : "failed");
     } finally {
       setRetrying(false);
       setVersion((value) => value + 1);
@@ -137,10 +162,18 @@ function StatusBanners({ onRetried }: { readonly onRetried: () => void }) {
   };
   return (
     <div className="space-y-3">
-      {!status.token && <Banner variant="alert" description={text.errors["token-missing"]} />}
-      {!status.webhookSecret && (
-        <Banner variant="alert" description={text.setup.webhookSecretMissing} />
+      {tokenProblem !== null && <Banner variant="alert" description={text.errors[tokenProblem]} />}
+      {!webhookSecret && <Banner variant="alert" description={text.setup.webhookSecretMissing} />}
+      {unqueued.count > 0 && unqueued.since !== null && (
+        <Banner
+          variant="error"
+          description={fill(text.queue.unqueued, {
+            count: unqueued.count,
+            date: formatDate(unqueued.since),
+          })}
+        />
       )}
+      {retryFailure !== null && <ErrorBanner failure={retryFailure} />}
       {pending + failed + unlinked > 0 && (
         <Banner
           variant={failed > 0 ? "error" : "default"}
@@ -241,19 +274,26 @@ function MessageDetail({
   const decide = async (decision: "approve" | "dismiss") => {
     setWorking(true);
     setNotice(null);
+    setFailure(null);
     try {
       const body = JSON.stringify({ id, decision });
       setDetail(await call(pluginApi, "messages/decide", body, SubmissionDetail));
       onDecided();
     } catch (error) {
+      // Whether the decision was recorded is unknown: the message is shown again only as Rondyr has it now.
+      setDetail(null);
       const reason = error instanceof Error ? failureOf(error) : "failed";
-      if (reason !== "conflict") {
-        setFailure(reason);
-      } else {
+      if (reason === "conflict") {
         setNotice(text.messages.alreadyDecided);
         onDecided();
-        setDetail(await call(pluginApi, "messages/get", JSON.stringify({ id }), SubmissionDetail));
       }
+      try {
+        setDetail(await call(pluginApi, "messages/get", JSON.stringify({ id }), SubmissionDetail));
+      } catch (reload) {
+        setFailure(reload instanceof Error ? failureOf(reload) : "failed");
+        return;
+      }
+      if (reason !== "conflict") setFailure(reason);
     } finally {
       setWorking(false);
     }
@@ -455,9 +495,13 @@ const EmDashForms = z.object({ items: z.array(EmDashForm) });
 const Link = z.object({ rondyrFormId: z.string().nullable(), recipients: z.array(z.string()) });
 type Link = z.infer<typeof Link>;
 
+const Unqueued = z.object({ count: z.number(), firstAt: z.number(), lastAt: z.number() });
+type Unqueued = z.infer<typeof Unqueued>;
+
 const Settings = z.object({
   links: z.array(z.object({ slug: z.string(), link: Link })),
-  token: z.boolean(),
+  unqueued: z.array(z.object({ slug: z.string(), record: Unqueued })),
+  tokenProblem: TokenProblem,
   webhookSecret: z.boolean(),
   webhookUrl: z.string(),
   organization: Organization.nullable(),
@@ -466,6 +510,90 @@ const Settings = z.object({
 type Settings = z.infer<typeof Settings>;
 
 const Saved = z.object({ requeued: z.number() });
+const Cleared = z.object({ cleared: z.boolean() });
+const Exported = z.object({ data: z.string(), filename: z.string().optional() });
+
+/**
+ * The submissions that could not be queued: the forms plugin kept them. With
+ * `formsWithoutSubmissions()` its Submissions page is gone, so this downloads
+ * its CSV export of the form since a little before the first failure.
+ */
+function UnqueuedNotice({
+  form,
+  record,
+}: {
+  readonly form: EmDashForm;
+  readonly record: Unqueued;
+}) {
+  const text = useStrings();
+  const [cleared, setCleared] = React.useState(false);
+  const [working, setWorking] = React.useState(false);
+  const [error, setError] = React.useState<Failure | null>(null);
+
+  const download = async () => {
+    setWorking(true);
+    setError(null);
+    try {
+      const from = new Date(record.firstAt - 10 * 60_000).toISOString();
+      const body = JSON.stringify({ formId: form.id, format: "csv", from });
+      const exported = await call(formsApi, "submissions/export", body, Exported);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([exported.data], { type: "text/csv" }));
+      link.download = exported.filename ?? `${form.slug}-submissions.csv`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (failure) {
+      setError(failure instanceof Error ? failureOf(failure) : "failed");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const clear = async () => {
+    setWorking(true);
+    setError(null);
+    try {
+      await call(
+        pluginApi,
+        "settings/unqueued/clear",
+        JSON.stringify({ slug: form.slug }),
+        Cleared,
+      );
+      setCleared(true);
+    } catch (failure) {
+      setError(failure instanceof Error ? failureOf(failure) : "failed");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  if (cleared) return null;
+  return (
+    <Banner
+      variant="error"
+      description={
+        <div className="space-y-2">
+          <p>
+            {fill(text.settings.unqueued, {
+              count: record.count,
+              first: formatDate(record.firstAt),
+              last: formatDate(record.lastAt),
+            })}
+          </p>
+          {error !== null && <p>{text.errors[error]}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" loading={working} onClick={() => void download()}>
+              {text.settings.download}
+            </Button>
+            <Button size="sm" variant="secondary" loading={working} onClick={() => void clear()}>
+              {text.settings.clearUnqueued}
+            </Button>
+          </div>
+        </div>
+      }
+    />
+  );
+}
 
 const emailAddress = z.email();
 
@@ -476,10 +604,12 @@ function parseRecipients(value: string): readonly string[] {
 function FormLinkEditor({
   form,
   link,
+  unqueued,
   settings,
 }: {
   readonly form: EmDashForm;
   readonly link: Link | null;
+  readonly unqueued: Unqueued | null;
   readonly settings: Settings;
 }) {
   const text = useStrings();
@@ -532,6 +662,7 @@ function FormLinkEditor({
   return (
     <section className="space-y-3 rounded-lg border border-kumo-line p-4">
       <h2 className="font-semibold">{form.name}</h2>
+      {unqueued !== null && <UnqueuedNotice form={form} record={unqueued} />}
       {sendsOwnEmails && (
         <Banner
           variant="alert"
@@ -622,14 +753,17 @@ function SettingsPage() {
   }
   const { settings, forms } = loaded.value;
   const links = new Map(settings.links.map(({ slug, link }) => [slug, link]));
+  const unqueued = new Map(settings.unqueued.map(({ slug, record }) => [slug, record]));
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-semibold">{text.settings.title}</h1>
-      {!settings.token && <Banner variant="alert" description={text.errors["token-missing"]} />}
+      {settings.tokenProblem !== null && (
+        <Banner variant="alert" description={text.errors[settings.tokenProblem]} />
+      )}
       {!settings.webhookSecret && (
         <Banner variant="alert" description={text.setup.webhookSecretMissing} />
       )}
-      {settings.error !== null && settings.token && (
+      {settings.error !== null && settings.tokenProblem === null && (
         <Banner
           variant="error"
           title={text.settings.unavailable}
@@ -646,6 +780,7 @@ function SettingsPage() {
           key={form.id}
           form={form}
           link={links.get(form.slug) ?? null}
+          unqueued={unqueued.get(form.slug) ?? null}
           settings={settings}
         />
       ))}
