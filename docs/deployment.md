@@ -105,6 +105,8 @@ Pull requests run `pnpm check` and `pnpm deploy:dry` in one job and the dashboar
 - **Gate not configured** (the default): the workflow deploys `prod` and leaves `staging` alone. The run shows the notice `The staging gate is not configured`.
 - **Gate configured**: the workflow deploys `staging`, checks `/health` and a submission through the authenticated inbox, and deploys `prod` only if that check passes.
 
+Before any deployment, the **Changed packages** job asks pnpm which workspace packages changed since the previous commit on `main` (`pnpm --filter "...[<commit>]" list`, in `scripts/deploy-scope.mjs`). The push deploys, and applies the D1 migrations, only if the Worker package, the repository root, is among them. A change to `pnpm-lock.yaml`, `pnpm-workspace.yaml` or a file under `.github/` counts as a Worker change. A merge that touches only `packages/emdash-plugin/` runs the checks and deploys nothing. If the comparison can't be made, for example on a first commit, the push deploys. The job log ends with `Deployment planned` or `Deployment skipped` and the reason; pull requests show the same line, compared with their base, and still run every check on every package.
+
 To deploy by hand, start the **Deploy** workflow and choose `staging` (the default) or `prod`. A manual `prod` deployment runs only from `main`. A manual `staging` deployment runs the smoke test when the gate is configured and skips it with a notice otherwise. It never deploys `prod`. Use it for the first setup of staging.
 
 Without `CLOUDFLARE_API_TOKEN`, the workflow skips cloud deployment.

@@ -28,6 +28,30 @@ jobs:
       - run: pnpm check
       - run: pnpm deploy:dry
 
+  # Which workspace packages changed, compared with the previous commit on main (push)
+  # or the base of the pull request. Pull request checks run on every package anyway;
+  # on main, the result decides whether the Worker deploys. Read it in the job log.
+  scope:
+    name: Changed packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      worker: ${{ steps.scope.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The whole history, so the comparison commit is present.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - id: scope
+        name: Detect changed packages
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/deploy-scope.mjs "$BASE"
+
   dashboard-e2e:
     name: Dashboard browser tests
     runs-on: ubuntu-latest
@@ -50,10 +74,11 @@ jobs:
           if-no-files-found: ignore
 
   # Every deployment below waits for this job, so it also waits for both test jobs.
+  # A push that changes no file of the Worker package deploys nothing.
   gate:
     name: Staging gate configuration
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [check, dashboard-e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.scope.outputs.worker == 'true'
+    needs: [check, dashboard-e2e, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
