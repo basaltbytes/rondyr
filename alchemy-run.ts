@@ -25,6 +25,7 @@ export default Alchemy.Stack(
     const delivery = yield* deliveryQueue;
     const deadLetter = yield* Cloudflare.Queues.Queue("ClassificationDeadLetterQueue");
     const deliveryDeadLetter = yield* Cloudflare.Queues.Queue("DeliveryDeadLetterQueue");
+    // The Worker adds the email binding only for a stage configured for Cloudflare Email Sending.
     const app = yield* RondyrWorker;
 
     yield* Cloudflare.Queues.Consumer("ClassificationConsumer", {

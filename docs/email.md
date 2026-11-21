@@ -1,6 +1,6 @@
 # Email
 
-When a message is accepted, automatically or in review, Rondyr sends it as one plain text email to the recipients of each active email destination of its form. The email goes out through the email provider of the stage. [Resend](https://resend.com) is the only provider so far; an adapter for Cloudflare's email service is planned in a separate issue.
+When a message is accepted, automatically or in review, Rondyr sends it as one plain text email to the recipients of each active email destination of its form. Each stage uses Resend by default or can opt in to Cloudflare Email Sending.
 
 As with webhooks, a quarantined message is sent only once someone accepts it, and a destination created or reactivated after a message was accepted doesn't receive that message.
 
@@ -17,13 +17,11 @@ You need a Resend account, a domain you control, and access to its DNS records.
 | --- | --- | --- |
 | `RESEND_API_KEY` | Secret | The API key, `re_…` |
 | `RONDYR_EMAIL_FROM` | Setting | A bare address on the verified domain, such as `forms@notifications.example.com` |
-| `RONDYR_EMAIL_PROVIDER` | Setting, optional | `resend`, the default and only value |
+| `RONDYR_EMAIL_PROVIDER` | Setting, optional | `resend`, the default |
 
 The deployment refuses a `RONDYR_EMAIL_FROM` that isn't a bare address: `Rondyr <forms@example.com>` is refused. [deployment.md](./deployment.md#email) lists the matching GitHub secrets and variables.
 
-Both values are optional. Without one of them the stage deploys and works as before: listing email destinations still works, creating one answers `503` with `{"error":"email-provider-missing"}`, and a delivery to an email destination created earlier fails without a retry, with the summary `Email is not configured on this stage. Set RESEND_API_KEY and RONDYR_EMAIL_FROM, then redeploy.`
-
-## Limits and cost
+### Resend limits and cost
 
 Resend's prices and limits change; check [Pricing](https://resend.com/pricing) and [Account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits) before you rely on them. In November 2026 they were:
 
@@ -34,6 +32,22 @@ Resend's prices and limits change; check [Pricing](https://resend.com/pricing) a
 - Resend expects a bounce rate under 4% and a spam complaint rate under 0.08%.
 
 A message over quota or over the rate limit gets `429`, which Rondyr retries. A daily quota reached in the afternoon resets at midnight UTC, which can be after the last retry (about 8 and a half hours after the first attempt), so these messages can end up failed. They stay in the inbox either way.
+
+## Setup with Cloudflare Email Sending
+
+1. Use Workers Paid and a sender domain on Cloudflare DNS in the same account as the Worker. In the Cloudflare dashboard, open **Compute → Email Service → Email Sending**, choose **Onboard Domain**, and complete domain setup. Check the domain's sending status after the DNS records propagate. [Domain configuration](https://developers.cloudflare.com/email-service/configuration/domains/)
+2. Set `RONDYR_EMAIL_PROVIDER=cloudflare` and `RONDYR_EMAIL_FROM` to a bare address on that domain, for example `forms@notifications.example.com`. Redeploy the selected stage with Alchemy. It adds the `CLOUDFLARE_EMAIL` binding without a recipient allowlist. The binding uses the Worker's account and needs no email API key. After onboarding, the binding can send to any recipient without adding them to Cloudflare's verified destination list. [Send bindings](https://developers.cloudflare.com/email-service/configuration/send-bindings/)
+3. Create an email destination and use **Send a test**. Keep Cloudflare's **Drop suppressed recipients** setting off if Rondyr should record a suppressed address as a failed delivery. [Workers API](https://developers.cloudflare.com/email-service/api/send-emails/workers-api/#error-codes)
+
+### Cloudflare limits and cost
+
+Workers Paid includes 3,000 outbound emails per account per billing month, then charges $0.35 per 1,000 emails. Emails accepted for sending count toward the quota, including hard bounces. Sends to destination addresses already verified in the Cloudflare account are free. [Pricing](https://developers.cloudflare.com/email-service/platform/pricing/)
+
+Cloudflare sets a daily sending limit per account and adjusts it based on sending history and reputation. It allows up to 50 recipients and 25 MiB per message. Rondyr allows up to 10 recipients per destination. [Limits](https://developers.cloudflare.com/email-service/platform/limits/)
+
+## Missing configuration
+
+The stage can deploy with email settings omitted. With no sender address or with the selected provider's key or binding missing, creating a destination answers `503` with `{"error":"email-provider-missing"}`. Listing and editing existing destinations still work. Deliveries to them fail without a retry.
 
 ## Destinations
 
@@ -102,9 +116,13 @@ Sent: 20 November 2026 at 15:42:07 UTC
 Test ID: 4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60
 ```
 
-The test ID is new for each test and is the idempotency key of the request, so every test sends an email and counts in the Resend quota, once per recipient. Rondyr sends it once, without a retry, waits up to 30 seconds, and stores nothing: no submission, no delivery, no attempt. The route answers `{"testId", "outcome", "summary"}`, where `outcome` is `delivered`, `retryable-failure` or `permanent-failure` and `summary`, absent after a success, is the status and error code described below, such as `Resend answered HTTP 403 (validation_error).` While a test of a destination runs, a second test of the same destination answers `409`; the check is per Worker instance.
+Each test has a new ID, which Resend uses as its idempotency key. Each test sends an email that is subject to the provider's quota. Rondyr waits up to 30 seconds, makes one attempt, and stores no submission, delivery, or attempt record. The route returns `testId` and an `outcome` of `delivered`, `retryable-failure` or `permanent-failure`. Failed tests include a `summary` with the available status or error code. While a test of a destination runs, a second test of the same destination answers `409` on that Worker instance.
 
 ## Responses and retries
+
+Retries follow the same schedule for both providers. Rondyr waits 1 minute, 5 minutes, 30 minutes, 2 hours, then 6 hours, for 6 attempts in all. A stored list of recipients that no longer passes the rules ends the delivery at once.
+
+### Resend responses
 
 Rondyr sends each attempt with the delivery ID as Resend's [idempotency key](https://resend.com/docs/dashboard/emails/idempotency-keys). Resend keeps a key for 24 hours and answers a repeated request with the same response, without sending the email again. All six attempts of a delivery fall within that window.
 
@@ -119,22 +137,29 @@ From the response, Rondyr keeps the status code and the error code, such as `val
 | No response, a network error, or no answer within 30 seconds | Retried |
 | Any other status: `400`, `401`, `403` (including a sender domain that isn't verified), `409 invalid_idempotent_request`, `422` | Failed |
 
-Retries follow the delays of every delivery: 1 minute, 5 minutes, 30 minutes, 2 hours, then 6 hours, for 6 attempts in all. A stored list of recipients that no longer passes the rules also ends the delivery at once.
-
 Resend compares the request with the first one that used the same key. If you change the recipients or `RONDYR_EMAIL_FROM` while a delivery is waiting for a retry, the next attempt gets `409 invalid_idempotent_request` and the delivery fails.
 
-A failed delivery can be retried by hand from the dashboard. The retry keeps the delivery ID, and so the idempotency key, and starts a new series of 6 attempts; [webhooks.md](./webhooks.md#delivery-history-and-manual-retry) describes the history and the retry. Within 24 hours of the first attempt, the rule above also applies to a manual retry: after a change of recipients or of `RONDYR_EMAIL_FROM`, Resend refuses it with `409 invalid_idempotent_request`.
+### Cloudflare responses
+
+The binding returns a message ID on success and throws an error with a code on a service failure. Rondyr records only known error codes, without Cloudflare's error text. The binding does not return an HTTP status. [Workers API error codes](https://developers.cloudflare.com/email-service/api/send-emails/workers-api/#error-codes)
+
+| Result | Rondyr behavior |
+| --- | --- |
+| `E_EMAIL_SENDING_NOT_READY`, `E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED`, `E_INTERNAL_SERVER_ERROR` | Retried |
+| Unknown error, or no answer within 30 seconds | Retried |
+| Other documented errors, including suppressed recipients, sender configuration and SMTP rejection, or an invalid binding argument | Failed |
+
+A manual retry from the dashboard keeps the delivery ID and starts a new series of 6 attempts. Resend still checks its original request during the 24-hour idempotency window. [Delivery history and manual retry](./webhooks.md#delivery-history-and-manual-retry)
 
 ## Delivery guarantee
 
-Delivery is at least once, as for webhooks. The idempotency key covers a retry within 24 hours, including a retry after the Worker stopped between the request and the record of its result. It doesn't cover a send more than 24 hours after the first attempt, and mail servers can also deliver one email twice. Two emails that end with the same delivery ID are the same delivery.
+Delivery is at least once, as for webhooks. Resend deduplicates retries within 24 hours, including after the Worker stops between sending and recording the result. The Cloudflare binding has no documented idempotency key. If it accepts an email and Rondyr times out or stops before recording the result, a retry can send the email again. Mail servers can also deliver duplicates. Two emails that end with the same delivery ID are the same delivery.
 
 ## Privacy
 
-The content of a message leaves Rondyr in the email. Resend processes it and keeps the emails it sends for the data retention period of your plan, 30 days on the free plan. List Resend as a subprocessor if you send personal data, and sign Resend's [data processing addendum](https://resend.com/legal/dpa) if you need one. The delivery records in D1 contain IDs, states and error summaries, never the fields.
+The selected provider processes the contents of sent emails. Resend keeps sent emails for the retention period of your plan, 30 days on the free plan. The delivery records in D1 contain IDs, states and error summaries. See the provider's terms for personal data processing. [Resend data processing addendum](https://resend.com/legal/dpa) · [Cloudflare data processing addendum](https://www.cloudflare.com/cloudflare-customer-dpa/)
 
 ## Not built yet
 
-- An adapter for Cloudflare's email service, chosen with `RONDYR_EMAIL_PROVIDER`, is planned in a separate issue.
 - The message text can't be changed. It exists in English and in French.
 - Every member of an organization can manage its destinations, retry a failed delivery and send a test email; roles come with [#11](https://github.com/basaltbytes/rondyr/issues/11).

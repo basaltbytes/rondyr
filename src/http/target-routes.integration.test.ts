@@ -58,12 +58,19 @@ function request(path: string, init?: RequestInit) {
   return Effect.promise(() => env.TEST_WORKER.fetch(new URL(path, origin), init));
 }
 
-const post = Effect.fnUntraced(function* (path: string, data: Schema.Json, extra?: HeadersInit) {
+const post = Effect.fnUntraced(function* (
+  path: string,
+  data: Schema.Json,
+  extra?: HeadersInit,
+  worker: Fetcher = env.TEST_WORKER,
+) {
   const body = yield* encode(data);
   const headers = new Headers(extra);
   headers.set("content-type", "application/json");
   headers.set("origin", origin);
-  return yield* request(path, { method: "POST", headers, body });
+  return yield* Effect.promise(() =>
+    worker.fetch(new URL(path, origin), { method: "POST", headers, body }),
+  );
 });
 
 const json = (response: Response) => Effect.promise(() => response.json());
@@ -487,6 +494,96 @@ it.live("refuses to create an email target when the stage has no email provider"
     ]);
     yield* Effect.promise(dispose);
   }).pipe(Effect.scoped),
+);
+
+it.live("sends a test email through the built Worker configured for Cloudflare", () =>
+  Effect.gen(function* () {
+    yield* Effect.promise(() => applyD1Migrations(env.CLOUDFLARE_EMAIL_DB, env.TEST_MIGRATIONS));
+    const worker = env.CLOUDFLARE_EMAIL_WORKER;
+    const credentials = {
+      email: "cloudflare-owner@example.test",
+      password: "cloudflare-test-password",
+    };
+    const setup = yield* post(
+      "/api/setup",
+      { name: "Potter", ...credentials },
+      { authorization: `Bearer ${testSetupToken}` },
+      worker,
+    );
+    assert.strictEqual(setup.status, 201);
+    const signIn = yield* post("/api/auth/sign-in/email", credentials, undefined, worker);
+    assert.strictEqual(signIn.status, 200);
+    const cookie = signIn.headers
+      .getSetCookie()
+      .map((value) => value.split(";", 1)[0])
+      .join("; ");
+    const headers = { cookie, origin };
+    const created = yield* post(
+      "/api/organizations",
+      { organizationName: "Cloudflare studio", formName: "Classes", businessContext: "" },
+      headers,
+      worker,
+    );
+    assert.strictEqual(created.status, 201);
+    const inboxes = yield* Effect.promise(() =>
+      worker.fetch(new URL("/api/organizations", origin), { headers }),
+    ).pipe(Effect.flatMap(json), Effect.flatMap(readInboxes));
+    const [inbox] = inboxes;
+    const form = inbox?.forms[0];
+    if (inbox === undefined || form === undefined) return assert.fail("Expected a form");
+
+    const target = yield* post(
+      `/api/organizations/${inbox.id}/forms/${form.publicId}/targets`,
+      { type: "email", recipients: ["proof@example.test"] },
+      headers,
+      worker,
+    );
+    assert.strictEqual(target.status, 201);
+    const email = yield* json(target).pipe(Effect.flatMap(readEmailTarget));
+    const response = yield* post(
+      `/api/organizations/${inbox.id}/targets/${email.id}/test`,
+      {},
+      headers,
+      worker,
+    );
+    const result = yield* json(response).pipe(
+      Effect.flatMap(
+        Schema.decodeUnknownEffect(
+          Schema.Struct({ testId: Schema.String, outcome: Schema.String }),
+        ),
+      ),
+    );
+    assert.deepEqual([response.status, result.outcome], [200, "delivered"]);
+
+    const received = yield* Effect.promise(() =>
+      env.CLOUDFLARE_EMAIL_FIXTURE.fetch(
+        "https://email.test/__received?recipient=proof@example.test",
+      ),
+    ).pipe(
+      Effect.flatMap(json),
+      Effect.flatMap(
+        Schema.decodeUnknownEffect(
+          Schema.Array(
+            Schema.Struct({
+              from: Schema.String,
+              to: Schema.Array(Schema.String),
+              subject: Schema.String,
+              text: Schema.String,
+              replyTo: Schema.optionalKey(Schema.String),
+            }),
+          ),
+        ),
+      ),
+    );
+    assert.lengthOf(received, 1);
+    const [message] = received;
+    if (message === undefined) return assert.fail("Expected a test email");
+    assert.deepEqual(
+      [message.from, message.to, message.subject, message.replyTo],
+      [testEmailFrom, ["proof@example.test"], "Test message: Classes", undefined],
+    );
+    assert.include(message.text, `Test ID: ${result.testId}`);
+  }),
 );
 
 it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY", () =>

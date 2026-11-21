@@ -61,12 +61,17 @@ const deploymentProps = Effect.gen(function* () {
   const classifier = yield* Config.schema(ClassifierProvider, "RONDYR_CLASSIFIER").pipe(
     Config.withDefault("jev"),
   );
-  // Without the key and the sender, email targets cannot be created; everything else works.
+  // Email targets require a sender and the selected provider's credentials or binding.
   const emailProvider = yield* Config.schema(EmailProviderName, "RONDYR_EMAIL_PROVIDER").pipe(
     Config.withDefault("resend"),
   );
   const emailFrom = yield* Config.option(Config.schema(EmailAddress, "RONDYR_EMAIL_FROM"));
-  const resendKey = yield* Config.option(Config.Redacted("RESEND_API_KEY"));
+  const resendKey = yield* emailProvider === "resend"
+    ? Config.option(Config.Redacted("RESEND_API_KEY"))
+    : Effect.succeedNone;
+  const cloudflareEmail = yield* emailProvider === "cloudflare" && Option.isSome(emailFrom)
+    ? Effect.asSome(Cloudflare.Email.SendEmail("CLOUDFLARE_EMAIL"))
+    : Effect.succeedNone;
   const rateLimit = yield* clientRateLimit;
   return {
     main: import.meta.url,
@@ -102,6 +107,7 @@ const deploymentProps = Effect.gen(function* () {
       ...(Option.isSome(secretsKey) && { RONDYR_SECRETS_KEY: secretsKey.value }),
       ...(Option.isSome(emailFrom) && { RONDYR_EMAIL_FROM: emailFrom.value }),
       ...(Option.isSome(resendKey) && { RESEND_API_KEY: resendKey.value }),
+      ...(Option.isSome(cloudflareEmail) && { CLOUDFLARE_EMAIL: cloudflareEmail.value }),
     },
   };
 });
