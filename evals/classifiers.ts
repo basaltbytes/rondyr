@@ -1,11 +1,11 @@
-import { ClassifierProvider } from "../src/adapters/ai/classifier.ts";
 import { scoreWithJev } from "../src/adapters/ai/jev.ts";
 import { scoreWithOpenAi } from "../src/adapters/ai/openai-decisions.ts";
+import { ClassifierProvider } from "../src/domain/submissions/classification-policy.ts";
 
 /** The values of `RONDYR_CLASSIFIER`. */
 export const ClassifierName = ClassifierProvider;
 
-export type ClassifierName = typeof ClassifierProvider.Type;
+export type ClassifierName = ClassifierProvider;
 
 /** USD per million tokens, from the model pages of the Cloudflare documentation. */
 export interface Prices {

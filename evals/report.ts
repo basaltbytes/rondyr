@@ -2,16 +2,21 @@ import { Schema } from "effect";
 
 import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
 import {
-  ClassificationScores,
+  ClassificationPolicy,
   ClassificationThresholds,
-  classificationThresholds,
+  defaultClassificationPolicies,
+} from "../src/domain/submissions/classification-policy.ts";
+import {
+  ClassificationScores,
+  isOffTopic,
   reviewReason,
   rulesVersion,
+  SubmissionLabel,
 } from "../src/domain/submissions/classification.ts";
 import { ClassifierName, classifiers } from "./classifiers.ts";
 import { type Corpus, type CorpusEntry, EntryId, Family, Label, weight } from "./corpus.ts";
 import type { ClassifierRun, EntryResult, Outcome } from "./evaluate.ts";
-import { Decision, thresholdGrid } from "./thresholds.ts";
+import { Decision, sweepPolicies } from "./thresholds.ts";
 import { Transport } from "./workers-ai.ts";
 
 /** A count of corpus lines, and of the submissions they stand for once `duplicates` is applied. */
@@ -30,6 +35,7 @@ const EntryDecision = Schema.Struct({
   duplicates: Schema.Int,
   firstOccurrence: Schema.Int,
   decision: Decision,
+  appliedLabel: Schema.optionalKey(SubmissionLabel),
   scores: Schema.optionalKey(ClassificationScores),
 });
 
@@ -70,6 +76,7 @@ type Cost = typeof Cost.Type;
 
 const SweepPoint = Schema.Struct({
   thresholds: ClassificationThresholds,
+  offTopic: ClassificationPolicy.fields.offTopic,
   falsePositives: Count,
   spamAccepted: Count,
   offTopicQuarantined: Count,
@@ -84,6 +91,7 @@ type SweepPoint = typeof SweepPoint.Type;
 const ClassifierReport = Schema.Struct({
   classifier: ClassifierName,
   requestedModel: Schema.String,
+  policy: ClassificationPolicy,
   returnedModels: Schema.Array(Schema.Struct({ model: Schema.String, entries: Schema.Int })),
   calls: Schema.Struct({ scored: Schema.Int, fromCache: Schema.Int, failed: Schema.Int }),
   falsePositives: Schema.Array(EntryDecision),
@@ -106,6 +114,7 @@ const ClassifierReport = Schema.Struct({
     spam: Schema.Array(SweepPoint),
     relevance: Schema.Array(SweepPoint),
     solicitation: Schema.Array(SweepPoint),
+    offTopic: Schema.Array(SweepPoint),
   }),
   decisions: Schema.Array(EntryDecision),
 });
@@ -114,7 +123,7 @@ export type ClassifierReport = typeof ClassifierReport.Type;
 
 /** The JSON report. It contains ids, labels, families, scores and decisions, never field values. */
 export const Report = Schema.Struct({
-  format: Schema.Literal("rondyr-classifier-evaluation/3"),
+  format: Schema.Literal("rondyr-classifier-evaluation/4"),
   generatedAt: Schema.String,
   transport: Transport,
   corpus: Schema.Struct({
@@ -124,7 +133,6 @@ export const Report = Schema.Struct({
     businessContext: Schema.Literals(["provided", "empty"]),
   }),
   rulesVersion: Schema.Int,
-  thresholds: ClassificationThresholds,
   gateway: Schema.Struct({
     id: Schema.String,
     collectLog: Schema.Boolean,
@@ -156,10 +164,10 @@ function byDecision<A>(value: (decision: Decision) => A) {
   };
 }
 
-export function decisionOf(outcome: Outcome): Decision {
+export function decisionOf(outcome: Outcome, policy: ClassificationPolicy): Decision {
   if (outcome._tag === "Failed") return "classification-error";
   if (outcome._tag === "Repetition") return "repetition";
-  return reviewReason(outcome.call.scores) ?? "accepted";
+  return reviewReason(outcome.call.scores, policy) ?? "accepted";
 }
 
 function count(entries: readonly CorpusEntry[]): Count {
@@ -184,16 +192,24 @@ function sum(left: Count, right: Count): Count {
   };
 }
 
-function entryDecision({ entry, outcome, firstOccurrence = 1 }: EntryResult): EntryDecision {
+function entryDecision(
+  { entry, outcome, firstOccurrence = 1 }: EntryResult,
+  policy: ClassificationPolicy,
+): EntryDecision {
   const decision = {
     id: entry.id,
     label: entry.label,
     duplicates: weight(entry),
     firstOccurrence,
-    decision: decisionOf(outcome),
+    decision: decisionOf(outcome, policy),
   };
   const withFamily = entry.family === undefined ? decision : { ...decision, family: entry.family };
-  return outcome._tag === "Scored" ? { ...withFamily, scores: outcome.call.scores } : withFamily;
+  if (outcome._tag !== "Scored") return withFamily;
+  const { scores } = outcome.call;
+  if (decision.decision === "accepted" && isOffTopic(scores, policy)) {
+    return { ...withFamily, scores, appliedLabel: "off-topic" };
+  }
+  return { ...withFamily, scores };
 }
 
 /** Nearest-rank percentile of sorted values. */
@@ -255,29 +271,22 @@ function cost(run: ClassifierRun): Cost {
   };
 }
 
-function sweepPoint(
-  thresholds: typeof ClassificationThresholds.Type,
-  scored: readonly {
-    readonly entry: CorpusEntry;
-    readonly scores: typeof ClassificationScores.Type;
-  }[],
-): SweepPoint {
-  const pick = (
-    label: CorpusEntry["label"],
-    keep: (reason: ReturnType<typeof reviewReason>) => boolean,
-  ) =>
+function sweepPoint(policy: ClassificationPolicy, results: readonly EntryResult[]): SweepPoint {
+  const decided = results.map(({ entry, outcome }) => ({
+    entry,
+    decision: decisionOf(outcome, policy),
+  }));
+  const pick = (label: CorpusEntry["label"], keep: (decision: Decision) => boolean) =>
     count(
-      scored
-        .filter(
-          ({ entry, scores }) => entry.label === label && keep(reviewReason(scores, thresholds)),
-        )
+      decided
+        .filter(({ entry, decision }) => entry.label === label && keep(decision))
         .map(({ entry }) => entry),
     );
   return {
-    thresholds,
-    falsePositives: pick("legitimate", (reason) => reason !== null),
-    spamAccepted: pick("spam", (reason) => reason === null),
-    offTopicQuarantined: pick("off-topic", (reason) => reason !== null),
+    ...policy,
+    falsePositives: pick("legitimate", (decision) => decision !== "accepted"),
+    spamAccepted: pick("spam", (decision) => decision === "accepted"),
+    offTopicQuarantined: pick("off-topic", (decision) => decision !== "accepted"),
     legitimateAsProbableSpam: pick("legitimate", (reason) => reason === "probable-spam"),
     spamAsProbableSpam: pick("spam", (reason) => reason === "probable-spam"),
     legitimateAsSolicitation: pick("legitimate", (reason) => reason === "solicitation"),
@@ -285,24 +294,16 @@ function sweepPoint(
   };
 }
 
-function sweep(results: readonly EntryResult[]) {
-  const scored = results.flatMap(({ entry, outcome }) =>
-    outcome._tag === "Scored" ? [{ entry, scores: outcome.call.scores }] : [],
-  );
-  const spam = thresholdGrid.flatMap((probableSpam) =>
-    thresholdGrid
-      .filter((ambiguous) => ambiguous <= probableSpam)
-      .map((ambiguous) =>
-        sweepPoint({ ...classificationThresholds, probableSpam, ambiguous }, scored),
-      ),
-  );
-  const relevance = thresholdGrid.map((lowRelevance) =>
-    sweepPoint({ ...classificationThresholds, lowRelevance }, scored),
-  );
-  const solicitation = [0, ...thresholdGrid, 1].map((threshold) =>
-    sweepPoint({ ...classificationThresholds, solicitation: threshold }, scored),
-  );
-  return { spam, relevance, solicitation };
+function sweep(results: readonly EntryResult[], policy: ClassificationPolicy) {
+  const variants = sweepPolicies(policy);
+  const points = (policies: readonly ClassificationPolicy[]) =>
+    policies.map((variant) => sweepPoint(variant, results));
+  return {
+    spam: points(variants.spam),
+    relevance: points(variants.relevance),
+    solicitation: points(variants.solicitation),
+    offTopic: points(variants.offTopic),
+  };
 }
 
 /** Quarantined by a rule. Failed model calls are excluded from these metrics. */
@@ -314,10 +315,15 @@ function byId(left: EntryDecision, right: EntryDecision) {
   return left.id.localeCompare(right.id) || left.firstOccurrence - right.firstOccurrence;
 }
 
-export function classifierReport(run: ClassifierRun): ClassifierReport {
-  const decisions = run.results.map(entryDecision);
+export function classifierReport(
+  run: ClassifierRun,
+  policy: ClassificationPolicy = defaultClassificationPolicies[run.classifier],
+): ClassifierReport {
+  const decisions = run.results.map((result) => entryDecision(result, policy));
   const entriesWith = (label: Label, keep: (decision: Decision) => boolean) =>
-    run.results.filter(({ entry, outcome }) => entry.label === label && keep(decisionOf(outcome)));
+    run.results.filter(
+      ({ entry, outcome }) => entry.label === label && keep(decisionOf(outcome, policy)),
+    );
 
   const confusion = byLabel((label) =>
     byDecision((decision) =>
@@ -349,6 +355,7 @@ export function classifierReport(run: ClassifierRun): ClassifierReport {
   return {
     classifier: run.classifier,
     requestedModel: run.model,
+    policy,
     returnedModels: [...returned].map(([model, entries]) => ({ model, entries })),
     calls: {
       scored: run.results.filter(({ outcome }) => outcome._tag === "Scored").length,
@@ -384,7 +391,7 @@ export function classifierReport(run: ClassifierRun): ClassifierReport {
     },
     latencyMs: latency(run.results),
     cost: cost(run),
-    sweep: sweep(run.results),
+    sweep: sweep(run.results, policy),
     decisions,
   };
 }
@@ -394,9 +401,10 @@ export function buildReport(
   runs: readonly ClassifierRun[],
   transport: Transport,
   generatedAt: string,
+  policy?: ClassificationPolicy,
 ): Report {
   return {
-    format: "rondyr-classifier-evaluation/3",
+    format: "rondyr-classifier-evaluation/4",
     generatedAt,
     transport,
     corpus: {
@@ -406,9 +414,8 @@ export function buildReport(
       businessContext: corpus.context === "" ? "empty" : "provided",
     },
     rulesVersion,
-    thresholds: classificationThresholds,
     gateway: aiGatewayOptions.gateway,
-    classifiers: runs.map(classifierReport),
+    classifiers: runs.map((run) => classifierReport(run, policy)),
   };
 }
 

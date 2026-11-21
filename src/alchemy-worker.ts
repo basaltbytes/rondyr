@@ -3,9 +3,12 @@ import * as Alchemy from "alchemy";
 import { Config, Effect, Option, Schema } from "effect";
 
 import wrangler from "../wrangler.json" with { type: "json" };
-import { ClassifierProvider } from "./adapters/ai/classifier.ts";
 import { EmailProviderName } from "./adapters/email/email-sender.ts";
 import { EmailAddress } from "./domain/deliveries/email.ts";
+import {
+  ClassifierProvider,
+  defaultClassifier,
+} from "./domain/submissions/classification-policy.ts";
 import { workerImplementation } from "./worker-implementation.ts";
 
 const deployedOrigin = Config.schema(
@@ -59,7 +62,7 @@ const deploymentProps = Effect.gen(function* () {
   // Without it, webhook targets cannot be created or rotated; everything else works.
   const secretsKey = yield* Config.option(Config.Redacted("RONDYR_SECRETS_KEY"));
   const classifier = yield* Config.schema(ClassifierProvider, "RONDYR_CLASSIFIER").pipe(
-    Config.withDefault("jev"),
+    Config.withDefault(defaultClassifier),
   );
   // Without the key and the sender, email targets cannot be created; everything else works.
   const emailProvider = yield* Config.schema(EmailProviderName, "RONDYR_EMAIL_PROVIDER").pipe(

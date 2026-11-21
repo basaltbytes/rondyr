@@ -1,6 +1,7 @@
 import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 
+import { defaultClassificationPolicies } from "../src/domain/submissions/classification-policy.ts";
 import { EntryId, parseCorpus } from "./corpus.ts";
 import type { ClassifierRun, Outcome } from "./evaluate.ts";
 import { classifierReport } from "./report.ts";
@@ -159,4 +160,34 @@ it.effect("counts extra solicitation quarantines without attributing spam quaran
       spamAccepted: { entries: 1, submissions: 3 },
     });
   }),
+);
+
+it.effect(
+  "reuses scored outcomes for an optional off-topic policy and reports the applied label",
+  () =>
+    Effect.gen(function* () {
+      const evaluated = yield* run;
+      const report = classifierReport(evaluated, {
+        ...defaultClassificationPolicies.jev,
+        offTopic: "accept",
+      });
+      assert.deepInclude(
+        report.decisions.find(({ id }) => id === "off-1"),
+        {
+          decision: "accepted",
+          appliedLabel: "off-topic",
+        },
+      );
+      assert.deepEqual(report.confusion.spam, classifierReport(evaluated).confusion.spam);
+      assert.deepEqual(
+        report.sweep.offTopic.map(({ offTopic, offTopicQuarantined }) => [
+          offTopic,
+          offTopicQuarantined.submissions,
+        ]),
+        [
+          ["review", 1],
+          ["accept", 0],
+        ],
+      );
+    }),
 );

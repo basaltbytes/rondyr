@@ -62,6 +62,9 @@ function MessageRow({ submission, active, showStatus, now, onOpen }: MessageRowP
         {showStatus && submission.reason === null && (
           <span className="shrink-0">{t(`inbox.statuses.${submission.status}`)}</span>
         )}
+        {submission.label === "off-topic" && (
+          <span className="shrink-0">{t("inbox.offTopicLabel")}</span>
+        )}
         <span className="truncate">{submission.formName}</span>
       </span>
     </button>

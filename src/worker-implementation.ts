@@ -7,6 +7,7 @@ import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
 import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
+import { classificationPoliciesLive } from "./adapters/database/classification-policies.ts";
 import { deliveryHistoryLive } from "./adapters/database/delivery-history.ts";
 import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
 import { formOriginsLive } from "./adapters/database/form-origins.ts";
@@ -27,6 +28,7 @@ import { clientRateLimitLive } from "./adapters/workers/client-rate-limit.ts";
 import { cronHeartbeatLive } from "./adapters/workers/cron-heartbeat.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
+import { classificationPolicyRoutes } from "./http/classification-policy-routes.ts";
 import { deliveryRoutes } from "./http/delivery-routes.ts";
 import { formRoutes } from "./http/form-routes.ts";
 import { operationsRoute } from "./http/operations-route.ts";
@@ -50,6 +52,7 @@ const services = Layer.mergeAll(
   formOriginsLive,
   formsLive,
   organizationDirectoryLive,
+  classificationPoliciesLive,
   outboxLive,
   classificationQueueLive,
   deliveries,
@@ -63,7 +66,9 @@ const services = Layer.mergeAll(
     Layer.provide(
       Layer.mergeAll(
         DomainCloudflare.layerDurableObjects(),
-        classifierLive.pipe(Layer.provide(storedMessagesLive)),
+        classifierLive.pipe(
+          Layer.provide(Layer.mergeAll(storedMessagesLive, classificationPoliciesLive)),
+        ),
         inboxStoreLive,
         deliverySchedulerLive.pipe(Layer.provide(deliveries)),
       ),
@@ -78,6 +83,7 @@ const routes = Layer.mergeAll(
   targetRoutes,
   originRoutes,
   organizationDomainRoutes,
+  classificationPolicyRoutes,
   formRoutes,
   deliveryRoutes,
   operationsRoute,
