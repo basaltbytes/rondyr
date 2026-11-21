@@ -7,10 +7,11 @@ import { ClassificationPolicy } from "../src/domain/submissions/classification-p
 import { fileCache } from "./cache.ts";
 import type { ClassifierName } from "./classifiers.ts";
 import { type Corpus, loadCorpus } from "./corpus.ts";
+import { encodeEscalation, evaluateEscalation, renderEscalation } from "./escalation.ts";
 import { evaluate } from "./evaluate.ts";
 import { buildReport, encodeReport } from "./report.ts";
 import { renderMarkdown, renderSummary } from "./render.ts";
-import { workersAiDry, workersAiRest } from "./workers-ai.ts";
+import { WorkersAi, workersAiDry, workersAiRest } from "./workers-ai.ts";
 
 class InvalidOption extends Schema.TaggedError<InvalidOption, { readonly brand: unique symbol }>()(
   "InvalidOption",
@@ -42,6 +43,10 @@ const refresh = Flag.Boolean("refresh").pipe(
   Flag.withDefault(false),
   Flag.withDescription("Call the model again even when the cache has a result"),
 );
+const escalation = Flag.Boolean("escalation").pipe(
+  Flag.withDefault(false),
+  Flag.withDescription("Replay escalation from cached scores without calling Workers AI"),
+);
 const policy = Flag.String("policy").pipe(
   Flag.optional,
   Flag.withDescription("Path to a JSON classification policy to use in place of the defaults"),
@@ -53,6 +58,10 @@ const out = Flag.String("out").pipe(
   Flag.withDefault("evals/out"),
   Flag.withDescription("Directory for the cache and the reports"),
 );
+const offline = Layer.succeed(WorkersAi, {
+  transport: "workers-ai",
+  run: () => Effect.die("Model calls are disabled in escalation replay."),
+});
 
 function limited(corpus: Corpus, count: Option.Option<number>): Corpus {
   if (Option.isNone(count)) return corpus;
@@ -62,13 +71,18 @@ function limited(corpus: Corpus, count: Option.Option<number>): Corpus {
 
 const evaluation = Command.make(
   "evaluate",
-  { corpusFile, classifier, dry, concurrency, limit, refresh, out, policy },
+  { corpusFile, classifier, dry, concurrency, limit, refresh, escalation, out, policy },
   Effect.fn("Evaluation.command")(function* (flags) {
     if (flags.concurrency < 1 || flags.concurrency > 16) {
       return yield* InvalidOption.make({ summary: "--concurrency must be between 1 and 16." });
     }
     if (Option.isSome(flags.limit) && flags.limit.value < 1) {
       return yield* InvalidOption.make({ summary: "--limit must be at least 1." });
+    }
+    if (flags.escalation && flags.refresh) {
+      return yield* InvalidOption.make({
+        summary: "--escalation cannot be combined with --refresh.",
+      });
     }
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -79,6 +93,24 @@ const evaluation = Command.make(
     const corpus = limited(loaded, flags.limit);
     const names: readonly ClassifierName[] =
       flags.classifier === "both" ? ["jev", "openai"] : [flags.classifier];
+    const transport = flags.dry ? "dry" : "workers-ai";
+    const base = path.join(flags.out, `${corpus.name}${flags.dry ? ".dry" : ""}`);
+    if (flags.escalation) {
+      const report = yield* evaluateEscalation(
+        corpus,
+        names,
+        transport,
+        flags.concurrency,
+        override,
+      );
+      const json = yield* encodeEscalation(report);
+      const markdown = renderEscalation(report);
+      yield* fs.writeFileString(`${base}.escalation.json`, `${json}\n`);
+      yield* fs.writeFileString(`${base}.escalation.md`, `${markdown}\n`);
+      yield* Console.log(markdown);
+      yield* Console.log(`\nReports: ${base}.escalation.json and ${base}.escalation.md.`);
+      return;
+    }
     yield* Console.error(
       `Scoring ${corpus.entries.length} entries of ${corpus.name} with ${names.join(" and ")}${flags.dry ? " (dry run)" : ""}.`,
     );
@@ -90,25 +122,21 @@ const evaluation = Command.make(
     });
 
     const now = yield* DateTime.now;
-    const report = buildReport(
-      corpus,
-      runs,
-      flags.dry ? "dry" : "workers-ai",
-      DateTime.formatIso(now),
-      override,
-    );
-    const base = path.join(flags.out, `${corpus.name}${flags.dry ? ".dry" : ""}.report`);
+    const report = buildReport(corpus, runs, transport, DateTime.formatIso(now), override);
+    const reportBase = `${base}.report`;
     const json = yield* encodeReport(report);
-    yield* fs.writeFileString(`${base}.json`, `${json}\n`);
-    yield* fs.writeFileString(`${base}.md`, renderMarkdown(report));
+    yield* fs.writeFileString(`${reportBase}.json`, `${json}\n`);
+    yield* fs.writeFileString(`${reportBase}.md`, renderMarkdown(report));
     yield* Console.log(renderSummary(report));
-    yield* Console.log(`\nReports: ${base}.json and ${base}.md, with the threshold sweep.`);
+    yield* Console.log(
+      `\nReports: ${reportBase}.json and ${reportBase}.md, with the threshold sweep.`,
+    );
   }),
 ).pipe(
   Command.provide((flags) =>
     Layer.mergeAll(
-      flags.dry ? workersAiDry : workersAiRest,
-      fileCache(flags.out),
+      flags.escalation ? offline : flags.dry ? workersAiDry : workersAiRest,
+      fileCache(flags.out, flags.escalation ? "read-only" : "read-write"),
       Digest.layerWebCrypto,
     ),
   ),

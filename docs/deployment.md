@@ -21,6 +21,7 @@ Create one environment file per stage, for example `.env.staging`.
 | `RONDYR_SETUP_TOKEN` | Only for the first account | A second value from `openssl rand -hex 32` |
 | `RONDYR_SECRETS_KEY` | Only for webhooks | 32 bytes in base64, from `openssl rand -base64 32`. See [Webhook secrets](#webhook-secrets) |
 | `RONDYR_CLASSIFIER` | No | `jev` (default) or `openai` |
+| `RONDYR_ESCALATION_CLASSIFIER` | No | `jev` or `openai` as the second classifier. An unset value or the primary classifier disables escalation. |
 | `RESEND_API_KEY` | Only for Resend | A Resend API key with sending access. See [Email](#email) |
 | `RONDYR_EMAIL_FROM` | Only for email | A bare sender address on a domain configured with the selected provider, such as `forms@notifications.example.com` |
 | `RONDYR_EMAIL_PROVIDER` | No | `resend` (default) or `cloudflare` |
@@ -66,6 +67,8 @@ If an organization already exists in SQL, give an account access by adding a row
 Jev is the default classifier, and the deployed Worker calls it through the Workers AI binding.
 
 To use OpenAI Decisions with GPT-6 Luna instead, set `RONDYR_CLASSIFIER=openai` in the stage environment and redeploy. The choice applies to every form of the stage. The Worker calls `openai/decisions` through the `AI` binding and the AI Gateway named `default`. With Cloudflare unified billing, the calls use the account's credits and Rondyr needs no OpenAI key. See the [Decisions model](https://developers.cloudflare.com/ai/models/openai/decisions/) and [unified billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/).
+
+To offer a second opinion for ambiguous submissions, set `RONDYR_ESCALATION_CLASSIFIER=openai` when Jev is primary, or `RONDYR_ESCALATION_CLASSIFIER=jev` when OpenAI Decisions is primary. Each organization opts in under **Settings → Classification**. An eligible submission can add a model call and its retries to the classification time and cost.
 
 The stack doesn't create the `default` gateway. When an account has no gateway with that name, AI Gateway creates it on the first authenticated request, with log collection on; see [Manage gateways](https://developers.cloudflare.com/ai-gateway/configuration/manage-gateway/). Jev calls made with the Workers AI binding go through the same gateway. The Worker turns log collection and caching off on every call of both classifiers, so the submission fields aren't stored in the gateway logs even with the gateway setting on. Logs written before this was in place stay in the gateway until you delete them.
 
@@ -114,6 +117,7 @@ Without `CLOUDFLARE_API_TOKEN`, the workflow skips cloud deployment.
 | `RONDYR_SETUP_TOKEN_PROD`, `RONDYR_SETUP_TOKEN_STAGING` | Secret, optional | One each |
 | `RONDYR_SECRETS_KEY_PROD`, `RONDYR_SECRETS_KEY_STAGING` | Secret, optional | One each |
 | `RONDYR_CLASSIFIER_PROD`, `RONDYR_CLASSIFIER_STAGING` | Variable, optional | One each |
+| `RONDYR_ESCALATION_CLASSIFIER_PROD`, `RONDYR_ESCALATION_CLASSIFIER_STAGING` | Variable, optional | One each |
 | `RESEND_API_KEY_PROD`, `RESEND_API_KEY_STAGING` | Secret, optional | One each |
 | `RONDYR_EMAIL_FROM_PROD`, `RONDYR_EMAIL_FROM_STAGING` | Variable, optional | One each |
 | `RONDYR_EMAIL_PROVIDER_PROD`, `RONDYR_EMAIL_PROVIDER_STAGING` | Variable, optional | One each |

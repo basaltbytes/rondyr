@@ -190,7 +190,7 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 
 ### Règles de décision
 
-`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 6`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur. La version 5 demande le score de démarchage et met en quarantaine un message dont le score dépasse 0,50. La version 6 ajoute les politiques par organisation et relève le seuil de faible pertinence par défaut.
+`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 7`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur. La version 5 demande le score de démarchage et met en quarantaine un message dont le score dépasse 0,50. La version 6 ajoute les politiques par organisation et relève le seuil de faible pertinence par défaut. La version 7 ajoute l’escalade facultative des décisions `ambiguous`.
 
 | Condition avec les réglages par défaut | Résultat |
 | --- | --- |
@@ -205,7 +205,13 @@ L’organisation peut remplacer les quatre seuils ensemble et choisir indépenda
 
 Le workflow lit la politique et le classificateur du stage au début de l’analyse. Il utilise cette politique pendant les tentatives de classement et la transmet à la commande `RecordClassification`. Les décisions automatiques enregistrent la politique résolue, la version des règles et les scores quand le modèle répond. Si la politique reste indisponible après les tentatives, ou si elle est illisible, la soumission attend en quarantaine avec le motif `classification-error`. Les événements enregistrés avant la version 6 restent lisibles.
 
-Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représentées par `duplicates`. La mesure du 21 novembre porte sur trois passages du corpus synthétique et du corpus réel du mainteneur ; avec ces seuils, aucun message légitime n’est mis en quarantaine. Avec Jev, les lignes de spam acceptées passent de 5 à 3 sur le corpus synthétique et de 7 à 5 sur le corpus réel. Avec OpenAI Decisions, elles passent de 4 à 2 sur le corpus synthétique et restent à 3 sur le corpus réel. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
+Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représentées par `duplicates`. La mesure du 21 novembre porte sur trois passages du corpus synthétique et du corpus réel du mainteneur ; avec ces seuils, aucun message légitime n’est mis en quarantaine. Avec Jev, les lignes de spam acceptées passent de 5 à 3 sur le corpus synthétique et de 7 à 5 sur le corpus réel. Avec OpenAI Decisions, elles passent de 4 à 2 sur le corpus synthétique et restent à 3 sur le corpus réel.
+
+### Escalade vers un second modèle
+
+L’escalade est désactivée par défaut. Le stage doit déclarer un modèle différent du premier avec `RONDYR_ESCALATION_CLASSIFIER`, et l’organisation doit activer le réglage dans **Classification**. Uniquement pour le motif `ambiguous`, `ClassifySubmission` lance un second appel logique. Chaque modèle dispose de 12 secondes par tentative et de deux reprises après un échec réessayable, à 10 puis 30 secondes.
+
+Le second modèle utilise ses seuils par défaut et le choix de l’organisation pour les messages hors sujet. Si aucun motif de quarantaine ne s’applique, la soumission est acceptée avec l’étiquette `off-topic` si la seconde évaluation la juge hors sujet. Si un motif s’applique ou si le second appel échoue, le motif final reste `ambiguous`. L’événement de décision conserve les scores et le modèle du premier appel, puis, en cas d’escalade, l’identité du second classificateur et ses scores s’il a répondu. Il enregistre une version des règles par évaluation. Les anciennes décisions et les politiques sans ce réglage restent lisibles.
 
 ### Quarantaine sans appel au modèle
 

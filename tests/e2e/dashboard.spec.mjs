@@ -147,7 +147,7 @@ test("add a domain and remove it after reopening the settings in French", async 
   await expect(page.getByText(frenchT("inbox.domains.empty"))).toBeVisible();
 });
 
-test("edit classification thresholds and off-topic handling, then restore the defaults in French", async ({
+test("edit the classification policy, then restore the defaults in French", async ({
   dashboard: page,
 }) => {
   await createOrganization(page);
@@ -163,6 +163,7 @@ test("edit classification thresholds and off-topic handling, then restore the de
   await openPolicy();
   const mode = page.getByRole("combobox", { name: frenchT("inbox.policy.thresholdMode") });
   const offTopic = page.getByRole("combobox", { name: frenchT("inbox.policy.offTopic") });
+  const escalation = page.getByRole("switch", { name: frenchT("inbox.policy.escalation") });
   const relevance = page.getByRole("spinbutton", {
     name: frenchT("inbox.policy.thresholds.lowRelevance"),
   });
@@ -173,6 +174,7 @@ test("edit classification thresholds and off-topic handling, then restore the de
   await expect(relevance).toHaveValue("0.5");
   await expect(relevance).toHaveAccessibleDescription(frenchT("inbox.policy.hints.lowRelevance"));
   await expect(ambiguous).toHaveAccessibleDescription(frenchT("inbox.policy.hints.ambiguous"));
+  await expect(escalation).not.toBeChecked();
   await mode.selectOption({ label: frenchT("inbox.policy.custom") });
   await ambiguous.fill("0.9");
   await save.click();
@@ -180,6 +182,7 @@ test("edit classification thresholds and off-topic handling, then restore the de
   await ambiguous.fill("0.35");
   await relevance.fill("0.62");
   await offTopic.selectOption({ label: frenchT("inbox.policy.accept") });
+  await escalation.press("Space");
   await save.click();
   await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
 
@@ -187,8 +190,10 @@ test("edit classification thresholds and off-topic handling, then restore the de
   await openPolicy();
   await expect(relevance).toHaveValue("0.62");
   await expect(offTopic).toHaveValue("accept");
+  await expect(escalation).toBeChecked();
   await mode.selectOption({ label: frenchT("inbox.policy.defaults") });
   await offTopic.selectOption({ label: frenchT("inbox.policy.defaults") });
+  await escalation.press("Space");
   await save.click();
   await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
 
@@ -196,6 +201,7 @@ test("edit classification thresholds and off-topic handling, then restore the de
   await openPolicy();
   await expect(relevance).toHaveValue("0.5");
   await expect(offTopic).toHaveValue("defaults");
+  await expect(escalation).not.toBeChecked();
 });
 
 test("sign in, create an organization and manage its forms, then sign out", async ({
