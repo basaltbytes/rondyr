@@ -92,7 +92,11 @@ export function csvLine(submission: ExportedSubmission, fieldNames: ReadonlyArra
     submission.status,
     submission.reason ?? "",
     submission.label ?? "",
-    ...fieldNames.map((name) => submission.fields[name] ?? ""),
+    // A message without the field gets an empty cell, even for a name such as
+    // `toString` that every object inherits.
+    ...fieldNames.map((name) =>
+      Object.hasOwn(submission.fields, name) ? (submission.fields[name] ?? "") : "",
+    ),
   ];
   return `${cells.map(csvCell).join(",")}\r\n`;
 }

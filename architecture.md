@@ -579,13 +579,16 @@ What remains after a deletion:
 │   │                               # and destination API contracts
 │   ├── domain/forms/               # allowed origin rule, status, success URL rule
 │   │                               # and form API contracts
+│   ├── domain/organizations/       # roles and permissions, members and invitations,
+│   │                               # retention, API tokens, quotas, domains, policy
 │   ├── ports/                      # authentication, intake, outbox, classification-queue,
 │   │                               # background-tasks, organization-directory,
 │   │                               # stored-messages, storage, delivery-store,
 │   │                               # delivery-queue, notification-provider,
 │   │                               # notification-targets, secret-cipher, form-origins,
 │   │                               # forms, email-sender, delivery-history,
-│   │                               # client-rate-limit, members
+│   │                               # client-rate-limit, members, recipient-confirmations,
+│   │                               # test-send-limit, submission-exports, submission-retention
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
@@ -594,20 +597,24 @@ What remains after a deletion:
 │   │   ├── database/               # Drizzle schemas, d1, intake, outbox, inbox,
 │   │   │                           # organization-directory, stored-messages, delivery-store,
 │   │   │                           # notification-targets, form-origins, forms,
-│   │   │                           # delivery-history
+│   │   │                           # delivery-history, members, recipient-confirmations,
+│   │   │                           # submission-exports, submission-retention
 │   │   ├── notifications/          # providers per type, webhook, email, test adapter
 │   │   ├── queues/                 # classification-queue, delivery-queue
 │   │   └── workers/                # background-tasks (Alchemy's waitUntil), client-rate-limit
-│   │                               # (Rate Limiting binding)
+│   │                               # and test-send-limit (Rate Limiting bindings)
 │   ├── http/                       # public, submission, authentication, review, target, origin,
-│   │                               # form, delivery, member, invitation, organization-access
+│   │                               # form, delivery, member, invitation, organization-access,
+│   │                               # recipient-confirmation, submission-administration
 │   └── jobs/
 │       ├── submission-outbox.ts    # publication (intake and Cron), queue consumer
-│       └── delivery-outbox.ts      # DeliveryScheduler, publication (policy and Cron),
-│                                   # delivery consumer, retry, test send
+│       ├── delivery-outbox.ts      # DeliveryScheduler, publication (policy and Cron),
+│       │                           # delivery consumer, retry, test send
+│       ├── recipient-confirmations.ts # confirmation emails of new recipients
+│       └── retention-purge.ts      # hourly purge of expired messages (Cron)
 ├── dashboard/src/
-│   ├── routes/
-│   ├── features/                   # authentication, inbox, operations
+│   ├── routes/                     # dashboard, invitation, recipient-confirmation
+│   ├── features/                   # authentication, inbox, operations, recipients
 │   ├── components/                 # text-field, and ui/: shadcn/ui (Base UI) components adapted to the theme
 │   ├── hooks/                      # use-mobile
 │   ├── lib/                        # HTTP clients
@@ -640,7 +647,7 @@ A recipient Worker, declared in the same place, records each request and answers
 - Intake atomicity, recovery through the outbox, double delivery of a queue message, isolation between organizations, concurrent review decisions.
 - Publication at intake without republication by the Cron, send failure picked up by the Cron after the lease expires, Cron kept out during a direct publication.
 - Turnstile: secret key encrypted and absent from responses; storage refused without `RONDYR_SECRETS_KEY`, for a key that Siteverify refuses (`400`) and when Siteverify does not answer or reports `internal-error` (`503`), without changing the stored keys; `404` for another account, without a Siteverify call; valid token, missing token, token refused with status 200 or 400, key that became unknown, service unavailable and timeout at intake, with a fake Siteverify defined in `tests/integration/external-workers.ts`. Daily quotas: exact boundary of both quotas under concurrency, duplicate queue message, reset at the UTC day change, bounds and isolation of the API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
-- Search, export, deletion and retention, through the built Worker: a search with `%` and `_` that match only themselves, without regard to the case of ASCII letters, in the values and not the names of the fields, combined with the status and paged with the cursor; a CSV export with a column per field, quotes and a neutralized formula, and a JSON Lines export of the searched list, both with `Cache-Control: no-store`; the 10,000 newest of 10,001 messages with `Rondyr-Export-Truncated: true`; a deletion that removes the submission, its outbox event, its inbox row, its delivery and its attempt, checked table by table, logs the account, and leaves the message out of the list, the detail, the delivery history and the review routes (`404`); a quarantined message deleted then accepted gets `404` and no inbox row comes back; retention periods saved and refused out of bounds; a purge that deletes accepted, quarantined and archived messages at the exact end of their period and keeps those a millisecond younger, a message still received and the messages of an organization without a period, with a log line per message; a purge stopped by a trigger in its second batch keeps the first batch done, and the next run deletes the rest, logging each message once; `404` for each of these routes in another organization. Playwright searches, downloads the CSV of the search, deletes a message after cancelling once, and saves a retention period.
+- Search, export, deletion and retention, through the built Worker: a search with `%` and `_` that match only themselves, without regard to the case of ASCII letters, in the values and not the names of the fields, combined with the status and paged with the cursor; a CSV export with a column per field, quotes and a neutralized formula, and an empty cell for a missing field even when its name is `toString`, and a JSON Lines export of the searched list, both with `Cache-Control: no-store`; the 10,000 newest of 10,001 messages with `Rondyr-Export-Truncated: true`; a deletion that removes the submission, its outbox event, its inbox row, its delivery and its attempt, checked table by table, logs the account, and leaves the message out of the list, the detail, the delivery history and the review routes (`404`); a quarantined message deleted then accepted gets `404` and no inbox row comes back; retention periods saved and refused out of bounds; a purge that deletes accepted, quarantined and archived messages at the exact end of their period and keeps those a millisecond younger, a message still received and the messages of an organization without a period, with a log line per message; a purge stopped by a trigger in its second batch keeps the first batch done, and the next run deletes the rest, logging each message once; `404` for each of these routes in another organization. Playwright searches, downloads the CSV of the search, deletes a message after cancelling once, and saves a retention period.
 - Confirmed recipients, through the built Worker with the fake Resend: a link that confirms once, then answers `404`, from an email that names neither the organization nor the form; an expired link; a delivery and a test that go to the confirmed recipient only, and a destination without a confirmed recipient whose delivery fails with its message still accepted; 3 tests a minute then `429` with `Retry-After: 60`; 3 confirmation emails a day for an address across two organizations, then `429`; another organization's admin gets `404` for listing and resending, an address confirmed in one organization stays pending in another, which sends it nothing, and `409` for a confirmed address. The Cloudflare test Worker confirms its recipient from the email that the binding received before sending its test. Playwright confirms a recipient from the link of its email before the test send.
 - Roles and invitations, through the built Worker: each administration route refused with `403` to a reviewer and with `404` to an account of another organization, without changing the organization; a reviewer lists, counts, accepts, archives and reads the delivery history, and the status page leaves out its organization; an invitation emailed through the fake Resend with a link whose secret D1 keeps only hashed, and whose email names no organization; expired, reused and cancelled invitations refused, without creating an account; acceptance with a new account that then signs in, and with an existing account after sign-in, refused without a session and with another account; invitation of a member and over the limit of 20 refused; role change and removal, the last admin refused, and under concurrency when two admins leave, step down or demote each other at the same time. Stories: a reviewer accepts one message and archives another; an admin of another organization gets `SubmissionNotFound` for the list, an acceptance and an archiving.
 - API tokens, through the built Worker: creation that stores only the SHA-256 hash and the last four characters; `401` for an unknown and for a revoked token, even with a valid cookie; each allowed route with a token and no `Origin`; `403` on every other `/api` route; `404` on every review route of another organization and on its messages, which stay quarantined; a token that wins over another account's cookie; ten active tokens under concurrent creation, then a free slot after a revocation; management refused to a non-member; acceptance and archiving recorded with the token ID; manual decisions stored before API tokens still decode. Stories for acceptance and archiving by a token, and a type test that a dismissal cannot be built without exactly one author. Playwright creates a token, copies it, sees it only once, and revokes it after a confirmation.
