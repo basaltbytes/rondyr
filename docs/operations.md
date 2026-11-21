@@ -2,10 +2,10 @@
 
 ## Queue backlog
 
-Open **Status** in the dashboard and select **Refresh**. Check the last successful Cron run, the number of undelivered outbox events, the age of the oldest one, and the number of stuck events. The Cron runs every minute and records success after both publishers finish. The timestamp applies to the stage. The other figures apply to each organization your account can see. Quarantine counts group messages received in the past 24 hours that are still in quarantine.
+Open **Status** in the dashboard and select **Refresh**. Check the last successful Cron run, the number of pending outbox events and the age of the oldest one, and the number of stuck events. A pending event is still published by the Cron until the classification consumer hands it off; a stuck event is no longer published, and the pending figures leave it out. The Cron runs every minute and records success after both publishers finish. The timestamp applies to the stage. The other figures apply to each organization your account can see. Quarantine counts group messages received in the past 24 hours that are still in quarantine.
 
 1. If the Cron timestamp is several minutes old, check the Worker’s Cron trigger and scheduled invocation logs in Cloudflare. A `Cron publication failed` entry means the run failed before it could record a success. Check the stage’s D1 and Queue bindings and look for errors at the same time.
-2. If the Cron is current but the oldest undelivered event is older than five minutes and still aging, check the classification queue and its dead-letter queue in **Queues**. Compare backlog, retries, and consumer errors. Use the submission ID in `Direct outbox publication failed` or `Classification queue message requires retry` to inspect `outbox_events`. Compare its lease, publication, and handoff timestamps and its `publication_count`. The Cron republishes expired claims and publications that still lack a handoff after five minutes, up to 12 publications; then the event is stuck (see [Stuck processing](#stuck-processing)).
+2. If the Cron is current but the oldest pending event is older than five minutes and still aging, check the classification queue and its dead-letter queue in **Queues**. Compare backlog, retries, and consumer errors. Use the submission ID in `Direct outbox publication failed` or `Classification queue message requires retry` to inspect `outbox_events`. Compare its lease, publication, and handoff timestamps and its `publication_count`. The Cron republishes expired claims and publications that still lack a handoff after five minutes, up to 12 publications; then the event is stuck (see [Stuck processing](#stuck-processing)).
 3. For a delivery backlog, inspect the delivery queue and its dead-letter queue. Compare `pending`, `processing`, and `retrying` counts over time. Open the affected delivery’s history for its next attempt and provider result. Once the provider or configuration is fixed, use the dashboard to retry a `failed` delivery. The recipient may receive a duplicate with the same delivery ID.
 4. After a fix, refresh **Status** and check that the oldest backlog age and count fall. Use the [Cloudflare Queues dashboard](https://developers.cloudflare.com/queues/observability/metrics/) to inspect queue metrics.
 
@@ -35,39 +35,47 @@ Each queue has a dead-letter queue with its own consumer. The consumer logs `Que
 
 ### Messages that the filter could not analyze
 
-A classifier outage puts messages in **To review** with the reason **Analysis unavailable** (`classification-error`). Check the `AI` binding, `RONDYR_CLASSIFIER`, and the Worker logs of the outage. Once the model answers again, open each message and select **Reclassify**: the message goes back to classification, as if it had just arrived, and leaves **To review** if the filter accepts it. Reclassify uses the classification slot that the message took at intake, not a new one. Only a message quarantined for this reason can be reclassified; any other reason is the filter’s or intake’s answer, and Reclassify answers `409`. An API token cannot reclassify.
+A classifier outage puts messages in **To review** with the reason **Analysis unavailable** (`classification-error`). Check the `AI` binding, `RONDYR_CLASSIFIER`, and the Worker logs of the outage. Once the model answers again, open each message and select **Reclassify**: the message goes back to classification, as if it had just arrived, and leaves **To review** if the filter accepts it. Each reclassification calls the model again, so it uses one slot of the organization's daily classification quota. When the day's quota is used up, Reclassify answers `429` with `{"error":"classification-quota-reached"}`, the dashboard says so, and the message stays in **To review**: try again after midnight UTC, or raise the limit in **Settings → Daily quotas**. Only a message quarantined for this reason can be reclassified; any other reason is the filter’s or intake’s answer, and Reclassify answers `409`. An API token cannot reclassify.
 
-## Staging gate
+## Production health check
 
-A push to `main` deploys `prod` in one of two modes. Check the summary of the CI run to see which one applied.
+After each deployment, GitHub Actions runs `scripts/smoke.mjs` against `BETTER_AUTH_URL_PROD` in the step **Check production health**. It asks for `/health` every 10 seconds until the Worker answers `ok`, for up to 15 minutes, and prints one line for each failed try, such as `Health check 3 failed: The deployment returned HTTP 522; expected 200 for /health. Trying again.` It never prints a response body.
 
-- **Staging not configured**: the run shows the notice `Staging is not configured`, deploys `prod`, and leaves `staging` untouched. Nothing tests the release before production.
-- **Staging configured**: the run deploys `staging`, runs `scripts/smoke-staging.mjs` against it, and deploys `prod` only if the script passes. The script checks `/health`, then, when the [submission check](./deployment.md#submission-check) is set up, the classification of one test submission. Without the submission check, the run shows the notice `Staging is deployed and its /health checked before prod, without a test submission`.
+When the step fails, the run shows the error `Production health`. `prod` is deployed: the failed check does not roll it back.
 
-[Staging gate](./deployment.md#staging-gate) in the deployment guide lists the setup.
+- `The request or its response failed.` or HTTP `52x` on every try: the domain does not reach the Worker. On a first deployment, check in **Workers & Pages → rondyr-prod → Settings → Domains & Routes** that the custom domain exists and that its certificate is active, and that the zone is active. Run the check again from your machine with `pnpm smoke <origin> --health-timeout 900` once the certificate is active.
+- HTTP `404`: the hostname answers but not with Rondyr. Check that `BETTER_AUTH_URL_PROD` is the hostname of the custom domain, and that no other Worker route takes it.
+- HTTP `500` or `/health did not report ok.`: the Worker answers but fails. Open its logs in **Workers Logs**, and [roll back](#roll-back-the-worker) if the previous version worked.
 
-### When the gate fails
+## Smoke test
 
-The job `staging / Deploy staging` is red and `production` is skipped. Production keeps the version it had before the push. Open the failed step:
+`pnpm smoke` checks a deployment from your machine: `/health`, then, with a form and an API token, that a new submission gets classified. Use it after a deployment, after a [restore](#restore-d1-with-time-travel) or a [rollback](#roll-back-the-worker), or on a [trial copy](./deployment.md#trial-copy). GitHub Actions runs the `/health` part after each deployment.
 
-- The gate job **Staging gate configuration** with `Staging is partly configured` or `The staging submission check is partly configured`: nothing was deployed. Set the setting it names, or delete the other one of the pair.
-- **Check deployment configuration** with `The staging submission check is partly configured`: a smoke setting was deleted after the run started. Restore it or delete the other one.
-- **Deploy through Alchemy**: staging itself did not deploy. Read the Alchemy output, and run `pnpm deploy:plan --stage staging` with the staging environment to see the drift.
-- **Verify staging health and submission processing**: staging deployed but did not pass the test. The step prints one line and no response body:
-  - `Staging returned HTTP <status>; expected 200 for /health` or `Staging health did not report ok.`: the script tried four times over 15 seconds. Check the Worker's logs and its D1 binding on staging.
-  - `Staging returned HTTP 401; expected 200 for /api/organizations`: the API token is unknown or revoked. Create a new one in **Settings → API tokens** of the test organization and update `RONDYR_SMOKE_API_TOKEN_STAGING`.
-  - `The smoke form does not belong to the API token's organization.`: `RONDYR_SMOKE_FORM_ID_STAGING` is not the public ID of a form of the token's organization.
-  - `expected 202 for /f/<form>`: the form refused the submission. Check that the form is still active.
-  - `Staging did not classify the smoke submission within three minutes.`: follow [Queue backlog](#queue-backlog) and [Stuck processing](#stuck-processing) on staging.
-  - `Staging did not classify the smoke submission (classification-error).`: the classifier call failed. Check the `AI` binding, the `RONDYR_CLASSIFIER_STAGING` value, and the Worker's logs.
-  - `Staging did not classify the smoke submission (honeypot).`: the test form's honeypot field is `name` or `message`, which the test fills. Remove the honeypot field from the test form or rename it.
-  - `The smoke test requires the rondyr-staging workers.dev origin.`: `BETTER_AUTH_URL_STAGING` is not the staging `workers.dev` origin. The test refuses any other host.
+```sh
+pnpm smoke https://forms.example.com
+RONDYR_SMOKE_API_TOKEN=<token> pnpm smoke https://forms.example.com --form <public ID>
+```
 
-Once staging is fixed, re-run the failed jobs of the CI run, or push again. To ship a fix to production while staging stays broken, delete `BETTER_AUTH_URL_STAGING` and the two smoke settings: the next push deploys `prod` directly, with the notice. Restore them once staging works. Keep `BETTER_AUTH_SECRET_STAGING`: staging sessions depend on it.
+The origin is an HTTPS origin without a path or a port; `http://localhost` also works for local development. `--health-timeout <seconds>` sets how long `/health` may take to answer, 180 seconds by default. The API token comes from `RONDYR_SMOKE_API_TOKEN` only, never from the command line.
+
+The submission check sends one synthetic enquiry about a pottery workshop to the form, reads it back with the API token, and waits up to three minutes for the classifier to accept it or place it in quarantine. A classifier error or a quarantine at intake fails the check. Set it up once:
+
+1. Create an organization for the test and a form with a business context that fits the enquiry, such as a pottery workshop. Add no honeypot field, Turnstile keys, webhook or email destination, so that the test sends no notification and intake does not quarantine it.
+2. In **Forms**, copy the form's public ID: the last part of its submission URL, after `/f/`.
+3. In **Settings → API tokens** of that organization, create a token named `Smoke test` and copy it. Rondyr shows it once. The token can read and review the inbox of the test organization only.
+
+Each run leaves a message in the test organization and uses one of its daily classifications. The script prints one line and no response body or credential. When it fails:
+
+- `The deployment returned HTTP 401; expected 200 for /api/organizations.`: the API token is unknown or revoked. Create a new one.
+- `The form does not belong to the API token's organization.`: `--form` is not the public ID of a form of the token's organization.
+- `expected 202 for /f/<form>`: the form refused the submission. Check that it is active and that the organization's daily submission quota is not used up.
+- `The smoke submission was not classified within three minutes.`: follow [Queue backlog](#queue-backlog) and [Stuck processing](#stuck-processing).
+- `The smoke submission was not classified (classification-error).`: the classifier call failed. Check the `AI` binding, `RONDYR_CLASSIFIER`, and the Worker's logs.
+- `The smoke submission was not classified (honeypot).`, `(turnstile-failed)`, `(repetition)` or `(quota)`: intake quarantined the message. Remove the honeypot field or the Turnstile keys from the test form, wait for the repetition window to pass, or raise the organization's daily classification quota.
 
 ## Restore D1 with Time Travel
 
-A Cloudflare operator must carry out and verify the restore and rollback procedures. Nobody has run them on Cloudflare yet, and no automated check covers either operation against a live account. Rehearse them on staging with disposable data, and correct this page from what you observe.
+A person with access to the Cloudflare account must carry out and verify the restore and rollback procedures. Nobody has run them on Cloudflare yet, and no automated check covers either operation against a live account. Rehearse them on a [trial copy](./deployment.md#trial-copy) with disposable data, and correct this page from what you observe.
 
 1. Confirm the account, stage, Worker, and actual D1 database name in the Worker’s binding or Alchemy stack output. `rondyr-local` is the development database name. Find the first bad write or migration and determine the UTC recovery point.
 2. Stop push-triggered deployments and arrange a maintenance window. Stop public intake and dashboard writes at the stage origin. Pause delivery on both queues, disable the Cron trigger, and account for in-flight consumers and Durable Object workflows before restoring. Keep the queues and dead-letter queues for reconciliation.
@@ -98,11 +106,11 @@ D1 Time Travel rewinds D1 alone. Durable Object event streams and workflow state
 - The Inbox projection keeps its own position in its Durable Object. Inbox rows written after the recovery point are gone from D1, and the projection does not write them again: those messages show an older status, or `received`, until their next event. Rebuilding a projection with the Alchemy Domain tooling has not been tried on Rondyr; record the affected submission IDs before attempting it.
 - Compare the backup and restored database for submissions, outbox handoffs, inbox versions, delivery attempts, and the applied D1 migrations. Account for every submission after the recovery point. Restore missing rows from the backup under operator control, keeping their original IDs and preserving the submission and its outbox event together. Check each affected inbox projection against its Durable Object events. A previously recorded command ID can make replay a no-op. Rebuild affected projections only from verified events, and check provider records before retrying deliveries that might already have gone out.
 - Compare the active Worker and D1 schema to the intended Git revision. Run `pnpm deploy:plan --stage "$RONDYR_STAGE"` with the authorized profile and the stage environment before the next Alchemy deployment. Review any drift or migration that the plan proposes. Cloudflare’s manual rollback leaves the Alchemy inventory at its previous revision.
-- Re-enable the consumers and Cron and restore access once the Worker and D1 schema agree and the affected rows have been reconciled. Check `/health`, sign in, submit a controlled test message, and verify its final inbox state. Check the Cron timestamp and queue backlog again before releasing the incident.
+- Re-enable the consumers and Cron and restore access once the Worker and D1 schema agree and the affected rows have been reconciled. Check `/health`, sign in, submit a controlled test message, and verify its final inbox state; the [smoke test](#smoke-test) does both with a test form. Check the Cron timestamp and queue backlog again before releasing the incident.
 
 ## Rotate secrets
 
-Use the secret store for the affected stage. Update the corresponding GitHub secret and any private local deployment environment used for that stage. When the [staging gate](#staging-gate) is configured, a push to `main` deploys staging first, so rotate the staging secret before the production one.
+Update the GitHub secret of the deployment (`*_PROD`) and any private environment file you deploy from by hand, such as the one of a trial copy, then deploy.
 
 ### `RONDYR_SECRETS_KEY`
 
@@ -110,7 +118,7 @@ Schedule a webhook maintenance window. Inventory the webhook targets and their r
 
 ### `BETTER_AUTH_SECRET`
 
-Generate a new value with `openssl rand -hex 32`, update the stage secret, and deploy. Expect existing cookies to stop working. Sign out or clear the old cookie, then verify a fresh sign-in and dashboard request. If rotating after a compromise, revoke the stage’s stored sessions as part of the incident response. Keep the staging smoke account credentials current if you also change its password.
+Generate a new value with `openssl rand -hex 32`, update the stage secret, and deploy. Expect existing cookies to stop working. Sign out or clear the old cookie, then verify a fresh sign-in and dashboard request. If rotating after a compromise, revoke the stage’s stored sessions as part of the incident response.
 
 ### `RESEND_API_KEY`
 
