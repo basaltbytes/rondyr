@@ -6,12 +6,14 @@ import {
   OutboxStatus,
   QuarantineCount,
 } from "../../domain/submissions/operations-status.ts";
-import { OrganizationId, type UserId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationId } from "../../domain/submissions/submission.id.ts";
 import { OperationsStore } from "../../ports/operations-status.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
 
-const members = `SELECT organization_id FROM organization_members WHERE user_id = ?`;
+// The organizations to read, as a JSON array.
+const members = `SELECT value FROM json_each(?)`;
+const encodeIds = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(OrganizationId)));
 const last24hMs = 24 * 60 * 60 * 1000;
 
 const decodeOrganizations = Schema.decodeUnknownEffect(
@@ -34,8 +36,9 @@ const decodeQuarantines = Schema.decodeUnknownEffect(
 );
 
 const read = Effect.fn("OperationsStore.read")(
-  function* (userId: typeof UserId.Type) {
+  function* (organizationIds: ReadonlyArray<OrganizationId>) {
     const db = yield* database;
+    const ids = yield* encodeIds(organizationIds);
     const now = yield* Clock.currentTimeMillis;
     const since = now - last24hMs;
     const [organizations, outbox, deliveries, quarantines] = yield* d1(() =>
@@ -48,7 +51,7 @@ const read = Effect.fn("OperationsStore.read")(
         ) AS receivedLast24h
         FROM organizations o WHERE o.id IN (${members}) ORDER BY o.name, o.id
       `)
-          .bind(since, userId),
+          .bind(since, ids),
         db
           .prepare(`
         SELECT s.organization_id AS id, COUNT(*) AS count,
@@ -57,14 +60,14 @@ const read = Effect.fn("OperationsStore.read")(
         WHERE e.handed_off_at IS NULL AND s.organization_id IN (${members})
         GROUP BY s.organization_id
       `)
-          .bind(now, userId),
+          .bind(now, ids),
         db
           .prepare(`
         SELECT s.organization_id AS id, d.status, COUNT(*) AS count
         FROM submissions s JOIN deliveries d ON d.submission_id = s.id
         WHERE s.organization_id IN (${members}) GROUP BY s.organization_id, d.status
       `)
-          .bind(userId),
+          .bind(ids),
         db
           .prepare(`
         SELECT s.organization_id AS id, i.reason, COUNT(*) AS count
@@ -72,7 +75,7 @@ const read = Effect.fn("OperationsStore.read")(
         WHERE s.organization_id IN (${members}) AND s.received_at >= ? AND i.status = 'quarantined'
         GROUP BY s.organization_id, i.reason
       `)
-          .bind(userId, since),
+          .bind(ids, since),
       ]),
     );
     const rows = yield* decodeOrganizations(organizations?.results);

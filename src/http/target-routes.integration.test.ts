@@ -426,7 +426,7 @@ it.live("refuses to create an email target when the stage has no email provider"
         ),
         env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('mailless-org', 'Mailless')"),
         env.DB.prepare(
-          "INSERT INTO organization_members (organization_id, user_id) VALUES ('mailless-org', 'mailless-user')",
+          "INSERT INTO organization_members (organization_id, user_id, role) VALUES ('mailless-org', 'mailless-user', 'admin')",
         ),
         env.DB.prepare(
           "INSERT INTO forms (id, organization_id, public_id, name) VALUES ('mailless-form', 'mailless-org', 'mailless', 'Mailless')",
@@ -598,7 +598,7 @@ it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY
         ),
         env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('keyless-org', 'Keyless')"),
         env.DB.prepare(
-          "INSERT INTO organization_members (organization_id, user_id) VALUES ('keyless-org', 'keyless-user')",
+          "INSERT INTO organization_members (organization_id, user_id, role) VALUES ('keyless-org', 'keyless-user', 'admin')",
         ),
         env.DB.prepare(
           "INSERT INTO forms (id, organization_id, public_id, name) VALUES ('keyless-form', 'keyless-org', 'keyless', 'Keyless')",

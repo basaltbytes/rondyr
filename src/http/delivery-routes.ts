@@ -3,12 +3,12 @@ import { HttpRouter, HttpServerResponse } from "effect/http";
 
 import { DeliveryId, TargetId } from "../domain/deliveries/delivery.ts";
 import { DeliveryRecord, TargetTestResult } from "../domain/deliveries/history.ts";
+import type { Permission } from "../domain/organizations/member-role.ts";
 import { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import { retryDelivery, sendTestNotification } from "../jobs/delivery-outbox.ts";
 import { DeliveryHistory } from "../ports/delivery-history.ts";
-import { DeliveryNotFound } from "../ports/delivery-store.ts";
 import { NotificationTargets } from "../ports/notification-targets.ts";
-import { reviewer } from "./review-routes.ts";
+import { authorize } from "./organization-access.ts";
 
 const SubmissionPath = Schema.Struct({
   organizationId: OrganizationId,
@@ -39,6 +39,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
+        PermissionDenied: () => empty(403),
+        OrganizationNotFound: () => empty(404),
         DeliveryNotFound: () => empty(404),
         TargetNotFound: () => empty(404),
         DeliveryNotRetryable: () => empty(409),
@@ -49,23 +51,15 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
   );
 
 /**
- * The account that reads the deliveries of an organization, retries them, and
- * tests its targets. Every member may do all three; the roles of #11 restrict
- * them here. The adapters also check membership in each query.
+ * The account that reads the deliveries of an organization (any role), retries
+ * them or tests its targets (admin). The adapters also check membership in each query.
  */
-const deliveryOperator = Effect.fn("DeliveryRoute.operator")(function* (
-  organizationId: OrganizationId,
-) {
-  const { userId, organizations } = yield* reviewer();
-  if (!organizations.some(({ id }) => id === organizationId)) {
-    return yield* DeliveryNotFound.make();
-  }
-  return userId;
-});
+const deliveryOperator = (organizationId: OrganizationId, permission: Permission) =>
+  Effect.map(authorize(organizationId, permission), ({ userId }) => userId);
 
 const history = Effect.gen(function* () {
   const path = yield* HttpRouter.schemaPathParams(SubmissionPath);
-  const userId = yield* deliveryOperator(path.organizationId);
+  const userId = yield* deliveryOperator(path.organizationId, "read-deliveries");
   const deliveries = yield* DeliveryHistory;
   const records = yield* deliveries.list({ userId, ...path });
   return yield* historyJson(records, jsonOptions);
@@ -73,7 +67,7 @@ const history = Effect.gen(function* () {
 
 const retry = Effect.gen(function* () {
   const path = yield* HttpRouter.schemaPathParams(DeliveryPath);
-  const userId = yield* deliveryOperator(path.organizationId);
+  const userId = yield* deliveryOperator(path.organizationId, "retry-deliveries");
   yield* retryDelivery({ userId, ...path });
   const deliveries = yield* DeliveryHistory;
   const records = yield* deliveries.list({ userId, ...path });
@@ -100,7 +94,7 @@ export const deliveryRoutes = Layer.unwrap(
 
     const test = Effect.gen(function* () {
       const { organizationId, targetId } = yield* HttpRouter.schemaPathParams(TargetPath);
-      const userId = yield* deliveryOperator(organizationId);
+      const userId = yield* deliveryOperator(organizationId, "test-destinations");
       const targets = yield* NotificationTargets;
       const testable = yield* targets.testable({ userId, organizationId, targetId });
       const result = yield* Effect.acquireUseRelease(

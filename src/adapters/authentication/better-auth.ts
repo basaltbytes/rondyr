@@ -1,6 +1,7 @@
 import { Clock, Effect, Layer, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
+import { AccountEmail, AccountName, AccountPassword } from "../../domain/organizations/account.ts";
 import {
   Authentication,
   AuthOriginRefused,
@@ -15,18 +16,11 @@ const BindingConfig = Schema.Struct({
   BETTER_AUTH_URL: Schema.optional(Schema.String),
 });
 const SetupConfig = Schema.Struct({ RONDYR_SETUP_TOKEN: Secret });
+// An invited person chooses a name and a password with the same rules.
 const OwnerInput = Schema.Struct({
-  name: Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-  email: Schema.Trim.check(
-    Schema.isMaxLength(254),
-    // Match the email format accepted by Better Auth's sign-in endpoint.
-    Schema.isPattern(
-      /^(?:[A-Za-z0-9_'+-]+\.)*[A-Za-z0-9_'+-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/u,
-    ),
-  ),
-  password: Schema.RedactedFromValue(
-    Schema.String.check(Schema.isMinLength(12), Schema.isMaxLength(128)),
-  ),
+  name: AccountName,
+  email: AccountEmail,
+  password: AccountPassword,
 });
 
 function loopback(url: URL): boolean {

@@ -60,7 +60,20 @@ Public sign-up is closed. With `RONDYR_SETUP_TOKEN` set on the stage, run the se
 
 The script reads `RONDYR_SETUP_TOKEN` from the environment or asks for it, then asks for a name, an email address, and a password of 12 to 128 characters. After the `201` response, sign in at `/`. Remove the setup token from the stage configuration and redeploy. D1 refuses a second account through this endpoint even while the token is still set.
 
-If an organization already exists in SQL, give an account access by adding a row to `organization_members` with the `organization_id` and the Better Auth `user_id`.
+The first account creates an organization in the dashboard and is its admin. Any signed-in account can create an organization and becomes its admin.
+
+## Members and invitations
+
+Every other person joins through an invitation. An admin opens **Settings → Members**, enters an email address and a role, and gets a link of the form `https://<origin>/invitation#<secret>`. The link works once, for 7 days; D1 keeps only the SHA-256 hash of the secret, which sits in the URL fragment so that no request or log carries it. When the stage sends email (see [Email](#email)), Rondyr also emails the link to the address, with fixed text that names neither the organization nor the person who invited. Rondyr emails an address at most 3 invitations in 24 hours across all organizations; past that, and on a stage without email, the admin copies the link from the dashboard and sends it another way.
+
+The invited person opens the link. Without an account, they choose a name and a password of 12 to 128 characters, and the account gets the invited address. With an account at that address, they sign in, then join. A link opened while signed in with another address is refused.
+
+| Role | Rights |
+| --- | --- |
+| `reviewer` | Reads the inbox and the delivery history, accepts and archives messages |
+| `admin` | Everything else as well: forms, allowed origins, honeypot field, Turnstile, destinations, delivery retries and test sends, members, settings, API tokens, export, deletion and retention |
+
+An admin can change a member's role or remove them in the same section. The last admin of an organization can be neither removed nor demoted; the SQL statement that changes the member checks it, so two admins who leave at the same time keep one of them. The migration that added roles made every member that existed before it an admin. An API token acts as a reviewer of its organization.
 
 ## Classifier
 

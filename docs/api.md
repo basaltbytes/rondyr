@@ -1,6 +1,6 @@
 # API tokens
 
-An organization member can create or revoke tokens in **Settings → API tokens**. Enter a name that identifies the client, then copy the token: Rondyr shows it once, right after creation, and never again. The list shows each token's name, creation date and last four characters. Each organization can have up to ten active tokens. Revoking a token frees a slot, and the next request with that token gets `401`; a revoked token can't be reactivated.
+An admin of the organization can create or revoke tokens in **Settings → API tokens**; a reviewer gets `403`. A token has the rights of a reviewer of its organization, never more, and only on the routes below. Enter a name that identifies the client, then copy the token: Rondyr shows it once, right after creation, and never again. The list shows each token's name, creation date and last four characters. Each organization can have up to ten active tokens. Revoking a token frees a slot, and the next request with that token gets `401`; a revoked token can't be reactivated.
 
 ## Authentication
 
@@ -76,4 +76,4 @@ These routes take the dashboard's Better Auth session from the same origin, and 
 | `POST` | Base path with JSON `{"name":"Site inbox"}` | `201` with the metadata and a `token` field. This is the only response that contains the token, and it has `Cache-Control: no-store` |
 | `DELETE` | Base path with `?id={tokenId}` | `204` after revocation |
 
-Creation returns `400` for an invalid name and `409` when the organization already has ten active tokens. Names have 1 to 100 characters after trimming. An account that isn't a member of the organization gets `404`, and so does a revocation of a token that doesn't exist or is already revoked.
+Creation returns `400` for an invalid name and `409` when the organization already has ten active tokens. Names have 1 to 100 characters after trimming. A reviewer of the organization gets `403`. An account that isn't a member of the organization gets `404`, and so does a revocation of a token that doesn't exist or is already revoked.

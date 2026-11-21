@@ -811,3 +811,52 @@ test("create, copy, and revoke a token that is only displayed once", async ({
     .click();
   await expect(page.getByText(t("inbox.apiTokens.empty"))).toBeVisible();
 });
+
+test("invite a reviewer, who creates an account from the link and sees no settings", async ({
+  dashboard: page,
+  browser,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.members"));
+  const reviewer = { name: "Second reviewer", email: "reviewer@example.test" };
+  await page.getByRole("textbox", { name: t("inbox.members.email") }).fill(reviewer.email);
+  await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
+  await expect(
+    page.getByText(t("inbox.members.emails.sent", { email: reviewer.email })),
+  ).toBeVisible();
+  const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
+  await expect(
+    page.getByRole("list", { name: t("inbox.members.pending") }).getByText(reviewer.email),
+  ).toBeVisible();
+
+  const context = await browser.newContext();
+  const invited = await context.newPage();
+  await invited.goto(link);
+  await expect(
+    invited.getByRole("heading", {
+      name: t("invitation.title", { organization: organizationName }),
+    }),
+  ).toBeVisible();
+  await invited.getByRole("textbox", { name: t("invitation.name") }).fill(reviewer.name);
+  await invited.getByLabel(t("invitation.password")).fill("playwright-reviewer-password");
+  await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
+  await expect(
+    invited.getByRole("button", {
+      name: t("inbox.organizations.switcher", { name: organizationName }),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    invited.getByRole("navigation", { name: t("inbox.navigation.settings"), exact: true }),
+  ).toHaveCount(0);
+  await invited.goto(link);
+  await expect(invited.getByRole("heading", { name: t("invitation.invalidTitle") })).toBeVisible();
+  await context.close();
+
+  await page.reload();
+  await openSection(page, t("inbox.sections.members"));
+  await expect(
+    page.getByRole("combobox", { name: t("inbox.members.roleOf", { name: reviewer.name }) }),
+  ).toHaveValue("reviewer");
+  await expect(page.getByText(t("inbox.members.noInvitations"))).toBeVisible();
+});

@@ -9,7 +9,7 @@ import {
 import { DailyQuotas, DailyUsage } from "../domain/organizations/organization-quotas.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
 import { OrganizationQuotas } from "../ports/organization-quotas.ts";
-import { reviewer } from "./review-routes.ts";
+import { authorize } from "./organization-access.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const responseOptions = { headers: { "cache-control": "no-store" } };
@@ -25,6 +25,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
+        PermissionDenied: () => empty(403),
+        OrganizationNotFound: () => empty(404),
         OrganizationQuotasNotFound: () => empty(404),
         SchemaError: () => empty(400),
         HttpServerError: () => empty(400),
@@ -33,8 +35,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
   );
 
 const scope = Effect.gen(function* () {
-  const { userId } = yield* reviewer();
   const { organizationId } = yield* HttpRouter.schemaPathParams(OrganizationPath);
+  const { userId } = yield* authorize(organizationId, "manage-settings");
   return { userId, organizationId };
 });
 

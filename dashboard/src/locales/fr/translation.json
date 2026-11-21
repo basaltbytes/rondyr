@@ -109,7 +109,8 @@
       "classification": "Classification",
       "apiTokens": "Jetons d’API",
       "quotas": "Plafonds quotidiens",
-      "organization": "Nouvelle organisation"
+      "organization": "Nouvelle organisation",
+      "members": "Membres"
     },
     "statuses": {
       "received": "Reçu",
@@ -514,6 +515,85 @@
         "invalid-address": "Une adresse n’est pas valide. Saisissez des adresses seules, comme equipe@example.com, sans nom ni chevrons.",
         "duplicate-address": "Une adresse apparaît deux fois."
       }
+    },
+    "members": {
+      "title": "Membres",
+      "description": "Un relecteur lit la boîte de réception et les livraisons, puis accepte ou archive les messages. Un administrateur gère aussi les formulaires, les destinations, les membres et les réglages.",
+      "you": "(vous)",
+      "roleOf": "Rôle de {{name}}",
+      "roles": {
+        "reviewer": "Relecteur",
+        "admin": "Administrateur"
+      },
+      "remove": "Retirer",
+      "removeLabel": "Retirer {{name}}",
+      "removing": "Retrait…",
+      "confirmTitle": "Retirer ce membre ?",
+      "confirmDescription": "{{name}} ({{email}}) perd aussitôt l’accès à cette organisation. Le compte reste, et un administrateur peut l’inviter à nouveau.",
+      "confirm": "Retirer le membre",
+      "inviteTitle": "Inviter une personne",
+      "inviteDescription": "Le lien d’invitation sert une fois, pendant 7 jours. Rondyr l’envoie par e-mail quand ce serveur envoie des e-mails, et vous pouvez toujours le copier.",
+      "email": "Adresse e-mail",
+      "role": "Rôle",
+      "rolesHint": "Les relecteurs lisent les messages et décident. Les administrateurs peuvent tout faire, y compris inviter et retirer des membres.",
+      "invite": "Inviter",
+      "inviting": "Invitation…",
+      "copyLink": "Copier le lien",
+      "hideLink": "Masquer le lien",
+      "copied": "Copié",
+      "copyFailed": "Le lien n’a pas pu être copié. Sélectionnez-le et copiez-le à la main.",
+      "emails": {
+        "sent": "Invitation envoyée par e-mail à {{email}}. Le lien ci-dessous n’est affiché qu’une fois.",
+        "no-provider": "Ce serveur n’envoie pas d’e-mails. Copiez ce lien et envoyez-le à {{email}} : il n’est affiché qu’une fois.",
+        "limit-reached": "{{email}} a déjà reçu 3 e-mails d’invitation en 24 heures. Copiez ce lien et envoyez-le vous-même : il n’est affiché qu’une fois.",
+        "failed": "L’e-mail à {{email}} n’a pas pu être envoyé. Copiez ce lien et envoyez-le vous-même : il n’est affiché qu’une fois."
+      },
+      "pending": "Invitations en attente",
+      "noInvitations": "Aucune invitation en attente.",
+      "expires": "valable jusqu’au {{date}}",
+      "expired": "Expirée",
+      "cancelInvitation": "Annuler",
+      "cancelLabel": "Annuler l’invitation de {{email}}",
+      "loadFailed": "Impossible de charger les membres.",
+      "retry": "Réessayer",
+      "problems": {
+        "lastAdmin": "Une organisation garde au moins un administrateur. Nommez d’abord un autre membre administrateur.",
+        "changeFailed": "Le rôle n’a pas pu être modifié. Réessayez.",
+        "removeFailed": "Le membre n’a pas pu être retiré. Réessayez.",
+        "cancelFailed": "L’invitation n’a pas pu être annulée. Réessayez.",
+        "alreadyMember": "Cette adresse appartient déjà à un membre.",
+        "limit": "Cette organisation a 20 invitations en attente. Annulez-en une avant d’inviter quelqu’un d’autre.",
+        "inviteFailed": "L’invitation n’a pas pu être créée. Vérifiez l’adresse et réessayez."
+      }
+    }
+  },
+  "invitation": {
+    "loading": "Chargement de l’invitation…",
+    "invalidTitle": "Invitation indisponible",
+    "invalid": "Ce lien d’invitation a expiré, a été annulé ou a déjà servi. Demandez-en un nouveau à un administrateur de l’organisation.",
+    "openDashboard": "Ouvrir le dashboard",
+    "loadFailed": "Impossible de charger l’invitation.",
+    "retry": "Réessayer",
+    "title": "Rejoindre {{organization}}",
+    "as": {
+      "reviewer": "Vous êtes invité comme relecteur, avec l’adresse {{email}}.",
+      "admin": "Vous êtes invité comme administrateur, avec l’adresse {{email}}."
+    },
+    "email": "Adresse e-mail",
+    "name": "Votre nom",
+    "password": "Mot de passe",
+    "passwordHint": "Au moins {{minimum}} caractères.",
+    "createAndJoin": "Créer le compte et rejoindre",
+    "join": "Rejoindre l’organisation",
+    "joining": "Connexion à l’organisation…",
+    "signInFirst": "Un compte utilise déjà {{email}}. Connectez-vous avec ce compte pour accepter.",
+    "otherAccount": "Vous êtes connecté en tant que {{signedIn}}. Déconnectez-vous, puis rouvrez le lien pour accepter en tant que {{invited}}.",
+    "problems": {
+      "invalid": "Ce lien d’invitation a expiré, a été annulé ou a déjà servi.",
+      "otherAccount": "Cette invitation est destinée à une autre adresse que celle de votre compte.",
+      "signInRequired": "Un compte utilise déjà cette adresse. Connectez-vous avec ce compte pour accepter.",
+      "rejected": "Vérifiez votre nom et choisissez un mot de passe de 12 à 128 caractères.",
+      "failed": "L’invitation n’a pas pu être acceptée. Réessayez."
     }
   }
 }

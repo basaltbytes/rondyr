@@ -473,7 +473,7 @@ it.effect("quarantines a sales pitch with its scores and lets a reviewer accept 
       }),
     ),
     Story.state(submission, { _tag: "Quarantined" }),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -566,12 +566,12 @@ it.effect("quarantines exhausted failures and accepts only one authorized review
         policy,
       }),
     ),
-    Story.provide(CurrentReviewer, { userId, organizations: [] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [] }),
     Story.query(ListSubmissions, { organizationId }),
     Story.rejected(SubmissionNotFound.make()),
     Story.when(submission, DismissSubmission.make()),
     Story.rejected(SubmissionNotFound.make()),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -610,7 +610,7 @@ it.effect("quarantines a submission at intake without the classifier, once", () 
     Story.when(submission, RequestClassification.make({ organizationId })),
     Story.then(submission),
     Story.state(submission, { _tag: "Quarantined" }),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -636,12 +636,72 @@ it.effect("lets a reviewer dismiss a submission quarantined at intake", () =>
       submission,
       SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
     ),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, DismissSubmission.make()),
     Story.then(submission, SubmissionDismissed.make({ organizationId, reviewerId: userId })),
     Story.state(submission, { _tag: "Archived" }),
   ),
 );
+
+it.effect("lets an account with the reviewer role accept one message and archive another", () => {
+  const archived = SubmissionId.make("73123ee4-40bf-4c5f-b8ff-1d56cdaa7641");
+  const other = Submission.ref(archived);
+  const reviewer = { userId, memberships: [{ organizationId, role: "reviewer" as const }] };
+  return story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    Story.when(other, QuarantineAtIntake.make({ organizationId, reason: "repetition" })),
+    Story.then(
+      other,
+      SubmissionQuarantined.make({ organizationId, reason: "repetition", rulesVersion }),
+    ),
+    Story.provide(CurrentReviewer, reviewer),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Manual", reviewerId: userId },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.when(other, DismissSubmission.make()),
+    Story.then(other, SubmissionDismissed.make({ organizationId, reviewerId: userId })),
+    Story.state(submission, { _tag: "Accepted" }),
+    Story.state(other, { _tag: "Archived" }),
+  );
+});
+
+it.effect("answers SubmissionNotFound to an account without a role in the organization", () => {
+  const elsewhere = OrganizationId.make("another-studio");
+  return story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    // An admin of another organization has no role in this one.
+    Story.provide(CurrentReviewer, {
+      userId,
+      memberships: [{ organizationId: elsewhere, role: "admin" }],
+    }),
+    Story.query(ListSubmissions, { organizationId }),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.when(submission, DismissSubmission.make()),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.state(submission, { _tag: "Quarantined" }),
+  );
+});
 
 it.effect("records the token that accepts a quarantined submission", () => {
   const apiTokenId = ApiTokenId.make("site-inbox-token");
@@ -651,7 +711,10 @@ it.effect("records the token that accepts a quarantined submission", () => {
       submission,
       SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
     ),
-    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, {
+      apiTokenId,
+      memberships: [{ organizationId, role: "reviewer" }],
+    }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -675,7 +738,10 @@ it.effect("records the token that archives a quarantined submission", () => {
       submission,
       SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
     ),
-    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, {
+      apiTokenId,
+      memberships: [{ organizationId, role: "reviewer" }],
+    }),
     Story.when(submission, DismissSubmission.make()),
     Story.then(submission, SubmissionDismissed.make({ organizationId, apiTokenId })),
     Story.state(submission, { _tag: "Archived" }),

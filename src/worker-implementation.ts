@@ -14,6 +14,7 @@ import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
 import { formOriginsLive } from "./adapters/database/form-origins.ts";
 import { formsLive } from "./adapters/database/forms.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
+import { membersLive } from "./adapters/database/members.ts";
 import { submissionIntakeLive } from "./adapters/database/intake.ts";
 import { notificationTargetsLive } from "./adapters/database/notification-targets.ts";
 import { operationsStoreLive } from "./adapters/database/operations-status.ts";
@@ -36,6 +37,8 @@ import { authenticationRoutes } from "./http/authentication.ts";
 import { classificationPolicyRoutes } from "./http/classification-policy-routes.ts";
 import { deliveryRoutes } from "./http/delivery-routes.ts";
 import { formRoutes } from "./http/form-routes.ts";
+import { invitationRoutes } from "./http/invitation-routes.ts";
+import { memberRoutes } from "./http/member-routes.ts";
 import { operationsRoute } from "./http/operations-route.ts";
 import { organizationDomainRoutes } from "./http/organization-domain-routes.ts";
 import { organizationQuotaRoutes } from "./http/organization-quota-routes.ts";
@@ -62,6 +65,7 @@ const services = Layer.mergeAll(
   formOriginsLive,
   formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,
+  membersLive,
   organizationQuotasLive,
   classificationPoliciesLive,
   outboxLive,
@@ -70,6 +74,7 @@ const services = Layer.mergeAll(
   deliveryHistoryLive,
   operationsStoreLive,
   cronHeartbeatLive,
+  emailSenderLive,
   Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
     Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
   ),
@@ -101,6 +106,8 @@ const routes = Layer.mergeAll(
   classificationPolicyRoutes,
   formRoutes,
   deliveryRoutes,
+  memberRoutes,
+  invitationRoutes,
   operationsRoute,
 ).pipe(Layer.provide(apiTokenAuthentication));
 

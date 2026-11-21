@@ -14,6 +14,7 @@ import {
   Network,
   ScanSearch,
   Send,
+  Users,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -51,6 +52,7 @@ export type Section =
   | "classification"
   | "quotas"
   | "apiTokens"
+  | "members"
   | "organization"
   | "operations";
 
@@ -68,6 +70,7 @@ const settings = [
   ["classification", ScanSearch],
   ["quotas", Gauge],
   ["apiTokens", KeyRound],
+  ["members", Users],
 ] as const;
 
 interface InboxSidebarProps {
@@ -225,44 +228,49 @@ export function InboxSidebar({
             })}
           </SidebarMenu>
         </SidebarGroup>
-        <SidebarGroup aria-label={t("inbox.navigation.settings")}>
-          <SidebarGroupLabel>{t("inbox.navigation.settings")}</SidebarGroupLabel>
-          <SidebarMenu>
-            {settings.map(([key, Icon]) => (
-              <SidebarMenuItem key={key}>
+        {/* A reviewer reads and decides; the settings and the status are an admin's. */}
+        {inbox.role === "admin" && (
+          <SidebarGroup aria-label={t("inbox.navigation.settings")}>
+            <SidebarGroupLabel>{t("inbox.navigation.settings")}</SidebarGroupLabel>
+            <SidebarMenu>
+              {settings.map(([key, Icon]) => (
+                <SidebarMenuItem key={key}>
+                  <SidebarMenuButton
+                    active={section === key}
+                    tooltip={t(`inbox.sections.${key}`)}
+                    onClick={() => {
+                      onSection(key);
+                      setOpenMobile(false);
+                    }}
+                  >
+                    <Icon aria-hidden="true" className="size-4 shrink-0" />
+                    <SidebarMenuLabel>{t(`inbox.sections.${key}`)}</SidebarMenuLabel>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
+        {inbox.role === "admin" && (
+          <SidebarGroup aria-label={t("inbox.navigation.operations")}>
+            <SidebarGroupLabel>{t("inbox.navigation.operations")}</SidebarGroupLabel>
+            <SidebarMenu>
+              <SidebarMenuItem>
                 <SidebarMenuButton
-                  active={section === key}
-                  tooltip={t(`inbox.sections.${key}`)}
+                  active={section === "operations"}
+                  tooltip={t("operations.title")}
                   onClick={() => {
-                    onSection(key);
+                    onSection("operations");
                     setOpenMobile(false);
                   }}
                 >
-                  <Icon aria-hidden="true" className="size-4 shrink-0" />
-                  <SidebarMenuLabel>{t(`inbox.sections.${key}`)}</SidebarMenuLabel>
+                  <Activity aria-hidden="true" className="size-4 shrink-0" />
+                  <SidebarMenuLabel>{t("operations.title")}</SidebarMenuLabel>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
-        <SidebarGroup aria-label={t("inbox.navigation.operations")}>
-          <SidebarGroupLabel>{t("inbox.navigation.operations")}</SidebarGroupLabel>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                active={section === "operations"}
-                tooltip={t("operations.title")}
-                onClick={() => {
-                  onSection("operations");
-                  setOpenMobile(false);
-                }}
-              >
-                <Activity aria-hidden="true" className="size-4 shrink-0" />
-                <SidebarMenuLabel>{t("operations.title")}</SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter>{account}</SidebarFooter>
     </Sidebar>

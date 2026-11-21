@@ -109,7 +109,8 @@
       "classification": "Classification",
       "apiTokens": "API tokens",
       "quotas": "Daily quotas",
-      "organization": "New organization"
+      "organization": "New organization",
+      "members": "Members"
     },
     "statuses": {
       "received": "Received",
@@ -514,6 +515,85 @@
         "invalid-address": "An address is not valid. Enter bare addresses, such as team@example.com, without a name or angle brackets.",
         "duplicate-address": "An address appears twice."
       }
+    },
+    "members": {
+      "title": "Members",
+      "description": "A reviewer reads the inbox and the deliveries, then accepts or archives messages. An admin also manages forms, destinations, members and settings.",
+      "you": "(you)",
+      "roleOf": "Role of {{name}}",
+      "roles": {
+        "reviewer": "Reviewer",
+        "admin": "Admin"
+      },
+      "remove": "Remove",
+      "removeLabel": "Remove {{name}}",
+      "removing": "Removing…",
+      "confirmTitle": "Remove this member?",
+      "confirmDescription": "{{name}} ({{email}}) loses access to this organization at once. The account stays, and an admin can invite it again.",
+      "confirm": "Remove member",
+      "inviteTitle": "Invite someone",
+      "inviteDescription": "The invitation link works once, for 7 days. Rondyr emails it when this server sends email, and you can copy it in every case.",
+      "email": "Email address",
+      "role": "Role",
+      "rolesHint": "Reviewers read messages and decide on them. Admins can do everything, including inviting and removing members.",
+      "invite": "Invite",
+      "inviting": "Inviting…",
+      "copyLink": "Copy link",
+      "hideLink": "Hide link",
+      "copied": "Copied",
+      "copyFailed": "The link could not be copied. Select it and copy it by hand.",
+      "emails": {
+        "sent": "Invitation emailed to {{email}}. The link below is shown only now.",
+        "no-provider": "This server does not send email. Copy this link and send it to {{email}}: it is shown only now.",
+        "limit-reached": "{{email}} already got 3 invitation emails in the last 24 hours. Copy this link and send it yourself: it is shown only now.",
+        "failed": "The email to {{email}} could not be sent. Copy this link and send it yourself: it is shown only now."
+      },
+      "pending": "Pending invitations",
+      "noInvitations": "No pending invitations.",
+      "expires": "valid until {{date}}",
+      "expired": "Expired",
+      "cancelInvitation": "Cancel",
+      "cancelLabel": "Cancel the invitation of {{email}}",
+      "loadFailed": "Could not load the members.",
+      "retry": "Try again",
+      "problems": {
+        "lastAdmin": "An organization keeps at least one admin. Make another member admin first.",
+        "changeFailed": "The role could not be changed. Try again.",
+        "removeFailed": "The member could not be removed. Try again.",
+        "cancelFailed": "The invitation could not be cancelled. Try again.",
+        "alreadyMember": "This address already belongs to a member.",
+        "limit": "This organization has 20 pending invitations. Cancel one before inviting someone else.",
+        "inviteFailed": "The invitation could not be created. Check the address and try again."
+      }
+    }
+  },
+  "invitation": {
+    "loading": "Loading the invitation…",
+    "invalidTitle": "Invitation unavailable",
+    "invalid": "This invitation link has expired, was cancelled or was already used. Ask an admin of the organization for a new one.",
+    "openDashboard": "Open the dashboard",
+    "loadFailed": "Could not load the invitation.",
+    "retry": "Try again",
+    "title": "Join {{organization}}",
+    "as": {
+      "reviewer": "You are invited as a reviewer, with the address {{email}}.",
+      "admin": "You are invited as an admin, with the address {{email}}."
+    },
+    "email": "Email address",
+    "name": "Your name",
+    "password": "Password",
+    "passwordHint": "At least {{minimum}} characters.",
+    "createAndJoin": "Create account and join",
+    "join": "Join the organization",
+    "joining": "Joining…",
+    "signInFirst": "An account already uses {{email}}. Sign in with it to accept.",
+    "otherAccount": "You are signed in as {{signedIn}}. Sign out, then open the link again to accept as {{invited}}.",
+    "problems": {
+      "invalid": "This invitation link has expired, was cancelled or was already used.",
+      "otherAccount": "This invitation is for another address than the one you are signed in with.",
+      "signInRequired": "An account already uses this address. Sign in with it to accept.",
+      "rejected": "Check your name, and choose a password of 12 to 128 characters.",
+      "failed": "The invitation could not be accepted. Try again."
     }
   }
 }

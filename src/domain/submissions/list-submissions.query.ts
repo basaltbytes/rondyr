@@ -4,7 +4,7 @@ import { Effect } from "effect";
 import { InboxStore } from "./inbox-store.ts";
 import { Inbox } from "./inbox.projection.ts";
 import { InboxEntry, InboxFilter } from "./inbox.ts";
-import { CurrentReviewer, ReviewSession } from "./review-session.middleware.ts";
+import { CurrentReviewer, ReviewSession, reviewerMay } from "./review-session.middleware.ts";
 import {
   InboxUnavailable,
   InvalidInboxCursor,
@@ -30,7 +30,9 @@ export const listSubmissionsLive = ListSubmissions.toLayer(
     const store = yield* InboxStore;
     return Effect.fnUntraced(function* ({ organizationId, ...filter }, { take, after }) {
       const reviewer = yield* CurrentReviewer;
-      if (!reviewer.organizations.includes(organizationId)) return yield* SubmissionNotFound.make();
+      if (!reviewerMay(reviewer, organizationId, "read-inbox")) {
+        return yield* SubmissionNotFound.make();
+      }
       return yield* store.list(organizationId, filter, take, after);
     });
   }),

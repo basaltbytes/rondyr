@@ -42,6 +42,8 @@ interface SubmissionReaderProps {
   /** The message as the API returns it once it is accepted or archived. */
   readonly onReviewed: (submission: Submission) => void;
   readonly onClose: () => void;
+  /** An admin may also retry a failed delivery. */
+  readonly administrator: boolean;
 }
 
 /**
@@ -60,6 +62,7 @@ export function SubmissionReader({
   onNext,
   onReviewed,
   onClose,
+  administrator,
 }: SubmissionReaderProps) {
   const { t } = useTranslation();
   const format = useFormats();
@@ -236,7 +239,12 @@ export function SubmissionReader({
             </dl>
           )}
           {entry.status === "accepted" && (
-            <DeliveryHistory inboxId={inboxId} submissionId={submissionId} revision={revision} />
+            <DeliveryHistory
+              inboxId={inboxId}
+              submissionId={submissionId}
+              revision={revision}
+              canRetry={administrator}
+            />
           )}
         </article>
       </div>

@@ -97,7 +97,7 @@ const seedForm = Effect.fnUntraced(function* (name: string, submissionIds: Reado
         name,
       ),
       env.DB.prepare(
-        "INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)",
+        "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
       ).bind(`${name}-org`, `${name}-user`),
       env.DB.prepare(
         "INSERT INTO forms (id, organization_id, public_id, name) VALUES (?, ?, ?, ?)",
