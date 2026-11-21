@@ -47,17 +47,16 @@ import { consumeSubmissions } from "./jobs/submission-outbox.ts";
 import { BackgroundTasks } from "./ports/background-tasks.ts";
 
 const deliveries = Layer.mergeAll(deliveryStoreLive, deliveryQueueLive);
+const turnstile = turnstileVerifierLive.pipe(
+  Layer.provide([secretCipherLive, FetchHttpClient.layer]),
+);
 const services = Layer.mergeAll(
   authenticationLive,
   HttpServer.layerServices,
-  submissionIntakeLive.pipe(
-    Layer.provide(
-      turnstileVerifierLive.pipe(Layer.provide([secretCipherLive, FetchHttpClient.layer])),
-    ),
-  ),
+  submissionIntakeLive.pipe(Layer.provide(turnstile)),
   clientRateLimitLive,
   formOriginsLive,
-  formsLive.pipe(Layer.provide(secretCipherLive)),
+  formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,
   organizationQuotasLive,
   classificationPoliciesLive,

@@ -258,12 +258,21 @@ test("save Turnstile keys and copy the widget HTML from Forms", async ({
   const settings = settingsFor(page, formName);
   const siteKey = "sample-widget-site-key";
   const secretKey = "sample-widget-secret";
+  const site = settings.getByLabel(t("inbox.forms.turnstile.siteKey"), { exact: true });
   const secret = settings.getByLabel(t("inbox.forms.turnstile.secretKey"), { exact: true });
-  await settings.getByLabel(t("inbox.forms.turnstile.siteKey"), { exact: true }).fill(siteKey);
-  await secret.fill(secretKey);
-  await settings.getByRole("button", { name: t("inbox.forms.turnstile.save") }).click();
-
+  const save = settings.getByRole("button", { name: t("inbox.forms.turnstile.save") });
   const copy = settings.getByRole("button", { name: t("inbox.forms.turnstile.copy") });
+  // The Siteverify fixture does not know a secret key that starts with refused-.
+  await site.fill(siteKey);
+  await secret.fill("refused-widget-secret");
+  await save.click();
+  await expect(settings.getByText(t("inbox.forms.turnstile.secretKeyRefused"))).toBeVisible();
+  await expect(copy).toBeHidden();
+
+  await site.fill(siteKey);
+  await secret.fill(secretKey);
+  await save.click();
+
   await expect(copy).toBeVisible();
   await expect(secret).toHaveValue("");
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
