@@ -21,11 +21,13 @@ import {
   LastAdmin,
   MemberNotFound,
   Members,
+  NotAnAdmin,
   type NewAccount,
 } from "../../ports/members.ts";
 import type { OrganizationScope } from "../../ports/organization-directory.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
+import { passwordHash } from "./password-hash.ts";
 import { hashSecret, newLinkSecret } from "./secret-hash.ts";
 
 const dayMillis = 24 * 60 * 60 * 1000;
@@ -54,14 +56,34 @@ const decodeValid = Schema.decodeUnknownEffect(
 );
 
 // ?1 is the acting account and ?2 the organization in every statement scoped to one.
-const actor = "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2";
-const memberColumns = "u.id AS userId, u.name, u.email, m.role";
+// The route checked the permission; each statement checks the admin role again, so a
+// request that started before its author lost the role changes nothing.
+const actor = `
+  SELECT 1 FROM organization_members
+  WHERE user_id = ?1 AND organization_id = ?2 AND role = 'admin'
+`;
+// The API tokens that a member created and that still work: removing the member revokes them.
+const memberColumns = `
+  u.id AS userId, u.name, u.email, m.role, (
+    SELECT count(*) FROM api_tokens t
+    WHERE t.organization_id = m.organization_id AND t.created_by = m.user_id
+      AND t.revoked_at IS NULL
+  ) AS activeApiTokens
+`;
 const invitationColumns = "id, email, role, created_at AS createdAt, expires_at AS expiresAt";
 const admins =
   "SELECT count(*) FROM organization_members WHERE organization_id = ?2 AND role = 'admin'";
-// An invitation is usable while nobody has accepted or cancelled it and it has not expired.
-const usable = (now: string) =>
-  `i.accepted_at IS NULL AND i.cancelled_at IS NULL AND i.expires_at > ${now}`;
+// An invitation is usable while nobody has accepted or cancelled it, it has not
+// expired, and the member who issued it is still an admin of the organization: a
+// member who lost the role, or the organization, leaves no working link behind.
+const usable = (now: string) => `
+  i.accepted_at IS NULL AND i.cancelled_at IS NULL AND i.expires_at > ${now}
+  AND EXISTS (
+    SELECT 1 FROM organization_members issuer
+    WHERE issuer.organization_id = i.organization_id AND issuer.user_id = i.created_by
+      AND issuer.role = 'admin'
+  )
+`;
 
 const list = Effect.fn("Members.list")(function* (scope: OrganizationScope) {
   const db = yield* database;
@@ -184,10 +206,37 @@ const cancelInvitation = Effect.fn("Members.cancelInvitation")(function* (
   if (cancelled.length === 0) return yield* InvitationNotFound.make();
 });
 
-const memberQuery = `
-  SELECT ${memberColumns} FROM organization_members m JOIN auth_users u ON u.id = m.user_id
-  WHERE m.organization_id = ?2 AND m.user_id = ?3 AND EXISTS (${actor})
+// ?1 is the acting account, ?2 the organization and ?3 the member. Read in the
+// transaction of a change that did not apply, to tell why.
+const refusal = `
+  SELECT
+    (SELECT role FROM organization_members WHERE user_id = ?1 AND organization_id = ?2) AS actor,
+    EXISTS (
+      SELECT 1 FROM organization_members WHERE organization_id = ?2 AND user_id = ?3
+    ) AS member,
+    (
+      SELECT role = 'admin' AND (${admins}) <= 1 FROM organization_members
+      WHERE organization_id = ?2 AND user_id = ?3
+    ) AS lastAdmin
 `;
+const Refusal = Schema.Struct({
+  actor: Schema.NullOr(MemberRole),
+  member: Schema.Literals([0, 1]),
+  lastAdmin: Schema.NullOr(Schema.Literals([0, 1])),
+});
+const decodeRefusal = Schema.decodeUnknownEffect(Refusal);
+
+/**
+ * Why a change of a member did not apply: the acting account left the
+ * organization or the member does not exist, the change would leave no admin,
+ * or the acting account is no longer an admin.
+ */
+const refused = Effect.fnUntraced(function* (state: typeof Refusal.Type, demotes: boolean) {
+  if (state.actor === null || state.member === 0) return yield* MemberNotFound.make();
+  if (demotes && state.lastAdmin === 1) return yield* LastAdmin.make();
+  if (state.actor !== "admin") return yield* NotAnAdmin.make();
+  return yield* LastAdmin.make();
+});
 
 // ?2 is the organization, ?3 the member and ?4 the time. A member who loses the
 // admin role, or the organization, keeps no invitation that it issued: one of
@@ -210,9 +259,12 @@ const changeRole = Effect.fn("Members.changeRole")(function* (
   const now = yield* Clock.currentTimeMillis;
   const key = [scope.userId, scope.organizationId, member] as const;
   // The last admin keeps the role: the condition is part of the statement, so two
-  // admins who demote each other at the same time cannot both succeed.
-  const [changed, , current] = yield* d1(() =>
+  // admins who demote each other at the same time cannot both succeed. An admin
+  // who steps down is no longer one after the update, so the member is read back
+  // without the check of the acting account, and returned only after the update.
+  const [before, changed, , current] = yield* d1(() =>
     db.batch([
+      db.prepare(refusal).bind(...key),
       db
         .prepare(`
         UPDATE organization_members SET role = ?4
@@ -222,14 +274,19 @@ const changeRole = Effect.fn("Members.changeRole")(function* (
       `)
         .bind(...key, role),
       db.prepare(withdrawInvitations).bind(...key, now),
-      db.prepare(memberQuery).bind(...key),
+      db
+        .prepare(`
+        SELECT ${memberColumns} FROM organization_members m JOIN auth_users u ON u.id = m.user_id
+        WHERE m.organization_id = ?2 AND m.user_id = ?3
+      `)
+        .bind(...key),
     ]),
   );
   const [row] = yield* decodeMembers(current?.results).pipe(Effect.mapError(unreadable));
-  if (row === undefined) return yield* MemberNotFound.make();
   const updated = yield* decodeIds(changed?.results).pipe(Effect.mapError(unreadable));
-  if (updated.length === 0) return yield* LastAdmin.make();
-  return row;
+  if (updated.length > 0 && row !== undefined) return row;
+  const state = yield* decodeRefusal(before?.results[0]).pipe(Effect.mapError(unreadable));
+  return yield* refused(state, role !== "admin");
 });
 
 const remove = Effect.fn("Members.remove")(function* (
@@ -241,8 +298,9 @@ const remove = Effect.fn("Members.remove")(function* (
   const key = [scope.userId, scope.organizationId, member] as const;
   // A removed member knows the API tokens it created and the links it issued:
   // the same transaction revokes them, so none of them keeps the access.
-  const [removed, , , current] = yield* d1(() =>
+  const [before, removed] = yield* d1(() =>
     db.batch([
+      db.prepare(refusal).bind(...key),
       db
         .prepare(`
         DELETE FROM organization_members
@@ -261,14 +319,12 @@ const remove = Effect.fn("Members.remove")(function* (
       `)
         .bind(...key, now),
       db.prepare(withdrawInvitations).bind(...key, now),
-      db.prepare(memberQuery).bind(...key),
     ]),
   );
   const deleted = yield* decodeIds(removed?.results).pipe(Effect.mapError(unreadable));
   if (deleted.length > 0) return;
-  const [row] = yield* decodeMembers(current?.results).pipe(Effect.mapError(unreadable));
-  if (row === undefined) return yield* MemberNotFound.make();
-  return yield* LastAdmin.make();
+  const state = yield* decodeRefusal(before?.results[0]).pipe(Effect.mapError(unreadable));
+  return yield* refused(state, true);
 });
 
 const readInvitation = Effect.fn("Members.readInvitation")(function* (
@@ -335,18 +391,6 @@ const acceptAsAccount = Effect.fn("Members.acceptAsAccount")(function* (
   const state = yield* decodeValid(valid?.results[0]).pipe(Effect.mapError(unreadable));
   if (state.valid === 1) return yield* InvitationForOtherAccount.make();
   return yield* InvitationNotFound.make();
-});
-
-const passwordHash = Effect.fnUntraced(function* (password: Redacted.Redacted<string>) {
-  // Better Auth's hash, which its sign-in verifies. Loaded only on this path.
-  const { hashPassword } = yield* Effect.tryPromise({
-    try: () => import("better-auth/crypto"),
-    catch: unreadable,
-  });
-  return yield* Effect.tryPromise({
-    try: () => hashPassword(Redacted.value(password)),
-    catch: unreadable,
-  });
 });
 
 const acceptWithNewAccount = Effect.fn("Members.acceptWithNewAccount")(function* (

@@ -18,6 +18,12 @@ export class MemberNotFound extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("MemberNotFound", {}) {}
 
+/** The acting account lost the admin role while its request ran: 403, as after it. */
+export class NotAnAdmin extends Schema.TaggedError<NotAnAdmin, { readonly brand: unique symbol }>()(
+  "NotAnAdmin",
+  {},
+) {}
+
 /** The change would leave the organization without an admin. */
 export class LastAdmin extends Schema.TaggedError<LastAdmin, { readonly brand: unique symbol }>()(
   "LastAdmin",
@@ -96,11 +102,11 @@ export class Members extends Context.Service<
       scope: OrganizationScope,
       member: typeof UserId.Type,
       role: MemberRole,
-    ) => Effect.Effect<Member, MemberNotFound | LastAdmin | StorageUnavailable>;
+    ) => Effect.Effect<Member, MemberNotFound | LastAdmin | NotAnAdmin | StorageUnavailable>;
     readonly remove: (
       scope: OrganizationScope,
       member: typeof UserId.Type,
-    ) => Effect.Effect<void, MemberNotFound | LastAdmin | StorageUnavailable>;
+    ) => Effect.Effect<void, MemberNotFound | LastAdmin | NotAnAdmin | StorageUnavailable>;
     /** The invitation that a link opens, for the person who opened it. */
     readonly readInvitation: (
       token: Redacted.Redacted<string>,

@@ -42,6 +42,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
         PermissionDenied: () => empty(403),
+        NotAnAdmin: () => empty(403),
         OrganizationNotFound: () => empty(404),
         MemberNotFound: () => empty(404),
         InvitationNotFound: () => empty(404),
