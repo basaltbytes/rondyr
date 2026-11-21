@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "96993ef5-0e7a-49ab-aaf2-4e76aa4d9a8d",
+  "id": "2472e7b2-bda3-4477-9104-14e76811f586",
   "prevIds": [
-    "13077923-a47f-4694-afb2-686b8db1e9fa"
+    "822276fb-eaaf-4dfb-97a4-4ff8cdc69ac5"
   ],
   "ddl": [
     {
@@ -969,6 +969,16 @@
       "notNull": true,
       "autoincrement": false,
       "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "organization_daily_usage",
+      "name": "junk",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
       "generated": null,
       "entityType": "columns"
     },
