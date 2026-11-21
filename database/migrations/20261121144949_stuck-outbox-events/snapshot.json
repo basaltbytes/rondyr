@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "afdc73d1-b100-4c4a-9728-f295e1f9e359",
+  "id": "c5bd5a50-2f5b-4ef2-90dd-2993a89839c8",
   "prevIds": [
     "2472e7b2-bda3-4477-9104-14e76811f586"
   ],
@@ -1103,6 +1103,26 @@
       "entityType": "columns"
     },
     {
+      "table": "outbox_events",
+      "name": "publication_count",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "outbox_events",
+      "name": "stuck_at",
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
       "table": "submission_inbox",
       "name": "submission_id",
       "type": "text",
@@ -1249,16 +1269,6 @@
       "notNull": true,
       "autoincrement": false,
       "default": "0",
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "submissions",
-      "name": "idempotency_key",
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
       "generated": null,
       "entityType": "columns"
     },
@@ -1442,7 +1452,7 @@
     },
     {
       "table": "outbox_events",
-      "name": "outbox_pending_idx",
+      "name": "outbox_due_idx",
       "columns": [
         {
           "value": "lease_until",
@@ -1454,7 +1464,21 @@
         }
       ],
       "isUnique": false,
-      "where": "\"outbox_events\".\"handed_off_at\" IS NULL",
+      "where": "\"outbox_events\".\"handed_off_at\" IS NULL AND \"outbox_events\".\"stuck_at\" IS NULL",
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
+      "table": "outbox_events",
+      "name": "outbox_stuck_idx",
+      "columns": [
+        {
+          "value": "stuck_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": "\"outbox_events\".\"handed_off_at\" IS NULL AND \"outbox_events\".\"stuck_at\" IS NOT NULL",
       "origin": "manual",
       "entityType": "indexes"
     },
@@ -1539,24 +1563,6 @@
       ],
       "isUnique": false,
       "where": "\"submissions\".\"content_fingerprint\" is not null",
-      "origin": "manual",
-      "entityType": "indexes"
-    },
-    {
-      "table": "submissions",
-      "name": "submissions_form_idempotency_key_idx",
-      "columns": [
-        {
-          "value": "form_id",
-          "isExpression": false
-        },
-        {
-          "value": "idempotency_key",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": "\"submissions\".\"idempotency_key\" is not null",
       "origin": "manual",
       "entityType": "indexes"
     },

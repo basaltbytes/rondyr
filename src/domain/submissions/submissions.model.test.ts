@@ -1,7 +1,7 @@
 import * as Domain from "@alchemy.run/domain";
 import { Story } from "@alchemy.run/domain/Story";
 import { assert, expectTypeOf, it } from "@effect/vitest";
-import { Effect, Layer, Schema } from "effect";
+import { DateTime, Effect, Layer, Result, Schema } from "effect";
 
 import { ApproveSubmission } from "./approve-submission.command.ts";
 import {
@@ -22,6 +22,10 @@ import { InboxStore } from "./inbox-store.ts";
 import { ListSubmissions } from "./list-submissions.query.ts";
 import { QuarantineAtIntake } from "./quarantine-at-intake.command.ts";
 import {
+  ReclassificationRequested,
+  ReclassifySubmission,
+} from "./reclassify-submission.command.ts";
+import {
   ClassificationRequested,
   RequestClassification,
 } from "./request-classification.command.ts";
@@ -30,7 +34,11 @@ import { SubmissionAccepted } from "./submission-accepted.event.ts";
 import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import { Submission } from "./submission.aggregate.ts";
 import { ApiTokenId, OrganizationId, SubmissionId, UserId } from "./submission.id.ts";
-import { SubmissionNotFound, SubmissionNotReviewable } from "./submission.rejection.ts";
+import {
+  SubmissionNotFound,
+  SubmissionNotReclassifiable,
+  SubmissionNotReviewable,
+} from "./submission.rejection.ts";
 import { Submissions, submissionHandlers } from "./submissions.model.ts";
 
 const organizationId = OrganizationId.make("pottery");
@@ -718,3 +726,223 @@ it.effect("ignores a quarantine at intake once classification has started", () =
     Story.state(submission, { _tag: "Accepted" }),
   );
 });
+
+/** A submission that the classifier could not score, now in quarantine with `classification-error`. */
+const quarantineAfterClassifierError = [
+  Story.when(submission, RequestClassification.make({ organizationId })),
+  Story.then(submission, ClassificationRequested.make({ organizationId })),
+  ...lookupPolicy(),
+  scoreCall(),
+  Story.fail(Classifier.score, ClassificationFailed.make({ retryable: false })),
+  Story.then(
+    submission,
+    SubmissionQuarantined.make({
+      organizationId,
+      reason: "classification-error",
+      rulesVersion,
+      policy,
+    }),
+  ),
+  Story.state(submission, { _tag: "Quarantined", reason: "classification-error" }),
+] as const;
+
+it.effect("reclassifies a submission quarantined after a classifier error, with a new run", () => {
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.15 };
+  return story(
+    ...quarantineAfterClassifierError,
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.then(submission, ReclassificationRequested.make({ organizationId, reviewerId: userId })),
+    Story.state(submission, { _tag: "Classifying" }),
+    // A saga started again with the first run's key would return that run: the
+    // policy lookup and the score show that a second run started.
+    ...lookupPolicy(),
+    scoreCall(),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Automatic", scores, rulesVersion, policy },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
+  );
+});
+
+it.effect("reclassifies again after a second classifier error", () =>
+  story(
+    ...quarantineAfterClassifierError,
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.then(submission, ReclassificationRequested.make({ organizationId, reviewerId: userId })),
+    ...lookupPolicy(),
+    scoreCall(),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: false })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+        policy,
+      }),
+    ),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.then(submission, ReclassificationRequested.make({ organizationId, reviewerId: userId })),
+    ...lookupPolicy(),
+    scoreCall(),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: false })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+        policy,
+      }),
+    ),
+    Story.state(submission, { _tag: "Quarantined", reason: "classification-error" }),
+  ),
+);
+
+it.effect("records the token that sends a submission back to classification", () => {
+  const apiTokenId = ApiTokenId.make("site-inbox-token");
+  return story(
+    ...quarantineAfterClassifierError,
+    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.then(submission, ReclassificationRequested.make({ organizationId, apiTokenId })),
+    ...lookupPolicy(),
+    scoreCall(),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: false })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+        policy,
+      }),
+    ),
+  );
+});
+
+it.effect("reclassifies once for a repeated command, then refuses while classifying", () =>
+  story(
+    ...quarantineAfterClassifierError,
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ReclassifySubmission.make({}), { commandId: "reclassify-1" }),
+    Story.then(submission, ReclassificationRequested.make({ organizationId, reviewerId: userId })),
+    Story.state(submission, { _tag: "Classifying" }),
+    // The same command again records nothing and starts no other run.
+    Story.when(submission, ReclassifySubmission.make({}), { commandId: "reclassify-1" }),
+    Story.then(submission),
+    // Another command, while the new run classifies, is refused.
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.rejected(SubmissionNotReviewable.make()),
+    ...lookupPolicy(),
+    scoreCall(),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: false })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+        policy,
+      }),
+    ),
+  ),
+);
+
+it.effect("refuses to reclassify for another reason, another state or another organization", () => {
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.93, relevance: 0.8 };
+  return story(
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.rejected(SubmissionNotReviewable.make()),
+    ...lookupPolicy(),
+    scoreCall(),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "solicitation",
+        scores,
+        rulesVersion,
+        policy,
+      }),
+    ),
+    // The state keeps the reason: the inbox's reason cannot override it.
+    Story.when(submission, ReclassifySubmission.make({ inboxReason: "classification-error" })),
+    Story.rejected(SubmissionNotReclassifiable.make()),
+    Story.provide(CurrentReviewer, { userId, organizations: [] }),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, DismissSubmission.make()),
+    Story.then(submission, SubmissionDismissed.make({ organizationId, reviewerId: userId })),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.rejected(SubmissionNotReviewable.make()),
+    Story.state(submission, { _tag: "Archived" }),
+  );
+});
+
+it.effect("refuses to reclassify a submission quarantined at intake", () =>
+  story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.when(submission, ReclassifySubmission.make({})),
+    Story.rejected(SubmissionNotReclassifiable.make()),
+    Story.state(submission, { _tag: "Quarantined", reason: "honeypot" }),
+  ),
+);
+
+it.effect("reads the inbox reason only for a quarantine stored before the state kept it", () =>
+  Effect.gen(function* () {
+    // The state of a submission quarantined before this version has no reason.
+    const legacy = { _tag: "Quarantined", organizationId } as const;
+    const context = {
+      id: submissionId,
+      commandId: "reclassify-legacy",
+      stream: `Submission/${submissionId}`,
+      version: 2,
+      now: DateTime.makeUnsafe(storyStart),
+    };
+    const decide = (inboxReason?: "classification-error" | "honeypot") => {
+      const decision = Submission.definition.decide.ReclassifySubmission(
+        legacy,
+        ReclassifySubmission.make(inboxReason === undefined ? {} : { inboxReason }),
+        context,
+      );
+      return (Effect.isEffect(decision) ? decision : Effect.succeed(decision)).pipe(
+        Effect.provideService(CurrentReviewer, { userId, organizations: [organizationId] }),
+        Effect.result,
+      );
+    };
+    const accepted = yield* decide("classification-error");
+    assert.deepEqual(
+      accepted,
+      Result.succeed([ReclassificationRequested.make({ organizationId, reviewerId: userId })]),
+    );
+    for (const refused of [yield* decide("honeypot"), yield* decide()]) {
+      assert.deepEqual(refused, Result.fail(SubmissionNotReclassifiable.make()));
+    }
+  }),
+);

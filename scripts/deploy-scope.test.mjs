@@ -42,7 +42,7 @@ function actions(runs, jobs) {
 }
 
 const prod = (conclusion, completed = "2026-11-21T10:00:00Z") => ({
-  name: "production / Deploy prod",
+  name: "Production / Deploy prod",
   conclusion,
   completed_at: completed,
 });
@@ -63,6 +63,22 @@ test("compares with the last run that deployed prod, past cancelled and failed o
     },
   );
   assert.equal(await lastProductionDeployment(github), "deployed");
+});
+
+test("recognizes the prod job by the names it had before and after the staging gate", async () => {
+  const { github } = actions(
+    {
+      "ci.yml": [
+        { id: 2, head_sha: "staging-docs" },
+        { id: 1, head_sha: "older" },
+      ],
+    },
+    {
+      2: [{ name: "Production / Deploy staging", conclusion: "success" }],
+      1: [{ name: "production / Deploy prod", conclusion: "success", completed_at: "x" }],
+    },
+  );
+  assert.equal(await lastProductionDeployment(github), "older");
 });
 
 test("counts a plugin-only run as no deployment, so its base is compared again", async () => {

@@ -27,7 +27,7 @@ Paths beginning with `/{organizationId}` in this table are relative to `/api/org
 | `POST` | `/{organizationId}/submissions/{submissionId}/approve` | Accepts a quarantined submission and returns its updated detail |
 | `POST` | `/{organizationId}/submissions/{submissionId}/dismiss` | Archives a quarantined submission and returns its updated detail |
 
-Both decision routes take an empty body, and the decision event stores the token ID. An accepted submission goes to the form's destinations, as when a reviewer accepts it in the dashboard. Every other `/api` route answers `403` to a token.
+Both decision routes take an empty body, and the decision event stores the token ID. An accepted submission goes to the form's destinations, as when a reviewer accepts it in the dashboard. Every other `/api` route answers `403` to a token, including `POST /{organizationId}/submissions/{submissionId}/reclassify` and the stuck submission routes, which the dashboard uses.
 
 ```sh
 curl --fail-with-body -X POST \
