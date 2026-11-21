@@ -3,7 +3,8 @@ import { Context, Effect, Option, Schema } from "effect";
 import type { SuccessUrl } from "../domain/forms/form.ts";
 import type { TurnstileToken } from "../domain/forms/turnstile.ts";
 import type { SubmissionFields } from "../domain/submissions/submission-fields.ts";
-import type { SubmissionId } from "../domain/submissions/submission.id.ts";
+import type { IdempotencyKey } from "../domain/submissions/idempotency-key.ts";
+import type { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import type { StorageUnavailable } from "./storage.ts";
 
 /**
@@ -58,6 +59,18 @@ export interface ReceivedSubmission {
   readonly successUrl: Option.Option<SuccessUrl>;
 }
 
+/** A submission sent by a server with an API token of the form's organization. */
+export interface ServerIntake {
+  readonly organizationId: OrganizationId;
+  readonly idempotencyKey: Option.Option<IdempotencyKey>;
+}
+
+export interface ReceivedFromServer {
+  readonly submissionId: SubmissionId;
+  /** The key named a submission stored earlier: nothing was stored or published. */
+  readonly replayed: boolean;
+}
+
 export class SubmissionIntake extends Context.Service<
   SubmissionIntake,
   {
@@ -85,6 +98,29 @@ export class SubmissionIntake extends Context.Service<
       | OrganizationRateLimited
       | FormSuspended
       | OriginRefused
+      | EmptySubmission
+      | StorageUnavailable
+    >;
+    /**
+     * Store a submission sent by a server, in the same single D1 batch as
+     * `receive`. The form must belong to the intake's organization, otherwise it
+     * is not found. The allowed origins and Turnstile do not apply; the honeypot
+     * field, the form cap and the organization quotas do.
+     *
+     * With an idempotency key, the batch looks for a submission of the form with
+     * that key before the insert. When one exists, nothing is stored and its ID
+     * is returned with `replayed`, whatever the form's state or quotas now are.
+     */
+    readonly receiveFromServer: (
+      publicId: string,
+      fields: typeof SubmissionFields.Type,
+      intake: ServerIntake,
+    ) => Effect.Effect<
+      ReceivedFromServer,
+      | FormNotFound
+      | FormRateLimited
+      | OrganizationRateLimited
+      | FormSuspended
       | EmptySubmission
       | StorageUnavailable
     >;
