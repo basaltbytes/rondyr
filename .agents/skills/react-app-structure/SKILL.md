@@ -3,10 +3,10 @@ name: react-app-structure
 description: Organize React routes, features, shared components, hooks, and HTTP clients in Rondyr's Vite dashboard.
 ---
 
-# Dashboard React
+# React dashboard
 
-Les routes de `dashboard/src/routes` composent les fonctionnalités de `dashboard/src/features`. Une fonctionnalité peut importer ses propres modules et les dossiers partagés `components`, `hooks` et `lib`. Les dossiers partagés restent indépendants des routes et fonctionnalités.
+The routes in `dashboard/src/routes` compose the features in `dashboard/src/features`. A feature can import its own modules and the shared folders `components`, `hooks` and `lib`. The shared folders stay independent of routes and features.
 
-Utiliser des exports nommés. Importer les modules du dossier courant avec un chemin relatif et ceux du reste du dashboard via `~/`. Passer par HTTP pour accéder au Worker. Aucun texte d’interface n’est écrit dans un composant : chaque texte est une clé i18next, en anglais dans `locales/en/translation.json` et en français dans `locales/fr/translation.json`, lue avec `useTranslation()`. Les deux fichiers ont les mêmes clés, ce que vérifie le typage de `lib/i18n.ts`. `pnpm i18n:check` signale un texte écrit en dur et une clé absente des fichiers.
+Use named exports. Import modules of the current folder with a relative path and those of the rest of the dashboard through `~/`. Go through HTTP to reach the Worker. No interface text is written in a component: each text is an i18next key, in English in `locales/en/translation.json` and in French in `locales/fr/translation.json`, read with `useTranslation()`. Both files have the same keys, which the typing of `lib/i18n.ts` checks. `pnpm i18n:check` reports a hard-coded text and a key missing from the files.
 
-Oxlint vérifie les imports, les appels de mémoïsation manuelle et les effets React. Si un effet synchronise une API externe, nommer cette API dans le commentaire d’exception demandé par la règle. Tester les calculs indépendamment du DOM et vérifier les interactions dans le navigateur quand elles en dépendent.
+Oxlint checks imports, manual memoization calls and React effects. If an effect synchronizes an external API, name that API in the exception comment the rule asks for. Test computations independently of the DOM, and check interactions in the browser when they depend on it.
