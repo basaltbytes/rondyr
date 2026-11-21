@@ -95,15 +95,30 @@ test("indexes every page for search", () => {
   assert.equal(entry.languages.en.page_count, documents.length + 1);
 });
 
-test("leaves out the production address that architecture.md gives", () => {
+/**
+ * The site documents Rondyr for people who deploy their own copy, so it never shows the
+ * address of the maintainers' instance: the host of architecture.md's `**Production:**`
+ * line, and the one it has had since the first deployment.
+ */
+const maintainerHosts = new Set(["rondyr.basaltbytes.com"]);
+
+test("contains no address of the maintainers' instance", () => {
   const source = readFileSync(repositoryPath("architecture.md"), "utf8");
   const address = /\*\*Production:\*\*\s*`([^`]+)`/u.exec(source)?.[1];
-  if (address === undefined) return;
-  const host = new URL(address).host;
+  if (address !== undefined) maintainerHosts.add(new URL(address).host);
   const files = readdirSync(dist, { recursive: true, encoding: "utf8" }).filter((file) =>
     /\.(html|xml|json|js|css|txt)$/u.test(file),
   );
-  for (const file of files) assert.ok(!built(file).includes(host), `${file} contains ${host}`);
+  const found = files.flatMap((file) =>
+    [...maintainerHosts]
+      .filter((host) => built(file).includes(host))
+      .map((host) => `${file}: ${host}`),
+  );
+  assert.deepEqual(
+    found,
+    [],
+    "Remove the address from the Markdown file that the page comes from.",
+  );
 });
 
 test("links files of the repository that are not pages to GitHub", () => {
