@@ -6,6 +6,10 @@
       "entry": ["scripts/*.mjs"],
       "project": ["scripts/**/*.mjs"]
     },
+    "apps/docs": {
+      "entry": ["src/components/*.astro", "scripts/*.ts", "**/*.test.ts"],
+      "project": ["**/*.{ts,astro,mdx}"]
+    },
     "apps/rondyr": {
       "entry": [
         "alchemy-run.ts",

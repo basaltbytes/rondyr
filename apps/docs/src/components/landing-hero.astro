@@ -1,0 +1,238 @@
+---
+// Starlight renders this component instead of the page title on a page with `hero` in its
+// frontmatter. Only the landing page has one: its first screen is the pitch, the Deploy to
+// Cloudflare button and the three steps of a first run.
+import { ContainerSection } from "lucode-starlight/components";
+
+import mark from "../../../../docs/brand/rondyr-mark.svg?raw";
+
+import { deployUrl, firstRun } from "../landing.ts";
+
+const { hero } = Astro.locals.starlightRoute.entry.data;
+const title = hero?.title ?? "";
+const tagline = hero?.tagline ?? "";
+---
+
+<ContainerSection width="xl">
+  <section class="landing-hero" aria-labelledby="_top">
+    <div class="pitch">
+      <div class="mark brand-ink" aria-hidden="true"><Fragment set:html={mark} /></div>
+      <h1 id="_top" data-page-title>{title}</h1>
+      <p class="tagline" set:html={tagline} />
+      <div class="actions">
+        <a class="deploy" href={deployUrl}>
+          <img
+            src="https://deploy.workers.cloudflare.com/button"
+            alt="Deploy to Cloudflare"
+            width="165"
+            height="32"
+          />
+        </a>
+        <a class="guide" href="/deployment/">Read the deployment guide</a>
+      </div>
+      <p class="plan">
+        Rondyr needs <strong>Workers Paid</strong>, at least $5 a month per Cloudflare account. On
+        Workers Free, sign-in can fail and a spam wave can use up the day's queue operations.{" "}
+        <a href="/deployment/#costs-and-plan-limits">Costs and plan limits</a>
+      </p>
+    </div>
+
+    <div class="first-run">
+      <h2>First run</h2>
+      <ol>
+        {
+          firstRun.map((step) => (
+            <li>
+              <h3>{step.title}</h3>
+              <p set:html={step.html} />
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+</ContainerSection>
+
+<style>
+  .landing-hero {
+    display: grid;
+    gap: calc(var(--spacing) * 10);
+    padding-block: calc(var(--spacing) * 10) calc(var(--spacing) * 8);
+  }
+
+  @media (min-width: 64rem) {
+    .landing-hero {
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: calc(var(--spacing) * 16);
+      align-items: start;
+      padding-block-start: calc(var(--spacing) * 16);
+    }
+  }
+
+  .mark :global(svg) {
+    display: block;
+    width: 3.5rem;
+    height: 3.5rem;
+    margin-block-end: calc(var(--spacing) * 6);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(2.25rem, 1.6rem + 2.6vw, 3.5rem);
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+    text-wrap: balance;
+    color: var(--foreground);
+  }
+
+  .tagline {
+    margin-block: calc(var(--spacing) * 6) 0;
+    max-width: 38rem;
+    font-size: 1.125rem;
+    line-height: 1.65;
+    color: var(--gray-2);
+  }
+
+  .tagline :global(code) {
+    font-size: 0.95em;
+    padding: 0.1em 0.3em;
+    border-radius: 0.3em;
+    background: var(--gray-7);
+  }
+
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--spacing) * 3) calc(var(--spacing) * 6);
+    margin-block-start: calc(var(--spacing) * 8);
+  }
+
+  .deploy {
+    display: inline-flex;
+    border-radius: 0.375rem;
+  }
+
+  .deploy img {
+    display: block;
+    height: 2.5rem;
+    width: auto;
+  }
+
+  .deploy:focus-visible,
+  .guide:focus-visible {
+    outline: 2px solid var(--rondyr-accent);
+    outline-offset: 3px;
+  }
+
+  .guide {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    font-weight: 500;
+    color: var(--foreground);
+    text-decoration: underline;
+    text-decoration-color: var(--rondyr-accent);
+    text-underline-offset: 0.3em;
+  }
+
+  .guide:hover {
+    color: var(--rondyr-accent);
+  }
+
+  .plan {
+    margin-block-start: calc(var(--spacing) * 6);
+    max-width: 38rem;
+    padding-inline-start: calc(var(--spacing) * 4);
+    border-inline-start: 3px solid var(--rondyr-accent);
+    font-size: 0.9375rem;
+    line-height: 1.6;
+    color: var(--gray-3);
+  }
+
+  .plan strong {
+    color: var(--foreground);
+  }
+
+  .plan a {
+    color: var(--foreground);
+    font-weight: 500;
+    text-decoration-color: var(--rondyr-accent);
+    text-underline-offset: 0.2em;
+  }
+
+  .first-run {
+    padding: calc(var(--spacing) * 6);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--gray-7);
+  }
+
+  @media (min-width: 40rem) {
+    .first-run {
+      padding: calc(var(--spacing) * 8);
+    }
+  }
+
+  .first-run h2 {
+    margin: 0;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--gray-3);
+  }
+
+  ol {
+    counter-reset: step;
+    list-style: none;
+    margin: calc(var(--spacing) * 6) 0 0;
+    padding: 0;
+    display: grid;
+    gap: calc(var(--spacing) * 6);
+  }
+
+  li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 2.25rem minmax(0, 1fr);
+    column-gap: calc(var(--spacing) * 3);
+  }
+
+  li::before {
+    content: counter(step);
+    grid-row: span 2;
+    display: grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    border: 1.5px solid var(--rondyr-accent);
+    color: var(--rondyr-accent);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  h3 {
+    margin: 0;
+    align-self: center;
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  li p {
+    margin: calc(var(--spacing) * 1.5) 0 0;
+    line-height: 1.6;
+    color: var(--gray-2);
+  }
+
+  li p :global(code) {
+    font-size: 0.9em;
+    padding: 0.1em 0.3em;
+    border-radius: 0.3em;
+    background: var(--background);
+    white-space: nowrap;
+  }
+</style>

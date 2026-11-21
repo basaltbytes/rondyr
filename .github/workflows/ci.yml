@@ -25,8 +25,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Also builds the documentation site in apps/docs and checks its links.
       - run: pnpm check
       - run: pnpm deploy:dry
+      # The documentation site that pnpm check built, to read a pull request's pages.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: documentation-site
+          path: apps/docs/dist/
+          if-no-files-found: error
+          retention-days: 7
 
   # Which workspace packages changed, compared with the commit of the last successful
   # prod deployment (push) or the base of the pull request. Comparing with the last

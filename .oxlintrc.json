@@ -316,6 +316,7 @@
     ".claude/**",
     ".codex/**",
     "**/.alchemy/**",
+    "**/.astro/**",
     "**/.wrangler/**",
     ".agent-sources/**",
     ".scratchpad/**",

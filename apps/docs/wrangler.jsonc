@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Static assets only. scripts/deploy.ts adds the custom domain from RONDYR_DOCS_URL and
+  // takes the account from CLOUDFLARE_ACCOUNT_ID.
+  "name": "rondyr-docs",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "404-page",
+  },
+}
