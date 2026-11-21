@@ -28,12 +28,23 @@
       "password": "Password",
       "submit": "Sign in",
       "pending": "Signing in…",
+      "forgotPassword": "Forgot your password?",
       "problems": {
         "rateLimited": "Too many attempts. Try again in a moment.",
         "unavailable": "The sign-in service is unavailable.",
         "refused": "Check your email address and your password.",
         "failed": "Sign-in failed. Try again."
       }
+    },
+    "passwordReset": {
+      "title": "Reset your password",
+      "description": "Enter the address of your account. If an account uses it, Rondyr emails it a link to choose a new password.",
+      "submit": "Email me a link",
+      "sending": "Sending…",
+      "sent": "If an account uses {{email}}, a link is on its way. It works once, for one hour.",
+      "noProvider": "This server does not send email, so it cannot reset a password. Ask the person who runs it.",
+      "failed": "The request failed. Try again.",
+      "back": "Back to sign-in"
     },
     "signOut": {
       "submit": "Sign out",
@@ -482,7 +493,8 @@
         "permanentFailure": "The test message failed: {{summary}}",
         "alreadyRunning": "A test is already running for this destination.",
         "notSent": "The test message could not be sent. Try again.",
-        "limited": "This destination already got 3 tests this minute. Wait a minute and try again."
+        "limited": "This destination already got 3 tests this minute. Wait a minute and try again.",
+        "limitUnavailable": "Rondyr could not check the test limit of this destination, so it sent nothing. Try again in a minute."
       }
     },
     "webhooks": {
@@ -570,7 +582,14 @@
       "removing": "Removing…",
       "confirmTitle": "Remove this member?",
       "confirmDescription": "{{name}} ({{email}}) loses access to this organization at once. The account stays, and an admin can invite it again.",
+      "confirmTokens_one": "This also revokes the API token that this member created. An integration that uses it, such as a website, stops reading the inbox.",
+      "confirmTokens_many": "This also revokes the {{count}} API tokens that this member created. An integration that uses one of them, such as a website, stops reading the inbox.",
+      "confirmTokens_other": "This also revokes the {{count}} API tokens that this member created. An integration that uses one of them, such as a website, stops reading the inbox.",
       "confirm": "Remove member",
+      "stepDownTitle": "Stop being an admin?",
+      "stepDownDescription": "You will keep reading and reviewing messages, but you will no longer manage forms, destinations, members or settings. Only another admin can make you an admin again.",
+      "stepDown": "Become a reviewer",
+      "steppingDown": "Changing your role…",
       "inviteTitle": "Invite someone",
       "inviteDescription": "The invitation link works once, for 7 days. Rondyr emails it when this server sends email, and you can copy it in every case.",
       "email": "Email address",
@@ -650,6 +669,25 @@
       "signInRequired": "An account already uses this address. Sign in with it to accept.",
       "rejected": "Check your name, and choose a password of 12 to 128 characters.",
       "failed": "The invitation could not be accepted. Try again."
+    }
+  },
+  "passwordReset": {
+    "title": "Choose a new password",
+    "description": "The new password replaces the old one and signs your account out everywhere.",
+    "password": "New password",
+    "passwordHint": "From {{minimum}} to {{maximum}} characters.",
+    "submit": "Save the new password",
+    "saving": "Saving…",
+    "rejected": "Choose a password of {{minimum}} to {{maximum}} characters.",
+    "failed": "The password could not be changed. Try again.",
+    "signIn": "Sign in",
+    "changed": {
+      "title": "Password changed",
+      "body": "Your account was signed out everywhere. Sign in with your new password."
+    },
+    "invalid": {
+      "title": "Link unavailable",
+      "body": "This link has expired or was already used. Ask for a new one from the sign-in page."
     }
   },
   "recipientConfirmation": {

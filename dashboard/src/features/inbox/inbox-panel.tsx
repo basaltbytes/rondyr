@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ApiTokenList } from "@rondyr/organizations/api-token";
+import { allows } from "@rondyr/organizations/member-role";
 import type { OrganizationDomainList } from "@rondyr/organizations/organization-domain";
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
@@ -135,7 +136,8 @@ function InboxView({
   const [searchText, setSearch] = useState<string | null>(null);
   const [selected, setSettings] = useState<SettingsSelection | null>(null);
   // A reviewer has no settings page, even one that was open before a change of role.
-  const settings = inbox.role === "admin" || selected?.section === "organization" ? selected : null;
+  const settings =
+    allows(inbox.role, "manage-settings") || selected?.section === "organization" ? selected : null;
   const [listing, setListing] = useState<Listing | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [opened, setOpened] = useState<SubmissionEntry | null>(null);
@@ -184,7 +186,7 @@ function InboxView({
     counts === null || form === null ? inFolder : totalOf(countsOfForm(counts, form), folder);
   // The counts know nothing of a search.
   const total = searchText === null ? inForm : null;
-  const administrator = inbox.role === "admin";
+  const mayExport = allows(inbox.role, "export-submissions");
   const formName = inbox.forms.find(({ publicId }) => publicId === form)?.name ?? null;
 
   function openFolder(next: Folder, nextForm: string | null) {
@@ -347,7 +349,7 @@ function InboxView({
               search={searchText}
               onSearch={search}
               exports={
-                administrator
+                mayExport
                   ? {
                       csv: exportAddress(inbox.id, "csv", status, form, searchText),
                       jsonl: exportAddress(inbox.id, "jsonl", status, form, searchText),
@@ -376,7 +378,8 @@ function InboxView({
                   onNext={below === undefined ? null : () => setOpened(below)}
                   onReviewed={reviewed}
                   onClose={() => setOpened(null)}
-                  administrator={administrator}
+                  mayDelete={allows(inbox.role, "delete-submissions")}
+                  mayRetry={allows(inbox.role, "retry-deliveries")}
                   onDeleted={() => deleted(current)}
                 />
               )}

@@ -21,6 +21,8 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { allows } from "@rondyr/organizations/member-role";
+
 import {
   Sidebar,
   SidebarContent,
@@ -232,7 +234,7 @@ export function InboxSidebar({
           </SidebarMenu>
         </SidebarGroup>
         {/* A reviewer reads and decides; the settings and the status are an admin's. */}
-        {inbox.role === "admin" && (
+        {allows(inbox.role, "manage-settings") && (
           <SidebarGroup aria-label={t("inbox.navigation.settings")}>
             <SidebarGroupLabel>{t("inbox.navigation.settings")}</SidebarGroupLabel>
             <SidebarMenu>
@@ -254,7 +256,7 @@ export function InboxSidebar({
             </SidebarMenu>
           </SidebarGroup>
         )}
-        {inbox.role === "admin" && (
+        {allows(inbox.role, "read-operations") && (
           <SidebarGroup aria-label={t("inbox.navigation.operations")}>
             <SidebarGroupLabel>{t("inbox.navigation.operations")}</SidebarGroupLabel>
             <SidebarMenu>

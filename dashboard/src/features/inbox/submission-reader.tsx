@@ -49,8 +49,10 @@ interface SubmissionReaderProps {
   /** The message as the API returns it once it is accepted or archived. */
   readonly onReviewed: (submission: Submission) => void;
   readonly onClose: () => void;
-  /** An admin may also retry a failed delivery and delete the message. */
-  readonly administrator: boolean;
+  /** Whether the role of the account allows deleting the message. */
+  readonly mayDelete: boolean;
+  /** Whether the role of the account allows retrying a failed delivery. */
+  readonly mayRetry: boolean;
   /** The message was deleted for good. */
   readonly onDeleted: () => void;
 }
@@ -144,7 +146,8 @@ export function SubmissionReader({
   onNext,
   onReviewed,
   onClose,
-  administrator,
+  mayDelete,
+  mayRetry,
   onDeleted,
 }: SubmissionReaderProps) {
   const { t } = useTranslation();
@@ -228,7 +231,7 @@ export function SubmissionReader({
           </div>
         )}
         <span className="flex-1" />
-        {administrator && (
+        {mayDelete && (
           <Deletion inboxId={inboxId} submissionId={submissionId} onDeleted={onDeleted} />
         )}
         {entry.status === "quarantined" && (
@@ -330,7 +333,7 @@ export function SubmissionReader({
               inboxId={inboxId}
               submissionId={submissionId}
               revision={revision}
-              canRetry={administrator}
+              canRetry={mayRetry}
             />
           )}
         </article>
