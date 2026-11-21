@@ -81,7 +81,7 @@ openssl rand -base64 32
 
 Add the value to the stage environment file, or to the `RONDYR_SECRETS_KEY_STAGING` or `RONDYR_SECRETS_KEY_PROD` GitHub secret, and redeploy.
 
-Keep the key once webhooks or Turnstile keys exist. If you remove or change it, every delivery to an existing webhook fails without a retry, because its secret no longer decrypts. To recover with a new key, rotate the secret of each webhook and give the new secret to its recipient. Stored Turnstile secret keys don't decrypt either: intake logs a warning and sends the form's messages to classification without checking their Turnstile token, until you save the form's Turnstile keys again. A value that isn't 32 bytes of base64 counts as missing.
+Keep the key once webhooks or Turnstile keys exist. If you remove or change it, every delivery to an existing webhook fails without a retry, because its secret no longer decrypts. To recover with a new key, rotate the secret of each webhook and give the new secret to its recipient. Stored Turnstile secret keys don't decrypt either: intake logs a warning and sends the form's messages to classification without checking their Turnstile token, until you save the form's Turnstile keys again. Until then, the Turnstile card of each of those forms in **Forms** warns that Turnstile isn't protecting it. A value that isn't 32 bytes of base64 counts as missing.
 
 [docs/webhooks.md](./webhooks.md) covers the payload, the signature, and the destination rules.
 

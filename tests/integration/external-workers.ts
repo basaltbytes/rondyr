@@ -90,6 +90,9 @@ export default {
 // GET /__calls?secret=..., and answers by the secret key first: refused-<name>
 // is an unknown key (HTTP 400 with invalid-input-secret, as Cloudflare answers),
 // unreachable-<name> gets 503 and internal-error-<name> an internal-error reply.
+// revoked-<name> and outage-<name> are known on their first call, so they can be
+// saved. After it, revoked-<name> gets the reply to an unknown key, as after the
+// widget's deletion in Cloudflare, and outage-<name> gets 503.
 // Any other secret key is known and accepts only the token "valid-<secret>". The
 // token unavailable gets 503, the token refused-with-400 a refusal with HTTP 400,
 // the token secret-unknown the reply to an unknown secret key, and the token slow
@@ -109,13 +112,18 @@ export default {
     const secret = body.get("secret");
     const token = body.get("response");
     calls.push({ secret, token });
-    if (secret.startsWith("refused-")) {
+    const later = calls.filter((call) => call.secret === secret).length > 1;
+    if (secret.startsWith("refused-") || (secret.startsWith("revoked-") && later)) {
       return Response.json({ success: false, "error-codes": ["invalid-input-secret"] }, { status: 400 });
     }
     if (secret.startsWith("internal-error-")) {
       return Response.json({ success: false, "error-codes": ["internal-error"] });
     }
-    if (secret.startsWith("unreachable-") || token === "unavailable") {
+    if (
+      secret.startsWith("unreachable-") ||
+      (secret.startsWith("outage-") && later) ||
+      token === "unavailable"
+    ) {
       return new Response(null, { status: 503 });
     }
     if (token === "secret-unknown") {

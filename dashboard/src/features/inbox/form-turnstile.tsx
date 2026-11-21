@@ -1,11 +1,14 @@
 import { Option, Schema } from "effect";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { TurnstileKeyState } from "@rondyr/forms/turnstile";
+
 import { FormProblem, TextField } from "~/components/text-field";
+import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { FormRequestFailed, setTurnstile } from "~/lib/forms-client";
+import { checkTurnstileKey, FormRequestFailed, setTurnstile } from "~/lib/forms-client";
 import type { Form, FormProblem as FormRequestProblem } from "~/lib/forms-client";
 import type { Inbox } from "~/lib/inbox-client";
 
@@ -13,6 +16,68 @@ const isFailed = Schema.is(FormRequestFailed);
 
 /** Why a save failed: the problem that the API names, or no stated reason. */
 type SaveFailure = FormRequestProblem["error"] | "unexplained";
+
+/** The answer of the key check, while it runs, or the failure of the request. */
+type KeyCheck = TurnstileKeyState | "checking" | "requestFailed";
+
+interface StoredKeyStateProps {
+  readonly inboxId: Inbox["id"];
+  readonly publicId: Form["publicId"];
+}
+
+/** Whether Cloudflare still accepts the stored secret key, checked on each display. */
+function StoredKeyState({ inboxId, publicId }: StoredKeyStateProps) {
+  const { t } = useTranslation();
+  const [check, setCheck] = useState<KeyCheck>("checking");
+
+  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Asks the Rondyr API, which asks Cloudflare Siteverify, about the stored key.
+  useEffect(() => {
+    const request = new AbortController();
+    void checkTurnstileKey(inboxId, publicId, request.signal).then(setCheck, () => {
+      if (!request.signal.aborted) setCheck("requestFailed");
+    });
+    return () => request.abort();
+  }, [inboxId, publicId]);
+
+  switch (check) {
+    case "refused":
+    case "unreadable":
+      return (
+        <Alert>
+          <AlertTitle>{t("inbox.forms.turnstile.key.off")}</AlertTitle>
+          <AlertDescription>
+            {check === "refused"
+              ? t("inbox.forms.turnstile.key.refused")
+              : t("inbox.forms.turnstile.key.unreadable")}
+          </AlertDescription>
+        </Alert>
+      );
+    case "checking":
+      return (
+        <output className="text-sm text-muted-foreground">
+          {t("inbox.forms.turnstile.key.checking")}
+        </output>
+      );
+    case "working":
+      return (
+        <p className="text-sm text-pretty text-muted-foreground">
+          {t("inbox.forms.turnstile.key.working")}
+        </p>
+      );
+    case "unchecked":
+      return (
+        <p className="text-sm text-pretty text-muted-foreground">
+          {t("inbox.forms.turnstile.key.unchecked")}
+        </p>
+      );
+    case "requestFailed":
+      return (
+        <p className="text-sm text-pretty text-muted-foreground">
+          {t("inbox.forms.turnstile.key.requestFailed")}
+        </p>
+      );
+  }
+}
 
 function WidgetSnippet({ siteKey }: { readonly siteKey: string }) {
   const { t } = useTranslation();
@@ -60,6 +125,8 @@ interface FormTurnstileProps {
 
 export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) {
   const { t } = useTranslation();
+  // Each save stores a new secret key, which the key state then checks again.
+  const [saves, setSaves] = useState(0);
   const [result, save, saving] = useActionState(async (_: SaveFailure | null, data: FormData) => {
     const settings =
       data.get("action") === "clear"
@@ -70,6 +137,7 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
           };
     try {
       await setTurnstile(inboxId, form.publicId, settings);
+      setSaves((count) => count + 1);
       await onChanged();
       return null;
     } catch (error) {
@@ -104,6 +172,13 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
       </CardHeader>
       <CardContent>
         <div className="grid gap-4">
+          {siteKey !== null && (
+            <StoredKeyState
+              key={`${form.publicId}:${saves}`}
+              inboxId={inboxId}
+              publicId={form.publicId}
+            />
+          )}
           <form action={save} className="grid gap-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <TextField
