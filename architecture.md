@@ -18,19 +18,19 @@ What distinguishes Rondyr from a SaaS form service: the filtering takes the orga
 
 | Capability | Status | Tracking |
 | --- | --- | --- |
-| Alchemy deployment, `staging` and `prod` stages, CI | Done | #12 for a fresh account |
+| Alchemy deployment, `staging` and `prod` stages, CI | Done | #43 for a fresh account |
 | First account, sessions, closed sign-up | Done | |
 | Organizations and forms | Done: adding, name, business context, suspension, success redirect and allowed origins per form | #11 for roles |
 | JSON, `application/x-www-form-urlencoded` and `multipart/form-data` intake without files | Done, including JSON from a browser on another origin | |
 | Intake limits | Done: size, schema, per-minute limits per client and per form, honeypot field, Turnstile and daily quotas per organization | |
 | Durable storage and outbox | Done | |
-| Classification and quarantine | Thresholds per classifier, policy per organization | #15 |
-| Inbox and human review | Done | #9 |
+| Classification and quarantine | Done: thresholds per classifier, policy per organization and optional escalation to a second model | |
+| Inbox and human review | Done | #11 for search, export and purge |
 | Deliveries: tables, queue, attempts and retries | Done | |
 | Delivery history, manual retry, test send | Done, in the dashboard | #11 for roles |
 | Signed webhook delivery | Done | |
-| Email delivery | Resend by default, Cloudflare Email Sending on the stages that choose it | Recipient confirmation (#36) |
-| Processing status and recovery procedures | Counters per organization, last successful Cron and runbook | #43 for the staging gate, #10 for stuck processing |
+| Email delivery | Resend by default, Cloudflare Email Sending on the stages that choose it | Recipient confirmation (#11) |
+| Processing status and recovery procedures | Counters per organization, last successful Cron and runbook | #43 for the staging gate and stuck processing |
 
 A form can have webhook destinations and email destinations, configured from the dashboard or the admin API. An email destination has 1 to 10 recipients; the message goes out as plain text through the stage's email provider (Resend or Cloudflare Email Sending). A form without a destination keeps its accepted messages in the Inbox only. Under the fields of an accepted message, the dashboard shows its deliveries and their attempts, and lets you retry a failed delivery; each destination can receive a test message.
 
@@ -77,9 +77,9 @@ flowchart TD
   B -->|refused| C["400, 403, 404, 413, 415, 429"]
   B --> Y["Per-client limit: Rate Limiting binding"]
   Y -->|exceeded| C
-  Y --> V["Turnstile with a token: key read and Siteverify call"]
+  Y --> Z["Turnstile with a token: key read and Siteverify call"]
   Y -->|no token| D["D1 batch · access, quotas, submission, outbox and counters"]
-  V --> D
+  Z --> D
   D -->|refused| C
   D --> E["202 and submission-id"]
   D --> T["Background publication from the request"]
@@ -178,11 +178,11 @@ The `email` provider builds the message and calls the `EmailSender` port, which 
 
 ### Known limitations
 
-- The outbox does not count its attempts. An event that the consumer never manages to hand off is republished every 5 minutes without an alert (#10).
-- The classification DLQ has no consumer (#10).
+- The outbox does not count its attempts. An event that the consumer never manages to hand off is republished every 5 minutes without an alert (#43).
+- The classification DLQ has no consumer (#43).
 - The saga records only the final result; failed attempts leave no trace in the events.
-- The delivery DLQ has no consumer either. It receives a message only after D1 failures, and the delivery state stays in D1, from where the Cron republishes it (#10).
-- Test sends are limited only to one at a time per destination and per Worker instance. A member can send as many as they want, and each email counts against the quota of the stage's provider (#7).
+- The delivery DLQ has no consumer either. It receives a message only after D1 failures, and the delivery state stays in D1, from where the Cron republishes it (#43).
+- Test sends are limited only to one at a time per destination and per Worker instance. A member can send as many as they want, and each email counts against the quota of the stage's provider (#11).
 
 ## 5. Intelligent classification
 
@@ -305,12 +305,12 @@ The aggregate goes from `Unrecorded` to `Classifying`, then to `Quarantined` or 
 
 The visible statuses are `received`, `classifying`, `quarantined`, `accepted` and `archived`. The Inbox `reason` field contains the quarantine reason, including `turnstile-failed` or `quota` for these intake checks.
 
-Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the reviewer's ID, and deliveries only IDs, states and error summaries, which limits a purge to D1 rows (#9). Deleting a submission deletes its deliveries and their attempts.
+Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the reviewer's ID, and deliveries only IDs, states and error summaries, which limits a purge to D1 rows (#11). Deleting a submission deletes its deliveries and their attempts.
 
 ### Planned tables
 
 - Role in `organization_members` and invitations (#11).
-- Retention periods (#9).
+- Retention periods (#11).
 
 The `classification-attempts` and `audit-events` tables of the initial document are not planned: the aggregate's event stream records the decisions and who made them.
 
@@ -421,7 +421,7 @@ The submission routes go through `ReviewApi`, the domain model's API, called in 
 
 A refused success URL answers `400` with `{"error":"success-url-refused","reason":…}`. A refused webhook URL answers `400` with `{"error":"destination-refused","reason":…}`. A refused origin answers `400` with `{"error":"origin-refused","reason":…}`; `parseAllowedOrigin`, in `src/domain/forms/allowed-origin.ts`, accepts HTTPS, and HTTP only for `localhost`, `127.0.0.0/8` and `[::1]`, then normalizes the origin. It refuses a path, query parameters, a fragment, credentials and wildcards (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Without `RONDYR_SECRETS_KEY`, creation and rotation answer `503` with `{"error":"secrets-key-missing"}`; listing and activation work. A refused recipient list answers `400` with `{"error":"recipients-refused","reason":…}` (`no-recipients`, `too-many-recipients`, `invalid-address`, `duplicate-address`). Without `RONDYR_EMAIL_FROM`, or without the key or binding of the chosen email provider, creating an email destination answers `503` with `{"error":"email-provider-missing"}`; listing, editing recipients and activation work. Responses that contain a secret have `Cache-Control: no-store`, like every admin API response. [docs/webhooks.md](docs/webhooks.md) documents the contract for recipients, and [docs/email.md](docs/email.md) the provider setup and the message format.
 
-Still to add: members and roles (#11), search and export (#9).
+Still to add: members and roles, search and export (#11).
 
 ## 8. Defenses and privacy
 
@@ -499,7 +499,7 @@ The Cloudflare adapter calls `CLOUDFLARE_EMAIL.send()` with the same plain-text 
 
 ### Personal data
 
-Message content is in D1, and the technical logs contain none of it: the consumer writes only the error type. Retention is unlimited until #9 adds retention periods, scheduled purge, export and deletion on request. Self-hosting does not exempt the operator from its GDPR obligations; the documentation must list the subprocessors, including the model provider and the stage's email provider, Resend or Cloudflare Email Sending. Resend keeps sent emails for the period of its plan; `docs/email.md` points this out.
+Message content is in D1, and the technical logs contain none of it: the consumer writes only the error type. Retention is unlimited until #11 adds retention periods, scheduled purge, export and deletion on request. Self-hosting does not exempt the operator from its GDPR obligations; the documentation must list the subprocessors, including the model provider and the stage's email provider, Resend or Cloudflare Email Sending. Resend keeps sent emails for the period of its plan; `docs/email.md` points this out.
 
 ## 9. Directory tree
 
@@ -595,9 +595,9 @@ A recipient Worker, declared in the same place, records each request and answers
 
 ### Missing coverage
 
-- Concurrent submissions at the boundary of the per-form cap (#7).
+- Concurrent submissions at the boundary of the per-form cap.
 - The per-client limit is checked only against Miniflare's simulation, which is exact and local. The behavior of the real binding (approximate count, per location, updated in the background) and the presence of `CF-Connecting-IP` in production are not tested.
-- An event that the consumer never manages to hand off (#10).
+- An event that the consumer never manages to hand off (#43).
 - A public hostname that points to a private address: the rule does not see it, and no test simulates it.
 
 ### Filtering evaluation
@@ -627,38 +627,26 @@ The project depends on Alchemy 2.0 beta, Drizzle 1.0 RC and Effect 4, pinned to 
 ### To do
 
 - Run a D1 restore and Worker rollback exercise on Cloudflare (#43).
-- Alerts and recovery of stuck processing (#10).
-- Installation guide verified on a fresh Cloudflare account, with the costs and limits, without promising zero cost (#12).
+- Alerts and recovery of stuck processing (#43).
+- Installation guide verified on a fresh Cloudflare account, with the costs and limits, without promising zero cost (#43).
 
 ## 12. Order of work
 
 In production on 20 November 2026: reliable intake, classification with Jev or OpenAI Decisions, quarantine and review, delivery by signed webhook and by email (Resend), delivery history and retry, JSON from a browser with allowed origins, form administration, per-client limit and honeypot field. `pnpm evaluate` measures the classifiers on a labeled corpus.
 
-Each issue states what blocks it, in its "Order" section and through GitHub's "blocked by" relation. An issue with no open blocker can start.
+Three issues remain open. They are independent of each other and can be worked on in any order or in parallel; each one is delivered whole, in one pull request:
 
-**Migration queue.** One D1 migration at a time (label `migration`), in this order:
+- #59, EmDash integration: API tokens per organization, authenticated intake from a server with an idempotency key, and the EmDash plugin.
+- #11, organization administration: members and roles, confirmed email recipients and limited test sends, search, export and purge.
+- #43, operations: processing status, stuck processing, runbook, staging and the install guide. The run-through on a fresh Cloudflare account needs a person.
 
-1. Repetition and classifier input (#31). The 20 November measurement shows that this is what the filtering lacks most.
-2. Organization domains (#39).
-3. Thresholds per classifier and policy per organization (#6).
-4. Turnstile and quotas per organization (#7).
-5. Email recipient confirmation (#36).
-6. Roles and invitations (#11).
-7. Search, export and purge (#9).
-8. Stuck processing: outbox, dead-letter queues, reclassification (#10).
-
-**After a step of the queue.** The "sales outreach" question after #31 (#40). Escalation to a second model after #6 (#15).
-
-**Without a migration, at any time and in parallel.** Defects found in review (#41), dashboard browser tests (#42), operations status, runbook and the `staging` gate (#43), Cloudflare email adapter (#33).
-
-**Needs a person.** Installation guide on a fresh Cloudflare account (#12).
+**Migrations.** Each issue has one Drizzle migration, generated at the end with `pnpm db:generate --name …`. Another branch may carry a migration at the same time; a migration is regenerated on top of `main` when its pull request merges.
 
 ## 13. Open decisions
 
 | Decision | Tracking |
 | --- | --- |
-| Off-topic message: human review (current behavior) or acceptance with a label | #6 |
-| Default retention periods, export and purge | #9 |
+| Default retention periods, export and purge | #11 |
 
 ### Decisions made
 
@@ -666,6 +654,7 @@ Each issue states what blocks it, in its "Order" section and through GitHub's "b
 - A submission's status is an event stream in a Durable Object, projected into D1 for the Inbox.
 - Runtime queries remain prepared SQL, in the adapters of `src/adapters/database`, and Effect Schema decodes the rows they return. Drizzle is used for the schema, the migrations and Better Auth (#23).
 - Jev goes through the Workers AI binding; OpenAI Decisions goes through AI Gateway with unified billing. The choice is made per stage.
+- An off-topic message goes to human review by default; each organization can choose instead to accept it with the `off-topic` label (#6).
 - Both classifiers go through the `default` gateway, which AI Gateway creates itself, and each call turns off log collection and caching there. The stack provisions no gateway (#22).
 - The first account is created with a setup token and `scripts/setup-owner.sh`.
 - An HTML post gets a confirmation page with the status `202`, or `303` to the form's success URL if one is set. Its origin must be an allowed origin of the form, and removing that origin is refused while the URL is set (#8).
