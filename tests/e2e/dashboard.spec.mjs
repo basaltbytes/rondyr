@@ -661,6 +661,37 @@ test("send a message back to the filter after an analysis error", async ({
   await openSubmission(page, t("inbox.folders.accepted"), message);
 });
 
+test("keep a message in quarantine when the daily classification quota is used up", async ({
+  dashboard: page,
+  request,
+  database,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  const message = "Request analyzed once the quota allows it";
+  const posted = await request.post(endpoint.href, {
+    data: { message, "fixture-verdict": "accept-after-error" },
+  });
+  expect(posted.status()).toBe(202);
+  const reader = await openSubmission(page, t("inbox.folders.quarantined"), message);
+  await expect(reader).toContainText(t("status.reasons.classification-error"));
+
+  // The message took the day's only classification at intake.
+  await database
+    .prepare(
+      "UPDATE organizations SET daily_classification_limit = 1 WHERE id = (SELECT organization_id FROM forms WHERE name = ?)",
+    )
+    .bind(formName)
+    .run();
+  await reader.getByRole("button", { name: t("inbox.reader.reclassify") }).click();
+  await expect(reader.getByRole("alert")).toHaveText(
+    t("inbox.reader.problems.classificationQuotaReached"),
+  );
+  await expect(reader).toContainText(t("status.reasons.classification-error"));
+  await expect(reader.getByRole("button", { name: t("inbox.reader.reclassify") })).toBeEnabled();
+});
+
 test("narrow a folder to one form, show every form again, and keep the folder unfolded after a reload", async ({
   dashboard: page,
   context,

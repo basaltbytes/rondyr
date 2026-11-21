@@ -22,6 +22,7 @@ import {
 import { OrganizationId, SubmissionId, UserId } from "../domain/submissions/submission.id.ts";
 import { Authentication } from "../ports/authentication.ts";
 import { OrganizationDirectory } from "../ports/organization-directory.ts";
+import { OrganizationQuotas } from "../ports/organization-quotas.ts";
 import {
   countsPath,
   CurrentApiToken,
@@ -48,6 +49,9 @@ const ListParams = OrganizationPath.mapFields((fields) => ({
 }));
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
+const quotaReached = HttpServerResponse.schemaJson(
+  Schema.Struct({ error: Schema.Literal("classification-quota-reached") }),
+);
 
 /** The signed-in account and its organizations, or `ReviewUnauthorized`. */
 export const reviewer = Effect.fn("ReviewRoute.reviewer")(function* () {
@@ -158,7 +162,23 @@ const detail = Effect.gen(function* () {
 const review = Effect.gen(function* () {
   const client = yield* reviewClient;
   const { decision, ...input } = yield* HttpRouter.schemaPathParams(ReviewPath);
-  const { reason } = yield* client.GetSubmission(input);
+  const { status, reason } = yield* client.GetSubmission(input);
+  // A new run calls the model again, so it takes a slot of the organization's daily
+  // classification quota, as intake does. The aggregate still decides whether the
+  // message can go back to classification.
+  if (decision === "reclassify" && status === "quarantined" && reason === "classification-error") {
+    const quotas = yield* OrganizationQuotas;
+    const reservation = yield* quotas.reserveClassification(input.organizationId);
+    if (reservation === "limit-reached") {
+      return yield* quotaReached(
+        { error: "classification-quota-reached" },
+        {
+          status: 429,
+          ...jsonOptions,
+        },
+      );
+    }
+  }
   const receipt =
     decision === "approve"
       ? yield* client.ApproveSubmission(input.submissionId)
