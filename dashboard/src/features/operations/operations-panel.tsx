@@ -70,7 +70,7 @@ function OrganizationMetrics({ organization, onChanged }: OrganizationMetricsPro
             <h4 className="font-medium">{t("operations.queue.title")}</h4>
             <dl>
               <Figure
-                label={t("operations.queue.undelivered")}
+                label={t("operations.queue.pending")}
                 value={format.count(outbox.count)}
                 tone="text-warning"
                 quiet={outbox.count === 0}

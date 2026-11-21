@@ -203,6 +203,10 @@ export const outboxEvents = sqliteTable(
     index("outbox_due_idx")
       .on(table.leaseUntil, table.publishedAt)
       .where(sql`${table.handedOffAt} IS NULL AND ${table.stuckAt} IS NULL`),
+    // The status page and the stuck list read the stuck events alone.
+    index("outbox_stuck_idx")
+      .on(table.stuckAt)
+      .where(sql`${table.handedOffAt} IS NULL AND ${table.stuckAt} IS NOT NULL`),
   ],
 );
 

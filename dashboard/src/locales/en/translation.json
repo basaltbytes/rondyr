@@ -73,7 +73,7 @@
     "organization": "Status of {{name}}",
     "queue": {
       "title": "Classification queue",
-      "undelivered": "Undelivered events",
+      "pending": "Pending events",
       "oldestAge": "Age of the oldest",
       "empty": "None",
       "stuck": "Stuck"

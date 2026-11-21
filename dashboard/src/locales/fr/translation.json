@@ -73,7 +73,7 @@
     "organization": "État de {{name}}",
     "queue": {
       "title": "File de classification",
-      "undelivered": "Événements non remis",
+      "pending": "Événements en attente",
       "oldestAge": "Âge du plus ancien",
       "empty": "Aucun",
       "stuck": "Bloqués"
