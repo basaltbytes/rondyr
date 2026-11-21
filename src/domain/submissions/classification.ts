@@ -1,6 +1,11 @@
 import { Schema } from "effect";
 
-import { ClassificationPolicy, Score } from "./classification-policy.ts";
+import {
+  type ClassificationPolicy,
+  ClassifierProvider,
+  defaultClassificationPolicies,
+  Score,
+} from "./classification-policy.ts";
 
 export const ClassificationScores = Schema.Struct({
   model: Schema.String,
@@ -13,6 +18,12 @@ export const ClassificationScores = Schema.Struct({
 export const ClassifierScores = Schema.Struct({
   ...ClassificationScores.fields,
   solicitation: Score,
+});
+
+export const EscalationEvaluation = Schema.Struct({
+  classifier: ClassifierProvider,
+  rulesVersion: Schema.Int,
+  scores: Schema.optionalKey(ClassificationScores),
 });
 
 /** Why the classification rules quarantine a submission. */
@@ -42,7 +53,7 @@ export const QuarantineReason = Schema.Literals([
 
 export const SubmissionLabel = Schema.Literal("off-topic");
 
-export const rulesVersion = 6;
+export const rulesVersion = 7;
 
 export function isOffTopic(scores: typeof ClassificationScores.Type, policy: ClassificationPolicy) {
   return scores.relevance !== undefined && scores.relevance < policy.thresholds.lowRelevance;
@@ -59,4 +70,31 @@ export function reviewReason(
   if (scores.solicitation > thresholds.solicitation) return "solicitation";
   if (policy.offTopic === "review" && isOffTopic(scores, policy)) return "low-relevance";
   return null;
+}
+
+type ClassificationDecision =
+  | { readonly reason: typeof ClassificationReason.Type }
+  | { readonly reason: null; readonly label?: typeof SubmissionLabel.Type };
+
+export function classificationDecision(
+  scores: typeof ClassificationScores.Type,
+  policy: ClassificationPolicy,
+  escalation?: Pick<typeof EscalationEvaluation.Type, "classifier" | "scores">,
+): ClassificationDecision {
+  const reason = reviewReason(scores, policy);
+  if (reason === "ambiguous" && escalation !== undefined) {
+    const secondPolicy = {
+      ...defaultClassificationPolicies[escalation.classifier],
+      offTopic: policy.offTopic,
+    };
+    const second = escalation.scores;
+    if (second === undefined || reviewReason(second, secondPolicy) !== null) {
+      return { reason };
+    }
+    return isOffTopic(second, secondPolicy)
+      ? { reason: null, label: "off-topic" }
+      : { reason: null };
+  }
+  if (reason !== null) return { reason };
+  return isOffTopic(scores, policy) ? { reason: null, label: "off-topic" } : { reason: null };
 }

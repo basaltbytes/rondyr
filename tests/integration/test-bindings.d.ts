@@ -10,6 +10,8 @@ declare global {
       WEBHOOK_RECEIVER: Fetcher;
       RESEND_FIXTURE: Fetcher;
       WORKERS_AI_FIXTURE: Fetcher;
+      ESCALATION_WORKER: Fetcher;
+      SAME_CLASSIFIER_WORKER: Fetcher;
       WORKER_LOGS: Fetcher;
       TEST_MIGRATIONS: D1Migration[];
     }

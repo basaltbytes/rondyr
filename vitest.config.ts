@@ -14,6 +14,11 @@ import {
 import { externalWorkers, workersAiBinding } from "./tests/integration/external-workers.ts";
 import wrangler from "./wrangler.json" with { type: "json" };
 
+const escalationWorkers = [
+  { binding: "ESCALATION_WORKER", name: "rondyr-test-escalation", classifier: "openai" },
+  { binding: "SAME_CLASSIFIER_WORKER", name: "rondyr-test-same-classifier", classifier: "jev" },
+] as const;
+
 // Collect actual console entries and uncaught exceptions from the built Worker.
 const workerLogFixture = `
 const entries = [];
@@ -85,6 +90,9 @@ export default defineConfig({
         RONDYR_SECRETS_KEY: testSecretsKey,
         RONDYR_EMAIL_FROM: testEmailFrom,
       };
+      const queueProducers = Object.fromEntries(
+        wrangler.queues.producers.map(({ binding, queue }) => [binding, queue]),
+      );
       return {
         remoteBindings: false,
         miniflare: {
@@ -94,9 +102,7 @@ export default defineConfig({
             ...wrangler.d1_databases.map(({ binding, database_id }) => [binding, database_id]),
             ["CLOUDFLARE_EMAIL_DB", cloudflareEmailDatabase],
           ]),
-          queueProducers: Object.fromEntries(
-            wrangler.queues.producers.map(({ binding, queue }) => [binding, queue]),
-          ),
+          queueProducers,
           serviceBindings: {
             TEST_WORKER: "rondyr-test-app",
             CLOUDFLARE_EMAIL_WORKER: "rondyr-test-cloudflare-email",
@@ -105,6 +111,7 @@ export default defineConfig({
             RESEND_FIXTURE: "resend-fixture",
             WORKERS_AI_FIXTURE: "workers-ai-fixture",
             WORKER_LOGS: "worker-log-fixture",
+            ...Object.fromEntries(escalationWorkers.map(({ binding, name }) => [binding, name])),
           },
           unsafeBindings: [cloudflareEmailBinding],
           bindings: {
@@ -132,6 +139,21 @@ export default defineConfig({
               unsafeBindings: [cloudflareEmailBinding],
               bindings: { ...bindings, RONDYR_EMAIL_PROVIDER: "cloudflare" },
             },
+            ...escalationWorkers.map(({ name, classifier }) => {
+              const queue = `${name}-classification`;
+              return {
+                ...worker,
+                name,
+                queueProducers: { ...queueProducers, CLASSIFICATION_QUEUE: queue },
+                queueConsumers: { [queue]: { maxBatchTimeout: 1 } },
+                unsafeBindings: [workersAiBinding],
+                bindings: {
+                  ...bindings,
+                  CLASSIFICATION_QUEUE_NAME: queue,
+                  RONDYR_ESCALATION_CLASSIFIER: classifier,
+                },
+              };
+            }),
             ...externalWorkers(wrangler.compatibility_date),
             {
               name: "cloudflare-email-fixture",

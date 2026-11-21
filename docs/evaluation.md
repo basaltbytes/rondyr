@@ -94,6 +94,7 @@ The first command calls each classifier once and is the quickest check that the 
 | `--concurrency` | 4 | Calls in flight at once, from 1 to 16 |
 | `--limit` | none | Evaluate only the first N lines |
 | `--refresh` | off | Call the model again even when the cache has a result |
+| `--escalation` | off | Compare decisions with escalation using cached scores only |
 | `--policy` | classifier defaults | JSON file with the full policy to apply to every selected classifier |
 | `--out` | `evals/out` | Directory for the cache and the reports, ignored by git |
 | `--dry` | off | Fake scores, no credentials |
@@ -120,6 +121,17 @@ pnpm evaluate --classifier both --policy policy.json evals/corpus/synthetic.json
 ```
 
 Keep the same output directory and omit `--refresh` to reuse the cached scores. The runner calls Workers AI for inputs without a cached score, including failed calls from the first run. Save a copy of the first report before the second command, which writes to the same report paths. Set `offTopic` to `review` to quarantine for low relevance or to `accept` to accept those messages with the `off-topic` label. Spam and sales outreach still take priority.
+
+### Comparing escalation
+
+```sh
+pnpm evaluate --escalation evals/corpus/synthetic.jsonl
+pnpm evaluate --escalation --classifier jev --policy policy.json evals/corpus/synthetic.jsonl
+```
+
+Use an output directory from a previous run with both classifiers. By default the report compares both directions. Select `--classifier jev` or `--classifier openai` to choose the primary model. The mode simulates an organization that has enabled escalation and uses the second model's default thresholds with the primary policy's off-topic choice.
+
+The replay reads cached scores without credentials or new calls, and rejects `--refresh`. With `--dry`, it reads previously cached fake scores. The `.escalation.json` and `.escalation.md` reports count which ambiguous submissions become accepted, including those accepted with the off-topic label, and which stay ambiguous. A missing second score leaves the submission in quarantine and has its own column. A missing primary score leaves the original decision unknown.
 
 ### Calls
 

@@ -64,6 +64,8 @@ const lookupPolicy = (resolved: ClassificationPolicy = policy) =>
   ] as const;
 const scoreCall = () =>
   Story.call(Classifier.score, { submissionId, organizationId, classifier: "jev" });
+const secondScoreCall = () =>
+  Story.call(Classifier.score, { submissionId, organizationId, classifier: "openai" });
 
 it("defines a valid Domain model and distinct classification thresholds", () => {
   assert.deepEqual(Domain.verify(Submissions), []);
@@ -164,6 +166,124 @@ it.effect("quarantines when the organization's policy cannot be loaded", () =>
         organizationId,
         reason: "classification-error",
         rulesVersion,
+      }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+  ),
+);
+
+const ambiguousScores = { model: "jev-fixture", spam: 0.4, solicitation: 0.03 };
+const escalationPolicy = { ...policy, escalation: true };
+const classifyAmbiguous = (chosenPolicy: ClassificationPolicy) =>
+  [
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    policyCall(),
+    Story.succeed(Classifier.policy, {
+      classifier: "jev",
+      policy: chosenPolicy,
+      escalationClassifier: "openai",
+    }),
+    scoreCall(),
+    Story.succeed(Classifier.score, ambiguousScores),
+  ] as const;
+
+it.effect("keeps an ambiguous submission in review when the organization disables escalation", () =>
+  story(
+    ...classifyAmbiguous(policy),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "ambiguous",
+        scores: ambiguousScores,
+        rulesVersion,
+        policy,
+      }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+  ),
+);
+
+it.effect("accepts and labels an ambiguous submission cleared by the second model", () => {
+  const custom: ClassificationPolicy = {
+    ...escalationPolicy,
+    thresholds: ClassificationThresholds.make({
+      ...escalationPolicy.thresholds,
+      ambiguous: 0.1,
+    }),
+    offTopic: "accept",
+  };
+  const scores = { model: "openai-fixture", spam: 0.2, solicitation: 0.03, relevance: 0.3 };
+  return story(
+    ...classifyAmbiguous(custom),
+    secondScoreCall(),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: {
+          _tag: "Automatic",
+          scores: ambiguousScores,
+          rulesVersion,
+          policy: custom,
+          escalation: { classifier: "openai", scores, rulesVersion },
+          label: "off-topic",
+        },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
+  );
+});
+
+it.effect("keeps the ambiguous reason when the second model also requires review", () => {
+  const scores = { model: "openai-fixture", spam: 0.8, solicitation: 0.03 };
+  return story(
+    ...classifyAmbiguous(escalationPolicy),
+    secondScoreCall(),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "ambiguous",
+        scores: ambiguousScores,
+        rulesVersion,
+        policy: escalationPolicy,
+        escalation: { classifier: "openai", scores, rulesVersion },
+      }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+  );
+});
+
+it.effect("keeps the ambiguous reason after the second model exhausts its retries", () =>
+  story(
+    ...classifyAmbiguous(escalationPolicy),
+    secondScoreCall(),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
+    Story.advance("10 seconds"),
+    secondScoreCall(),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
+    Story.advance("30 seconds"),
+    secondScoreCall(),
+    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "ambiguous",
+        scores: ambiguousScores,
+        rulesVersion,
+        policy: escalationPolicy,
+        escalation: { classifier: "openai", rulesVersion },
       }),
     ),
     Story.state(submission, { _tag: "Quarantined" }),

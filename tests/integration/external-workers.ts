@@ -8,10 +8,12 @@ import { fileURLToPath } from "node:url";
 // relevance score is high, or low when the business context contains
 // `fixture-relevance: low`. Any other request gets an answer that does not
 // decode, so the classifier quarantines it with `classification-error`, as it
-// does without an AI binding. Tests can read the fields or the complete
-// classifier inputs from GET /__calls or GET /__states.
+// does without an AI binding. For ambiguous-solicitation, OpenAI Decisions
+// answers with low scores. Tests can read the fields, inputs or models from
+// GET /__calls, GET /__states or GET /__models?message=....
 const workersAiFixture = `
 const calls = [];
+const models = [];
 const verdicts = new Map([
   ["accept", { spam: 0.02, solicitation: 0.03 }],
   ["solicitation", { spam: 0.02, solicitation: 0.93 }],
@@ -20,14 +22,27 @@ const verdicts = new Map([
 ]);
 export default {
   async fetch(request) {
-    const path = new URL(request.url).pathname;
+    const url = new URL(request.url);
+    const path = url.pathname;
     if (path === "/__calls") return Response.json(calls.map((state) => state?.submission_fields ?? null));
     if (path === "/__states") return Response.json(calls);
+    if (path === "/__models") {
+      return Response.json(models.filter(({ message }) => message === url.searchParams.get("message"))
+        .map(({ model }) => model));
+    }
     if (path !== "/ai-gateway/run") return new Response(null, { status: 404 });
     const model = request.headers.get("cf-consn-model-id");
     const { inputs: input } = await request.json();
-    calls.push(input?.state ?? null);
-    const verdict = verdicts.get(input?.state?.submission_fields?.["fixture-verdict"]);
+    const state = model === "openai/decisions" ? JSON.parse(input.input) : input?.state;
+    calls.push(state ?? null);
+    models.push({ model, message: state?.submission_fields?.message });
+    const kind = state?.submission_fields?.["fixture-verdict"];
+    if (model === "openai/decisions" && kind === "ambiguous-solicitation") {
+      const scores = { spam: 0.2, solicitation: 0.03, relevance: 0.98 };
+      const answers = input.questions.map(({ type, name }) => ({ type, name, probability: scores[name] }));
+      return Response.json({ model: "openai-workerd-fixture", answers });
+    }
+    const verdict = verdicts.get(kind);
     if (model !== "typesafe/jev" || verdict === undefined) return Response.json({});
     const relevance = input.state.business_context.includes("fixture-relevance: low") ? 0.05 : 0.98;
     const scores = { ...verdict, relevance };
