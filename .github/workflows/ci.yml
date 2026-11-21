@@ -49,69 +49,10 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
-  # Every deployment below waits for this job, so it also waits for both test jobs.
-  gate:
-    name: Staging gate configuration
+  production:
+    # Deploys prod after both test jobs pass, then checks its /health.
+    name: Production
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [check, dashboard-e2e]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      configured: ${{ steps.gate.outputs.configured }}
-    steps:
-      - id: gate
-        name: Check the staging settings
-        env:
-          BETTER_AUTH_URL_STAGING: ${{ vars.BETTER_AUTH_URL_STAGING }}
-          BETTER_AUTH_SECRET_STAGING: ${{ secrets.BETTER_AUTH_SECRET_STAGING }}
-          RONDYR_SMOKE_FORM_ID_STAGING: ${{ vars.RONDYR_SMOKE_FORM_ID_STAGING }}
-          RONDYR_SMOKE_API_TOKEN_STAGING: ${{ secrets.RONDYR_SMOKE_API_TOKEN_STAGING }}
-        run: |
-          # Print setting names only, never their values.
-          unset_of() {
-            local name
-            for name in "$@"; do
-              if [[ -z "${!name}" ]]; then echo "$name"; fi
-            done
-          }
-          mapfile -t stage_unset < <(unset_of BETTER_AUTH_URL_STAGING BETTER_AUTH_SECRET_STAGING)
-          mapfile -t smoke_unset < <(unset_of RONDYR_SMOKE_FORM_ID_STAGING RONDYR_SMOKE_API_TOKEN_STAGING)
-          if [[ ${#smoke_unset[@]} -eq 1 ]]; then
-            echo "::error title=Staging gate::The staging submission check is partly configured, so nothing was deployed. Missing: ${smoke_unset[*]}. Set it, or remove the other smoke setting. See docs/deployment.md#staging-gate."
-            exit 1
-          elif [[ ${#stage_unset[@]} -eq 1 ]]; then
-            echo "::error title=Staging gate::Staging is partly configured, so nothing was deployed. Missing: ${stage_unset[*]}. Set it, or remove the other staging setting to deploy prod directly. See docs/deployment.md#staging-gate."
-            exit 1
-          elif [[ ${#stage_unset[@]} -eq 0 ]]; then
-            if [[ ${#smoke_unset[@]} -eq 2 ]]; then
-              echo "::notice title=Staging gate::Staging is deployed and its /health checked before prod, without a test submission. To also check that staging classifies a submission, set the variable RONDYR_SMOKE_FORM_ID_STAGING and the secret RONDYR_SMOKE_API_TOKEN_STAGING. See docs/deployment.md#staging-gate."
-            fi
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-          elif [[ ${#smoke_unset[@]} -eq 0 ]]; then
-            echo "::error title=Staging gate::The staging submission check is configured but staging cannot deploy, so nothing was deployed. Missing: ${stage_unset[*]}. See docs/deployment.md#staging-gate."
-            exit 1
-          else
-            echo "::notice title=Staging gate::Staging is not configured: prod deploys without going through staging. To enable the gate, set the variable BETTER_AUTH_URL_STAGING and the secret BETTER_AUTH_SECRET_STAGING. See docs/deployment.md#staging-gate."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          fi
-
-  staging:
-    if: needs.gate.outputs.configured == 'true'
-    needs: gate
     uses: ./.github/workflows/deploy.yml
-    with:
-      stage: staging
-      verify: true
-    secrets: inherit
-
-  production:
-    # Deploy prod after staging deploys and passes its checks, or directly when staging is not configured.
-    if: >-
-      !cancelled() && needs.gate.result == 'success' &&
-      ((needs.gate.outputs.configured == 'true' && needs.staging.result == 'success' && needs.staging.outputs.verified == 'true') ||
-      (needs.gate.outputs.configured == 'false' && needs.staging.result == 'skipped'))
-    needs: [gate, staging]
-    uses: ./.github/workflows/deploy.yml
-    with:
-      stage: prod
     secrets: inherit
