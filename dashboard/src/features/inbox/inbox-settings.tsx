@@ -24,7 +24,7 @@ type Picked = Form["publicId"] | "new" | null;
 const newForm = "new";
 
 interface FormListProps {
-  readonly section: Exclude<Section, "domains" | "operations">;
+  readonly section: Exclude<Section, "classification" | "domains" | "operations">;
   readonly forms: readonly Form[];
   /** The form shown in the next pane. */
   readonly shown: Form | undefined;
@@ -98,7 +98,7 @@ function FormList({ section, forms, shown, adding, collapsed, onPick }: FormList
 
 interface InboxSettingsProps {
   /** A settings page. The status of the processing is another feature's page. */
-  readonly section: Exclude<Section, "domains" | "operations">;
+  readonly section: Exclude<Section, "classification" | "domains" | "operations">;
   readonly inbox: Inbox;
   /** Reload the organizations after a change to their forms. */
   readonly onFormsChanged: () => Promise<void>;

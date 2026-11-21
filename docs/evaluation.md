@@ -2,7 +2,7 @@
 
 `pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `src/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
 
-The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31). The spam and relevance thresholds still come from the first estimate described in [architecture.md](../architecture.md#5-classification-intelligente). The solicitation threshold comes from the measurement in [#40](https://github.com/basaltbytes/rondyr/issues/40). Issue [#6](https://github.com/basaltbytes/rondyr/issues/6) tracks thresholds per classifier.
+The runner and the Worker read their default policies from `src/domain/submissions/classification-policy.ts`. The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31), and [#40](https://github.com/basaltbytes/rondyr/issues/40) records the measurement behind the solicitation threshold. [Architecture section 5](../architecture.md#5-classification-intelligente) describes the current defaults.
 
 The harness isn't part of the Worker: nothing in `src/` imports `evals/`, and `pnpm deploy:dry` checks the bundle size as before.
 
@@ -94,8 +94,32 @@ The first command calls each classifier once and is the quickest check that the 
 | `--concurrency` | 4 | Calls in flight at once, from 1 to 16 |
 | `--limit` | none | Evaluate only the first N lines |
 | `--refresh` | off | Call the model again even when the cache has a result |
+| `--policy` | classifier defaults | JSON file with the full policy to apply to every selected classifier |
 | `--out` | `evals/out` | Directory for the cache and the reports, ignored by git |
 | `--dry` | off | Fake scores, no credentials |
+
+### Comparing policies
+
+Run once with the defaults. To replay those scores with a different policy, pass a JSON file such as `policy.json`.
+
+```json
+{
+  "thresholds": {
+    "probableSpam": 0.7,
+    "ambiguous": 0.3,
+    "solicitation": 0.5,
+    "lowRelevance": 0.35
+  },
+  "offTopic": "accept"
+}
+```
+
+```sh
+pnpm evaluate --classifier both evals/corpus/synthetic.jsonl
+pnpm evaluate --classifier both --policy policy.json evals/corpus/synthetic.jsonl
+```
+
+Keep the same output directory and omit `--refresh` to reuse the cached scores. The runner calls Workers AI for inputs without a cached score, including failed calls from the first run. Save a copy of the first report before the second command, which writes to the same report paths. Set `offTopic` to `review` to quarantine for low relevance or to `accept` to accept those messages with the `off-topic` label. Spam and sales outreach still take priority.
 
 ### Calls
 
@@ -105,9 +129,9 @@ A call has 12 seconds, as in the Worker. A failure that the adapter marks retrya
 
 ### Cache
 
-Each scored call is appended to `evals/out/cache.jsonl` as soon as it returns, so an interrupted run can resume. The key is the transport (`workers-ai` or `dry`), the classifier, the requested model, `rulesVersion`, the line ID and a SHA-256 of the full classifier input. Editing an earlier submission can change the facts and invalidate later cache entries. Failures aren't cached.
+Each scored call is appended to `evals/out/cache.jsonl` as soon as it returns, so an interrupted run can resume. The key is the transport (`workers-ai` or `dry`), the classifier, the requested model, the scoring version, the line ID and a SHA-256 of the full classifier input. Editing an earlier submission can change the facts and invalidate later cache entries. Policy changes preserve cached scores. Failures aren't cached.
 
-The model name in the key is the one the adapter requests, such as `typesafe/jev`. The model that answers can change behind that name (`jev-1.13.0`, then a later version); the report lists the models that answered, and `--refresh` scores everything with the current one.
+The model name in the key is the one the adapter requests, such as `typesafe/jev`. The model that answers can change behind that name. The report lists the models that answered, and `--refresh` scores everything with the current one. Advance the scoring version in `evals/evaluate.ts` when a change to the adapters or model questions invalidates existing scores.
 
 ## Report
 
@@ -116,7 +140,7 @@ The terminal shows the summary. The full report, with the threshold sweep, is wr
 For each classifier, in this order:
 
 - **Legitimate messages quarantined.** The total includes intake rules and failed calls. The table lists the rule decisions by id and score, and the failed calls appear below.
-- **Off-topic messages quarantined.** Genuine messages that a person has to read and archive. Today's rules quarantine them for low relevance on purpose; a spam reason is the worse outcome.
+- **Off-topic messages quarantined.** Genuine messages that a person has to read and archive. The report also lists messages accepted with the off-topic label.
 - **Spam accepted**, by id and family.
 - **Expected label and decision.** The table includes `solicitation` and `repetition`. Each cell counts distinct corpus lines and the submissions those lines represent. A line can appear in more than one cell when its occurrences get different decisions. The decision list identifies the first occurrence and number of submissions in each result.
 - **Quarantine of spam.** Spam is the positive class; legitimate and off-topic lines are the negatives; ambiguous lines and failed calls are left out. Precision is the share of quarantined lines that are spam, and recall the share of spam that is quarantined, for any reason. Both are given for lines and for submissions.
@@ -124,15 +148,17 @@ For each classifier, in this order:
 - **Cost**: the token usage of the answers times the per-million prices of the model pages, checked on 2026-11-20 and kept in `evals/classifiers.ts`. If an answer has no usage, the cost is reported as unavailable. Calls that failed may also be billed and aren't counted.
 - **Failed calls**, with the number of calls, whether the failure was retryable and the last error: an HTTP status with the Cloudflare error codes, a timeout, or an answer the adapter refused. Error messages from Cloudflare aren't kept, since they can repeat the request.
 
-The report also gives the returned model ids and their counts, `rulesVersion`, the thresholds, and the gateway options.
+The report also gives the returned model ids and their counts, `rulesVersion`, the policy applied to each classifier, and the gateway options.
 
 ### Threshold sweep
 
-The sweep recomputes decisions from the recorded scores without new calls, with `reviewReason` and the thresholds of each point. It excludes intake quarantines and failed calls. The JSON has every point of the grid from 0.05 to 0.95 in steps of 0.05 for the two spam thresholds (with the probable-spam threshold at or above the ambiguous one), and for the low relevance threshold with the spam thresholds at 0.70 and 0.30. All of these points keep the solicitation threshold at 0.50. Each point gives the legitimate and off-topic lines quarantined, the spam accepted, and the legitimate and spam lines that would get `probable-spam`.
+The sweep uses `reviewReason` to recompute decisions from the recorded scores. It tests both spam thresholds together, holding the other settings fixed, and varies the relevance threshold and the solicitation threshold separately. The grid runs from 0 to 1 in steps of 0.05 and includes the policy's active thresholds. It also compares `review` with `accept` for off-topic messages. Intake quarantines and failed calls count the same at every point.
 
-The solicitation sweep tests thresholds from 0 to 1 in steps of 0.05 while holding the spam and relevance thresholds fixed. A solicitation score must exceed the threshold. The report counts all legitimate lines quarantined among scored calls and shows how many legitimate and spam lines get the `solicitation` reason. The Markdown has one table for each threshold.
+Read the `legitimate` quarantined count first, then compare how many spam submissions are accepted at points with zero legitimate quarantines. Each point also counts off-topic quarantines and decisions with the `probable-spam` or `solicitation` reason. The Markdown has a table for each setting and the JSON contains all points.
 
 The Worker quarantines a message whose solicitation score is above 0.50. On 20 November 2026, with Jev, no `legitimate` or `off-topic` line of the synthetic corpus scored above 0.32 and the four `syn-solicitation-*` lines scored between 0.94 and 0.98. OpenAI Decisions kept every `legitimate` line at 0.04 or below and scored the same four lines between 0.96 and 1. Scores vary by a few hundredths from one run to the next. When you change the solicitation question or its threshold, run both classifiers on the same corpus before and after the change, and use the full report to check that every `legitimate` entry stays out of quarantine, including entries quarantined at intake or after a failed call.
+
+By default, the Worker quarantines a message whose relevance is below 0.50 with Jev or below 0.45 with OpenAI Decisions; until rules version 6, both classifiers used 0.35. On 21 November 2026, each classifier ran three times on the synthetic corpus and on the maintainer's corpus of real submissions. With Jev, the move from 0.35 to 0.50 quarantined no `legitimate` line on either corpus, and the spam lines accepted went from 5 to 3 on the synthetic corpus and from 7 to 5 on the real one. Across the three runs, the lowest relevance of a `legitimate` line was 0.60 on the synthetic corpus and 0.66 on the real one. With OpenAI Decisions, the move from 0.35 to 0.45 also quarantined no `legitimate` line; the spam lines accepted went from 4 to 2 on the synthetic corpus and stayed at 3 on the real one. Its scores were identical in all three runs, and the lowest `legitimate` relevance was 0.50 on the synthetic corpus, 0.05 above the threshold, and 0.87 on the real one.
 
 ## Privacy
 
@@ -143,4 +169,4 @@ The Worker quarantines a message whose solicitation score is above 0.50. On 20 N
 
 ## Tests
 
-`pnpm check` runs the harness tests in Node, as the `evals` Vitest project, without network: corpus validation with invalid lines, the decisions at each threshold, the report counts with `duplicates`, the cache key, the REST request against a fake Cloudflare API, retries, and a dry run of the synthetic corpus that checks that no field value appears in the reports. The REST path has not been checked against the live API yet.
+`pnpm check` runs the harness tests in Node, as the `evals` Vitest project, without network: corpus validation with invalid lines, the decisions at each threshold, the report counts with `duplicates`, the cache key, the REST request against a fake Cloudflare API, retries, and a dry run of the synthetic corpus that checks that no field value appears in the reports.

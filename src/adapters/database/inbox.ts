@@ -37,7 +37,7 @@ const inboxUnavailable = () => InboxUnavailable.make();
 const columns = `
   s.id AS submissionId, s.organization_id AS organizationId, s.form_id AS formId,
   f.public_id AS formPublicId, f.name AS formName, s.received_at AS receivedAt,
-  COALESCE(i.status, 'received') AS status, i.reason AS reason
+  COALESCE(i.status, 'received') AS status, i.reason AS reason, i.label AS label
 `;
 const tables = `
   FROM submissions s JOIN forms f ON f.id = s.form_id
@@ -45,17 +45,17 @@ const tables = `
 `;
 
 export const inboxStoreLive = Layer.succeed(InboxStore, {
-  project: Effect.fn("Inbox.project")(function* ({ submissionId, version, status, reason }) {
+  project: Effect.fn("Inbox.project")(function* ({ submissionId, version, status, reason, label }) {
     const db = yield* database;
     yield* d1(() =>
       db
         .prepare(`
-      INSERT INTO submission_inbox (submission_id, version, status, reason) VALUES (?, ?, ?, ?)
+      INSERT INTO submission_inbox (submission_id, version, status, reason, label) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (submission_id) DO UPDATE SET version = excluded.version,
-        status = excluded.status, reason = excluded.reason
+        status = excluded.status, reason = excluded.reason, label = excluded.label
       WHERE excluded.version > submission_inbox.version
     `)
-        .bind(submissionId, version, status, reason)
+        .bind(submissionId, version, status, reason, label)
         .run(),
     );
   }, Effect.mapError(inboxUnavailable)),

@@ -1,27 +1,35 @@
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import { ClassificationFailed, Classifier } from "../../domain/submissions/classifier.external.ts";
 import { classifierInput } from "../../domain/submissions/classifier-input.ts";
+import { ClassificationPolicies } from "../../ports/classification-policies.ts";
 import { StoredMessages } from "../../ports/stored-messages.ts";
 import { scoreWithJev } from "./jev.ts";
 import { scoreWithOpenAi } from "./openai-decisions.ts";
 
 const providers = { jev: scoreWithJev, openai: scoreWithOpenAi };
 
-export const ClassifierProvider = Schema.Literals(["jev", "openai"]);
-
-const decodeProvider = Schema.decodeUnknownEffect(ClassifierProvider);
-
 export const classifierLive = Classifier.toLayer(
   Effect.gen(function* () {
     const messages = yield* StoredMessages;
+    const policies = yield* ClassificationPolicies;
     return {
-      score: Effect.fn("Classifier.score")(function* ({ submissionId, organizationId }) {
+      // An unavailable database can recover; an unknown classifier or an invalid policy cannot.
+      policy: ({ organizationId }) =>
+        policies.resolve(organizationId).pipe(
+          Effect.catchTags({
+            StorageUnavailable: () => Effect.fail(ClassificationFailed.make({ retryable: true })),
+            ClassificationPolicyUnreadable: () =>
+              Effect.fail(ClassificationFailed.make({ retryable: false })),
+          }),
+        ),
+      score: Effect.fn("Classifier.score")(function* ({
+        submissionId,
+        organizationId,
+        classifier,
+      }) {
         const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
         if (env.AI === undefined) return yield* ClassificationFailed.make({ retryable: false });
-        const provider = yield* decodeProvider(env.RONDYR_CLASSIFIER ?? "jev").pipe(
-          Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
-        );
         // An unavailable database can recover; a missing or invalid row cannot.
         const message = yield* messages
           .read(submissionId, organizationId)
@@ -36,7 +44,7 @@ export const classifierLive = Classifier.toLayer(
           message.repetition,
           message.organizationDomains,
         );
-        return yield* providers[provider](env.AI, input).pipe(
+        return yield* providers[classifier](env.AI, input).pipe(
           Effect.timeoutOrElse({
             duration: "12 seconds",
             orElse: () => Effect.fail(ClassificationFailed.make({ retryable: true })),

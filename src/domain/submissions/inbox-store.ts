@@ -20,6 +20,7 @@ export interface InboxChange {
   readonly version: number;
   readonly status: typeof SubmissionStatus.Type;
   readonly reason: typeof InboxRow.Type.reason;
+  readonly label: typeof InboxRow.Type.label;
 }
 
 export class InboxStore extends Context.Service<

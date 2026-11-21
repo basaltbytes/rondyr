@@ -1,11 +1,17 @@
 import * as Domain from "@alchemy.run/domain";
 import { Schema } from "effect";
 
-import { ClassificationScores } from "./classification.ts";
+import { ClassificationPolicy } from "./classification-policy.ts";
+import { ClassificationScores, SubmissionLabel } from "./classification.ts";
 import { OrganizationId, UserId } from "./submission.id.ts";
 
 export const Acceptance = Schema.Union([
-  Schema.TaggedStruct("Automatic", { scores: ClassificationScores, rulesVersion: Schema.Int }),
+  Schema.TaggedStruct("Automatic", {
+    scores: ClassificationScores,
+    rulesVersion: Schema.Int,
+    policy: Schema.optionalKey(ClassificationPolicy),
+    label: Schema.optionalKey(SubmissionLabel),
+  }),
   Schema.TaggedStruct("Manual", { reviewerId: UserId }),
 ]);
 

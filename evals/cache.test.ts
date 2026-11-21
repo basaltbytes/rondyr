@@ -11,7 +11,7 @@ const parts = {
   transport: "workers-ai",
   classifier: "jev",
   model: "typesafe/jev",
-  rulesVersion: 1,
+  scoringVersion: 1,
   entryId: EntryId.make("bb-spam-001"),
   inputDigest: "abc",
 } as const;
@@ -24,7 +24,7 @@ layer(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))((it) => {
         cacheKey({ ...parts, transport: "dry" }),
         cacheKey({ ...parts, classifier: "openai" }),
         cacheKey({ ...parts, model: "typesafe/jev-1.14.0" }),
-        cacheKey({ ...parts, rulesVersion: 2 }),
+        cacheKey({ ...parts, scoringVersion: 2 }),
         cacheKey({ ...parts, entryId: EntryId.make("bb-spam-002") }),
         cacheKey({ ...parts, inputDigest: "abd" }),
       ]);

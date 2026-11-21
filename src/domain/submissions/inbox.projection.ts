@@ -36,6 +36,10 @@ export const inboxLive = Inbox.toLayer(
             version: envelope.seq,
             status: statuses[event._tag],
             reason: event._tag === "SubmissionQuarantined" ? event.reason : null,
+            label:
+              event._tag === "SubmissionAccepted" && event.acceptance._tag === "Automatic"
+                ? (event.acceptance.label ?? null)
+                : null,
           })
           .pipe(Effect.orDie);
       }

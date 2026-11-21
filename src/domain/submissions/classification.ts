@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-export const Score = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }));
+import { ClassificationPolicy, Score } from "./classification-policy.ts";
 
 export const ClassificationScores = Schema.Struct({
   model: Schema.String,
@@ -40,37 +40,23 @@ export const QuarantineReason = Schema.Literals([
   ...IntakeReason.literals,
 ]);
 
-export const ClassificationResult = Schema.Union([
-  Schema.TaggedStruct("Scored", { scores: ClassificationScores }),
-  Schema.TaggedStruct("ClassificationError", {}),
-]);
+export const SubmissionLabel = Schema.Literal("off-topic");
 
-export const rulesVersion = 5;
+export const rulesVersion = 6;
 
-export const ClassificationThresholds = Schema.Struct({
-  probableSpam: Score,
-  ambiguous: Score,
-  solicitation: Score,
-  lowRelevance: Score,
-});
-
-export const classificationThresholds: typeof ClassificationThresholds.Type = {
-  probableSpam: 0.7,
-  ambiguous: 0.3,
-  solicitation: 0.5,
-  lowRelevance: 0.35,
-};
+export function isOffTopic(scores: typeof ClassificationScores.Type, policy: ClassificationPolicy) {
+  return scores.relevance !== undefined && scores.relevance < policy.thresholds.lowRelevance;
+}
 
 export function reviewReason(
   scores: typeof ClassificationScores.Type,
-  thresholds = classificationThresholds,
+  policy: ClassificationPolicy,
 ) {
+  const { thresholds } = policy;
   if (scores.solicitation === undefined) return "classification-error";
   if (scores.spam >= thresholds.probableSpam) return "probable-spam";
   if (scores.spam >= thresholds.ambiguous) return "ambiguous";
   if (scores.solicitation > thresholds.solicitation) return "solicitation";
-  if (scores.relevance !== undefined && scores.relevance < thresholds.lowRelevance) {
-    return "low-relevance";
-  }
+  if (policy.offTopic === "review" && isOffTopic(scores, policy)) return "low-relevance";
   return null;
 }

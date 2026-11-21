@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 
-import { Score } from "../../domain/submissions/classification.ts";
+import { Score } from "../../domain/submissions/classification-policy.ts";
 import { ClassificationFailed } from "../../domain/submissions/classifier.external.ts";
 import {
   ClassifierInput,

@@ -1,4 +1,3 @@
-import { classificationThresholds } from "../src/domain/submissions/classification.ts";
 import { Label } from "./corpus.ts";
 import type { ClassifierReport, Report } from "./report.ts";
 import { Decision } from "./thresholds.ts";
@@ -35,6 +34,7 @@ function decisionTable(decisions: readonly EntryDecision[]) {
       "first occurrence",
       "submissions",
       "decision",
+      "applied label",
       "spam",
       "solicitation",
       "relevance",
@@ -45,6 +45,7 @@ function decisionTable(decisions: readonly EntryDecision[]) {
       `${entry.firstOccurrence}`,
       `${entry.duplicates}`,
       entry.decision,
+      entry.appliedLabel ?? "",
       score(entry.scores?.spam),
       score(entry.scores?.solicitation),
       score(entry.scores?.relevance),
@@ -58,6 +59,7 @@ function costLine(cost: ClassifierReport["cost"]) {
 }
 
 function classifierSummary(report: ClassifierReport) {
+  const { thresholds, offTopic } = report.policy;
   const models = report.returnedModels.map(({ model, entries }) => `${model} (${entries})`);
   const latency =
     report.latencyMs === null
@@ -66,12 +68,15 @@ function classifierSummary(report: ClassifierReport) {
   const { quarantineSpam: metrics } = report;
   return [
     `## ${report.classifier} (${report.requestedModel})`,
+    `Policy: probable spam from ${thresholds.probableSpam}, ambiguous from ${thresholds.ambiguous}, solicitation over ${thresholds.solicitation}, low relevance under ${thresholds.lowRelevance}, off-topic handling \`${offTopic}\`.`,
     `Returned model: ${models.length === 0 ? "none" : models.join(", ")}. Scored ${report.calls.scored} inputs, ${report.calls.fromCache} of them from the cache. ${report.calls.failed} failed.`,
     `### Legitimate messages quarantined: ${pair(report.legitimateQuarantined)}`,
     "Rule decisions are listed below. Classification errors are listed with failed calls.",
     decisionTable(report.falsePositives),
     `### Off-topic messages quarantined: ${report.offTopicQuarantined.length}`,
     decisionTable(report.offTopicQuarantined),
+    "### Accepted with the off-topic label",
+    decisionTable(report.decisions.filter(({ appliedLabel }) => appliedLabel === "off-topic")),
     `### Spam accepted: ${report.spamAccepted.length}`,
     decisionTable(report.spamAccepted),
     "### Quarantined for repetition",
@@ -124,12 +129,13 @@ function threshold(value: number) {
 // The full grid is in the JSON report. Accepting or quarantining depends only on the lower of the
 // two spam thresholds, and the probable-spam reason only on the upper one, so two tables show it.
 function classifierSweep(report: ClassifierReport) {
-  const { spam, relevance, solicitation } = report.sweep;
+  const { spam, relevance, solicitation, offTopic } = report.sweep;
+  const { thresholds: active } = report.policy;
   const highest = Math.max(...spam.map(({ thresholds }) => thresholds.probableSpam));
   const lowest = Math.min(...spam.map(({ thresholds }) => thresholds.ambiguous));
   return [
     `## Threshold sweep: ${report.classifier}`,
-    "Recomputed from the recorded scores without new calls. The sweep excludes failed calls and intake quarantines. Entries, then submissions in parentheses.",
+    "Recomputed from the recorded scores without new calls. Failed calls and intake quarantines count the same at every point. Entries, then submissions in parentheses.",
     "### Ambiguous threshold",
     table(
       ["ambiguous", "legitimate quarantined", "off-topic quarantined", "spam accepted"],
@@ -153,11 +159,21 @@ function classifierSweep(report: ClassifierReport) {
           pair(point.spamAsProbableSpam),
         ]),
     ),
-    `### Low relevance threshold, spam thresholds ${threshold(classificationThresholds.probableSpam)} and ${threshold(classificationThresholds.ambiguous)}, solicitation threshold ${threshold(classificationThresholds.solicitation)}`,
+    `### Low relevance threshold, spam thresholds ${threshold(active.probableSpam)} and ${threshold(active.ambiguous)}, solicitation threshold ${threshold(active.solicitation)}`,
     table(
       ["low relevance", "legitimate quarantined", "off-topic quarantined", "spam accepted"],
       relevance.map((point) => [
         threshold(point.thresholds.lowRelevance),
+        pair(point.falsePositives),
+        pair(point.offTopicQuarantined),
+        pair(point.spamAccepted),
+      ]),
+    ),
+    "### Off-topic handling",
+    table(
+      ["handling", "legitimate quarantined", "off-topic quarantined", "spam accepted"],
+      offTopic.map((point) => [
+        point.offTopic,
         pair(point.falsePositives),
         pair(point.offTopicQuarantined),
         pair(point.spamAccepted),
@@ -192,7 +208,7 @@ export function renderSummary(report: Report) {
     report.transport === "dry"
       ? "**Dry run: the scores are fake and measure nothing.**"
       : "Scores from Workers AI.",
-    `${pair(corpus.size)} entries, business context ${corpus.businessContext}. Rules version ${report.rulesVersion}: probable spam from ${report.thresholds.probableSpam}, ambiguous from ${report.thresholds.ambiguous}, solicitation over ${report.thresholds.solicitation}, low relevance under ${report.thresholds.lowRelevance}. Gateway \`${report.gateway.id}\`, collectLog ${report.gateway.collectLog}, skipCache ${report.gateway.skipCache}. Generated ${report.generatedAt}.`,
+    `${pair(corpus.size)} entries, business context ${corpus.businessContext}. Rules version ${report.rulesVersion}. Gateway \`${report.gateway.id}\`, collectLog ${report.gateway.collectLog}, skipCache ${report.gateway.skipCache}. Generated ${report.generatedAt}.`,
   ];
   return [...header, ...report.classifiers.map(classifierSummary)].join("\n\n");
 }

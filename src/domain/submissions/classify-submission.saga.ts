@@ -2,6 +2,7 @@ import * as Domain from "@alchemy.run/domain";
 import { Effect } from "effect";
 import { Activity, DurableClock } from "effect/workflow";
 
+import { ResolvedClassificationPolicy } from "./classification-policy.ts";
 import { ClassificationScores } from "./classification.ts";
 import { ClassificationFailed, Classifier } from "./classifier.external.ts";
 import { RecordClassification } from "./record-classification.command.ts";
@@ -14,19 +15,53 @@ export class ClassifySubmission extends Domain.Saga(
   { description: "Classify a submission with a bounded retry budget and record its outcome." },
 ) {}
 
+/**
+ * Run an activity up to three times, waiting 10 seconds and then 30 seconds
+ * after a retryable failure. The activity's name must include `attempt`, and
+ * each wait is named `${sleep}-${attempt}`, so that a replayed workflow finds
+ * the outcomes it recorded.
+ */
+const withRetries = <A, R>(
+  sleep: string,
+  activity: (attempt: number) => Effect.Effect<A, ClassificationFailed, R>,
+) =>
+  Effect.gen(function* () {
+    for (let attempt = 1; ; attempt += 1) {
+      const result = yield* activity(attempt).pipe(Effect.result);
+      if (result._tag === "Success" || !result.failure.retryable || attempt === 3) return result;
+      yield* DurableClock.sleep({
+        name: `${sleep}-${attempt}`,
+        duration: attempt === 1 ? "10 seconds" : "30 seconds",
+        inMemoryThreshold: 0,
+      });
+    }
+  });
+
 export const classifySubmissionLive = ClassifySubmission.toLayer(
   Effect.gen(function* () {
     const submissions = yield* Submission;
     const classifier = yield* Classifier;
 
     return Effect.fnUntraced(function* ({ key, organizationId }) {
-      for (let attempt = 1; attempt <= 3; attempt += 1) {
-        const score = yield* Activity.make({
-          name: `score-${attempt}`,
-          success: ClassificationScores,
+      const resolved = yield* withRetries("policy-retry", (attempt) =>
+        Activity.make({
+          name: `resolve-classification-policy-${attempt}`,
+          success: ResolvedClassificationPolicy,
           error: ClassificationFailed,
-          execute: classifier.score({ submissionId: key, organizationId }),
-        }).pipe(Effect.result);
+          execute: classifier.policy({ organizationId }),
+        }),
+      );
+      if (resolved._tag === "Success") {
+        const { classifier: provider, policy } = resolved.success;
+        // Workflows started before the policy lookup recorded these names.
+        const score = yield* withRetries("retry", (attempt) =>
+          Activity.make({
+            name: `score-${attempt}`,
+            success: ClassificationScores,
+            error: ClassificationFailed,
+            execute: classifier.score({ submissionId: key, organizationId, classifier: provider }),
+          }),
+        );
         if (score._tag === "Success") {
           yield* Activity.make({
             name: "record-classification",
@@ -34,26 +69,21 @@ export const classifySubmissionLive = ClassifySubmission.toLayer(
               .send(
                 key,
                 RecordClassification.make({
-                  result: { _tag: "Scored", scores: score.success },
+                  result: { _tag: "Scored", scores: score.success, policy },
                 }),
               )
               .pipe(Effect.asVoid),
           });
           return;
         }
-        if (!score.failure.retryable || attempt === 3) break;
-        yield* DurableClock.sleep({
-          name: `retry-${attempt}`,
-          duration: attempt === 1 ? "10 seconds" : "30 seconds",
-          inMemoryThreshold: 0,
-        });
       }
 
+      const failure = { _tag: "ClassificationError" } as const;
+      const result =
+        resolved._tag === "Success" ? { ...failure, policy: resolved.success.policy } : failure;
       yield* Activity.make({
         name: "record-classification-error",
-        execute: submissions
-          .send(key, RecordClassification.make({ result: { _tag: "ClassificationError" } }))
-          .pipe(Effect.asVoid),
+        execute: submissions.send(key, RecordClassification.make({ result })).pipe(Effect.asVoid),
       });
     });
   }),
