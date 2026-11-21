@@ -48,6 +48,8 @@ const en = {
     unexpected: "Rondyr sent an answer this plugin doesn't understand.",
     "token-missing":
       "RONDYR_API_TOKEN isn't set. Submissions wait in the queue, and this page can't read Rondyr.",
+    "token-malformed":
+      "RONDYR_API_TOKEN isn't a Rondyr API token, which starts with rdr_ and has 47 characters. Submissions wait in the queue until it is set again with the token Rondyr showed.",
     failed: "The request failed. Try again in a moment.",
   },
   setup: {
@@ -59,6 +61,9 @@ const en = {
       "Waiting to be sent to Rondyr: {pending}. Failed: {failed}. Without a Rondyr form: {unlinked}.",
     retry: "Retry failed submissions",
     retrying: "Retrying…",
+    statusUnavailable: "The queue of submissions for Rondyr can't be read.",
+    unqueued:
+      "{count} submissions accepted since {date} could not be put in the queue for Rondyr, so Rondyr doesn't have them. The Forms plugin kept them: an administrator can download them in Rondyr settings.",
   },
   widget: {
     toReview: "Messages to review",
@@ -81,6 +86,10 @@ const en = {
     unavailable: "The list of Rondyr forms can't be read:",
     formsEmails:
       "This form still sends its own notification emails or an auto-reply from the Forms plugin, before Rondyr classifies the message. Remove them in Forms, in the settings of {name}.",
+    unqueued:
+      "{count} submissions of this form, from {first} to {last}, could not be put in the queue for Rondyr, so Rondyr doesn't have them and sent no email for them. The Forms plugin kept them: download its submissions since then to read them.",
+    download: "Download from the Forms plugin",
+    clearUnqueued: "Mark as handled",
   },
 };
 
@@ -133,6 +142,8 @@ const fr: Strings = {
     unexpected: "Rondyr a envoyé une réponse que ce plugin ne comprend pas.",
     "token-missing":
       "RONDYR_API_TOKEN n’est pas défini. Les soumissions attendent dans la file, et cette page ne peut pas lire Rondyr.",
+    "token-malformed":
+      "RONDYR_API_TOKEN n’est pas un jeton d’API Rondyr, qui commence par rdr_ et compte 47 caractères. Les soumissions attendent dans la file jusqu’à ce qu’il soit de nouveau défini avec le jeton affiché par Rondyr.",
     failed: "La requête a échoué. Réessayez dans un instant.",
   },
   setup: {
@@ -144,6 +155,9 @@ const fr: Strings = {
       "En attente d’envoi à Rondyr : {pending}. En échec : {failed}. Sans formulaire Rondyr : {unlinked}.",
     retry: "Réessayer les soumissions en échec",
     retrying: "Nouvel essai…",
+    statusUnavailable: "La file des soumissions pour Rondyr est illisible.",
+    unqueued:
+      "{count} soumissions acceptées depuis le {date} n’ont pas pu entrer dans la file pour Rondyr : Rondyr ne les a pas. Le plugin Forms les a gardées : un administrateur peut les télécharger dans les réglages Rondyr.",
   },
   widget: {
     toReview: "Messages à examiner",
@@ -166,6 +180,10 @@ const fr: Strings = {
     unavailable: "La liste des formulaires Rondyr est illisible :",
     formsEmails:
       "Ce formulaire envoie encore ses propres e-mails de notification ou une réponse automatique depuis le plugin Forms, avant que Rondyr classe le message. Supprimez-les dans Forms, dans les réglages de {name}.",
+    unqueued:
+      "{count} soumissions de ce formulaire, du {first} au {last}, n’ont pas pu entrer dans la file pour Rondyr : Rondyr ne les a pas et n’a envoyé aucun e-mail pour elles. Le plugin Forms les a gardées : téléchargez ses soumissions depuis cette date pour les lire.",
+    download: "Télécharger depuis le plugin Forms",
+    clearUnqueued: "Marquer comme traité",
   },
 };
 
