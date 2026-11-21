@@ -3,37 +3,49 @@ import { FetchHttpClient, HttpClient } from "effect/http";
 
 import { EmailAddress } from "../../domain/deliveries/email.ts";
 import { EmailProviderMissing, EmailSender } from "../../ports/email-sender.ts";
+import { cloudflareTransport } from "./cloudflare.ts";
 import { resendTransport } from "./resend.ts";
 
 /** `RONDYR_EMAIL_PROVIDER`: the email service of a stage. */
-export const EmailProviderName = Schema.Literals(["resend"]);
+export const EmailProviderName = Schema.Literals(["resend", "cloudflare"]);
 
-/** The email settings of the Worker. Each provider reads its own credentials. */
-const EmailEnvironment = Schema.Struct({
+const EmailSettings = Schema.Struct({
   RONDYR_EMAIL_PROVIDER: Schema.optionalKey(EmailProviderName),
   RONDYR_EMAIL_FROM: Schema.optionalKey(EmailAddress),
   RESEND_API_KEY: Schema.optionalKey(Schema.RedactedFromValue(Schema.NonEmptyString)),
 });
-export type EmailEnvironment = typeof EmailEnvironment.Type;
+export type EmailEnvironment = typeof EmailSettings.Type & {
+  readonly CLOUDFLARE_EMAIL?: SendEmail;
+};
 
-const decodeEnvironment = Schema.decodeUnknownEffect(EmailEnvironment);
+const decodeSettings = Schema.decodeUnknownEffect(EmailSettings);
 
 /** The settings from the Worker environment. Invalid settings count as missing. */
 const emailEnvironmentFromWorker = Effect.promise(() => import("cloudflare:workers")).pipe(
-  Effect.flatMap(({ env }) => decodeEnvironment(env)),
+  Effect.flatMap(({ env }) => {
+    const { CLOUDFLARE_EMAIL } = env;
+    return decodeSettings(env).pipe(
+      Effect.map((settings): EmailEnvironment =>
+        CLOUDFLARE_EMAIL === undefined ? settings : { ...settings, CLOUDFLARE_EMAIL },
+      ),
+    );
+  }),
   Effect.tapError(() =>
     Effect.logWarning("Email settings are invalid; email targets are unavailable"),
   ),
   Effect.orElseSucceed((): EmailEnvironment => ({})),
 );
 
-// A second provider is one more entry, with the settings it needs.
 const providers = {
   resend: (environment: EmailEnvironment) =>
     Option.match(Option.fromUndefinedOr(environment.RESEND_API_KEY), {
       onNone: () => Effect.succeedNone,
       onSome: (apiKey) => Effect.asSome(resendTransport(apiKey)),
     }),
+  cloudflare: (environment: EmailEnvironment) =>
+    Effect.succeed(
+      Option.map(Option.fromUndefinedOr(environment.CLOUDFLARE_EMAIL), cloudflareTransport),
+    ),
 };
 
 /** The stage's provider, with the sender address of `RONDYR_EMAIL_FROM`, read on each call. */

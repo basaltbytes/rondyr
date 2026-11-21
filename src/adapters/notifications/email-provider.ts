@@ -23,7 +23,7 @@ function permanent(summary: string) {
 }
 
 const notConfigured =
-  "Email is not configured on this stage. Set RESEND_API_KEY and RONDYR_EMAIL_FROM, then redeploy.";
+  "Email is not configured on this stage. Check the email provider and RONDYR_EMAIL_FROM.";
 
 /**
  * Sends a delivery as one plain text email to the recipients of its target,

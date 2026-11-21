@@ -1,5 +1,5 @@
 import { cn } from "cn";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
@@ -73,10 +73,14 @@ function MessageRow({ submission, active, showStatus, now, onOpen }: MessageRowP
 
 interface MessageListProps {
   readonly folder: Folder;
+  /** The name of the form that the list is narrowed to, if any. */
+  readonly formName: string | null;
   /** `null` while the first page loads. */
   readonly entries: readonly SubmissionEntry[] | null;
-  /** The number of messages of the folder, when the counts are known. */
+  /** The number of messages listed, when the counts are known. */
   readonly total: number | null;
+  /** The number of messages of the folder in the other forms, when the counts are known. */
+  readonly elsewhere: number | null;
   readonly selected: SubmissionEntry["submissionId"] | null;
   readonly hasMore: boolean;
   readonly loadingMore: boolean;
@@ -88,12 +92,16 @@ interface MessageListProps {
   readonly onOpen: (submission: SubmissionEntry) => void;
   readonly onMore: () => void;
   readonly onRefresh: () => void;
+  /** Show the messages of every form again. */
+  readonly onAllForms: () => void;
 }
 
 export function MessageList({
   folder,
+  formName,
   entries,
   total,
+  elsewhere,
   selected,
   hasMore,
   loadingMore,
@@ -103,6 +111,7 @@ export function MessageList({
   onOpen,
   onMore,
   onRefresh,
+  onAllForms,
 }: MessageListProps) {
   const { t } = useTranslation();
   return (
@@ -112,7 +121,13 @@ export function MessageList({
     >
       <header className="flex h-14 shrink-0 items-center gap-1 hairline-b px-1">
         <SidebarTrigger />
-        <h1 className="min-w-0 flex-1 truncate text-base font-semibold">
+        <h1
+          className={cn(
+            "text-base font-semibold",
+            // Next to the form, the folder keeps its whole name and the form's is cut.
+            formName === null ? "min-w-0 flex-1 truncate" : "shrink-0",
+          )}
+        >
           {t(`inbox.folders.${folder}`)}
           {total !== null && (
             <span className="ml-2 text-sm font-normal text-muted-foreground tabular-nums">
@@ -120,6 +135,21 @@ export function MessageList({
             </span>
           )}
         </h1>
+        {formName !== null && (
+          <>
+            <Button
+              size="sm"
+              title={formName}
+              aria-label={t("inbox.list.form.remove", { name: formName })}
+              className="ml-2 min-w-0 shrink"
+              onClick={onAllForms}
+            >
+              <span className="truncate">{formName}</span>
+              <X aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+            </Button>
+            <span className="flex-1" />
+          </>
+        )}
         <Button variant="ghost" size="icon" aria-label={t("common.refresh")} onClick={onRefresh}>
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
@@ -135,7 +165,22 @@ export function MessageList({
             {t("inbox.list.loading")}
           </output>
         )}
-        {entries?.length === 0 && (
+        {entries?.length === 0 && formName !== null && (
+          <div className="grid justify-items-start gap-2 px-4 py-10">
+            <h2 className="text-base font-semibold text-balance wrap-anywhere">
+              {t("inbox.list.form.empty.title", { name: formName })}
+            </h2>
+            {elsewhere !== null && (
+              <p className="max-w-prose text-sm text-pretty text-muted-foreground">
+                {t("inbox.list.form.empty.others", { count: elsewhere })}
+              </p>
+            )}
+            <Button className="mt-2" onClick={onAllForms}>
+              {t("inbox.list.form.empty.showAll")}
+            </Button>
+          </div>
+        )}
+        {entries?.length === 0 && formName === null && (
           <div className="grid gap-2 px-4 py-10">
             <h2 className="text-base font-semibold text-balance">
               {t(`inbox.list.empty.${folder}.title`)}

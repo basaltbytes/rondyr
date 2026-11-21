@@ -1,4 +1,5 @@
 import { readdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 import { unstable_getMiniflareWorkerOptions } from "wrangler";
@@ -24,6 +25,42 @@ export default {
 };
 `;
 
+const cloudflareEmailBinding = {
+  name: "CLOUDFLARE_EMAIL",
+  type: "rondyr-email-fixture",
+  plugin: {
+    name: "rondyr-email-fixture",
+    package: fileURLToPath(
+      new URL("./tests/integration/cloudflare-email-binding-fixture.mjs", import.meta.url),
+    ),
+  },
+  options: {},
+};
+const cloudflareEmailDatabase = "00000000-0000-0000-0000-000000000033";
+
+const cloudflareEmailFixture = `
+const received = [];
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/__received") {
+      const recipient = url.searchParams.get("recipient");
+      return Response.json(received.filter(({ to }) => to.includes(recipient)));
+    }
+    const message = await request.json();
+    const recipient = message.to[0];
+    received.push(message);
+    const attempts = received.filter(({ to }) => to[0] === recipient).length;
+    let code;
+    if (recipient.startsWith("rate-limit-once@") && attempts === 1) code = "E_RATE_LIMIT_EXCEEDED";
+    if (recipient.startsWith("suppressed@")) code = "E_RECIPIENT_SUPPRESSED";
+    if (recipient.startsWith("unknown-error@")) code = message.text;
+    if (code !== undefined) return Response.json({ code, message: message.text }, { status: 400 });
+    return Response.json({ messageId: crypto.randomUUID() });
+  },
+};
+`;
+
 export default defineConfig({
   plugins: [
     cloudflareTest(async () => {
@@ -33,24 +70,43 @@ export default defineConfig({
       const files = await readdir("./dist/rondyr", { recursive: true });
       const chunks = files.filter((file) => file !== "index.js" && file.endsWith(".js"));
       const modules = ["index.js", ...chunks].map((path) => ({ type: "ESModule" as const, path }));
+      const worker = {
+        ...workerOptions,
+        rootPath: "./dist/rondyr",
+        modules,
+        outboundService: "webhook-receiver-fixture",
+        tails: ["worker-log-fixture"],
+      };
+      const bindings = {
+        ...wrangler.vars,
+        BETTER_AUTH_SECRET: "workerd-test-only-better-auth-secret-8ea101",
+        BETTER_AUTH_URL: testOrigin,
+        RONDYR_SETUP_TOKEN: testSetupToken,
+        RONDYR_SECRETS_KEY: testSecretsKey,
+        RONDYR_EMAIL_FROM: testEmailFrom,
+      };
       return {
         remoteBindings: false,
         miniflare: {
           compatibilityDate: wrangler.compatibility_date,
           compatibilityFlags: wrangler.compatibility_flags,
-          d1Databases: Object.fromEntries(
-            wrangler.d1_databases.map(({ binding, database_id }) => [binding, database_id]),
-          ),
+          d1Databases: Object.fromEntries([
+            ...wrangler.d1_databases.map(({ binding, database_id }) => [binding, database_id]),
+            ["CLOUDFLARE_EMAIL_DB", cloudflareEmailDatabase],
+          ]),
           queueProducers: Object.fromEntries(
             wrangler.queues.producers.map(({ binding, queue }) => [binding, queue]),
           ),
           serviceBindings: {
             TEST_WORKER: "rondyr-test-app",
+            CLOUDFLARE_EMAIL_WORKER: "rondyr-test-cloudflare-email",
+            CLOUDFLARE_EMAIL_FIXTURE: "cloudflare-email-fixture",
             WEBHOOK_RECEIVER: "webhook-receiver-fixture",
             RESEND_FIXTURE: "resend-fixture",
             WORKERS_AI_FIXTURE: "workers-ai-fixture",
             WORKER_LOGS: "worker-log-fixture",
           },
+          unsafeBindings: [cloudflareEmailBinding],
           bindings: {
             TEST_MIGRATIONS: await readD1Migrations({
               migrationsDir: "database/migrations",
@@ -60,24 +116,29 @@ export default defineConfig({
           // A native worker lets Alchemy's Durable Object proxy dispatch its RPC methods.
           workers: [
             {
-              ...workerOptions,
+              ...worker,
               name: "rondyr-test-app",
-              rootPath: "./dist/rondyr",
-              modules,
               unsafeBindings: [workersAiBinding],
-              outboundService: "webhook-receiver-fixture",
-              tails: ["worker-log-fixture"],
               bindings: {
-                ...wrangler.vars,
-                BETTER_AUTH_SECRET: "workerd-test-only-better-auth-secret-8ea101",
-                BETTER_AUTH_URL: testOrigin,
-                RONDYR_SETUP_TOKEN: testSetupToken,
-                RONDYR_SECRETS_KEY: testSecretsKey,
+                ...bindings,
                 RESEND_API_KEY: testResendKey,
-                RONDYR_EMAIL_FROM: testEmailFrom,
               },
             },
+            {
+              ...worker,
+              name: "rondyr-test-cloudflare-email",
+              d1Databases: { DB: cloudflareEmailDatabase },
+              queueConsumers: {},
+              unsafeBindings: [cloudflareEmailBinding],
+              bindings: { ...bindings, RONDYR_EMAIL_PROVIDER: "cloudflare" },
+            },
             ...externalWorkers(wrangler.compatibility_date),
+            {
+              name: "cloudflare-email-fixture",
+              modules: true,
+              script: cloudflareEmailFixture,
+              compatibilityDate: wrangler.compatibility_date,
+            },
             {
               name: "worker-log-fixture",
               modules: true,

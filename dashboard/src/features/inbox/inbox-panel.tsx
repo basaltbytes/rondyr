@@ -13,7 +13,7 @@ import { listDomains } from "~/lib/organization-domains-client";
 import { productName } from "~/lib/product";
 
 import { InboxSetup } from "./inbox-setup.tsx";
-import { countsAfterMove, totalOf } from "./folder-counts.ts";
+import { countsAfterMove, countsOfForm, totalOf } from "./folder-counts.ts";
 import type { Folder } from "./folder-counts.ts";
 import { InboxSidebar } from "./inbox-sidebar.tsx";
 import type { Section } from "./inbox-sidebar.tsx";
@@ -88,6 +88,8 @@ function InboxView({
 }: InboxViewProps) {
   const { t } = useTranslation();
   const [folder, setFolder] = useState<Folder>("quarantined");
+  // The public ID of the form that the list is narrowed to.
+  const [form, setForm] = useState<string | null>(null);
   const [settings, setSettings] = useState<SettingsSelection | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
@@ -102,7 +104,7 @@ function InboxView({
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the list of messages with the Rondyr API.
   useEffect(() => {
     const request = new AbortController();
-    void listSubmissions(inbox.id, status, null, request.signal).then(
+    void listSubmissions(inbox.id, status, form, null, request.signal).then(
       ({ entries, cursor }) => {
         setFailed(false);
         setListing({ entries, cursor, readAt: Date.now() });
@@ -113,7 +115,7 @@ function InboxView({
     );
     return () => request.abort();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh initiates a new API request. A decision changes the list without one.
-  }, [inbox.id, status, revision]);
+  }, [inbox.id, status, form, revision]);
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the folder counts with the Rondyr API.
   useEffect(() => {
@@ -132,13 +134,17 @@ function InboxView({
   const current = listing?.entries[index] ?? opened;
   const above = listing?.entries[index - 1];
   const below = index < 0 ? undefined : listing?.entries[index + 1];
-  const total = counts === null ? null : totalOf(counts, folder);
+  const inFolder = counts === null ? null : totalOf(counts, folder);
+  const total =
+    counts === null || form === null ? inFolder : totalOf(countsOfForm(counts, form), folder);
+  const formName = inbox.forms.find(({ publicId }) => publicId === form)?.name ?? null;
 
-  function openFolder(next: Folder) {
+  function openFolder(next: Folder, nextForm: string | null) {
     setSettings(null);
     setOpened(null);
-    if (next === folder) return;
+    if (next === folder && nextForm === form) return;
     setFolder(next);
+    setForm(nextForm);
     setListing(null);
     setFailed(false);
   }
@@ -169,6 +175,7 @@ function InboxView({
       const page = await listSubmissions(
         inbox.id,
         status,
+        form,
         listing.cursor,
         new AbortController().signal,
       );
@@ -190,7 +197,9 @@ function InboxView({
       if (before !== undefined) {
         // The API counts every message of the organization, so the counts follow the decision here.
         setCounts((known) =>
-          known === null ? null : countsAfterMove(known, before.status, updated.status),
+          known === null
+            ? null
+            : countsAfterMove(known, before.formPublicId, before.status, updated.status),
         );
       }
       if (folder === "all") {
@@ -216,6 +225,7 @@ function InboxView({
         inbox={inbox}
         counts={counts}
         folder={folder}
+        form={form}
         section={section}
         account={account}
         onInbox={onInbox}
@@ -227,8 +237,10 @@ function InboxView({
           <>
             <MessageList
               folder={folder}
+              formName={formName}
               entries={listing?.entries ?? null}
               total={total}
+              elsewhere={inFolder === null || total === null ? null : inFolder - total}
               selected={current?.submissionId ?? null}
               hasMore={listing !== null && listing.cursor !== null}
               loadingMore={loadingMore}
@@ -238,6 +250,7 @@ function InboxView({
               onOpen={setOpened}
               onMore={() => void loadMore()}
               onRefresh={() => setRevision((value) => value + 1)}
+              onAllForms={() => openFolder(folder, null)}
             />
             <section
               aria-label={t("inbox.reader.label")}

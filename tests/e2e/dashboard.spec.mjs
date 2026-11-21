@@ -448,6 +448,80 @@ test("see a new message in the processing status after refreshing it", async ({
   await expect(status).toContainText(figure(received, 1));
 });
 
+test("narrow a folder to one form, show every form again, and keep the folder unfolded after a reload", async ({
+  dashboard: page,
+  context,
+  externalOrigin,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const contactEndpoint = await publicFormUrl(page, formName);
+  const quotes = "Quote requests";
+  await page.getByRole("button", { name: t("inbox.forms.new"), exact: true }).click();
+  await page.getByRole("textbox", { name: t("inbox.forms.name") }).fill(quotes);
+  await page.getByRole("button", { name: t("inbox.forms.add") }).click();
+  const quotesEndpoint = await publicFormUrl(page, quotes);
+  const site = await context.newPage();
+  const question = "Question sent from the contact form";
+  const quote = "Estimate asked from the second form";
+  await openContact(site, externalOrigin, contactEndpoint);
+  expect((await submitContact(site, contactEndpoint, question)).status()).toBe(202);
+  await openContact(site, externalOrigin, quotesEndpoint);
+  expect((await submitContact(site, quotesEndpoint, quote)).status()).toBe(202);
+  const accepted = t("inbox.folders.accepted");
+  await openSubmission(page, accepted, question);
+  await openMessage(page, quote);
+  const list = page.getByRole("region", { name: t("inbox.list.label") });
+  const fromContact = list.getByRole("button").filter({ hasText: question });
+  const fromQuotes = list.getByRole("button").filter({ hasText: quote });
+  const folderForms = t("inbox.folderForms", { folder: accepted });
+  const unfold = page.getByRole("button", { name: folderForms, exact: true });
+  const forms = page.getByRole("list", { name: folderForms, exact: true });
+  // The folder unfolds once the counts say that two forms have a message in it.
+  await expect(async () => {
+    await list.getByRole("button", { name: t("common.refresh"), exact: true }).click();
+    await expect(unfold).toBeVisible({ timeout: 500 });
+  }).toPass({ timeout: 10_000 });
+
+  await unfold.click();
+  // The name of a form's row ends with the number of its messages.
+  await forms.getByRole("button", { name: new RegExp(`^${RegExp.escape(quotes)}`, "u") }).click();
+  await expect(fromQuotes).toBeVisible();
+  await expect(fromContact).toHaveCount(0);
+
+  await list
+    .getByRole("button", { name: t("inbox.list.form.remove", { name: quotes }), exact: true })
+    .click();
+  await expect(fromContact).toBeVisible();
+  await expect(fromQuotes).toBeVisible();
+
+  await page.reload();
+  await expect(forms).toBeVisible();
+});
+
+test("offer no forms under a folder of an organization that has one form", async ({
+  dashboard: page,
+  context,
+  externalOrigin,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  const site = await context.newPage();
+  await openContact(site, externalOrigin, endpoint);
+  const message = "Request sent to the only form";
+  expect((await submitContact(site, endpoint, message)).status()).toBe(202);
+  const accepted = t("inbox.folders.accepted");
+
+  await openSubmission(page, accepted, message);
+
+  // The count of the folder shows that the counts of its forms have arrived.
+  await expect(folderButton(page, accepted)).toContainText("1");
+  await expect(
+    page.getByRole("button", { name: t("inbox.folderForms", { folder: accepted }), exact: true }),
+  ).toHaveCount(0);
+});
+
 test("keep the sidebar collapsed after a reload", async ({ dashboard: page }) => {
   await createOrganization(page);
   const collapsed = page.getByRole("button", { name: t("sidebar.toggle"), expanded: false });
