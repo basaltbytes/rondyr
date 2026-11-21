@@ -16,15 +16,22 @@ export class SubmissionExports extends Context.Service<
   SubmissionExports,
   {
     /**
-     * The field names of the first `limit` messages of the list, and whether
-     * the list has more messages than that.
+     * The field names of the first `limit` messages of the list, at most
+     * `maxFieldNames` of them, those that the most messages use first; whether
+     * the messages have other field names; and whether the list has more
+     * messages than `limit`.
      */
     readonly outline: (
       organizationId: OrganizationId,
       filter: typeof InboxFilter.Type,
       limit: number,
+      maxFieldNames: number,
     ) => Effect.Effect<
-      { readonly fieldNames: ReadonlyArray<string>; readonly truncated: boolean },
+      {
+        readonly fieldNames: ReadonlyArray<string>;
+        readonly moreFieldNames: boolean;
+        readonly truncated: boolean;
+      },
       StorageUnavailable
     >;
     readonly page: (

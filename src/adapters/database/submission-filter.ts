@@ -39,3 +39,14 @@ export function filterConditions(
     ],
   };
 }
+
+/**
+ * The condition that starts a page after `cursor`, the reception time and ID of
+ * the last message of the previous page. Without the `? IS NULL OR` form, SQLite
+ * starts its read of the index at the cursor instead of at the newest message.
+ */
+export function afterCursor(cursor: readonly [number, string] | null) {
+  return cursor === null
+    ? { sql: "", bindings: [] }
+    : { sql: "AND (s.received_at, s.id) < (?, ?)", bindings: [cursor[0], cursor[1]] };
+}

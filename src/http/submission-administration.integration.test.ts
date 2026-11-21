@@ -9,8 +9,8 @@ import { submissionRetentionLive } from "../adapters/database/submission-retenti
 import { dayMillis } from "../domain/organizations/retention.ts";
 import { InboxPage } from "../domain/submissions/inbox.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
-import { purgeExpiredSubmissions } from "../jobs/retention-purge.ts";
-import { SubmissionRetention } from "../ports/submission-retention.ts";
+import { purgeExpiredSubmissions, purgeOnTheHour } from "../jobs/retention-purge.ts";
+import type { SubmissionRetention } from "../ports/submission-retention.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
@@ -275,6 +275,42 @@ it.live(
   60_000,
 );
 
+it.live("caps the CSV at 100 field columns and puts the other fields in other_fields", () =>
+  Effect.gen(function* () {
+    const admin = yield* signIn;
+    const inbox = yield* createInbox("Many field names", admin);
+    // Visitors choose the names: 5 messages of 32 names each have 160 of them.
+    const messages = Array.from({ length: 5 }, (_, message) => ({
+      fields: Object.fromEntries(
+        Array.from({ length: 32 }, (__, field) => [`m${message}f${field}`, `v${message}-${field}`]),
+      ),
+      receivedAt: message + 1,
+      status: "accepted" as const,
+    }));
+    yield* seed(inbox.id, inbox.forms[0]?.publicId ?? "", messages);
+
+    const response = yield* call(
+      "GET",
+      `/api/organizations/${inbox.id}/submission-export?format=csv`,
+      undefined,
+      admin,
+    );
+    const [header = "", ...lines] = (yield* bodyText(response)).split("\r\n");
+    const columns = header.split(",");
+    const rows = lines.filter((line) => line !== "");
+
+    assert.strictEqual(response.status, 200);
+    assert.lengthOf(columns, 7 + 100 + 1);
+    assert.strictEqual(columns.at(-1), "other_fields");
+    assert.lengthOf(rows, 5);
+    // Each message keeps all 32 of its fields, in their columns or in other_fields.
+    const all = rows.join("\n");
+    for (const message of messages) {
+      for (const value of Object.values(message.fields)) assert.include(all, value);
+    }
+  }),
+);
+
 const countIn = (table: string, column: string, value: string) =>
   Effect.promise(() =>
     env.DB.prepare(`SELECT count(*) AS total FROM ${table} WHERE ${column} = ?`)
@@ -452,13 +488,9 @@ const withRetention = <A, E>(effect: Effect.Effect<A, E, SubmissionRetention>) =
     ),
   );
 
-const purgeAt = (now: number) =>
-  withRetention(
-    Effect.gen(function* () {
-      const retention = yield* SubmissionRetention;
-      return yield* retention.purgeExpired(now, 500);
-    }),
-  );
+const purgeAt = (now: number) => withRetention(purgeExpiredSubmissions(now));
+
+const purgeNow = Effect.flatMap(Clock.currentTimeMillis, purgeAt);
 
 const remaining = (organizationId: string) =>
   Effect.promise(() =>
@@ -569,11 +601,11 @@ it.live(
       `).run(),
       );
 
-      const interrupted = yield* Effect.exit(withRetention(purgeExpiredSubmissions()));
+      const interrupted = yield* Effect.exit(purgeNow);
       const afterFirst = yield* remaining(inbox.id);
       const loggedFirst = yield* countIn("submission_deletions", "organization_id", inbox.id);
       yield* Effect.promise(() => env.DB.prepare("DROP TRIGGER interrupt_purge").run());
-      const resumed = yield* withRetention(purgeExpiredSubmissions());
+      const resumed = yield* purgeNow;
       const afterSecond = yield* remaining(inbox.id);
       const logged = yield* Effect.promise(() =>
         env.DB.prepare(
@@ -591,6 +623,105 @@ it.live(
       assert.deepEqual(logged, { total: 600, distinct_total: 600 });
     }),
   30_000,
+);
+
+/** Store `count` accepted messages received at 1 ms, 2 ms… with ID prefix `prefix`. */
+const seedAccepted = Effect.fnUntraced(function* (
+  organizationId: string,
+  publicId: string,
+  prefix: string,
+  count: number,
+) {
+  const formId = yield* formIdOf(publicId);
+  yield* Effect.promise(() =>
+    env.DB.batch([
+      env.DB.prepare(`
+        WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?4)
+        INSERT INTO submissions (id, organization_id, form_id, fields, received_at)
+        SELECT printf('%s-0000-4000-8000-%012x', ?3, i), ?1, ?2, json_object('message', 'old ' || i), i
+        FROM n
+      `).bind(organizationId, formId, prefix, count),
+      env.DB.prepare(`
+        INSERT INTO submission_inbox (submission_id, version, status)
+        SELECT id, 1, 'accepted' FROM submissions WHERE organization_id = ?
+      `).bind(organizationId),
+    ]),
+  );
+});
+
+it.live(
+  "gives every organization a batch before a large backlog gets another, and stops after 20",
+  () =>
+    Effect.gen(function* () {
+      const admin = yield* signIn;
+      const backlog = yield* createInbox("Purge backlog", admin);
+      const small = yield* createInbox("Purge small", admin);
+      for (const inbox of [backlog, small]) {
+        const saved = yield* call(
+          "PUT",
+          `/api/organizations/${inbox.id}/retention`,
+          { accepted: 1, quarantine: null },
+          admin,
+        );
+        assert.strictEqual(saved.status, 200);
+      }
+      yield* seedAccepted(backlog.id, backlog.forms[0]?.publicId ?? "", "baccbacc", 10_500);
+      yield* seedAccepted(small.id, small.forms[0]?.publicId ?? "", "5a115a11", 10);
+
+      const deleted = yield* purgeNow;
+      const left = yield* Effect.forEach([backlog.id, small.id], (id) =>
+        countIn("submissions", "organization_id", id),
+      );
+
+      // The small organization is done in its first turn; the backlog keeps
+      // whole batches for the next runs.
+      assert.deepEqual(left[1], 0);
+      assert.isAtMost(deleted, 20 * 500);
+      assert.isAtLeast(Number(left[0]), 500);
+      assert.strictEqual((10_500 - Number(left[0])) % 500, 0);
+      assert.strictEqual(deleted, 10_500 - Number(left[0]) + 10);
+      for (const inbox of [backlog, small]) {
+        const reset = yield* call(
+          "PUT",
+          `/api/organizations/${inbox.id}/retention`,
+          { accepted: null, quarantine: null },
+          admin,
+        );
+        assert.strictEqual(reset.status, 200);
+      }
+    }),
+  60_000,
+);
+
+it.live("purges in the run scheduled for the first minute of an hour only", () =>
+  Effect.gen(function* () {
+    const admin = yield* signIn;
+    const inbox = yield* createInbox("Hourly purge", admin);
+    const saved = yield* call(
+      "PUT",
+      `/api/organizations/${inbox.id}/retention`,
+      { accepted: 1, quarantine: null },
+      admin,
+    );
+    assert.strictEqual(saved.status, 200);
+    yield* seedAccepted(inbox.id, inbox.forms[0]?.publicId ?? "", "40a140a1", 3);
+    const now = yield* Clock.currentTimeMillis;
+    const hour = Math.floor(now / 3_600_000) * 3_600_000;
+
+    yield* withRetention(purgeOnTheHour(hour + 60_000));
+    const afterLateRun = yield* countIn("submissions", "organization_id", inbox.id);
+    yield* withRetention(purgeOnTheHour(hour));
+    const afterHourlyRun = yield* countIn("submissions", "organization_id", inbox.id);
+
+    assert.deepEqual([afterLateRun, afterHourlyRun], [3, 0]);
+    const reset = yield* call(
+      "PUT",
+      `/api/organizations/${inbox.id}/retention`,
+      { accepted: null, quarantine: null },
+      admin,
+    );
+    assert.strictEqual(reset.status, 200);
+  }),
 );
 
 it.live("refuses search export, deletion and retention of another organization", () =>
