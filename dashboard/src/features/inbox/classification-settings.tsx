@@ -87,7 +87,7 @@ function PolicyForm({
           <TextField
             key={name}
             label={t(`inbox.policy.thresholds.${name}`)}
-            hint={name === "ambiguous" ? t("inbox.policy.order") : undefined}
+            hint={t(`inbox.policy.hints.${name}`)}
             name={name}
             type="number"
             min={0}

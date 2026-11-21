@@ -332,7 +332,12 @@
         "solicitation": "Démarchage commercial",
         "lowRelevance": "Faible pertinence"
       },
-      "order": "Saisissez une valeur de 0 à 1, inférieure ou égale au seuil de spam probable.",
+      "hints": {
+        "probableSpam": "Un message dont le score de spam atteint ou dépasse cette valeur est mis à vérifier comme indésirable probable.",
+        "ambiguous": "Un message dont le score de spam atteint ou dépasse cette valeur, sans atteindre le seuil de spam probable, est mis à vérifier ; cette valeur ne peut pas dépasser ce seuil.",
+        "solicitation": "Un message dont le score de démarchage commercial dépasse cette valeur est mis à vérifier.",
+        "lowRelevance": "Un message dont le score de pertinence est inférieur à cette valeur est mis à vérifier, ou accepté avec l’étiquette Hors sujet si vous acceptez les soumissions hors sujet."
+      },
       "offTopic": "Soumissions hors sujet",
       "review": "Mettre en quarantaine",
       "accept": "Accepter avec l’étiquette Hors sujet",
