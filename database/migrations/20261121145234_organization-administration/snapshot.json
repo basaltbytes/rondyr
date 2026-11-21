@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "1846ce05-deea-4994-8239-d53fdf167af7",
+  "id": "9500d57e-822b-4ce1-bb42-2d7f18c4bcee",
   "prevIds": [
     "2472e7b2-bda3-4477-9104-14e76811f586"
   ],
@@ -80,6 +80,10 @@
     },
     {
       "name": "outbox_events",
+      "entityType": "tables"
+    },
+    {
+      "name": "password_resets",
       "entityType": "tables"
     },
     {
@@ -1220,7 +1224,7 @@
       "type": "text",
       "notNull": true,
       "autoincrement": false,
-      "default": "'reviewer'",
+      "default": "'admin'",
       "generated": null,
       "entityType": "columns"
     },
@@ -1317,6 +1321,56 @@
     {
       "table": "outbox_events",
       "name": "handed_off_at",
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "password_resets",
+      "name": "token_hash",
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "password_resets",
+      "name": "user_id",
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "password_resets",
+      "name": "created_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "password_resets",
+      "name": "expires_at",
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "entityType": "columns"
+    },
+    {
+      "table": "password_resets",
+      "name": "used_at",
       "type": "integer",
       "notNull": false,
       "autoincrement": false,
@@ -1803,6 +1857,24 @@
       "entityType": "indexes"
     },
     {
+      "table": "password_resets",
+      "name": "password_resets_user_idx",
+      "columns": [
+        {
+          "value": "user_id",
+          "isExpression": false
+        },
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "entityType": "indexes"
+    },
+    {
       "table": "submission_deletions",
       "name": "submission_deletions_organization_idx",
       "columns": [
@@ -2175,6 +2247,21 @@
       "entityType": "fks"
     },
     {
+      "table": "password_resets",
+      "name": "fk_password_resets_user_id_auth_users_id_fk",
+      "columns": [
+        "user_id"
+      ],
+      "tableTo": "auth_users",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "entityType": "fks"
+    },
+    {
       "table": "submission_deletions",
       "name": "fk_submission_deletions_organization_id_organizations_id_fk",
       "columns": [
@@ -2411,6 +2498,15 @@
       "entityType": "pks"
     },
     {
+      "table": "password_resets",
+      "name": "password_resets_pk",
+      "columns": [
+        "token_hash"
+      ],
+      "nameExplicit": false,
+      "entityType": "pks"
+    },
+    {
       "table": "submission_deletions",
       "name": "submission_deletions_pk",
       "columns": [
@@ -2513,6 +2609,18 @@
       "table": "organizations",
       "name": "organizations_id_not_null",
       "value": "\"id\" is not null",
+      "entityType": "checks"
+    },
+    {
+      "table": "password_resets",
+      "name": "password_resets_token_hash_not_null",
+      "value": "\"token_hash\" is not null",
+      "entityType": "checks"
+    },
+    {
+      "table": "submission_deletions",
+      "name": "submission_deletions_submission_id_not_null",
+      "value": "\"submission_id\" is not null",
       "entityType": "checks"
     }
   ],
