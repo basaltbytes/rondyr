@@ -24,7 +24,7 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Réception JSON, `application/x-www-form-urlencoded` et `multipart/form-data` sans fichier | Fait, y compris JSON depuis un navigateur sur une autre origine | |
 | Limites à l’entrée | Taille, schéma, 5 par minute et par client sur un formulaire, 30 par minute et par formulaire, champ piège | #7 pour Turnstile et les quotas |
 | Enregistrement durable et outbox | Fait | |
-| Classification et quarantaine | Fait, seuils fixes | #6, #15 |
+| Classification et quarantaine | Seuils par classificateur, politique par organisation | #15 |
 | Inbox et revue humaine | Fait | #9 |
 | Livraisons : tables, file, tentatives et reprises | Fait | |
 | Historique des livraisons, relance manuelle, envoi d’essai | Fait, dans le dashboard | #11 pour les rôles |
@@ -133,7 +133,7 @@ Le motif d’entrée est une colonne de `submissions`, écrite par la même inst
 
 ### Classification durable
 
-La politique `Classification` démarre la saga `ClassifySubmission` à chaque `ClassificationRequested`. La saga appelle le classificateur jusqu’à 3 fois, avec 10 puis 30 secondes d’attente et un délai maximal de 12 secondes par appel. Une erreur non réessayable ou l’épuisement des tentatives produit `SubmissionQuarantined` avec le motif `classification-error`. Les étapes sont des activités durables : un redémarrage du Durable Object reprend la saga là où elle s’est arrêtée.
+La politique `Classification` démarre la saga `ClassifySubmission` à chaque `ClassificationRequested`. La saga lit la politique de classification de l’organisation, puis appelle le classificateur avec un délai maximal de 12 secondes par appel. Elle tente chacune de ces deux étapes jusqu’à 3 fois, avec 10 puis 30 secondes d’attente. Une panne de D1 pendant la lecture de la politique se réessaie ; une valeur inconnue de `RONDYR_CLASSIFIER` ou une politique enregistrée illisible ne se réessaie pas. Une erreur non réessayable ou l’épuisement des tentatives produit `SubmissionQuarantined` avec le motif `classification-error`. Les étapes sont des activités durables : un redémarrage du Durable Object reprend la saga là où elle s’est arrêtée.
 
 ### Livraison
 
@@ -190,20 +190,22 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 
 ### Règles de décision
 
-`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 5`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur. La version 5 demande le score de démarchage et met en quarantaine un message dont le score dépasse 0,50.
+`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 6`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur. La version 5 demande le score de démarchage et met en quarantaine un message dont le score dépasse 0,50. La version 6 ajoute les politiques par organisation et relève le seuil de faible pertinence par défaut.
 
-| Condition | Résultat |
+| Condition avec les réglages par défaut | Résultat |
 | --- | --- |
 | Échec du classificateur ou score de démarchage manquant | Quarantaine, motif `classification-error` |
 | Spam ≥ 0,70 | Quarantaine, motif `probable-spam` |
 | Spam ≥ 0,30 | Quarantaine, motif `ambiguous` |
 | Démarchage > 0,50 | Quarantaine, motif `solicitation` |
-| Contexte configuré et pertinence < 0,35 | Quarantaine, motif `low-relevance` |
+| Contexte configuré et pertinence < 0,50 (Jev) ou < 0,45 (OpenAI Decisions) | Quarantaine, motif `low-relevance` |
 | Aucun motif | Acceptation automatique |
 
-Les deux classificateurs partagent ces seuils. La mesure du 20 novembre (#31) montre que les scores des messages légitimes et ceux des indésirables manqués se recouvrent. Le seuil de démarchage vient de la mesure du même jour (#40) : avec Jev, aucun message légitime ne dépasse 0,32 sur le corpus synthétique ni 0,21 sur le corpus réel de basaltbytes.com, et les démarchages visés obtiennent au moins 0,93. Deux mesures du même corpus diffèrent de quelques centièmes. Avec OpenAI Decisions, les messages légitimes restent sous 0,05 et les démarchages entre 0,95 et 1. Le démarchage ne mène jamais à un refus : le message attend en quarantaine qu’un relecteur l’accepte ou l’archive. `pnpm evaluate` rejoue les soumissions d’un corpus dans l’ordre de réception, applique la règle de répétition et appelle les deux adaptateurs pour les occurrences qui doivent être scorées. Le rapport compte les occurrences représentées par `duplicates`. #6 prévoit des seuils par classificateur et une politique par organisation. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
+L’organisation peut remplacer les quatre seuils ensemble et choisir indépendamment que les messages hors sujet soient traités en mode `review` ou `accept`. Les seuils vont de 0 à 1 inclus, et le seuil ambigu doit être inférieur ou égal à celui du spam probable. Le mode `accept` accepte et étiquette `off-topic` un message dont le seul motif de quarantaine serait la faible pertinence. La boîte de réception affiche l’étiquette, et les livraisons suivent le circuit habituel.
 
-Chaque événement de décision enregistre la version des règles et, quand le classificateur a répondu, les scores et l’identifiant du modèle.
+Le workflow lit la politique et le classificateur du stage au début de l’analyse. Il utilise cette politique pendant les tentatives de classement et la transmet à la commande `RecordClassification`. Les décisions automatiques enregistrent la politique résolue, la version des règles et les scores quand le modèle répond. Si la politique reste indisponible après les tentatives, ou si elle est illisible, la soumission attend en quarantaine avec le motif `classification-error`. Les événements enregistrés avant la version 6 restent lisibles.
+
+Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représentées par `duplicates`. La mesure du 21 novembre porte sur trois passages du corpus synthétique et du corpus réel du mainteneur ; avec ces seuils, aucun message légitime n’est mis en quarantaine. Avec Jev, les lignes de spam acceptées passent de 5 à 3 sur le corpus synthétique et de 7 à 5 sur le corpus réel. Avec OpenAI Decisions, elles passent de 4 à 2 sur le corpus synthétique et restent à 3 sur le corpus réel. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
 
 ### Quarantaine sans appel au modèle
 
@@ -251,11 +253,12 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `organizations` | `id`, `name` |
 | `organization_members` | `(organization_id, user_id)`, sans rôle |
 | `organization_domains` | `(organization_id, domain)`, jusqu’à dix par organisation |
+| `organization_classification_policies` | Réglages de classification personnalisés, au plus une ligne par organisation |
 | `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context`, `status` (`active` par défaut, ou `suspended`), `success_url` (facultative, normalisée par `parseSuccessUrl`), `honeypot_field` (facultatif, nom du champ piège) |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` est normalisée : schéma, hôte et port éventuel, sans chemin ni barre oblique finale |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (facultatif), `sender_fingerprint` et `content_fingerprint` (facultatifs), `prior_same_sender` et `prior_same_content` |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
-| `submission_inbox` | `submission_id`, `version`, `status`, `reason` ; écrite par la projection |
+| `submission_inbox` | `submission_id`, `version`, `status`, `reason`, `label` (facultatif) |
 | `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON lu par le fournisseur du type), `active`, `created_at`. Pour un webhook, `configuration` contient `url`, `secret` (chiffré) et `previousSecret` (`null`, ou le secret chiffré précédent et la fin de sa validité). Pour un e-mail, elle contient `recipients`, la liste des destinataires |
 | `deliveries` | `id` (UUID v4 stable), `submission_id`, `target_id`, `status`, `attempt_count` (tentatives de la série en cours), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at` ; unique sur `(submission_id, target_id)` |
 | `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numérote les tentatives sur tout l’historique, relances manuelles comprises |
@@ -361,6 +364,9 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `GET /api/organizations/:organizationId/domains` | Liste les domaines déclarés par ordre alphabétique |
 | `POST /api/organizations/:organizationId/domains` | Ajoute un domaine (`{"domain":…}`). Répond `201` pour une création, `200` pour un doublon, `400` pour un nom invalide ou `409` si la liste est pleine |
 | `DELETE /api/organizations/:organizationId/domains?domain=…` | Retire un domaine et répond `204`, ou `404` si le domaine n’est pas déclaré |
+| `GET /api/organizations/:organizationId/classification-policy` | Renvoie le classificateur, sa politique par défaut et les réglages de l’organisation, ou `null` si elle utilise les réglages par défaut |
+| `PUT /api/organizations/:organizationId/classification-policy` | Remplace les réglages de l’organisation. Accepte `thresholds` et `offTopic`, ensemble ou seuls. Répond `204`, ou `400` pour un réglage invalide |
+| `DELETE /api/organizations/:organizationId/classification-policy` | Rétablit les réglages du classificateur et répond `204` |
 | `POST /api/organizations/:organizationId/forms` | Ajoute un formulaire actif (`{"name":…,"businessContext":…}`, contexte facultatif) : `201` et le formulaire |
 | `PATCH /api/organizations/:organizationId/forms/:publicId` | Renomme le formulaire, modifie son contexte métier, ou les deux (`{"name":…}`, `{"businessContext":…}`) ; un contexte vide l’efface |
 | `POST /api/organizations/:organizationId/forms/:publicId/suspend` ou `/reactivate` | Suspend ou réactive le formulaire |
@@ -553,11 +559,11 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 
 ### Évaluation du filtrage
 
-Aucune mesure n’est encore enregistrée. Le critère qui prime est de ne perdre aucune demande réelle.
+Les mesures consignées dans #31 et #40 donnent les premiers résultats sur des soumissions réelles. Le critère qui prime est de ne perdre aucune demande réelle.
 
-`pnpm evaluate`, dans `evals/`, lit un corpus JSON Lines étiqueté (`legitimate`, `spam`, `ambiguous`, `off-topic`) et le contexte métier du formulaire, dans un fichier `.context.txt` à côté. Il appelle `scoreWithJev` et `scoreWithOpenAi` par l’API REST de Workers AI (`POST /ai/run`), avec les options de `src/adapters/ai/gateway.ts` transmises en en-têtes `cf-aig-*`, puis applique `reviewReason`. Le rapport donne par classificateur les messages légitimes mis en quarantaine, le spam accepté, la matrice entre étiquette et décision, pondérée ou non par `duplicates`, la précision et le rappel de la quarantaine du spam, la latence, le coût estimé, les échecs et un balayage des seuils calculé sur les scores enregistrés. Il ne contient aucune valeur de champ. Un cache par classificateur, modèle, version des règles, ligne et empreinte de l’entrée évite de payer deux fois le même appel.
+`pnpm evaluate`, dans `evals/`, lit un corpus JSON Lines étiqueté (`legitimate`, `spam`, `ambiguous`, `off-topic`) et le contexte métier du formulaire, dans un fichier `.context.txt` à côté. Il appelle `scoreWithJev` et `scoreWithOpenAi` par l’API REST de Workers AI (`POST /ai/run`), avec les options de `src/adapters/ai/gateway.ts` transmises en en-têtes `cf-aig-*`, puis applique `reviewReason`. Le rapport donne par classificateur les messages légitimes mis en quarantaine, le spam accepté, la matrice entre étiquette et décision, pondérée ou non par `duplicates`, la précision et le rappel de la quarantaine du spam, la latence, le coût estimé, les échecs et un balayage des seuils calculé sur les scores enregistrés. Il ne contient aucune valeur de champ. Un cache par classificateur, modèle, version du calcul des scores, ligne et empreinte de l’entrée évite de payer deux fois le même appel.
 
-Le corpus synthétique `evals/corpus/synthetic.jsonl`, versionné, couvre les quatre étiquettes en plusieurs langues. Les corpus réels restent dans `evals/corpus/local/`, ignoré par Git ; le contenu des messages part chez le fournisseur du modèle, comme en production. Le mode `--dry` remplace Workers AI par des scores factices ; les tests du harnais tournent dans Node, sans réseau, dans le projet Vitest `evals`. Le chemin REST n’a pas encore été vérifié contre l’API réelle. Voir [docs/evaluation.md](docs/evaluation.md).
+Le corpus synthétique `evals/corpus/synthetic.jsonl`, versionné, couvre les quatre étiquettes en plusieurs langues. Les corpus réels restent dans `evals/corpus/local/`, ignoré par Git. Pour toute mesure via Workers AI, le contenu des messages part chez le fournisseur du modèle, comme en production. Le mode `--dry` remplace Workers AI par des scores factices. Les tests du harnais tournent dans Node, sans réseau, dans le projet Vitest `evals`. Voir [docs/evaluation.md](docs/evaluation.md).
 
 ## 11. Déploiement et exploitation
 

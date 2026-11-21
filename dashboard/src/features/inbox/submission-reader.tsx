@@ -168,6 +168,11 @@ export function SubmissionReader({
               {entry.reason === null
                 ? t(`inbox.statuses.${entry.status}`)
                 : t(`status.reasons.${entry.reason}`)}
+              {entry.label === "off-topic" && (
+                <span className="ml-2 font-normal text-muted-foreground">
+                  {t("inbox.offTopicLabel")}
+                </span>
+              )}
             </p>
             <div>
               <h2 className="text-xl/snug font-semibold wrap-anywhere">

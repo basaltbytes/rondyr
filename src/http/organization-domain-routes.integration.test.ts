@@ -3,78 +3,14 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
-import { testOrigin as origin, testSetupToken } from "../../tests/integration/auth-fixture.ts";
+import { call, createInbox, json, signIn } from "../../tests/integration/organization-fixture.ts";
 import { ClassifierInput } from "../domain/submissions/classifier-input.ts";
-import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
-const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
-const readInboxes = Schema.decodeUnknownEffect(Schema.Array(InboxOrganizationWithForms));
 const readDomains = Schema.decodeUnknownEffect(Schema.Array(Schema.String));
 const readStates = Schema.decodeUnknownPromise(Schema.Array(ClassifierInput));
-const json = (response: Response) => Effect.promise(() => response.json());
 const statuses = (responses: readonly Response[]) => responses.map(({ status }) => status);
-
-const call = Effect.fnUntraced(function* (
-  method: string,
-  path: string,
-  data?: Schema.Json,
-  extra?: HeadersInit,
-) {
-  const headers = new Headers(extra);
-  headers.set("origin", origin);
-  const url = new URL(path, origin);
-  if (data === undefined)
-    return yield* Effect.promise(() => env.TEST_WORKER.fetch(url, { method, headers }));
-  headers.set("content-type", "application/json");
-  const body = yield* encode(data);
-  return yield* Effect.promise(() => env.TEST_WORKER.fetch(url, { method, headers, body }));
-});
-
-const signIn = Effect.runSync(
-  Effect.cached(
-    Effect.gen(function* () {
-      const credentials = {
-        email: "domain-admin@example.test",
-        password: "domain-admin-test-password",
-      };
-      const setup = yield* call(
-        "POST",
-        "/api/setup",
-        { name: "Domain admin", ...credentials },
-        {
-          authorization: `Bearer ${testSetupToken}`,
-        },
-      );
-      assert.strictEqual(setup.status, 201);
-      const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
-      assert.strictEqual(session.status, 200);
-      const cookie = session.headers
-        .getSetCookie()
-        .map((value) => value.split(";", 1)[0])
-        .join("; ");
-      return { cookie };
-    }),
-  ),
-);
-
-const createInbox = Effect.fnUntraced(function* (organizationName: string, headers: HeadersInit) {
-  const created = yield* call(
-    "POST",
-    "/api/organizations",
-    { organizationName, formName: "Contact", businessContext: "" },
-    headers,
-  );
-  assert.strictEqual(created.status, 201);
-  const inboxes = yield* call("GET", "/api/organizations", undefined, headers).pipe(
-    Effect.flatMap(json),
-    Effect.flatMap(readInboxes),
-  );
-  const inbox = inboxes.find(({ name }) => name === organizationName);
-  if (inbox === undefined) return assert.fail("Expected the new organization");
-  return inbox;
-});
 
 const domainsOf = (organizationId: string) => `/api/organizations/${organizationId}/domains`;
 const removePath = (path: string, domain: string) => `${path}?${new URLSearchParams({ domain })}`;

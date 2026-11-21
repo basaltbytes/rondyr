@@ -85,6 +85,22 @@ export const organizationDomains = sqliteTable(
   (table) => [primaryKey({ columns: [table.organizationId, table.domain] })],
 );
 
+export const organizationClassificationPolicies = sqliteTable(
+  "organization_classification_policies",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    policy: text().notNull(),
+  },
+  (table) => [
+    check(
+      "classification_policies_organization_id_not_null",
+      sql`${table.organizationId} is not null`,
+    ),
+  ],
+);
+
 export const submissions = sqliteTable(
   "submissions",
   {
@@ -143,6 +159,7 @@ export const submissionInbox = sqliteTable("submission_inbox", {
   version: integer().notNull(),
   status: text().notNull(),
   reason: text(),
+  label: text(),
 });
 
 export const notificationTargets = sqliteTable(

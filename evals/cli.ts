@@ -3,6 +3,7 @@ import { Console, DateTime, Effect, FileSystem, Layer, Option, Path, Schema } fr
 import { Argument, Command, Flag } from "effect/cli";
 import { Digest } from "effect/crypto";
 
+import { ClassificationPolicy } from "../src/domain/submissions/classification-policy.ts";
 import { fileCache } from "./cache.ts";
 import type { ClassifierName } from "./classifiers.ts";
 import { type Corpus, loadCorpus } from "./corpus.ts";
@@ -41,6 +42,13 @@ const refresh = Flag.Boolean("refresh").pipe(
   Flag.withDefault(false),
   Flag.withDescription("Call the model again even when the cache has a result"),
 );
+const policy = Flag.String("policy").pipe(
+  Flag.optional,
+  Flag.withDescription("Path to a JSON classification policy to use in place of the defaults"),
+);
+const decodePolicy = Schema.decodeUnknownEffect(Schema.fromJsonString(ClassificationPolicy), {
+  onExcessProperty: "error",
+});
 const out = Flag.String("out").pipe(
   Flag.withDefault("evals/out"),
   Flag.withDescription("Directory for the cache and the reports"),
@@ -54,7 +62,7 @@ function limited(corpus: Corpus, count: Option.Option<number>): Corpus {
 
 const evaluation = Command.make(
   "evaluate",
-  { corpusFile, classifier, dry, concurrency, limit, refresh, out },
+  { corpusFile, classifier, dry, concurrency, limit, refresh, out, policy },
   Effect.fn("Evaluation.command")(function* (flags) {
     if (flags.concurrency < 1 || flags.concurrency > 16) {
       return yield* InvalidOption.make({ summary: "--concurrency must be between 1 and 16." });
@@ -64,6 +72,9 @@ const evaluation = Command.make(
     }
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const override = Option.isNone(flags.policy)
+      ? undefined
+      : yield* fs.readFileString(flags.policy.value).pipe(Effect.flatMap(decodePolicy));
     const loaded = yield* loadCorpus(flags.corpusFile);
     const corpus = limited(loaded, flags.limit);
     const names: readonly ClassifierName[] =
@@ -84,6 +95,7 @@ const evaluation = Command.make(
       runs,
       flags.dry ? "dry" : "workers-ai",
       DateTime.formatIso(now),
+      override,
     );
     const base = path.join(flags.out, `${corpus.name}${flags.dry ? ".dry" : ""}.report`);
     const json = yield* encodeReport(report);

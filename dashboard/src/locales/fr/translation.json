@@ -104,6 +104,7 @@
       "destinations": "Destinations",
       "origins": "Origines autorisées",
       "domains": "Domaines de l’organisation",
+      "classification": "Classification",
       "organization": "Nouvelle organisation"
     },
     "statuses": {
@@ -113,6 +114,7 @@
       "quarantined": "À vérifier",
       "archived": "Archivé"
     },
+    "offTopicLabel": "Hors sujet",
     "unknownSender": "Expéditeur inconnu",
     "organizations": {
       "switcher": "Organisation : {{name}}. Changer d’organisation",
@@ -314,6 +316,38 @@
       "retry": "Réessayer",
       "addFailed": "Impossible d’ajouter le domaine. Réessayez.",
       "removeFailed": "Impossible de retirer le domaine. Réessayez."
+    },
+    "policy": {
+      "description": "{{classifier}} analyse les soumissions de cette organisation. Les réglages personnalisés s’appliquent aux nouvelles analyses.",
+      "models": {
+        "jev": "Jev",
+        "openai": "OpenAI Decisions"
+      },
+      "thresholdMode": "Seuils",
+      "defaults": "Utiliser les réglages du classificateur",
+      "custom": "Personnaliser les seuils",
+      "thresholds": {
+        "probableSpam": "Spam probable",
+        "ambiguous": "Spam ambigu",
+        "solicitation": "Démarchage commercial",
+        "lowRelevance": "Faible pertinence"
+      },
+      "hints": {
+        "probableSpam": "Un message dont le score de spam atteint ou dépasse cette valeur est mis à vérifier comme indésirable probable.",
+        "ambiguous": "Un message dont le score de spam atteint ou dépasse cette valeur, sans atteindre le seuil de spam probable, est mis à vérifier ; cette valeur ne peut pas dépasser ce seuil.",
+        "solicitation": "Un message dont le score de démarchage commercial dépasse cette valeur est mis à vérifier.",
+        "lowRelevance": "Un message dont le score de pertinence est inférieur à cette valeur est mis à vérifier, ou accepté avec l’étiquette Hors sujet si vous acceptez les soumissions hors sujet."
+      },
+      "offTopic": "Soumissions hors sujet",
+      "review": "Mettre en quarantaine",
+      "accept": "Accepter avec l’étiquette Hors sujet",
+      "save": "Enregistrer les réglages de classification",
+      "saving": "Enregistrement…",
+      "saved": "Réglages enregistrés.",
+      "invalid": "Vérifiez que les seuils sont compris entre 0 et 1 et que le seuil de spam ambigu ne dépasse pas celui de spam probable.",
+      "saveFailed": "Impossible d’enregistrer les réglages de classification. Réessayez.",
+      "loadFailed": "Impossible de charger les réglages de classification.",
+      "retry": "Réessayer"
     },
     "origins": {
       "label": "Origines autorisées du formulaire {{name}}",

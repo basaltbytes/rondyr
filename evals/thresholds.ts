@@ -1,5 +1,9 @@
 import { Schema } from "effect";
 
+import {
+  type ClassificationPolicy,
+  ClassificationThresholds,
+} from "../src/domain/submissions/classification-policy.ts";
 import { ClassificationReason } from "../src/domain/submissions/classification.ts";
 
 export const Decision = Schema.Literals([
@@ -10,7 +14,26 @@ export const Decision = Schema.Literals([
 
 export type Decision = typeof Decision.Type;
 
-/** Thresholds from 0.05 to 0.95 in steps of 0.05, built from integers to avoid drift. */
-export const thresholdGrid = Array.from({ length: 19 }, (_, index) => (index + 1) * 5).map(
-  (hundredths) => hundredths / 100,
-);
+/** Include the active value even when it falls between grid points. */
+function grid(active: number) {
+  const points = Array.from({ length: 21 }, (_, index) => index / 20);
+  return [...new Set([...points, active])].toSorted((a, b) => a - b);
+}
+
+export function sweepPolicies(policy: ClassificationPolicy) {
+  const { thresholds } = policy;
+  const variant = (change: Partial<typeof ClassificationThresholds.Encoded>) => ({
+    ...policy,
+    thresholds: ClassificationThresholds.make({ ...thresholds, ...change }),
+  });
+  return {
+    spam: grid(thresholds.probableSpam).flatMap((probableSpam) =>
+      grid(thresholds.ambiguous)
+        .filter((ambiguous) => ambiguous <= probableSpam)
+        .map((ambiguous) => variant({ probableSpam, ambiguous })),
+    ),
+    relevance: grid(thresholds.lowRelevance).map((lowRelevance) => variant({ lowRelevance })),
+    solicitation: grid(thresholds.solicitation).map((solicitation) => variant({ solicitation })),
+    offTopic: (["review", "accept"] as const).map((offTopic) => ({ ...policy, offTopic })),
+  };
+}

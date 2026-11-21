@@ -10,6 +10,7 @@ import {
   Inbox as InboxIcon,
   Mails,
   Network,
+  ScanSearch,
   Send,
 } from "lucide-react";
 import { useState } from "react";
@@ -45,6 +46,7 @@ export type Section =
   | "destinations"
   | "origins"
   | "domains"
+  | "classification"
   | "organization"
   | "operations";
 
@@ -59,6 +61,7 @@ const settings = [
   ["destinations", Send],
   ["origins", Globe],
   ["domains", Network],
+  ["classification", ScanSearch],
 ] as const;
 
 interface InboxSidebarProps {

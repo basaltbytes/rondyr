@@ -2,7 +2,6 @@ import { Duration, Effect, Option, Ref, Schema } from "effect";
 
 import { ClassificationFailed } from "../src/domain/submissions/classifier.external.ts";
 import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
-import { rulesVersion } from "../src/domain/submissions/classification.ts";
 import type { ClassifierInput } from "../src/domain/submissions/classifier-input.ts";
 import { ResultCache, ScoredCall, Usage, cacheKey, inputDigest } from "./cache.ts";
 import { type ClassifierName, classifiers } from "./classifiers.ts";
@@ -71,6 +70,8 @@ export class UnexpectedModel extends Schema.TaggedError<
 // three attempts (src/domain/submissions/classify-submission.saga.ts).
 const callTimeout = "12 seconds";
 const attemptBudget = 3;
+// Advance when the questions or adapter scoring change, including when the input digest stays the same.
+const scoringVersion = 5;
 
 const decodeUsage = Schema.decodeUnknownEffect(Schema.Struct({ usage: Usage }));
 
@@ -206,7 +207,7 @@ const evaluateClassifier = Effect.fn("Evaluation.classifier")(function* (
           transport: ai.transport,
           classifier,
           model,
-          rulesVersion,
+          scoringVersion,
           entryId: entry.id,
           inputDigest: digest,
         });

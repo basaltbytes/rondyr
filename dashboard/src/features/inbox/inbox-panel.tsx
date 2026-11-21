@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { OrganizationDomainList } from "@rondyr/organizations/organization-domain";
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
+import { getClassificationSettings } from "~/lib/classification-policy-client";
 import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
 import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
 import { listDomains } from "~/lib/organization-domains-client";
@@ -27,6 +28,10 @@ const InboxSettings = lazy(async () => {
 const OrganizationDomains = lazy(async () => {
   const { OrganizationDomains: Domains } = await import("./organization-domains.tsx");
   return { default: Domains };
+});
+const ClassificationSettings = lazy(async () => {
+  const { ClassificationSettings: Settings } = await import("./classification-settings.tsx");
+  return { default: Settings };
 });
 
 /**
@@ -54,7 +59,11 @@ interface Listing {
 
 type SettingsSelection =
   | { readonly section: "domains"; readonly domains: Promise<OrganizationDomainList | null> }
-  | { readonly section: Exclude<Section, "domains"> };
+  | {
+      readonly section: "classification";
+      readonly policy: Promise<Awaited<ReturnType<typeof getClassificationSettings>> | null>;
+    }
+  | { readonly section: Exclude<Section, "domains" | "classification"> };
 
 interface InboxViewProps {
   readonly inboxes: readonly Inbox[];
@@ -144,10 +153,18 @@ function InboxView({
     setSettings({ section: "domains", domains: listDomains(inbox.id).catch(() => null) });
   }
 
+  function openClassification() {
+    setSettings({
+      section: "classification",
+      policy: getClassificationSettings(inbox.id).catch(() => null),
+    });
+  }
+
   function openSection(next: Section) {
     if (next === section) return;
     setOpened(null);
     if (next === "domains") openDomains();
+    else if (next === "classification") openClassification();
     else setSettings({ section: next });
   }
 
@@ -188,7 +205,9 @@ function InboxView({
       if (folder === "all") {
         // The row keeps its preview and takes the new status.
         const decided = (entry: SubmissionEntry) =>
-          entry === before ? { ...entry, status: updated.status, reason: updated.reason } : entry;
+          entry === before
+            ? { ...entry, status: updated.status, reason: updated.reason, label: updated.label }
+            : entry;
         setListing({ ...listing, entries: listing.entries.map(decided) });
       } else {
         // Like a mail client: the decided message leaves the folder and the next one opens.
@@ -267,6 +286,12 @@ function InboxView({
                 inboxId={inbox.id}
                 domains={settings.domains}
                 onRetry={openDomains}
+              />
+            ) : settings.section === "classification" ? (
+              <ClassificationSettings
+                inboxId={inbox.id}
+                settings={settings.policy}
+                onRetry={openClassification}
               />
             ) : (
               <InboxSettings

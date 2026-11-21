@@ -30,7 +30,7 @@ export interface CacheKeyParts {
   readonly transport: Transport;
   readonly classifier: ClassifierName;
   readonly model: string;
-  readonly rulesVersion: number;
+  readonly scoringVersion: number;
   readonly entryId: EntryId;
   /** SHA-256 of the complete classifier input, including facts from earlier lines. */
   readonly inputDigest: string;
@@ -41,7 +41,7 @@ export function cacheKey(parts: CacheKeyParts) {
     parts.transport,
     parts.classifier,
     parts.model,
-    `rules-${parts.rulesVersion}`,
+    `rules-${parts.scoringVersion}`,
     parts.entryId,
     parts.inputDigest,
   ].join("|");

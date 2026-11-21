@@ -104,6 +104,7 @@
       "destinations": "Destinations",
       "origins": "Allowed origins",
       "domains": "Organization domains",
+      "classification": "Classification",
       "organization": "New organization"
     },
     "statuses": {
@@ -113,6 +114,7 @@
       "quarantined": "To review",
       "archived": "Archived"
     },
+    "offTopicLabel": "Off-topic",
     "unknownSender": "Unknown sender",
     "organizations": {
       "switcher": "Organization: {{name}}. Switch organization",
@@ -314,6 +316,38 @@
       "retry": "Try again",
       "addFailed": "Could not add the domain. Try again.",
       "removeFailed": "Could not remove the domain. Try again."
+    },
+    "policy": {
+      "description": "{{classifier}} classifies submissions for this organization. Custom settings apply to new classification runs.",
+      "models": {
+        "jev": "Jev",
+        "openai": "OpenAI Decisions"
+      },
+      "thresholdMode": "Thresholds",
+      "defaults": "Use classifier defaults",
+      "custom": "Set custom thresholds",
+      "thresholds": {
+        "probableSpam": "Probable spam",
+        "ambiguous": "Ambiguous spam",
+        "solicitation": "Sales outreach",
+        "lowRelevance": "Low relevance"
+      },
+      "hints": {
+        "probableSpam": "A message with a spam score at or above this value goes to review as probable spam.",
+        "ambiguous": "A message with a spam score at or above this value but below the probable spam threshold goes to review; this value cannot exceed that threshold.",
+        "solicitation": "A message with a sales outreach score above this value goes to review.",
+        "lowRelevance": "A message with a relevance score below this value goes to review, or is accepted with the Off-topic label if you accept off-topic submissions."
+      },
+      "offTopic": "Off-topic submissions",
+      "review": "Send to review",
+      "accept": "Accept with the Off-topic label",
+      "save": "Save classification settings",
+      "saving": "Saving…",
+      "saved": "Settings saved.",
+      "invalid": "Check that the thresholds are between 0 and 1 and that ambiguous spam is at or below probable spam.",
+      "saveFailed": "Could not save the classification settings. Try again.",
+      "loadFailed": "Could not load the classification settings.",
+      "retry": "Try again"
     },
     "origins": {
       "label": "Allowed origins of the form {{name}}",

@@ -1,5 +1,11 @@
 import { assert, it } from "@effect/vitest";
+import { Schema } from "effect";
 
+import {
+  type ClassificationPolicy,
+  ClassificationThresholds,
+  defaultClassificationPolicies,
+} from "../src/domain/submissions/classification-policy.ts";
 import { decisionOf } from "./report.ts";
 
 const scored = (spam: number, relevance?: number, solicitation = 0) => ({
@@ -33,5 +39,28 @@ it("maps scores to the Worker's decision at each threshold", () => {
     ],
     [{ _tag: "Failed", attempts: 3, retryable: true } as const, "classification-error"],
   ] as const;
-  for (const [outcome, decision] of cases) assert.strictEqual(decisionOf(outcome), decision);
+  const policy: ClassificationPolicy = {
+    ...defaultClassificationPolicies.jev,
+    thresholds: ClassificationThresholds.make({
+      ...defaultClassificationPolicies.jev.thresholds,
+      lowRelevance: 0.35,
+    }),
+  };
+  for (const [outcome, decision] of cases)
+    assert.strictEqual(decisionOf(outcome, policy), decision);
+});
+
+it("accepts threshold bounds and rejects out-of-range or inverted thresholds", () => {
+  const valid = Schema.is(ClassificationThresholds);
+  assert.isTrue(valid({ probableSpam: 1, ambiguous: 1, solicitation: 0, lowRelevance: 0 }));
+  assert.isTrue(valid({ probableSpam: 0, ambiguous: 0, solicitation: 1, lowRelevance: 1 }));
+  assert.isFalse(
+    valid({ probableSpam: 0.6, ambiguous: 0.7, solicitation: 0.5, lowRelevance: 0.5 }),
+  );
+  assert.isFalse(
+    valid({ probableSpam: 0.7, ambiguous: 0.3, solicitation: -0.1, lowRelevance: 0.5 }),
+  );
+  assert.isFalse(
+    valid({ probableSpam: 0.7, ambiguous: 0.3, solicitation: 0.5, lowRelevance: 1.1 }),
+  );
 });
