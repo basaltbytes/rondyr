@@ -8,7 +8,7 @@ The package is in this repository, under `packages/emdash-plugin/`, with the MIT
 
 ## Submission path
 
-1. The site's contact form posts to the site route that the package exports, `/api/form`, with or without JavaScript.
+1. The site's contact form posts to the site route that the package exports, `/api/form`, with or without JavaScript, or to a route or page of the site that calls the package's `submitForm`.
 2. The route calls the forms plugin's `submit` in the same Worker. The forms plugin validates the fields and stores its own copy, files included, as before.
 3. When the forms plugin accepts, the route calls the Rondyr plugin's `enqueue` route, still in the same Worker, before it answers the visitor. The plugin writes a queue entry under a new submission ID.
 4. Right after the response, the plugin sends the entry to `POST /f/{publicId}` on Rondyr with the API token and an `Idempotency-Key` equal to the submission ID ([server intake](./api.md#server-intake)). Rondyr's `202` deletes the entry.
@@ -16,7 +16,7 @@ The package is in this repository, under `packages/emdash-plugin/`, with the MIT
 
 A quarantined message sends no email. Accepting it later, in EmDash or in the Rondyr dashboard, sends the emails then.
 
-Only forms that post to `/api/form` go through Rondyr. The forms plugin's own **Form** block (`emdash-form`) posts straight to the forms plugin's `submit` route, so its submissions never reach the route or Rondyr; render those forms with a block that posts to `/api/form` instead.
+Only forms that post to `/api/form`, or to a site route that calls `submitForm`, go through Rondyr. The forms plugin's own **Form** block (`emdash-form`) posts straight to the forms plugin's `submit` route, so its submissions never reach the route or Rondyr; render those forms with a block that posts to `/api/form` instead.
 
 ## Requirements
 
@@ -42,7 +42,9 @@ The repository is private, so installing from it needs read access to `basaltbyt
 pnpm add "git+ssh://git@github.com/basaltbytes/rondyr.git#main&path:/packages/emdash-plugin"
 ```
 
-A checkout of this repository works too, with `pnpm add file:../rondyr/packages/emdash-plugin`.
+A checkout of this repository works too, with `pnpm add file:../rondyr/packages/emdash-plugin`. pnpm copies the directory when it installs, so after a change to the package, `pnpm install --force` brings the copy up to date.
+
+The package has no dependencies of its own, only peer dependencies that the site already has, so a site with `blockExoticSubdeps` installs it from git or from a directory.
 
 ### `astro.config.mjs`
 
@@ -90,10 +92,23 @@ export { POST, prerender } from "@basaltbytes/emdash-plugin-rondyr/route";
 
 The route takes two kinds of posts:
 
-- With JavaScript: a JSON body `{ "formId": …, "data": { … }, "files": { … } }`, as the forms plugin's client script builds it. `formId` is the form's ID or slug. The answer is the forms plugin's JSON, with `200` when it accepted and `400` otherwise.
+- With JavaScript: a JSON body `{ "formId": …, "data": { … }, "files": { … } }`, as the forms plugin's client script builds it. `formId` is the form's ID or slug. The answer is the forms plugin's JSON as its own route sends it, `{ "success": true, "data": … }` or `{ "success": false, "error": { "code", "message" } }`, with `200` when it accepted and `400` otherwise.
 - Without JavaScript: a regular `multipart/form-data` or URL-encoded post with `formId`, the fields, and two optional fields: `_return`, a path on the site to come back to, and `_block`, a key for the form on that page. The answer is `303` to `_return?form=<_block>&status=sent` (or `status=error`), with `#<_block>-status`.
 
-The route refuses a post whose `Origin` is another site with `403`. Files go to the forms plugin, which stores them; Rondyr never gets them. In the EmDash site template, set `data-endpoint` to `/api/form` in `ContactForm.astro` so its script posts there.
+The route refuses a post whose `Origin` is another site with `403`. Every answer has `Cache-Control: private, no-store`, as the forms plugin's route has. Files go to the forms plugin, which stores them; Rondyr never gets them. In the EmDash site template, set `data-endpoint` to `/api/form` in `ContactForm.astro` so its script posts there.
+
+#### A site's own route or page
+
+A site that answers a post on a page of its own, for example a localized confirmation page for posts without JavaScript, calls `submitForm` from the same entry point instead:
+
+```ts
+import { submitForm } from "@basaltbytes/emdash-plugin-rondyr/route";
+
+const posted = await Astro.request.formData();
+const { accepted, answer } = await submitForm(Astro, { formId, data });
+```
+
+`submitForm` does what the route does between reading the post and answering: the forms plugin validates and stores the submission, and once it accepts, the submission is in the queue before `submitForm` returns. It takes Astro's `request`, `url` and `locals` (passing `Astro` works), and `{ formId, data, files? }` as the JSON route takes them. It reads the visitor's IP and country from the request's headers and never reads its body, so the page can read the posted form first. `accepted` is true when the forms plugin accepted, a filled honeypot field included, and `answer` is the forms plugin's JSON as the route would send it: `answer.data.message` and `answer.data.redirect` are the form's confirmation message and redirect. A post whose `Origin` is another site gets `accepted: false` with the error code `CROSS_SITE`, without reaching the forms plugin.
 
 ### Cron trigger
 
@@ -112,7 +127,7 @@ and `src/worker.ts`:
 export { default, PluginBridge } from "@emdash-cms/cloudflare/worker";
 ```
 
-`pnpm exec emdash doctor` checks this wiring. Without it, the attempt right after each response is the only one, and an entry that it doesn't send stays in the queue.
+`pnpm exec emdash doctor` checks this wiring, on its "scheduler wiring" line; on a D1 site it also reports that `./data.db` is missing, which is expected. Without the wiring, the attempt right after each response is the only one, and an entry that it doesn't send stays in the queue.
 
 ### Secrets
 
@@ -163,7 +178,7 @@ If the queue itself can't be written, the forms plugin has already stored the su
 
 ## Notification emails
 
-On `submission.accepted`, the `webhook` route sends one email per recipient of each EmDash form linked to the Rondyr form, through `ctx.email.send`. The text follows the forms plugin's format, `New submission for "<form>"` and one `Label: value` line per field, with the labels of the last submission of that form. A valid address in an email field of the form, or in a field named `email`, becomes `Reply-To`.
+On `submission.accepted`, the `webhook` route sends one email per recipient of each EmDash form linked to the Rondyr form, through `ctx.email.send`. The text follows the forms plugin's format, `New submission for "<form>"` and one `Label: value` line per field, with the labels of the last submission of that form. `Reply-To` is chosen as the forms plugin chooses it: the first filled email field of the form, a required one before an optional one, when its value is a plain address. A form with no filled email field falls back to a field named `email`.
 
 The route answers `2xx` only once the mailer has taken every email. Otherwise it answers `503`, Rondyr retries the delivery, and the recipients already emailed for that delivery are skipped: the route records each recipient as soon as the mailer takes the email. While one request sends a delivery's emails, another request for the same delivery gets `503`. The route refuses a wrong signature and a timestamp more than 5 minutes away with `401`, and answers a delivery ID it has already processed with `2xx` and no email. A `test` request from the Rondyr dashboard gets `2xx` and sends nothing.
 
@@ -184,5 +199,5 @@ Both secrets are optional: the site builds and deploys without them, and the for
 
 - The forms plugin's `submit` returns no submission ID. The site route creates a UUID for each accepted submission, which is the queue entry's ID and the `Idempotency-Key`. A visitor who posts twice makes two messages, as with the forms plugin alone.
 - A filled honeypot field (`_hp`) gets a silent success from the forms plugin, which stores nothing. The route doesn't send that submission to Rondyr either.
-- Fields go to Rondyr by their name. Empty values, file fields and fields the form doesn't define (`_hp`, the Turnstile token) are left out. A list is joined with `, `, and numbers and booleans become text. Values come from the posted body, before the forms plugin converts them: a checkbox is `on`.
+- Fields go to Rondyr by their name. Empty values, file fields and fields the form doesn't define (`_hp`, the Turnstile token) are left out. A list is joined with `, `, and numbers and booleans become text. Values come from the posted body, trimmed as the forms plugin trims what it stores, but not otherwise converted: a checkbox is `on`.
 - Delivery IDs are kept for 30 days. Rondyr stops retrying a delivery after about nine hours.

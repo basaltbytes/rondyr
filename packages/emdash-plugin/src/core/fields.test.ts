@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { flattenFields, formatNotification, replyToAddress, type FormLayout } from "./fields.ts";
+import {
+  flattenFields,
+  formatNotification,
+  formLayout,
+  replyToAddress,
+  type FormLayout,
+} from "./fields.ts";
 
 const layout: FormLayout = {
   slug: "contact",
@@ -44,6 +50,30 @@ describe("flattenFields", () => {
   it("leaves out missing and null values", () => {
     expect(flattenFields(layout, { name: null })).toEqual({});
   });
+
+  it("trims values as the forms plugin stores them, and leaves out blank ones", () => {
+    const fields = flattenFields(layout, {
+      name: "  Ada ",
+      email: " ",
+      message: "\r\n\r\nHello,\r\nthe kiln is ready.\r\n",
+    });
+    expect(fields).toEqual({ name: "Ada", message: "Hello,\r\nthe kiln is ready." });
+  });
+});
+
+describe("formLayout", () => {
+  it("marks required fields only", () => {
+    const { fields } = formLayout("contact", "Contact", [
+      { name: "email", label: "Email", type: "email", required: true },
+      { name: "name", label: "Name", type: "text", required: false },
+      { name: "page", label: "Page", type: "hidden" },
+    ]);
+    expect(fields).toEqual([
+      { name: "email", label: "Email", type: "email", required: true },
+      { name: "name", label: "Name", type: "text" },
+      { name: "page", label: "Page", type: "hidden" },
+    ]);
+  });
 });
 
 describe("formatNotification", () => {
@@ -81,5 +111,21 @@ describe("replyToAddress", () => {
     expect(replyToAddress(layout, { email: "Ada <ada@example.com>" })).toBeNull();
     expect(replyToAddress(null, { email: "ada@example.com" })).toBe("ada@example.com");
     expect(replyToAddress(null, {})).toBeNull();
+  });
+
+  it("prefers a required email field to an optional one before it, as the forms plugin does", () => {
+    const quote: FormLayout = {
+      slug: "quote",
+      name: "Quote",
+      fields: [
+        { name: "office", label: "Your office's address", type: "email" },
+        { name: "contact", label: "Your address", type: "email", required: true },
+      ],
+    };
+    const both = { office: "office@example.com", contact: "ada@example.com" };
+    expect(replyToAddress(quote, both)).toBe("ada@example.com");
+    expect(replyToAddress(quote, { office: "office@example.com" })).toBe("office@example.com");
+    // The first filled field decides; a value that isn't a plain address gives no Reply-To.
+    expect(replyToAddress(quote, { ...both, contact: "ada@example.com," })).toBeNull();
   });
 });
