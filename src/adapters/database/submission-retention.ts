@@ -1,35 +1,39 @@
-import { Effect, Layer, Schema } from "effect";
+import { Clock, Effect, Layer, Schema } from "effect";
 
 import { dayMillis, RetentionPeriods } from "../../domain/organizations/retention.ts";
 import { SubmissionNotFound } from "../../domain/submissions/submission.rejection.ts";
-import { SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
 import type { OrganizationScope } from "../../ports/organization-directory.ts";
-import { SubmissionRetention } from "../../ports/submission-retention.ts";
+import { SubmissionRetention, type RetentionLane } from "../../ports/submission-retention.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
-import { Clock } from "effect";
 import { d1, database } from "./d1.ts";
 
 const unreadable = () => StorageUnavailable.make();
 const decodePeriods = Schema.decodeUnknownEffect(RetentionPeriods);
 const decodeIds = Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ id: SubmissionId })));
-const encodeIds = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(SubmissionId)));
 
-// ?1 is the time in milliseconds. A message is expired once its age reaches the
-// period of its status: `received_at` at the exact boundary is purged. A message
-// still received or being classified has no inbox status here and is kept.
-const expired = `
-  (
-    (i.status = 'accepted' AND o.accepted_retention_days IS NOT NULL
-      AND s.received_at <= ?1 - o.accepted_retention_days * ${dayMillis})
-    OR (i.status IN ('quarantined', 'archived') AND o.quarantine_retention_days IS NOT NULL
-      AND s.received_at <= ?1 - o.quarantine_retention_days * ${dayMillis})
-  )
-`;
-const expiredTables = `
-  FROM organizations o
-    JOIN submissions s ON s.organization_id = o.id
-    JOIN submission_inbox i ON i.submission_id = s.id
-`;
+// The statuses of each lane, and the period of the organization that covers them.
+// A message still received or being classified has no inbox status here and is kept.
+const laneCondition = {
+  accepted: `
+    i.status = 'accepted' AND o.accepted_retention_days IS NOT NULL
+    AND s.received_at <= ?3 - o.accepted_retention_days * ${dayMillis}
+  `,
+  quarantine: `
+    i.status IN ('quarantined', 'archived') AND o.quarantine_retention_days IS NOT NULL
+    AND s.received_at <= ?3 - o.quarantine_retention_days * ${dayMillis}
+  `,
+} as const;
+
+const decodeLanes = Schema.decodeUnknownEffect(
+  Schema.Array(
+    Schema.Struct({
+      organizationId: OrganizationId,
+      accepted: RetentionPeriods.fields.accepted,
+      quarantine: RetentionPeriods.fields.quarantine,
+    }),
+  ),
+);
 
 const remove = Effect.fn("SubmissionRetention.remove")(function* (
   scope: OrganizationScope,
@@ -90,46 +94,66 @@ const savePeriods = Effect.fn("SubmissionRetention.savePeriods")(function* (
   return yield* decodePeriods(row).pipe(Effect.mapError(unreadable));
 });
 
-const purgeExpired = Effect.fn("SubmissionRetention.purgeExpired")(function* (
+const retentionLanes = Effect.fn("SubmissionRetention.retentionLanes")(function* (now: number) {
+  const db = yield* database;
+  const rows = yield* d1(() =>
+    db
+      .prepare(`
+      SELECT id AS organizationId, ${columns} FROM organizations
+      WHERE accepted_retention_days IS NOT NULL OR quarantine_retention_days IS NOT NULL
+      ORDER BY id
+    `)
+      .all(),
+  );
+  const organizations = yield* decodeLanes(rows.results).pipe(Effect.mapError(unreadable));
+  return organizations.flatMap(({ organizationId, accepted, quarantine }) => [
+    ...(accepted === null
+      ? []
+      : [{ organizationId, statuses: "accepted" as const, cutoff: now - accepted * dayMillis }]),
+    ...(quarantine === null
+      ? []
+      : [
+          {
+            organizationId,
+            statuses: "quarantine" as const,
+            cutoff: now - quarantine * dayMillis,
+          },
+        ]),
+  ]);
+});
+
+const purgeLane = Effect.fn("SubmissionRetention.purgeLane")(function* (
+  lane: RetentionLane,
   now: number,
   limit: number,
 ) {
   const db = yield* database;
-  const candidates = yield* d1(() =>
-    db
-      .prepare(`
-      SELECT s.id ${expiredTables}
-      WHERE (o.accepted_retention_days IS NOT NULL OR o.quarantine_retention_days IS NOT NULL)
-        AND ${expired}
-      ORDER BY s.received_at, s.id LIMIT ?2
-    `)
-      .bind(now, limit)
-      .all(),
-  );
-  const ids = yield* decodeIds(candidates.results).pipe(Effect.mapError(unreadable));
-  if (ids.length === 0) return 0;
-  const list = yield* encodeIds(ids.map(({ id }) => id)).pipe(Effect.mapError(unreadable));
-  // One transaction logs and deletes the batch. Each statement checks the period
-  // again, so a message that a change made current again stays.
+  // ?1 organization, ?2 the cutoff of the lane, ?3 the time, ?4 the size of the batch.
+  // The cutoff bounds the read to the organization's messages received before
+  // it, in the order of its index; the condition of the lane reads the period
+  // again. One transaction logs the batch, then deletes the messages it logged.
   const [, deleted] = yield* d1(() =>
     db.batch([
       db
         .prepare(`
         INSERT INTO submission_deletions (submission_id, organization_id, deleted_at, deleted_by, cause)
-        SELECT s.id, s.organization_id, ?1, NULL, 'retention' ${expiredTables}
-        WHERE s.id IN (SELECT value FROM json_each(?2)) AND ${expired}
+        SELECT s.id, s.organization_id, ?3, NULL, 'retention'
+        FROM organizations o
+          JOIN submissions s ON s.organization_id = o.id
+          JOIN submission_inbox i ON i.submission_id = s.id
+        WHERE o.id = ?1 AND s.received_at <= ?2 AND ${laneCondition[lane.statuses]}
+        ORDER BY s.received_at, s.id LIMIT ?4
       `)
-        .bind(now, list),
+        .bind(lane.organizationId, lane.cutoff, now, limit),
       db
         .prepare(`
         DELETE FROM submissions WHERE id IN (
-          SELECT d.submission_id FROM submission_deletions d
-          WHERE d.submission_id IN (SELECT value FROM json_each(?2))
-            AND d.cause = 'retention' AND d.deleted_at = ?1
+          SELECT submission_id FROM submission_deletions
+          WHERE organization_id = ?1 AND deleted_at = ?2 AND cause = 'retention'
         )
         RETURNING id
       `)
-        .bind(now, list),
+        .bind(lane.organizationId, now),
     ]),
   );
   const rows = yield* decodeIds(deleted?.results).pipe(Effect.mapError(unreadable));
@@ -140,5 +164,6 @@ export const submissionRetentionLive = Layer.succeed(SubmissionRetention, {
   remove,
   periods,
   savePeriods,
-  purgeExpired,
+  retentionLanes,
+  purgeLane,
 });
