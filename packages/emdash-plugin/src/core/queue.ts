@@ -1,7 +1,7 @@
 import { z } from "astro/zod";
 
 import { FlatFields } from "./fields.ts";
-import { retryDelayMs, retryWindowMs, type SendOutcome } from "./retry.ts";
+import { attemptLeaseMs, retryDelayMs, retryWindowMs, type SendOutcome } from "./retry.ts";
 
 /**
  * `pending` waits for its next attempt, `failed` will not be sent again
@@ -21,24 +21,40 @@ export const QueueEntry = z.object({
   state: QueueState,
   attempts: z.number().int().min(0),
   enqueuedAt: z.number().int(),
+  /** When the entry is due. While an attempt holds the entry, the end of its lease. */
   nextAttemptAt: z.number().int(),
   /** The last HTTP status from Rondyr, or null before any answer or after a network error. */
   lastStatus: z.number().int().nullable(),
 });
 export type QueueEntry = z.infer<typeof QueueEntry>;
 
+/**
+ * A new entry is due at once: the attempt that runs right after the visitor's
+ * response claims it. If that attempt never runs, the cron finds it due.
+ */
 export function newEntry(formSlug: string, fields: FlatFields, now: number): QueueEntry {
-  // The first attempt runs right after the response; the cron picks the entry
-  // up a minute later only if that attempt did not settle it.
   return {
     formSlug,
     fields,
     state: "pending",
     attempts: 0,
     enqueuedAt: now,
-    nextAttemptAt: now + retryDelayMs(1),
+    nextAttemptAt: now,
     lastStatus: null,
   };
+}
+
+/** Whether an attempt may start now. */
+export function isDue(entry: QueueEntry, now: number): boolean {
+  return entry.state === "pending" && entry.nextAttemptAt <= now;
+}
+
+/**
+ * The entry while one attempt holds it: no other attempt finds it due until
+ * the lease ends. An attempt that dies leaves the entry due again then.
+ */
+export function claimed(entry: QueueEntry, now: number): QueueEntry {
+  return { ...entry, nextAttemptAt: now + attemptLeaseMs };
 }
 
 /** The entry after an attempt, or `null` when Rondyr stored it and the entry goes. */

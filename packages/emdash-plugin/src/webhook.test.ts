@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Store } from "./store.ts";
 import { memoryHost } from "./testing/memory-storage.ts";
@@ -40,9 +40,16 @@ async function signed(body: Uint8Array, key = secret, at = now) {
   return new Headers({ "rondyr-timestamp": timestamp, "rondyr-signature": `v1=${hex}` });
 }
 
+interface Sent {
+  readonly to: string;
+  readonly subject: string;
+  readonly text: string;
+  readonly replyTo?: string;
+}
+
 async function site(failing: ReadonlySet<string> = new Set()) {
-  const { host } = memoryHost();
-  const sent: { to: string; subject: string; text: string; replyTo?: string }[] = [];
+  const { host, lines } = memoryHost();
+  const sent: Sent[] = [];
   const store = new Store(host);
   await store.putLink("contact", {
     rondyrFormId: "rondyr-contact",
@@ -58,12 +65,12 @@ async function site(failing: ReadonlySet<string> = new Set()) {
     ],
   });
   const email = {
-    send: async (message: { to: string; subject: string; text: string; replyTo?: string }) => {
-      if (failing.has(message.to)) throw new Error("Mailer refused");
+    send: async (message: Sent) => {
+      if (failing.has(message.to)) throw new Error(`Mailer refused ${message.text}`);
       sent.push(message);
     },
   };
-  return { host, email, sent };
+  return { host, email, sent, lines };
 }
 
 describe("receiveWebhook", () => {
@@ -130,7 +137,7 @@ describe("receiveWebhook", () => {
 
   it("asks Rondyr to retry when an email fails, then skips the recipients already emailed", async () => {
     const failing = new Set(["owner@example.com"]);
-    const { host, email, sent } = await site(failing);
+    const { host, email, sent, lines } = await site(failing);
     const body = payload();
     const context = async () => ({
       ...host,
@@ -144,6 +151,70 @@ describe("receiveWebhook", () => {
     });
     failing.clear();
     expect(await receiveWebhook(await context(), secret, now)).toEqual({ status: 200, emailed: 1 });
+    expect(sent.map(({ to }) => to)).toEqual(["team@example.com", "owner@example.com"]);
+    // The log names the delivery and the form, never the message or a recipient.
+    expect(lines).toEqual([
+      {
+        level: "error",
+        message: "Failed to send a Rondyr notification",
+        data: { deliveryId, form: "contact" },
+      },
+    ]);
+  });
+
+  it("answers 503 to a second request while the first one sends the emails", async () => {
+    const { host, email, sent } = await site();
+    const slow = Promise.withResolvers<void>();
+    const sending = Promise.withResolvers<void>();
+    const held = {
+      send: async (message: Sent) => {
+        sending.resolve();
+        await slow.promise;
+        await email.send(message);
+      },
+    };
+    const body = payload();
+    const headers = await signed(body);
+    const first = receiveWebhook(
+      { ...host, email: held, input: body, request: { headers } },
+      secret,
+      now,
+    );
+    await sending.promise;
+    const second = await receiveWebhook(
+      { ...host, email, input: body, request: { headers } },
+      secret,
+      now + 1_000,
+    );
+    expect(second).toEqual({ status: 503, code: "DELIVERY_IN_PROGRESS" });
+    slow.resolve();
+    expect(await first).toEqual({ status: 200, emailed: 2 });
+    expect(sent.map(({ to }) => to)).toEqual(["team@example.com", "owner@example.com"]);
+  });
+
+  it("emails only the remaining recipients after a request that stopped midway", async () => {
+    const { host, email, sent } = await site();
+    const stuck = {
+      send: async (message: Sent) => {
+        // The Worker stops while the second email is with the mailer.
+        if (message.to === "owner@example.com") await new Promise(() => {});
+        await email.send(message);
+      },
+    };
+    const body = payload();
+    void receiveWebhook(
+      { ...host, email: stuck, input: body, request: { headers: await signed(body) } },
+      secret,
+      now,
+    );
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    const later = now + 5 * 60_000;
+    const retry = await receiveWebhook(
+      { ...host, email, input: body, request: { headers: await signed(body, secret, later) } },
+      secret,
+      later,
+    );
+    expect(retry).toEqual({ status: 200, emailed: 1 });
     expect(sent.map(({ to }) => to)).toEqual(["team@example.com", "owner@example.com"]);
   });
 

@@ -27,6 +27,12 @@ const EnqueueInput = z.object({
   fields: FlatFields,
 });
 
+/** Why the site route could not queue a submission: the slug and an error code, no content. */
+const UnqueuedInput = z.object({
+  form: z.string().min(1).max(200),
+  code: z.string().regex(/^[\w-]{1,64}$/u),
+});
+
 const ListInput = z.object({
   status: SubmissionStatus,
   form: z.string().min(1).max(128).nullable().default(null),
@@ -39,11 +45,21 @@ const DecisionInput = MessageInput.extend({ decision: z.enum(["approve", "dismis
 
 const SaveLinkInput = FormLink.extend({ slug: z.string().min(1).max(200) });
 
+const SlugInput = z.object({ slug: z.string().min(1).max(200) });
+
 /**
  * Reading and decisions are open to every role that reads plugin pages, from
  * Editor up. Settings keep the default permission, `plugins:manage`.
  */
 const reader = "plugins:read" as const;
+
+/** Refuse a call to a route of the in-process hop that lacks the credential. */
+function requireCredential(ctx: RouteContext<unknown>): void {
+  const credential = enqueueCredential(rondyrSecrets().token);
+  if (!matchesCredential(ctx.request.headers.get("authorization"), credential)) {
+    throw new PluginRouteError("UNAUTHORIZED", "Unknown credential", 401);
+  }
+}
 
 export function createPlugin(input: RondyrOptions): ResolvedPlugin {
   const options = RondyrOptions.parse(input);
@@ -67,24 +83,46 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
     },
     routes: {
       // The site's submission route calls this in the same Worker, with the API
-      // token (or, without one, a key of this isolate) in `Authorization`.
+      // token (or, without one, a key of this isolate) in `Authorization`. A
+      // second call with the same submission ID changes nothing.
       enqueue: {
         public: true,
         methods: ["POST"],
         input: EnqueueInput,
         handler: async (ctx: RouteContext<z.infer<typeof EnqueueInput>>) => {
-          const credential = enqueueCredential(rondyrSecrets().token);
-          if (!matchesCredential(ctx.request.headers.get("authorization"), credential)) {
-            throw new PluginRouteError("UNAUTHORIZED", "Unknown credential", 401);
-          }
+          requireCredential(ctx);
           const { submissionId, form, fields } = ctx.input;
           const store = new Store(ctx);
           await store.putLayout(form);
-          if ((await store.queueEntry(submissionId)) !== null) return { queued: true };
-          const entry = newEntry(form.slug, fields, Date.now());
-          await store.putQueueEntry(submissionId, entry);
-          after(() => attempt(ctx, options, rondyrSecrets().token, submissionId, entry));
+          await store.createQueueEntry(submissionId, newEntry(form.slug, fields, Date.now()));
+          after(async () => {
+            try {
+              await attempt(ctx, options, rondyrSecrets().token, submissionId);
+            } catch (error) {
+              // The entry stays queued; the cron tries again. The error's name only, never its text.
+              ctx.log.error("A queued submission could not be sent", {
+                submissionId,
+                error: error instanceof Error ? error.name : "unknown",
+              });
+            }
+          });
           return { queued: true };
+        },
+      },
+      // The site route calls this when `enqueue` failed twice: the forms plugin
+      // kept the submission, and the admin pages show how many were not queued.
+      "enqueue/failed": {
+        public: true,
+        methods: ["POST"],
+        input: UnqueuedInput,
+        handler: async (ctx: RouteContext<z.infer<typeof UnqueuedInput>>) => {
+          requireCredential(ctx);
+          ctx.log.error("A submission accepted by the forms plugin could not be queued", {
+            form: ctx.input.form,
+            code: ctx.input.code,
+          });
+          await new Store(ctx).recordUnqueued(ctx.input.form, Date.now());
+          return { recorded: true };
         },
       },
       webhook: {
@@ -104,15 +142,23 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
         handler: async (ctx) => {
           const store = new Store(ctx);
           const secrets = rondyrSecrets();
-          const [pending, failed, unlinked] = await Promise.all([
+          const [pending, failed, unlinked, unqueued] = await Promise.all([
             store.queueCount("pending"),
             store.queueCount("failed"),
             store.queueCount("unlinked"),
+            store.unqueued(),
           ]);
           return {
-            token: secrets.token !== null,
+            tokenProblem: secrets.tokenProblem,
             webhookSecret: secrets.webhookSecret !== null,
             queue: { pending, failed, unlinked },
+            unqueued: {
+              count: unqueued.reduce((total, { record }) => total + record.count, 0),
+              since: unqueued.reduce<number | null>(
+                (first, { record }) => Math.min(first ?? record.firstAt, record.firstAt),
+                null,
+              ),
+            },
           };
         },
       },
@@ -120,7 +166,9 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
         permission: reader,
         handler: async (ctx) => {
           const retried = await requeue(ctx, "failed", null);
-          after(() => sendDue(ctx, options, rondyrSecrets().token));
+          after(async () => {
+            await sendDue(ctx, options, rondyrSecrets().token);
+          });
           return { retried };
         },
       },
@@ -159,7 +207,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
       "settings/get": {
         handler: async (ctx) => {
           const store = new Store(ctx);
-          const links = await store.links();
+          const [links, unqueued] = await Promise.all([store.links(), store.unqueued()]);
           const secrets = rondyrSecrets();
           let organization: Organization | null = null;
           let error: string | null = null;
@@ -172,7 +220,8 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
           }
           return {
             links,
-            token: secrets.token !== null,
+            unqueued,
+            tokenProblem: secrets.tokenProblem,
             webhookSecret: secrets.webhookSecret !== null,
             webhookUrl: ctx.url(`/_emdash/api/plugins/${pluginId}/webhook`),
             organization,
@@ -187,8 +236,21 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
           await new Store(ctx).putLink(slug, link);
           if (link.rondyrFormId === null) return { requeued: 0 };
           const requeued = await requeue(ctx, "unlinked", slug);
-          if (requeued > 0) after(() => sendDue(ctx, options, rondyrSecrets().token));
+          if (requeued > 0) {
+            after(async () => {
+              await sendDue(ctx, options, rondyrSecrets().token);
+            });
+          }
           return { requeued };
+        },
+      },
+      // An administrator found the submissions that were not queued (in the
+      // forms plugin's export) and clears the warning.
+      "settings/unqueued/clear": {
+        input: SlugInput,
+        handler: async (ctx: RouteContext<z.infer<typeof SlugInput>>) => {
+          await new Store(ctx).clearUnqueued(ctx.input.slug);
+          return { cleared: true };
         },
       },
     },
