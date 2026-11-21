@@ -9,9 +9,9 @@ test("lists every page of the repository once", () => {
 });
 
 test("names the line to add for a page missing from the navigation", () => {
-  const documents = [...listDocuments(), { path: "docs/forms.md", id: "forms" }];
+  const documents = [...listDocuments(), { path: "docs/glossary.md", id: "glossary" }];
   assert.deepEqual(sidebarProblems(documents), [
-    'docs/forms.md is not in the navigation: add { slug: "forms" } to a group in apps/docs/src/sidebar.ts.',
+    'docs/glossary.md is not in the navigation: add { slug: "glossary" } to a group in apps/docs/src/sidebar.ts.',
   ]);
 });
 

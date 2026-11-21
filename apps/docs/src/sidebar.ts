@@ -16,11 +16,11 @@ export interface SidebarGroup {
 export const sidebar: readonly SidebarGroup[] = [
   {
     label: "Get started",
-    items: [{ slug: "deployment" }],
+    items: [{ slug: "deployment" }, { slug: "concepts" }, { slug: "local-development" }],
   },
   {
     label: "Forms and the HTTP API",
-    items: [{ slug: "api" }],
+    items: [{ slug: "forms" }, { slug: "api" }],
   },
   {
     label: "Spam classification",
@@ -36,7 +36,7 @@ export const sidebar: readonly SidebarGroup[] = [
   },
   {
     label: "Operations",
-    items: [{ slug: "operations" }],
+    items: [{ slug: "operations" }, { slug: "inbox" }],
   },
   {
     label: "Architecture",
