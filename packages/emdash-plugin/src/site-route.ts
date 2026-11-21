@@ -34,7 +34,14 @@ const Definition = z.object({
   slug: z.string(),
   pages: z.array(
     z.object({
-      fields: z.array(z.object({ name: z.string(), label: z.string(), type: z.string() })),
+      fields: z.array(
+        z.object({
+          name: z.string(),
+          label: z.string(),
+          type: z.string(),
+          required: z.boolean().optional(),
+        }),
+      ),
     }),
   ),
   settings: z.object({ spamProtection: z.string().optional() }).optional(),
@@ -50,9 +57,53 @@ const Accepted = z.object({ success: z.literal(true) });
 
 type Handle = NonNullable<ReturnType<typeof getPublicPluginApiRouteHandler>>;
 
-interface Submission {
+/** What a plugin route answers in-process: `{ success, data }` or `{ success: false, error }`. */
+type PluginAnswer = Awaited<ReturnType<Handle>>;
+
+/**
+ * The forms plugin's answer as EmDash's own route for it sends it: the data
+ * when the route succeeded, otherwise the error's code and message, with the
+ * message of an internal error hidden.
+ */
+export type FormsAnswer =
+  | { readonly success: true; readonly data: unknown }
+  | {
+      readonly success: false;
+      readonly error: { readonly code: string; readonly message: string };
+    };
+
+function formsAnswer(answer: PluginAnswer): FormsAnswer {
+  if (answer.success) return { success: true, data: answer.data };
+  const code = answer.error?.code ?? "PLUGIN_ERROR";
+  const message =
+    code === "INTERNAL_ERROR"
+      ? "Plugin route error"
+      : (answer.error?.message ?? "Plugin route error");
+  return { success: false, error: { code, message } };
+}
+
+/** The forms plugin's route never lets a cache keep its answer; neither does this one. */
+const noStore = { "cache-control": "private, no-store" };
+
+/** A submission as the forms plugin's `submit` takes it. `formId` is the form's ID or slug. */
+export interface FormSubmission {
   readonly formId: string;
   readonly data: SubmittedData;
+  readonly files?: Readonly<Record<string, SubmittedFile>>;
+}
+
+/**
+ * What became of a submission. `accepted` is true when the forms plugin
+ * accepted it, a filled honeypot field included. `answer` is the forms
+ * plugin's answer, as its own route would send it: `{ success: true, data:
+ * { success: true, message, redirect } }` when it accepted.
+ */
+export interface SubmitResult {
+  readonly accepted: boolean;
+  readonly answer: FormsAnswer;
+}
+
+interface Submission extends FormSubmission {
   readonly files: Readonly<Record<string, SubmittedFile>>;
   readonly back: string | null;
   readonly block: string | null;
@@ -153,6 +204,12 @@ async function definitionOf(handle: Handle, url: URL, formId: string) {
   return null;
 }
 
+/** A post whose `Origin` is another site. The forms plugin's own route refuses it; called in-process it can't. */
+function crossSite(request: Request, url: URL): boolean {
+  const origin = request.headers.get("origin");
+  return origin !== null && origin !== url.origin;
+}
+
 function layoutOf(definition: Definition): FormLayout {
   return formLayout(
     definition.slug,
@@ -171,7 +228,7 @@ function layoutOf(definition: Definition): FormLayout {
 async function forward(
   handle: Handle,
   url: URL,
-  submission: Submission,
+  submission: FormSubmission,
   definition: Definition | null,
   token: string | null,
 ): Promise<void> {
@@ -206,6 +263,66 @@ export interface SiteRequest {
   readonly locals: PublicPluginRuntimeLocals;
 }
 
+const invalid: FormsAnswer = {
+  success: false,
+  error: { code: "INVALID_REQUEST", message: "Invalid form" },
+};
+
+/**
+ * Submit to the forms plugin in this Worker and, once it accepts, put the
+ * submission in the Rondyr plugin's queue before returning, without its files.
+ * `site.request` is the visitor's request: the forms plugin reads the
+ * visitor's IP and country from its headers, and its body is not read.
+ * `token` is `RONDYR_API_TOKEN`, or null.
+ *
+ * A post from another site is refused without calling the forms plugin, as
+ * the forms plugin's own route would refuse it.
+ */
+export async function submitToForms(
+  site: SiteRequest,
+  submission: FormSubmission,
+  token: string | null,
+): Promise<SubmitResult> {
+  const { request, url, locals } = site;
+  if (crossSite(request, url)) {
+    return {
+      accepted: false,
+      answer: {
+        success: false,
+        error: { code: "CROSS_SITE", message: "Cross-site form submission" },
+      },
+    };
+  }
+  const handle = getPublicPluginApiRouteHandler(locals);
+  if (handle === undefined) return { accepted: false, answer: invalid };
+
+  const headers = new Headers(request.headers);
+  headers.set("content-type", "application/json");
+  headers.delete("content-length");
+  const body: z.input<typeof JsonBody> = { formId: submission.formId, data: submission.data };
+  const files = submission.files ?? {};
+  if (Object.keys(files).length > 0) body.files = files;
+  // Built from the incoming request, so the forms plugin still sees the visitor's IP and country.
+  const answer = await handle(
+    formsPluginId,
+    "POST",
+    "/submit",
+    new Request(request, { method: "POST", headers, body: JSON.stringify(body) }),
+  );
+  const envelope = Envelope.safeParse(answer);
+  const accepted =
+    envelope.success && envelope.data.success && Accepted.safeParse(envelope.data.data).success;
+  if (accepted) {
+    const definition = await definitionOf(handle, url, submission.formId);
+    // The forms plugin answers a filled honeypot like a success and stores nothing; so does Rondyr.
+    const trap =
+      definition?.settings?.spamProtection === "honeypot" &&
+      Boolean(submission.data[honeypotField]);
+    if (!trap) await forward(handle, url, submission, definition, token);
+  }
+  return { accepted, answer: formsAnswer(answer) };
+}
+
 /**
  * The site's submission route, mounted by `route.ts` in place of the
  * template's `src/pages/api/form.ts`. `token` is `RONDYR_API_TOKEN`, or null.
@@ -218,51 +335,20 @@ export interface SiteRequest {
  * its files.
  */
 export async function handleSubmission(site: SiteRequest, token: string | null) {
-  const { request, url, locals } = site;
-  // The plugin's own route refuses cross-site posts; called in-process it can't.
-  const origin = request.headers.get("origin");
-  if (origin !== null && origin !== url.origin) {
-    return new Response("Cross-site form submission", { status: 403 });
+  const { request, url } = site;
+  if (crossSite(request, url)) {
+    return new Response("Cross-site form submission", { status: 403, headers: noStore });
   }
-  const handle = getPublicPluginApiRouteHandler(locals);
   const submission = await readSubmission(request);
   const json = (request.headers.get("content-type") ?? "")
     .toLowerCase()
     .startsWith("application/json");
-  let accepted = false;
-  let answer: Awaited<ReturnType<Handle>> = {
-    success: false,
-    error: { code: "INVALID_REQUEST", message: "Invalid form" },
-  };
+  const { accepted, answer } =
+    submission === null
+      ? { accepted: false, answer: invalid }
+      : await submitToForms(site, submission, token);
 
-  if (handle !== undefined && submission !== null) {
-    const headers = new Headers(request.headers);
-    headers.set("content-type", "application/json");
-    headers.delete("content-length");
-    const body: z.input<typeof JsonBody> = { formId: submission.formId, data: submission.data };
-    if (Object.keys(submission.files).length > 0) body.files = submission.files;
-    // Built from the incoming request, so the forms plugin still sees the visitor's IP and country.
-    const result = await handle(
-      formsPluginId,
-      "POST",
-      "/submit",
-      new Request(request, { method: "POST", headers, body: JSON.stringify(body) }),
-    );
-    answer = result;
-    const envelope = Envelope.safeParse(result);
-    accepted =
-      envelope.success && envelope.data.success && Accepted.safeParse(envelope.data.data).success;
-    if (accepted) {
-      const definition = await definitionOf(handle, url, submission.formId);
-      // The forms plugin answers a filled honeypot like a success and stores nothing; so does Rondyr.
-      const trap =
-        definition?.settings?.spamProtection === "honeypot" &&
-        Boolean(submission.data[honeypotField]);
-      if (!trap) await forward(handle, url, submission, definition, token);
-    }
-  }
-
-  if (json) return Response.json(answer, { status: accepted ? 200 : 400 });
+  if (json) return Response.json(answer, { status: accepted ? 200 : 400, headers: noStore });
   const target = new URL(
     submission?.back !== null &&
       submission?.back !== undefined &&
@@ -282,5 +368,5 @@ export async function handleSubmission(site: SiteRequest, token: string | null) 
   target.searchParams.set("status", accepted ? "sent" : "error");
   // `/a/..//x` resolves to `//x`, which a browser would read as a host: one leading slash.
   const location = `${target.pathname.replace(/^\/+/u, "/")}${target.search}${target.hash}`;
-  return new Response(null, { status: 303, headers: { location } });
+  return new Response(null, { status: 303, headers: { location, ...noStore } });
 }

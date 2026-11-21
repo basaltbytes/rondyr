@@ -3,7 +3,7 @@ import type { PublicPluginApiRouteHandler } from "emdash/plugin-utils";
 import { describe, expect, it } from "vitest";
 
 import { enqueueCredential } from "./core/hop.ts";
-import { handleSubmission } from "./site-route.ts";
+import { handleSubmission, submitToForms } from "./site-route.ts";
 
 const site = "https://site.example.com";
 const token = `rdr_${"S".repeat(43)}`;
@@ -189,6 +189,56 @@ describe("the site route", () => {
     expect(crossSite.calls).toEqual([]);
   });
 
+  it("answers as the forms plugin's own route would, and keeps the answer out of caches", async () => {
+    // EmDash's in-process envelope carries the route's status, which its own route doesn't send.
+    const { locals } = emdash({
+      "emdash-forms/submit": () => ({ ...accepted(), status: 200 }),
+      "emdash-forms/definition": defined,
+      "rondyr/enqueue": queued,
+    });
+    const response = await submit(jsonPost({ formId: "contact", data: { name: "Ada" } }), locals);
+    expect(await response.json()).toEqual(accepted());
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+
+    const turnstile = emdash({
+      "emdash-forms/submit": () => ({
+        success: false,
+        status: 403,
+        error: { code: "FORBIDDEN", message: "Spam verification required" },
+      }),
+    });
+    const refused = await submit(jsonPost({ formId: "contact", data: {} }), turnstile.locals);
+    expect(refused.status).toBe(400);
+    expect(await refused.json()).toEqual({
+      success: false,
+      error: { code: "FORBIDDEN", message: "Spam verification required" },
+    });
+    expect(turnstile.calls.map(({ route }) => route)).toEqual(["emdash-forms/submit"]);
+
+    const internal = emdash({
+      "emdash-forms/submit": () => ({
+        success: false,
+        status: 500,
+        error: { code: "INTERNAL_ERROR", message: "Turnstile is not configured" },
+      }),
+    });
+    const failed = await submit(jsonPost({ formId: "contact", data: {} }), internal.locals);
+    expect(await failed.json()).toEqual({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: "Plugin route error" },
+    });
+
+    const form = new FormData();
+    form.set("formId", "contact");
+    const post = new Request(`${site}/api/form`, {
+      method: "POST",
+      headers: { origin: site },
+      body: form,
+    });
+    const redirect = await submit(post, emdash({ "emdash-forms/submit": accepted }).locals);
+    expect(redirect.headers.get("cache-control")).toBe("private, no-store");
+  });
+
   it("takes a post without JavaScript, with its files and repeated names, and redirects", async () => {
     const { locals, calls } = emdash({
       "emdash-forms/submit": accepted,
@@ -219,5 +269,104 @@ describe("the site route", () => {
       files: { cv: { filename: "cv.pdf", contentType: "application/pdf", bytes: btoa("%PDF") } },
     });
     expect(calls[2]?.body["fields"]).toEqual({ name: "Ada", topics: "Pottery, Glazing" });
+  });
+});
+
+/** A post without JavaScript that the page has already read, as Astro's `formData()` leaves it. */
+async function readPost(origin: string | null = site) {
+  const headers = new Headers({
+    "content-type": "application/x-www-form-urlencoded",
+    "cf-connecting-ip": "203.0.113.7",
+  });
+  if (origin !== null) headers.set("origin", origin);
+  const request = new Request(`${site}/form`, {
+    method: "POST",
+    headers,
+    body: "formId=contact&name=Ada",
+  });
+  await request.formData();
+  return request;
+}
+
+describe("submitToForms, for a site's own route or page", () => {
+  it("returns the forms plugin's answer once the submission is queued, without reading the body", async () => {
+    const seen: Request[] = [];
+    const { locals, calls } = emdash({
+      "emdash-forms/submit": accepted,
+      "emdash-forms/definition": () => ({
+        success: true,
+        data: {
+          ...definition,
+          pages: [
+            { fields: [{ name: "email", label: "Email", type: "email", required: true }] },
+            ...definition.pages,
+          ],
+        },
+      }),
+      "rondyr/enqueue": queued,
+    });
+    const handle = locals.emdash.handlePublicPluginApiRoute;
+    const spied: typeof handle = async (plugin, method, path, request) => {
+      seen.push(request);
+      return handle(plugin, method, path, request);
+    };
+    const request = await readPost();
+    const data = { email: "ada@example.com", name: "Ada" };
+    const result = await submitToForms(
+      {
+        request,
+        url: new URL(request.url),
+        locals: { emdash: { handlePublicPluginApiRoute: spied } },
+      },
+      { formId: "contact", data },
+      token,
+    );
+    expect(result).toEqual({ accepted: true, answer: accepted() });
+    expect(calls.map(({ route }) => route)).toEqual([
+      "emdash-forms/submit",
+      "emdash-forms/definition",
+      "rondyr/enqueue",
+    ]);
+    expect(calls[0]?.body).toEqual({ formId: "contact", data });
+    // The forms plugin still sees the visitor's address.
+    expect(seen[0]?.headers.get("cf-connecting-ip")).toBe("203.0.113.7");
+    expect(calls[2]?.body["form"]).toEqual({
+      slug: "contact",
+      name: "Contact",
+      fields: [
+        { name: "email", label: "Email", type: "email", required: true },
+        ...definition.pages.flatMap(({ fields }) => fields),
+      ],
+    });
+    expect(calls[2]?.body["fields"]).toEqual(data);
+  });
+
+  it("returns a refusal without queuing anything", async () => {
+    const refusal: Answer = {
+      success: true,
+      data: { success: false, errors: { name: "Required" } },
+    };
+    const { locals, calls } = emdash({ "emdash-forms/submit": () => refusal });
+    const request = await readPost();
+    const result = await submitToForms(
+      { request, url: new URL(request.url), locals },
+      { formId: "contact", data: {} },
+      token,
+    );
+    expect(result).toEqual({ accepted: false, answer: refusal });
+    expect(calls.map(({ route }) => route)).toEqual(["emdash-forms/submit"]);
+  });
+
+  it("refuses a post from another site without calling the forms plugin", async () => {
+    const { locals, calls } = emdash({});
+    const request = await readPost("https://elsewhere.example.com");
+    const result = await submitToForms(
+      { request, url: new URL(request.url), locals },
+      { formId: "contact", data: { name: "Ada" } },
+      token,
+    );
+    expect(result.accepted).toBe(false);
+    expect(result.answer).toMatchObject({ success: false, error: { code: "CROSS_SITE" } });
+    expect(calls).toEqual([]);
   });
 });
