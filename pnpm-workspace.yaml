@@ -87,6 +87,15 @@ minimumReleaseAgeExclude:
   - "@better-auth/telemetry@1.7.26"
   - better-auth@1.7.26
 strictPeerDependencies: true
+# @cloudflare/vite-plugin passes on the optional `workerd` peer of @cloudflare/unenv-preset.
+# apps/rondyr has two workerd versions at the same depth, from wrangler and from
+# @alchemy.run/cloudflare-runtime, and pnpm takes whichever its graph reaches first, so an
+# unrelated workspace package could switch it. This pins it to the workerd of wrangler;
+# scripts/workerd-peer.test.mjs fails when a wrangler update makes them differ.
+packageExtensions:
+  "@cloudflare/vite-plugin":
+    dependencies:
+      workerd: 1.20261118.1
 peerDependencyRules:
   allowedVersions:
     "capnp-es@0.0.16>typescript": "7.0.2"
