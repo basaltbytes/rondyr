@@ -1,0 +1,2 @@
+ALTER TABLE `submissions` ADD `idempotency_key` text;--> statement-breakpoint
+CREATE UNIQUE INDEX `submissions_form_idempotency_key_idx` ON `submissions` (`form_id`,`idempotency_key`) WHERE "submissions"."idempotency_key" is not null;

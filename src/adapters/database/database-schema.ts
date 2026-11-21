@@ -233,6 +233,8 @@ export const submissions = sqliteTable(
     contentFingerprint: text("content_fingerprint"),
     priorSameSender: integer("prior_same_sender").notNull().default(0),
     priorSameContent: integer("prior_same_content").notNull().default(0),
+    // The Idempotency-Key of a server intake, unique per form. It lives as long as the submission.
+    idempotencyKey: text("idempotency_key"),
   },
   (table) => [
     index("submissions_inbox_idx").on(table.organizationId, table.receivedAt, table.id),
@@ -243,6 +245,9 @@ export const submissions = sqliteTable(
     index("submissions_content_repetition_idx")
       .on(table.organizationId, table.contentFingerprint, table.receivedAt)
       .where(sql`${table.contentFingerprint} is not null`),
+    uniqueIndex("submissions_form_idempotency_key_idx")
+      .on(table.formId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
   ],
 );
 
@@ -296,11 +301,21 @@ export const outboxEvents = sqliteTable(
     leaseUntil: integer("lease_until").notNull().default(0),
     publishedAt: integer("published_at"),
     handedOffAt: integer("handed_off_at"),
+    /** Publications since intake or since the last manual retry. */
+    publicationCount: integer("publication_count").notNull().default(0),
+    /** When the Cron stopped republishing the event. A manual retry clears it. */
+    stuckAt: integer("stuck_at"),
   },
   (table) => [
-    index("outbox_pending_idx")
+    // The Cron reads this index every minute; stuck events stay out of it until a retry.
+    // A new name: drizzle-kit does not compare the condition of a partial index.
+    index("outbox_due_idx")
       .on(table.leaseUntil, table.publishedAt)
-      .where(sql`${table.handedOffAt} IS NULL`),
+      .where(sql`${table.handedOffAt} IS NULL AND ${table.stuckAt} IS NULL`),
+    // The status page and the stuck list read the stuck events alone.
+    index("outbox_stuck_idx")
+      .on(table.stuckAt)
+      .where(sql`${table.handedOffAt} IS NULL AND ${table.stuckAt} IS NOT NULL`),
   ],
 );
 

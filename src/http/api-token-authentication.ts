@@ -18,6 +18,9 @@ export const detailPath = `${submissionsPath}/:submissionId`;
 
 export const decisionPath = `${detailPath}/:decision`;
 
+/** The submission route. A `POST` with an `Authorization` header is a server intake. */
+export const intakePath = "/f/:formId";
+
 const tokenReads = new Set<string>([organizationPath, submissionsPath, countsPath, detailPath]);
 const bearer = /^Bearer[ \t]+([^,]+)$/iu;
 const apiCredential = /(?:^|,)[ \t]*Bearer[ \t]+rdr_/iu;
@@ -25,7 +28,14 @@ const apiCredential = /(?:^|,)[ \t]*Bearer[ \t]+rdr_/iu;
 const empty = (status: number) =>
   HttpServerResponse.empty({ status, headers: { "cache-control": "no-store" } });
 
-/** Match against the registered route, which also covers newly added routes by default. */
+/**
+ * Match against the registered route, which also covers newly added routes by default.
+ * On `/api`, a request with an `rdr_` Bearer credential is authenticated by its
+ * token. On the submission route, any `Authorization` header makes a server
+ * intake, whatever its scheme or value: a header that is not the Bearer
+ * credential of an active token gets `401` and never reaches the public path.
+ * The route reads the token's organization from `CurrentApiToken`.
+ */
 export const apiTokenAuthentication = HttpRouter.middleware(
   Effect.gen(function* () {
     const tokens = yield* ApiTokens;
@@ -34,10 +44,11 @@ export const apiTokenAuthentication = HttpRouter.middleware(
         const request = yield* HttpServerRequest.HttpServerRequest;
         const { route, params } = yield* HttpRouter.RouteContext;
         const authorization = request.headers.authorization;
+        const intake = route.path === intakePath && request.method === "POST";
+        const api = route.path === "/api" || route.path.startsWith("/api/");
         if (
-          !(route.path === "/api" || route.path.startsWith("/api/")) ||
           authorization === undefined ||
-          !apiCredential.test(authorization)
+          !(intake || (api && apiCredential.test(authorization)))
         ) {
           return yield* handler;
         }
@@ -51,6 +62,7 @@ export const apiTokenAuthentication = HttpRouter.middleware(
           );
         if (principal === "unavailable") return empty(503);
         if (principal === null) return empty(401);
+        if (intake) return yield* handler.pipe(Effect.provideService(CurrentApiToken, principal));
 
         const permitted =
           (request.method === "GET" && tokenReads.has(route.path)) ||

@@ -4,8 +4,10 @@ import * as Alchemy from "alchemy";
 import { Effect, Layer } from "effect";
 
 import RondyrWorker, {
+  classificationDeadLetterQueue,
   classificationQueue,
   databaseResource,
+  deliveryDeadLetterQueue,
   deliveryQueue,
 } from "./src/alchemy-worker.ts";
 
@@ -23,8 +25,8 @@ export default Alchemy.Stack(
     const database = yield* databaseResource;
     const classification = yield* classificationQueue;
     const delivery = yield* deliveryQueue;
-    const deadLetter = yield* Cloudflare.Queues.Queue("ClassificationDeadLetterQueue");
-    const deliveryDeadLetter = yield* Cloudflare.Queues.Queue("DeliveryDeadLetterQueue");
+    const deadLetter = yield* classificationDeadLetterQueue;
+    const deliveryDeadLetter = yield* deliveryDeadLetterQueue;
     // The Worker adds the email binding only for a stage configured for Cloudflare Email Sending.
     const app = yield* RondyrWorker;
 
@@ -40,6 +42,19 @@ export default Alchemy.Stack(
       scriptName: app.workerName,
       deadLetterQueue: deliveryDeadLetter.queueName,
       settings: { batchSize: 10, maxRetries: 3 },
+    });
+
+    // D1 keeps the state; each dead-letter consumer logs the IDs and acknowledges.
+    yield* Cloudflare.Queues.Consumer("ClassificationDeadLetterConsumer", {
+      queueId: deadLetter.queueId,
+      scriptName: app.workerName,
+      settings: { batchSize: 10 },
+    });
+
+    yield* Cloudflare.Queues.Consumer("DeliveryDeadLetterConsumer", {
+      queueId: deliveryDeadLetter.queueId,
+      scriptName: app.workerName,
+      settings: { batchSize: 10 },
     });
 
     return {

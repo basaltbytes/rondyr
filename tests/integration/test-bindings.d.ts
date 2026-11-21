@@ -15,6 +15,8 @@ declare global {
       SAME_CLASSIFIER_WORKER: Fetcher;
       SITEVERIFY_FIXTURE: Fetcher;
       WORKER_LOGS: Fetcher;
+      CLASSIFICATION_DEAD_LETTER_QUEUE: Queue;
+      DELIVERY_DEAD_LETTER_QUEUE: Queue;
       TEST_MIGRATIONS: D1Migration[];
     }
   }

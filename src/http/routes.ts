@@ -15,6 +15,7 @@ import { passwordResetRoutes } from "./password-reset-routes.ts";
 import { publicRoutes } from "./public-routes.ts";
 import { recipientConfirmationRoutes } from "./recipient-confirmation-routes.ts";
 import { reviewRoutes } from "./review-routes.ts";
+import { stuckSubmissionRoutes } from "./stuck-submission-routes.ts";
 import { submissionAdministrationRoutes } from "./submission-administration-routes.ts";
 import { submissionRoutes } from "./submission-routes.ts";
 import { targetRoutes } from "./target-routes.ts";
@@ -42,4 +43,5 @@ export const routes = Layer.mergeAll(
   recipientConfirmationRoutes,
   submissionAdministrationRoutes,
   operationsRoute,
+  stuckSubmissionRoutes,
 );

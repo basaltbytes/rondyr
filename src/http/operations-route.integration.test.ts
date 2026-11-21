@@ -134,7 +134,7 @@ it.live(
       assert.deepEqual(empty, {
         id: OrganizationId.make("empty"),
         name: "Vide",
-        outbox: { count: 0, oldestAgeMs: null },
+        outbox: { count: 0, oldestAgeMs: null, stuck: 0 },
         deliveries: [],
         receivedLast24h: 0,
         quarantinedLast24h: [],

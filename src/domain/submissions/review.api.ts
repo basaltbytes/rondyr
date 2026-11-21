@@ -6,7 +6,7 @@ export class ReviewApi extends Domain.Api(
   "ReviewApi",
   {
     model: Submissions,
-    commands: ["ApproveSubmission", "DismissSubmission"],
+    commands: ["ApproveSubmission", "DismissSubmission", "ReclassifySubmission"],
     queries: ["ListSubmissions", "GetSubmission", "CountSubmissions"],
   },
   { description: "Read and review messages within an authenticated organization inbox." },

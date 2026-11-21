@@ -129,7 +129,7 @@ export const test = base.extend({
         data: owner,
       });
       expect(setup.status(), "POST /api/setup").toBe(201);
-      await use({ origin, runtime });
+      await use({ origin, runtime, database: db });
     } finally {
       await runtime.dispose();
     }
@@ -149,6 +149,11 @@ export const test = base.extend({
       const received = await response.json();
       return received.map((entry) => JSON.parse(entry.body));
     });
+  },
+
+  /** The D1 database of the dashboard's Worker, for a state that only hours of processing reach. */
+  database: async ({ dashboardRuntime }, use) => {
+    await use(dashboardRuntime.database);
   },
 
   externalOrigin: async ({ dashboardOrigin }, use) => {

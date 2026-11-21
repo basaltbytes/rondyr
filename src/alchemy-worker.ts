@@ -30,6 +30,12 @@ export const classificationQueue = Cloudflare.Queues.Queue("ClassificationQueue"
 
 export const deliveryQueue = Cloudflare.Queues.Queue("DeliveryQueue");
 
+export const classificationDeadLetterQueue = Cloudflare.Queues.Queue(
+  "ClassificationDeadLetterQueue",
+);
+
+export const deliveryDeadLetterQueue = Cloudflare.Queues.Queue("DeliveryDeadLetterQueue");
+
 // wrangler.json declares the rate limits for local runs and tests; the deployed
 // Worker gets the same namespaces and limits: the client limit of the intake,
 // then the limit on the test messages of a destination.
@@ -57,6 +63,8 @@ const deploymentProps = Effect.gen(function* () {
   const database = yield* databaseResource;
   const classification = yield* classificationQueue;
   const delivery = yield* deliveryQueue;
+  const classificationDeadLetter = yield* classificationDeadLetterQueue;
+  const deliveryDeadLetter = yield* deliveryDeadLetterQueue;
   const secret = Config.Redacted("BETTER_AUTH_SECRET");
   const authSecret = yield* dev ? Config.option(secret) : secret.pipe(Config.map(Option.some));
   const authUrl = yield* dev
@@ -106,9 +114,11 @@ const deploymentProps = Effect.gen(function* () {
       DELIVERY_QUEUE: delivery,
       CLIENT_RATE_LIMIT: clientRateLimit,
       TARGET_TEST_RATE_LIMIT: testRateLimit,
-      // The queue handler tells the two queues apart by name.
+      // The queue handler tells the queues apart by name.
       CLASSIFICATION_QUEUE_NAME: classification.queueName,
       DELIVERY_QUEUE_NAME: delivery.queueName,
+      CLASSIFICATION_DEAD_LETTER_QUEUE_NAME: classificationDeadLetter.queueName,
+      DELIVERY_DEAD_LETTER_QUEUE_NAME: deliveryDeadLetter.queueName,
       RONDYR_CLASSIFIER: classifier,
       ...(Option.isSome(escalationClassifier) && {
         RONDYR_ESCALATION_CLASSIFIER: escalationClassifier.value,
