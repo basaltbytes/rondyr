@@ -33,6 +33,11 @@ export const Member = Schema.Struct({
   name: Schema.String,
   email: Schema.String,
   role: MemberRole,
+  /**
+   * The API tokens of the organization that this member created and that still
+   * work. Removing the member revokes them, and an integration that uses one stops.
+   */
+  activeApiTokens: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 });
 export type Member = typeof Member.Type;
 

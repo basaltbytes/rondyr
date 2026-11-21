@@ -1,23 +1,25 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
-import { hashPassword } from "better-auth/crypto";
-import { Clock, Effect, Redacted, Schema } from "effect";
+import { Clock, Effect, Layer, Redacted, Schema } from "effect";
 
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
-import { call, createInbox, json, signIn } from "../../tests/integration/organization-fixture.ts";
 import {
-  InvitationSummary,
-  IssuedInvitation,
-  Member,
-  OrganizationMembers,
-} from "../domain/organizations/members.ts";
+  addMember,
+  invite,
+  memberPassword,
+  seedAccount,
+  signInAs,
+} from "../../tests/integration/member-fixture.ts";
+import { call, createInbox, json, signIn } from "../../tests/integration/organization-fixture.ts";
+import { InvitationSummary, Member, OrganizationMembers } from "../domain/organizations/members.ts";
 import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
-import { SubmissionId } from "../domain/submissions/submission.id.ts";
+import { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
+import { membersLive } from "../adapters/database/members.ts";
+import { Members } from "../ports/members.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
-const readIssued = Schema.decodeUnknownEffect(IssuedInvitation);
 const readMembers = Schema.decodeUnknownEffect(OrganizationMembers);
 const readMember = Schema.decodeUnknownEffect(Member);
 const readSummary = Schema.decodeUnknownEffect(InvitationSummary);
@@ -38,84 +40,7 @@ const readEmails = Schema.decodeUnknownEffect(
   ),
 );
 
-const password = "invited-member-test-password";
-
-const cookieOf = (response: Response) =>
-  response.headers
-    .getSetCookie()
-    .map((value) => value.split(";", 1)[0])
-    .join("; ");
-
-let clients = 0;
-
-/** Better Auth limits sign-in attempts per address: each sign-in here comes from its own client. */
-const signInAs = Effect.fnUntraced(function* (email: string, secret = password) {
-  clients += 1;
-  const response = yield* call(
-    "POST",
-    "/api/auth/sign-in/email",
-    { email, password: secret },
-    { "cf-connecting-ip": `192.0.2.${clients}` },
-  );
-  assert.strictEqual(response.status, 200);
-  return { cookie: cookieOf(response) };
-});
-
-/** An account created directly in D1, outside any organization, and signed in. */
-const seedAccount = Effect.fnUntraced(function* (id: string, email: string) {
-  const hash = yield* Effect.promise(() => hashPassword(password));
-  const now = yield* Clock.currentTimeMillis;
-  yield* Effect.promise(() =>
-    env.DB.batch([
-      env.DB.prepare(
-        "INSERT INTO auth_users (id, name, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ).bind(id, id, email, now, now),
-      env.DB.prepare(`
-        INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password, created_at, updated_at)
-        VALUES (?, ?, ?, 'credential', ?, ?, ?)
-      `).bind(id, id, id, hash, now, now),
-    ]),
-  );
-  return yield* signInAs(email);
-});
-
-const invite = Effect.fnUntraced(function* (
-  organizationId: string,
-  headers: HeadersInit,
-  email: string,
-  role: "reviewer" | "admin",
-) {
-  const response = yield* call(
-    "POST",
-    `/api/organizations/${organizationId}/invitations`,
-    { email, role },
-    headers,
-  );
-  assert.strictEqual(response.status, 201);
-  assert.strictEqual(response.headers.get("cache-control"), "no-store");
-  const issued = yield* json(response).pipe(Effect.flatMap(readIssued));
-  const link = new URL(Redacted.value(issued.link));
-  assert.strictEqual(link.origin, origin);
-  assert.strictEqual(link.pathname, "/invitation");
-  return { ...issued, token: link.hash.slice(1) };
-});
-
-/** Invite an address and accept with a new account, then sign in with it. */
-const addMember = Effect.fnUntraced(function* (
-  organizationId: string,
-  headers: HeadersInit,
-  email: string,
-  role: "reviewer" | "admin",
-) {
-  const { token } = yield* invite(organizationId, headers, email, role);
-  const accepted = yield* call("POST", "/api/invitations/accept", {
-    token,
-    name: email.split("@", 1)[0] ?? email,
-    password,
-  });
-  assert.strictEqual(accepted.status, 201);
-  return yield* signInAs(email);
-});
+const password = memberPassword;
 
 const quarantine = Effect.fnUntraced(function* (publicId: string) {
   const response = yield* Effect.promise(() =>
@@ -674,4 +599,115 @@ it.live(
         [404, 404],
       );
     }),
+);
+
+/** Run with the D1 adapter of the members, past the check of the route. */
+const withMembers = <A, E>(effect: Effect.Effect<A, E, Members>) =>
+  Effect.scoped(
+    Effect.flatMap(Layer.build(membersLive), (context) => Effect.provideContext(effect, context)),
+  );
+
+it.live(
+  "refuses the changes of an admin demoted while its request ran, and the links of a reviewer",
+  () =>
+    Effect.gen(function* () {
+      const admin = yield* signIn;
+      const { id } = yield* createInbox("Demoted during a request", admin);
+      yield* addMember(id, admin, "racing-admin@example.test", "admin");
+      yield* addMember(id, admin, "racing-reviewer@example.test", "reviewer");
+      const members = `/api/organizations/${id}/members`;
+      const listed = yield* call("GET", members, undefined, admin).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readMembers),
+      );
+      const userOf = (email: string) =>
+        listed.members.find((member) => member.email === email)?.userId ?? assert.fail(email);
+      const racing = userOf("racing-admin@example.test");
+      const reviewer = userOf("racing-reviewer@example.test");
+      const demoted = yield* call("PATCH", `${members}/${racing}`, { role: "reviewer" }, admin);
+      assert.strictEqual(demoted.status, 200);
+      // The requests below passed the check of the route before the demotion.
+      const scope = { userId: racing, organizationId: OrganizationId.make(id) };
+
+      const outcomes = yield* withMembers(
+        Effect.gen(function* () {
+          const store = yield* Members;
+          return yield* Effect.all([
+            Effect.flip(store.changeRole(scope, reviewer, "admin")),
+            Effect.flip(store.remove(scope, reviewer)),
+            Effect.flip(store.invite(scope, "late-friend@example.test", "admin")),
+            Effect.flip(store.list(scope)),
+          ]);
+        }),
+      );
+      // An invitation that a reviewer issued, however it got into D1, opens nothing.
+      const token = "r".repeat(43);
+      const digest = yield* Effect.promise(() =>
+        crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)),
+      );
+      const now = yield* Clock.currentTimeMillis;
+      yield* Effect.promise(() =>
+        env.DB.prepare(`
+          INSERT INTO organization_invitations
+            (id, organization_id, email, role, token_hash, created_by, created_at, expires_at)
+          VALUES ('73123ee4-40bf-4c5f-b8ff-1d56cdaa7650', ?, 'smuggled@example.test', 'admin', ?, ?, ?, ?)
+        `)
+          .bind(
+            id,
+            [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join(""),
+            reviewer,
+            now,
+            now + 86_400_000,
+          )
+          .run(),
+      );
+      const read = yield* call("POST", "/api/invitations/read", { token });
+      const accepted = yield* call("POST", "/api/invitations/accept", {
+        token,
+        name: "Smuggled",
+        password,
+      });
+
+      assert.deepEqual(
+        outcomes.map(({ _tag }) => _tag),
+        ["NotAnAdmin", "NotAnAdmin", "MemberNotFound", "MemberNotFound"],
+      );
+      assert.deepEqual([read.status, accepted.status], [404, 404]);
+      const roles = yield* call("GET", members, undefined, admin).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readMembers),
+      );
+      assert.deepEqual(roles.members.map(({ email, role }) => [email, role]).toSorted(), [
+        ["racing-admin@example.test", "reviewer"],
+        ["racing-reviewer@example.test", "reviewer"],
+        ["settings-admin@example.test", "admin"],
+      ]);
+    }),
+);
+
+it.live("lists the active API tokens of each member, which its removal revokes", () =>
+  Effect.gen(function* () {
+    const admin = yield* signIn;
+    const { id } = yield* createInbox("Tokens per member", admin);
+    const leaving = yield* addMember(id, admin, "token-owner@example.test", "admin");
+    const tokens = `/api/organizations/${id}/api-tokens`;
+    for (const name of ["Site", "Backup"]) {
+      const created = yield* call("POST", tokens, { name }, leaving);
+      assert.strictEqual(created.status, 201);
+    }
+    const members = `/api/organizations/${id}/members`;
+
+    const listed = yield* call("GET", members, undefined, admin).pipe(
+      Effect.flatMap(json),
+      Effect.flatMap(readMembers),
+    );
+
+    assert.deepEqual(
+      listed.members.map(({ email, activeApiTokens }) => [email, activeApiTokens]).toSorted(),
+      [
+        ["settings-admin@example.test", 0],
+        ["token-owner@example.test", 2],
+      ],
+    );
+  }),
 );
