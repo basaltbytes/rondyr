@@ -1,6 +1,7 @@
 import { z } from "astro/zod";
 
 import type { FlatFields } from "./fields.ts";
+import { attemptTimeoutMs } from "./retry.ts";
 
 /** `fetch`, or the EmDash plugin's `ctx.http.fetch` limited to the Rondyr host. */
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -81,8 +82,6 @@ export class RondyrError extends Error {
   }
 }
 
-const timeoutMs = 30_000;
-
 function failureOf(status: number): RondyrFailure {
   if (status === 401 || status === 403) return "unauthorized";
   if (status === 404) return "not-found";
@@ -91,9 +90,31 @@ function failureOf(status: number): RondyrFailure {
   return "unexpected";
 }
 
+/**
+ * Why a request did not reach Rondyr. `host-refused` is EmDash refusing the
+ * call: a host missing from `allowedHosts`, or a local or private address.
+ */
+export type NetworkFailure = "timeout" | "host-refused" | "network";
+
+/**
+ * The category of a failed `fetch`. Only the category is kept: the error's
+ * message is free text from the platform, and nothing proves it never repeats
+ * a header or the body.
+ */
+export function networkFailure(error: Error | null): NetworkFailure {
+  if (error === null) return "network";
+  if (error.name === "TimeoutError" || error.name === "AbortError") return "timeout";
+  if (
+    /is not allowed to fetch from host|blocked fetch to|has no allowed hosts/u.test(error.message)
+  ) {
+    return "host-refused";
+  }
+  return "network";
+}
+
 export type SubmitResult =
   | { readonly status: number }
-  | { readonly status: null; readonly reason: string };
+  | { readonly status: null; readonly reason: NetworkFailure };
 
 /** A Rondyr folder: the status its messages have. */
 export type Decision = "approve" | "dismiss";
@@ -120,7 +141,7 @@ export class RondyrClient {
       return await this.#fetch(new URL(path, this.#origin).href, {
         ...init,
         headers,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(attemptTimeoutMs),
       });
     } catch {
       throw new RondyrError("unreachable");
@@ -136,34 +157,34 @@ export class RondyrClient {
   }
 
   /**
-   * Send a submission as a server intake. Returns the HTTP status, or the reason
-   * Rondyr was not reached: a network error, a timeout, or a host that the
-   * platform refuses. The reason never contains the fields.
+   * Send a submission as a server intake. Returns the HTTP status, or why
+   * Rondyr was not reached: a timeout, a host that EmDash refuses, or another
+   * network error. Neither carries the fields or the token.
    */
   async submit(
     publicId: string,
     fields: FlatFields,
     idempotencyKey: string,
   ): Promise<SubmitResult> {
-    const headers = new Headers({
-      authorization: `Bearer ${this.#token}`,
-      "content-type": "application/json",
-      "idempotency-key": idempotencyKey,
-    });
     try {
+      const headers = new Headers({
+        authorization: `Bearer ${this.#token}`,
+        "content-type": "application/json",
+        "idempotency-key": idempotencyKey,
+      });
       const response = await this.#fetch(
         new URL(`/f/${encodeURIComponent(publicId)}`, this.#origin).href,
         {
           method: "POST",
           headers,
           body: JSON.stringify(fields),
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(attemptTimeoutMs),
         },
       );
       await response.body?.cancel();
       return { status: response.status };
     } catch (error) {
-      return { status: null, reason: error instanceof Error ? error.message : "Request failed" };
+      return { status: null, reason: networkFailure(error instanceof Error ? error : null) };
     }
   }
 

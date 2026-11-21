@@ -6,12 +6,13 @@ import { beforeAll, expect, it, vi } from "vitest";
 
 import { testOrigin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
 import { flattenFields, type FormLayout } from "../src/core/fields.ts";
-import { newEntry } from "../src/core/queue.ts";
+import { newEntry, QueueEntry } from "../src/core/queue.ts";
 import { RondyrClient } from "../src/core/rondyr-client.ts";
 import { verifyWebhook } from "../src/core/signature.ts";
-import { attempt } from "../src/delivery.ts";
+import { attempt, sendDue } from "../src/delivery.ts";
 import { Store } from "../src/store.ts";
 import { memoryHost } from "../src/testing/memory-storage.ts";
+import { receiveWebhook } from "../src/webhook.ts";
 
 // The plugin's own code against the built Rondyr Worker, in workerd: intake with a
 // token and an idempotency key, the folders and counts, a decision, then the
@@ -191,6 +192,28 @@ it("sends, reads, decides and verifies the webhook with the plugin's code", asyn
     submission: { id: entry.submissionId, fields },
     form: { id: publicId },
   });
+
+  // The plugin's webhook route on the request Rondyr sent: one email per recipient, once.
+  const { host, lines } = memoryHost();
+  const store = new Store(host);
+  await store.putLink("contact", { rondyrFormId: publicId, recipients: ["team@example.com"] });
+  await store.putLayout(layout);
+  const sent: { to: string; subject: string; text: string; replyTo?: string }[] = [];
+  const email = { send: async (message: (typeof sent)[number]) => void sent.push(message) };
+  const site = { ...host, email, input: body, request: { headers } };
+  expect(await receiveWebhook(site, secret, Date.now())).toEqual({ status: 200, emailed: 1 });
+  expect(await receiveWebhook(site, secret, Date.now())).toEqual({ status: 200, emailed: 0 });
+  expect(sent).toEqual([
+    {
+      to: "team@example.com",
+      subject: "New submission: Contact",
+      replyTo: "ada@example.com",
+      text: expect.stringContaining(
+        "Topics: Pottery, Glazing\nMessage: Is there room in the class?",
+      ),
+    },
+  ]);
+  expect(lines).toEqual([]);
 });
 
 it("stores a submission once when the first attempt times out after Rondyr stored it", async () => {
@@ -199,8 +222,7 @@ it("stores a submission once when the first attempt times out after Rondyr store
   const store = new Store(host);
   await store.putLink("contact", { rondyrFormId: publicId, recipients: [] });
   const id = crypto.randomUUID();
-  const entry = newEntry("contact", { message: "Sent during a timeout" }, Date.now());
-  await store.putQueueEntry(id, entry);
+  await store.createQueueEntry(id, newEntry("contact", { message: "Sent during a timeout" }, 0));
   let calls = 0;
   const http = {
     fetch: async (url: string, init?: RequestInit) => {
@@ -212,15 +234,65 @@ it("stores a submission once when the first attempt times out after Rondyr store
     },
   };
   const options = { url: testOrigin };
-  await attempt({ ...host, http }, options, token, id, entry);
+  expect(await attempt({ ...host, http }, options, token, id, () => 0)).toBe("retry");
   const retry = await store.queueEntry(id);
   expect(retry).toMatchObject({ state: "pending", attempts: 1, lastStatus: null });
-  if (retry === null) throw new Error("Expected the entry to wait");
-  await attempt({ ...host, http }, options, token, id, retry);
+  expect(await attempt({ ...host, http }, options, token, id, () => 60_000)).toBe("sent");
   expect(await store.queueEntry(id)).toBeNull();
   const client = new RondyrClient(worker, testOrigin, token);
   const counts = await client.counts(organizationId);
   const total =
     counts.received + counts.classifying + counts.accepted + counts.quarantined + counts.archived;
   expect(total).toBe(1);
+});
+
+it("loses and duplicates nothing when Rondyr is unreachable for an hour", async () => {
+  const { organizationId, publicId, token } = await siteOrganization("Outage site");
+  const { host, collections } = memoryHost();
+  const store = new Store(host);
+  await store.putLink("contact", { rondyrFormId: publicId, recipients: [] });
+  const start = Date.UTC(2026, 10, 21, 9);
+  const clock = { now: start };
+  const ids = Array.from({ length: 3 }, () => crypto.randomUUID());
+  for (const [index, id] of ids.entries()) {
+    const fields = { email: `visitor-${index}@example.com`, message: `Message ${index}` };
+    await store.createQueueEntry(id, newEntry("contact", fields, start));
+  }
+  const outageEnds = start + 3_600_000;
+  const keys: string[] = [];
+  let lostAnswer = false;
+  const http = {
+    fetch: async (url: string, init?: RequestInit) => {
+      keys.push(new Headers(init?.headers).get("idempotency-key") ?? "");
+      if (clock.now < outageEnds) throw new TypeError("Network connection lost");
+      const response = await worker(url, init);
+      // The first answer after the outage is lost after Rondyr stored the message.
+      if (!lostAnswer) {
+        lostAnswer = true;
+        throw new DOMException("The operation timed out", "TimeoutError");
+      }
+      return response;
+    },
+  };
+  const options = { url: testOrigin };
+  // The attempts right after each visitor's response, during the outage.
+  for (const id of ids) await attempt({ ...host, http }, options, token, id, () => clock.now);
+  // Then the cron, once a minute, until the queue is empty.
+  for (let run = 0; run < 1_000 && collections.queue.rows.size > 0; run += 1) {
+    const due = [...collections.queue.rows.values()].map(
+      ({ data }) => QueueEntry.parse(data).nextAttemptAt,
+    );
+    const next = Math.max(clock.now + 60_000, Math.min(...due));
+    clock.now = Math.ceil(next / 60_000) * 60_000;
+    await sendDue({ ...host, http }, options, token, () => clock.now);
+  }
+  expect(collections.queue.rows.size).toBe(0);
+  expect(clock.now).toBeGreaterThan(outageEnds);
+  // Every attempt for a message used its own key, and one key was sent again after the lost answer.
+  expect(new Set(keys)).toEqual(new Set(ids));
+  const client = new RondyrClient(worker, testOrigin, token);
+  const counts = await client.counts(organizationId);
+  const total =
+    counts.received + counts.classifying + counts.accepted + counts.quarantined + counts.archived;
+  expect(total).toBe(3);
 });

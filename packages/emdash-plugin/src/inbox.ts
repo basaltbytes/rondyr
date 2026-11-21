@@ -12,12 +12,20 @@ const statusOf = {
   unexpected: 502,
 } as const;
 
-/** A client of the Rondyr API with the site's token, or the route error `token-missing`. */
+/**
+ * A client of the Rondyr API with the site's token, or the route error
+ * `token-missing` or `token-malformed`.
+ */
 export function rondyrClient(ctx: PluginContext, options: ResolvedOptions): RondyrClient {
-  const { token } = rondyrSecrets();
+  const { token, tokenProblem } = rondyrSecrets();
   const http = ctx.http;
-  if (token === null)
-    throw new PluginRouteError("token-missing", "RONDYR_API_TOKEN is not set", 503);
+  if (token === null) {
+    throw new PluginRouteError(
+      tokenProblem ?? "token-missing",
+      "RONDYR_API_TOKEN is not usable",
+      503,
+    );
+  }
   if (http === undefined) throw new PluginRouteError("unexpected", "Network access is off", 503);
   return new RondyrClient((url, init) => http.fetch(url, init), options.url, token);
 }

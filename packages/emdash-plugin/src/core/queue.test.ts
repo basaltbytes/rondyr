@@ -1,14 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { afterAttempt, newEntry, retried, unlinked } from "./queue.ts";
-import { retryWindowMs } from "./retry.ts";
+import { afterAttempt, claimed, isDue, newEntry, retried, unlinked } from "./queue.ts";
+import { attemptLeaseMs, retryWindowMs } from "./retry.ts";
 
 const start = Date.UTC(2026, 10, 21, 12);
 const entry = newEntry("contact", { message: "Hello" }, start);
 
 describe("queue transitions", () => {
-  it("starts pending, with the cron as a fallback a minute later", () => {
-    expect(entry).toMatchObject({ state: "pending", attempts: 0, nextAttemptAt: start + 60_000 });
+  it("starts pending and due at once", () => {
+    expect(entry).toMatchObject({ state: "pending", attempts: 0, nextAttemptAt: start });
+    expect(isDue(entry, start)).toBe(true);
+  });
+
+  it("is not due while an attempt holds it, and due again when the lease ends", () => {
+    const held = claimed(entry, start);
+    expect(held).toMatchObject({ state: "pending", attempts: 0 });
+    expect(isDue(held, start + attemptLeaseMs - 1)).toBe(false);
+    expect(isDue(held, start + attemptLeaseMs)).toBe(true);
+    expect(isDue(unlinked(entry), start)).toBe(false);
   });
 
   it("removes the entry once Rondyr answers 202", () => {

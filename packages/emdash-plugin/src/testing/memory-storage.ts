@@ -42,19 +42,49 @@ function sortValue(document: Value, key: string): number {
   return value?.success === true ? value.data : 0;
 }
 
+interface Row {
+  readonly data: Value;
+  readonly revision: string;
+}
+
 /**
  * An in-memory storage collection for unit tests: equality and numeric range
- * filters, one sort key, a limit. No cursor, so every page is the only page.
+ * filters, one sort key, a limit, and conditional writes on a revision that
+ * changes with every write. No cursor, so every page is the only page.
  */
 class MemoryCollection implements Collection {
-  readonly rows = new Map<string, Value>();
+  readonly rows = new Map<string, Row>();
+  #writes = 0;
+
+  #write(id: string, data: Value): string {
+    this.#writes += 1;
+    const revision = String(this.#writes);
+    this.rows.set(id, { data: structuredClone(data), revision });
+    return revision;
+  }
 
   async get(id: string) {
-    return this.rows.get(id) ?? null;
+    return this.rows.get(id)?.data ?? null;
+  }
+
+  async getVersioned(id: string) {
+    const row = this.rows.get(id);
+    return row === undefined ? null : { value: row.data, revision: row.revision };
   }
 
   async put(id: string, data: Value) {
-    this.rows.set(id, structuredClone(data));
+    this.#write(id, data);
+  }
+
+  async compareAndSet(id: string, expectedRevision: string | null, data: Value) {
+    const current = this.rows.get(id)?.revision ?? null;
+    if (current !== expectedRevision) return { applied: false as const };
+    return { applied: true as const, revision: this.#write(id, data) };
+  }
+
+  async compareAndDelete(id: string, expectedRevision: string) {
+    if (this.rows.get(id)?.revision !== expectedRevision) return { applied: false };
+    return { applied: this.rows.delete(id) };
   }
 
   async delete(id: string) {
@@ -66,14 +96,14 @@ class MemoryCollection implements Collection {
   }
 
   async count(where?: Where) {
-    return [...this.rows.values()].filter((data) => matches(data, where)).length;
+    return [...this.rows.values()].filter(({ data }) => matches(data, where)).length;
   }
 
   async query(options?: Query) {
     const [sortKey, direction] = Object.entries(options?.orderBy ?? {})[0] ?? [];
     const items = [...this.rows.entries()]
-      .filter(([, data]) => matches(data, options?.where))
-      .map(([id, data]) => ({ id, data }))
+      .filter(([, { data }]) => matches(data, options?.where))
+      .map(([id, { data }]) => ({ id, data }))
       .toSorted((left, right) =>
         sortKey === undefined
           ? 0
@@ -85,12 +115,15 @@ class MemoryCollection implements Collection {
   }
 }
 
+type LogData = Parameters<StorageHost["log"]["info"]>[1];
+
 export interface LogLine {
   readonly level: "info" | "warn" | "error";
   readonly message: string;
+  readonly data: LogData;
 }
 
-/** A storage host with the plugin's four collections and a logger that records lines. */
+/** A storage host with the plugin's collections and a logger that records lines. */
 export function memoryHost() {
   const lines: LogLine[] = [];
   const collections = {
@@ -98,13 +131,14 @@ export function memoryHost() {
     layouts: new MemoryCollection(),
     links: new MemoryCollection(),
     deliveries: new MemoryCollection(),
+    unqueued: new MemoryCollection(),
   };
   const host: StorageHost = {
     storage: collections,
     log: {
-      info: (message: string) => lines.push({ level: "info", message }),
-      warn: (message: string) => lines.push({ level: "warn", message }),
-      error: (message: string) => lines.push({ level: "error", message }),
+      info: (message: string, data?: LogData) => lines.push({ level: "info", message, data }),
+      warn: (message: string, data?: LogData) => lines.push({ level: "warn", message, data }),
+      error: (message: string, data?: LogData) => lines.push({ level: "error", message, data }),
     },
   };
   return { host, collections, lines };

@@ -19,6 +19,30 @@ export const FormLayout = z.object({
 });
 export type FormLayout = z.infer<typeof FormLayout>;
 
+/**
+ * The layout of a form as the forms plugin's definition gives it, cut to the
+ * limits of `FormLayout`, so that an unusual form never stops a submission from
+ * being queued. A field name that is empty or too long is left out.
+ */
+export function formLayout(
+  slug: string,
+  name: string,
+  fields: readonly { readonly name: string; readonly label: string; readonly type: string }[],
+): FormLayout {
+  return {
+    slug: slug.slice(0, 200),
+    name: name.slice(0, 200),
+    fields: fields
+      .filter((field) => field.name.length > 0 && field.name.length <= 200)
+      .slice(0, 200)
+      .map((field) => ({
+        name: field.name,
+        label: field.label.slice(0, 500),
+        type: field.type.slice(0, 40),
+      })),
+  };
+}
+
 const Scalar = z.union([z.string(), z.number(), z.boolean()]);
 
 /** A value a visitor sent: a string, a number, a boolean or a list of them. */

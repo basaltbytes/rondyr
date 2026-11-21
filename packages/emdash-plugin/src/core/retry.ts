@@ -4,6 +4,15 @@ export const retryDelaysMs = [60_000, 300_000, 1_800_000, 7_200_000, 21_600_000]
 /** After this long in the queue, a retryable failure marks the entry as failed. */
 export const retryWindowMs = 7 * 24 * 3_600_000;
 
+/** How long Rondyr gets to answer one attempt before it counts as a network error. */
+export const attemptTimeoutMs = 30_000;
+
+/**
+ * How long one attempt holds an entry: longer than an attempt can last, so two
+ * attempts never send the same entry at once.
+ */
+export const attemptLeaseMs = 4 * attemptTimeoutMs;
+
 /** How long to wait after the given number of consecutive failures, at least one. */
 export function retryDelayMs(failures: number): number {
   return retryDelaysMs[Math.min(Math.max(failures, 1), retryDelaysMs.length) - 1] ?? 21_600_000;
