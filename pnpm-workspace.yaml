@@ -10,7 +10,7 @@ catalog:
   "@alchemy.run/cloudflare": 2.0.0-beta.87
   "@alchemy.run/domain": 2.0.0-beta.87
   "@astrojs/markdown-remark": 7.3.10
-  "@astrojs/starlight": 0.42.11
+  "@astrojs/starlight": 0.43.1
   "@babel/core": 8.1.2
   "@base-ui/react": 1.9.0
   "@cloudflare/kumo": 2.15.0
