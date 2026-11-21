@@ -452,7 +452,7 @@ L’adaptateur Cloudflare appelle `CLOUDFLARE_EMAIL.send()` avec le même e-mail
 
 ### Données personnelles
 
-Le contenu des messages est dans D1, et les journaux techniques n’en contiennent pas : le consumer n’écrit que le type de l’erreur. La conservation est illimitée tant que #9 n’a pas ajouté les durées de rétention, la purge planifiée, l’export et la suppression à la demande. L’auto-hébergement ne dispense pas l’opérateur de ses obligations RGPD ; la documentation doit lister les sous-traitants, dont le fournisseur du modèle et Resend, qui garde les e-mails envoyés selon la durée de son offre ; `docs/email.md` le signale.
+Le contenu des messages est dans D1, et les journaux techniques n’en contiennent pas : le consumer n’écrit que le type de l’erreur. La conservation est illimitée tant que #9 n’a pas ajouté les durées de rétention, la purge planifiée, l’export et la suppression à la demande. L’auto-hébergement ne dispense pas l’opérateur de ses obligations RGPD ; la documentation doit lister les sous-traitants, dont le fournisseur du modèle et le fournisseur d’e-mail du stage, Resend ou Cloudflare Email Sending. Resend garde les e-mails envoyés selon la durée de son offre ; `docs/email.md` le signale.
 
 ## 9. Arborescence
 

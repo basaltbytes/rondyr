@@ -157,7 +157,7 @@ Delivery is at least once, as for webhooks. Resend deduplicates retries within 2
 
 ## Privacy
 
-The selected provider processes the contents of sent emails. Resend keeps sent emails for the retention period of your plan, 30 days on the free plan. The delivery records in D1 contain IDs, states and error summaries. See the provider's terms for personal data processing. [Resend data processing addendum](https://resend.com/legal/dpa) · [Cloudflare data processing addendum](https://www.cloudflare.com/cloudflare-customer-dpa/)
+The selected provider processes the contents of sent emails. Resend keeps sent emails for the retention period of your plan, 30 days on the free plan. The delivery records in D1 contain IDs, states and error summaries. If you send personal data, list the stage's provider, Resend or Cloudflare, as a subprocessor and sign its data processing addendum if you need one. [Resend data processing addendum](https://resend.com/legal/dpa) · [Cloudflare data processing addendum](https://www.cloudflare.com/cloudflare-customer-dpa/)
 
 ## Not built yet
 
