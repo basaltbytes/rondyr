@@ -1,9 +1,12 @@
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
+  "$schema": "./apps/rondyr/node_modules/wrangler/config-schema.json",
   "name": "rondyr",
-  "main": "./src/worker.ts",
+  "main": "./apps/rondyr/src/worker.ts",
   "compatibility_date": "2026-11-02",
   "compatibility_flags": ["nodejs_compat", "new_module_registry"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "keep_vars": true,
   "assets": {
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/health", "/f", "/f/*", "/api", "/api/*"]
@@ -11,19 +14,16 @@
   "observability": {
     "enabled": true
   },
-  "vars": {
-    "CLASSIFICATION_QUEUE_NAME": "rondyr-classification",
-    "DELIVERY_QUEUE_NAME": "rondyr-delivery",
-    "CLASSIFICATION_DEAD_LETTER_QUEUE_NAME": "rondyr-classification-dead-letter",
-    "DELIVERY_DEAD_LETTER_QUEUE_NAME": "rondyr-delivery-dead-letter"
+  "ai": {
+    "binding": "AI",
+    "remote": true
   },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "rondyr-local",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "./database/migrations",
-      "migrations_pattern": "./database/migrations/*/migration.sql"
+      "database_name": "rondyr",
+      "migrations_dir": "./apps/rondyr/database/migrations",
+      "migrations_pattern": "./apps/rondyr/database/migrations/*/migration.sql"
     }
   ],
   "queues": {
@@ -121,27 +121,16 @@
       }
     ]
   },
-  "migrations": [
-    {
-      "tag": "submission-review",
-      "new_sqlite_classes": [
-        "DomainDirectory",
-        "SubmissionAggregate",
-        "ClassificationPolicy",
-        "InboxProjection",
-        "InboxProjectionRun",
-        "ClassifySubmissionWorkflow"
-      ]
-    },
-    {
-      "tag": "deliveries",
-      "new_sqlite_classes": ["DeliveryPolicy"]
-    },
-    {
-      "tag": "cron-heartbeat",
-      "new_sqlite_classes": ["CronHeartbeatObject"]
-    }
-  ],
+  "exports": {
+    "DomainDirectory": { "type": "durable-object", "storage": "sqlite" },
+    "SubmissionAggregate": { "type": "durable-object", "storage": "sqlite" },
+    "ClassificationPolicy": { "type": "durable-object", "storage": "sqlite" },
+    "DeliveryPolicy": { "type": "durable-object", "storage": "sqlite" },
+    "InboxProjection": { "type": "durable-object", "storage": "sqlite" },
+    "InboxProjectionRun": { "type": "durable-object", "storage": "sqlite" },
+    "ClassifySubmissionWorkflow": { "type": "durable-object", "storage": "sqlite" },
+    "CronHeartbeatObject": { "type": "durable-object", "storage": "sqlite" }
+  },
   "workflows": [
     {
       "name": "rondyr-submissions-backfill",
@@ -152,19 +141,18 @@
   "env": {
     "cloudflare-email": {
       "vars": {
-        "CLASSIFICATION_QUEUE_NAME": "rondyr-classification",
-        "DELIVERY_QUEUE_NAME": "rondyr-delivery",
-        "CLASSIFICATION_DEAD_LETTER_QUEUE_NAME": "rondyr-classification-dead-letter",
-        "DELIVERY_DEAD_LETTER_QUEUE_NAME": "rondyr-delivery-dead-letter",
         "RONDYR_EMAIL_PROVIDER": "cloudflare"
+      },
+      "ai": {
+        "binding": "AI",
+        "remote": true
       },
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "rondyr-local",
-          "database_id": "00000000-0000-0000-0000-000000000000",
-          "migrations_dir": "./database/migrations",
-          "migrations_pattern": "./database/migrations/*/migration.sql"
+          "database_name": "rondyr",
+          "migrations_dir": "./apps/rondyr/database/migrations",
+          "migrations_pattern": "./apps/rondyr/database/migrations/*/migration.sql"
         }
       ],
       "queues": {

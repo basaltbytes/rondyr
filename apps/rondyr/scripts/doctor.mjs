@@ -1,8 +1,17 @@
 import { readFileSync } from "node:fs";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, parseEnv } from "node:util";
 
-const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-const wrangler = JSON.parse(readFileSync(new URL("../wrangler.json", import.meta.url), "utf8"));
+import { queueNameVars } from "../worker-config.ts";
+
+// The root wrangler.json is the deployment definition: the Deploy to Cloudflare button
+// and `pnpm run deploy` read it. The Alchemy stack, which deploys the prod stage for now,
+// reads it too; these checks keep the two in step until that stack is deleted.
+const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
+const pkg = JSON.parse(read("../package.json"));
+const rootPkg = JSON.parse(read("../../../package.json"));
+const wrangler = JSON.parse(read("../../../wrangler.json"));
+const workerEntry = read("../src/worker.ts");
+const deployPrompts = parseEnv(read("../../../.dev.vars.example"));
 const alchemyWorker = readFileSync(new URL("../src/alchemy-worker.ts", import.meta.url), "utf8");
 const alchemyRun = readFileSync(new URL("../alchemy-run.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../../../pnpm-workspace.yaml", import.meta.url), "utf8");
@@ -44,6 +53,7 @@ for (const name of ["@alchemy.run/cloudflare", "@alchemy.run/domain"]) {
 }
 
 const { d1_databases: databases, queues, vars = {} } = wrangler;
+const queueNames = queueNameVars(queues);
 if (databases.length !== 1 || databases[0]?.binding !== "DB" || databases[0]?.remote) {
   errors.push("Wrangler must use one local D1 binding named DB.");
 }
@@ -53,9 +63,10 @@ for (const binding of expectedBindings) {
     errors.push(`Wrangler must use a local producer binding named ${binding}.`);
     continue;
   }
-  // The queue handler dispatches a batch by the name of its queue.
-  if (vars[`${binding}_NAME`] !== producer.queue) {
-    errors.push(`Wrangler must set ${binding}_NAME to the queue "${producer.queue}".`);
+  // The queue handler dispatches a batch by the name of its queue. The build derives the
+  // variable from the queue configuration, so a renamed queue cannot leave it behind.
+  if (queueNames[`${binding}_NAME`] !== producer.queue || `${binding}_NAME` in vars) {
+    errors.push(`Wrangler must derive ${binding}_NAME from the queue, not set it in vars.`);
   }
   if (!alchemyWorker.includes(`${binding}_NAME:`)) {
     errors.push(`src/alchemy-worker.ts must pass ${binding}_NAME to the Worker.`);
@@ -78,8 +89,8 @@ for (const binding of expectedBindings) {
       `Wrangler must consume ${deadLetterQueue}, without a dead-letter queue of its own.`,
     );
   }
-  if (vars[deadLetterName] !== deadLetterQueue) {
-    errors.push(`Wrangler must set ${deadLetterName} to the queue "${deadLetterQueue}".`);
+  if (queueNames[deadLetterName] !== deadLetterQueue || deadLetterName in vars) {
+    errors.push(`Wrangler must derive ${deadLetterName} from the queue, not set it in vars.`);
   }
   if (!alchemyWorker.includes(`${deadLetterName}:`)) {
     errors.push(`src/alchemy-worker.ts must pass ${deadLetterName} to the Worker.`);
@@ -93,6 +104,12 @@ for (const binding of expectedBindings) {
     errors.push(
       `alchemy-run.ts must declare the ${consumerName} consumer of the ${resource} resource.`,
     );
+  }
+  // The Alchemy consumers take their batch size, wait and retries from wrangler.json.
+  for (const kind of ["queue", "dead-letter"]) {
+    if (!alchemyRun.includes(`consumerSettings("${binding}", "${kind}")`)) {
+      errors.push(`alchemy-run.ts must read the ${kind} consumer settings of ${binding}.`);
+    }
   }
 }
 
@@ -121,23 +138,71 @@ if (
   errors.push("Wrangler must give each rate limit its own namespace.");
 }
 
-// A Durable Object class needs a migration tag that creates it.
-const migrated = new Set(
-  (wrangler.migrations ?? []).flatMap((migration) => migration.new_sqlite_classes ?? []),
+// Each Durable Object class is declared in the declarative `exports` map, with SQLite
+// storage, and exported by the Worker's entry. Cloudflare refuses a Worker that mixes
+// `exports` with the older `migrations` list.
+if (wrangler.migrations !== undefined) {
+  errors.push("Wrangler must declare the Durable Object classes in exports, not migrations.");
+}
+const entryExports = new Set(
+  (/^export \{([^}]*)\};/mu.exec(workerEntry)?.[1] ?? "").split(",").map((name) => name.trim()),
 );
 for (const { class_name: className } of wrangler.durable_objects?.bindings ?? []) {
-  if (!migrated.has(className)) {
-    errors.push(`Wrangler must create the Durable Object class ${className} in a migration.`);
+  const declared = wrangler.exports?.[className];
+  if (declared?.type !== "durable-object" || declared.storage !== "sqlite") {
+    errors.push(`Wrangler must export the Durable Object class ${className} with SQLite storage.`);
+  }
+  if (!entryExports.has(className)) {
+    errors.push(`src/worker.ts must export the Durable Object class ${className}.`);
+  }
+}
+
+// Workers AI runs the default classifier; without the binding every message waits in
+// quarantine. Alchemy binds it outside local development.
+if (wrangler.ai?.binding !== "AI" || !alchemyWorker.includes("AI: Cloudflare.Workers.AI()")) {
+  errors.push("Wrangler and src/alchemy-worker.ts must bind Workers AI as AI.");
+}
+if (!alchemyWorker.includes("flags: wrangler.compatibility_flags")) {
+  errors.push("src/alchemy-worker.ts must read the compatibility flags of wrangler.json.");
+}
+
+// A deployment from the Deploy to Cloudflare button: no preview URL serves an old version
+// against the live data, variables set in the dashboard survive a redeploy, and no secret
+// is required, since every new setting stays optional at deployment.
+if (wrangler.preview_urls !== false) errors.push("Wrangler must set preview_urls to false.");
+if (wrangler.keep_vars !== true) errors.push("Wrangler must set keep_vars to true.");
+if (wrangler.secrets !== undefined) errors.push("Wrangler must not declare required secrets.");
+if (wrangler.routes !== undefined || wrangler.route !== undefined) {
+  errors.push("Wrangler must not declare routes: a custom domain is added in the dashboard.");
+}
+// The button runs the root deploy script, which applies the migrations and deploys with
+// Wrangler. Alchemy keeps its own script name.
+if (rootPkg.scripts?.deploy !== "pnpm --filter rondyr run deploy") {
+  errors.push('The root deploy script must be "pnpm --filter rondyr run deploy".');
+}
+if (!pkg.scripts?.deploy?.endsWith("node scripts/deploy-cloudflare.mjs")) {
+  errors.push("The deploy script of apps/rondyr must run scripts/deploy-cloudflare.mjs.");
+}
+// The button prompts for the secrets of .dev.vars.example, with the descriptions of the
+// root package.json.
+for (const name of Object.keys(deployPrompts)) {
+  if (!rootPkg.cloudflare?.bindings?.[name]?.description) {
+    errors.push(`The root package.json must describe ${name} in cloudflare.bindings.`);
   }
 }
 
 // Wrangler doesn't inherit bindings or vars into a named environment, so each
 // environment repeats them and must change with the top level.
-const repeatedKeys = ["d1_databases", "queues", "ratelimits", "durable_objects", "workflows"];
+const repeatedKeys = ["ai", "d1_databases", "queues", "ratelimits", "durable_objects", "workflows"];
 for (const [name, environment] of Object.entries(wrangler.env ?? {})) {
   for (const key of repeatedKeys) {
     if (!isDeepStrictEqual(environment[key], wrangler[key])) {
       errors.push(`Wrangler environment ${name} must repeat the top-level ${key} unchanged.`);
+    }
+  }
+  for (const variable of Object.keys(queueNames)) {
+    if (variable in (environment.vars ?? {})) {
+      errors.push(`Wrangler environment ${name} must not set ${variable}: the build derives it.`);
     }
   }
   for (const [variable, value] of Object.entries(vars)) {

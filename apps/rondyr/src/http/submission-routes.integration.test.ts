@@ -5,7 +5,7 @@ import { Clock, Effect, Layer, Option, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
-import wrangler from "../../wrangler.json" with { type: "json" };
+import wrangler from "../../../../wrangler.json" with { type: "json" };
 import { submissionIntakeLive } from "../adapters/database/intake.ts";
 import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
 import { turnstileVerifierLive } from "../adapters/workers/siteverify.ts";

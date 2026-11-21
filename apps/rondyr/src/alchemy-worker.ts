@@ -2,7 +2,7 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Alchemy from "alchemy";
 import { Config, Effect, Option, Schema } from "effect";
 
-import wrangler from "../wrangler.json" with { type: "json" };
+import wrangler from "../../../wrangler.json" with { type: "json" };
 import { EmailProviderName } from "./adapters/email/email-sender.ts";
 import { EmailAddress } from "./domain/deliveries/email.ts";
 import {
@@ -99,7 +99,7 @@ const deploymentProps = Effect.gen(function* () {
       : { workersDev: true }),
     compatibility: {
       date: wrangler.compatibility_date,
-      flags: ["nodejs_compat", "new_module_registry"],
+      flags: wrangler.compatibility_flags,
     },
     assets: {
       directory: "./dist/client",
