@@ -91,7 +91,9 @@ export default {
 // is an unknown key (HTTP 400 with invalid-input-secret, as Cloudflare answers),
 // unreachable-<name> gets 503 and internal-error-<name> an internal-error reply.
 // Any other secret key is known and accepts only the token "valid-<secret>". The
-// token unavailable gets 503, and the token slow an answer after 15 seconds.
+// token unavailable gets 503, the token refused-with-400 a refusal with HTTP 400,
+// the token secret-unknown the reply to an unknown secret key, and the token slow
+// an answer after 15 seconds.
 const siteverifyFixture = `
 const calls = [];
 export default {
@@ -115,6 +117,12 @@ export default {
     }
     if (secret.startsWith("unreachable-") || token === "unavailable") {
       return new Response(null, { status: 503 });
+    }
+    if (token === "secret-unknown") {
+      return Response.json({ success: false, "error-codes": ["invalid-input-secret"] }, { status: 400 });
+    }
+    if (token === "refused-with-400") {
+      return Response.json({ success: false, "error-codes": ["invalid-input-response"] }, { status: 400 });
     }
     if (token === "slow") await scheduler.wait(15_000);
     return token === "valid-" + secret

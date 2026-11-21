@@ -155,7 +155,9 @@ const cases = [
   { name: "valid", token: "valid-siteverify-valid", classified: true },
   { name: "missing", token: null, classified: false },
   { name: "refused", token: "wrong", classified: false },
+  { name: "400-refused", token: "refused-with-400", classified: false },
   { name: "unavailable", token: "unavailable", classified: true },
+  { name: "secret-unknown", token: "secret-unknown", classified: true },
   { name: "timeout", token: "slow", classified: true },
 ] as const;
 

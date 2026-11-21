@@ -129,7 +129,7 @@ Create a Cloudflare Turnstile widget for the hostname that serves your form. In 
 
 When you save the keys, Rondyr asks Siteverify whether it knows the secret key. If Siteverify refuses it, for example because a character is missing, nothing is saved and the dashboard asks you to copy the key again. If Siteverify doesn't answer, nothing is saved either; try again a moment later. Cloudflare's [test secret keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) pass this check.
 
-Rondyr removes the token before storing the message. A missing or refused token sends the message to **To review** with the reason **Turnstile verification failed**, and the visitor still gets the usual response. If Siteverify fails to answer within five seconds or the verification service is unavailable, Rondyr logs the incident and lets the other intake checks and classification proceed.
+Rondyr removes the token before storing the message. A missing or refused token sends the message to **To review** with the reason **Turnstile verification failed**, and the visitor still gets the usual response. Rondyr reads Siteverify's answer from the JSON body of an HTTP 200 or 400 reply, so a refusal counts whatever its status. If Siteverify doesn't answer within five seconds, answers with another status, reports `internal-error`, or no longer recognizes the secret key, Rondyr logs the incident and lets the other intake checks and classification proceed.
 
 ### Allowed origins
 
