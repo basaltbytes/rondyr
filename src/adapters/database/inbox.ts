@@ -14,7 +14,7 @@ import {
 } from "../../domain/submissions/submission.rejection.ts";
 import { SubmissionId } from "../../domain/submissions/submission.id.ts";
 import { d1, database } from "./d1.ts";
-import { filterConditions } from "./submission-filter.ts";
+import { afterCursor, filterConditions } from "./submission-filter.ts";
 
 const Cursor = Schema.fromJsonString(Schema.Tuple([Schema.Int, SubmissionId]));
 const decodeCursor = Schema.decodeUnknownEffect(Cursor);
@@ -69,21 +69,15 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
           ? null
           : yield* decodeCursor(after).pipe(Effect.mapError(() => InvalidInboxCursor.make()));
       const conditions = filterConditions(organizationId, filter);
+      const start = afterCursor(cursor);
       const rows = yield* d1(() =>
         db
           .prepare(`
       SELECT ${columns}, s.fields ${tables}
-      WHERE ${conditions.sql}
-        AND (? IS NULL OR (s.received_at, s.id) < (?, ?))
+      WHERE ${conditions.sql} ${start.sql}
       ORDER BY s.received_at DESC, s.id DESC LIMIT ?
     `)
-          .bind(
-            ...conditions.bindings,
-            cursor?.[0] ?? null,
-            cursor?.[0] ?? null,
-            cursor?.[1] ?? null,
-            take + 1,
-          )
+          .bind(...conditions.bindings, ...start.bindings, take + 1)
           .all(),
       );
       const decoded = yield* decodeRows(rows.results);

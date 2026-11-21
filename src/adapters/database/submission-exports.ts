@@ -7,7 +7,7 @@ import { SubmissionId, type OrganizationId } from "../../domain/submissions/subm
 import { SubmissionExports } from "../../ports/submission-exports.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
-import { filterConditions } from "./submission-filter.ts";
+import { afterCursor, filterConditions } from "./submission-filter.ts";
 
 const Cursor = Schema.fromJsonString(Schema.Tuple([Schema.Int, SubmissionId]));
 const decodeCursor = Schema.decodeUnknownEffect(Cursor);
@@ -21,7 +21,7 @@ const decodeRows = Schema.decodeUnknownEffect(
   ),
 );
 const decodeNames = Schema.decodeUnknownEffect(
-  Schema.Array(Schema.Struct({ name: Schema.String })),
+  Schema.Array(Schema.Struct({ name: Schema.String, uses: Schema.Int })),
 );
 const decodeMore = Schema.decodeUnknownEffect(Schema.Struct({ more: Schema.Literals([0, 1]) }));
 const unreadable = () => StorageUnavailable.make();
@@ -35,19 +35,23 @@ const outline = Effect.fn("SubmissionExports.outline")(function* (
   organizationId: OrganizationId,
   filter: typeof InboxFilter.Type,
   limit: number,
+  maxFieldNames: number,
 ) {
   const db = yield* database;
   const conditions = filterConditions(organizationId, filter);
+  // The names that the most messages use come first; one more than the columns
+  // tells whether some names get none.
   const [names, more] = yield* d1(() =>
     db.batch([
       db
         .prepare(`
-        SELECT DISTINCT j.key AS name FROM (
+        SELECT j.key AS name, count(*) AS uses FROM (
           SELECT s.fields ${tables} WHERE ${conditions.sql}
           ORDER BY s.received_at DESC, s.id DESC LIMIT ?
         ) AS listed, json_each(listed.fields) j
+        GROUP BY j.key ORDER BY uses DESC, j.key LIMIT ?
       `)
-        .bind(...conditions.bindings, limit),
+        .bind(...conditions.bindings, limit, maxFieldNames + 1),
       db
         .prepare(`
         SELECT EXISTS (
@@ -60,7 +64,11 @@ const outline = Effect.fn("SubmissionExports.outline")(function* (
   );
   const rows = yield* decodeNames(names?.results).pipe(Effect.mapError(unreadable));
   const { more: truncated } = yield* decodeMore(more?.results[0]).pipe(Effect.mapError(unreadable));
-  return { fieldNames: rows.map(({ name }) => name), truncated: truncated === 1 };
+  return {
+    fieldNames: rows.slice(0, maxFieldNames).map(({ name }) => name),
+    moreFieldNames: rows.length > maxFieldNames,
+    truncated: truncated === 1,
+  };
 });
 
 const page = Effect.fn("SubmissionExports.page")(function* (
@@ -73,6 +81,7 @@ const page = Effect.fn("SubmissionExports.page")(function* (
   const cursor =
     after === null ? null : yield* decodeCursor(after).pipe(Effect.mapError(unreadable));
   const conditions = filterConditions(organizationId, filter);
+  const start = afterCursor(cursor);
   const result = yield* d1(() =>
     db
       .prepare(`
@@ -80,16 +89,10 @@ const page = Effect.fn("SubmissionExports.page")(function* (
         f.name AS formName, COALESCE(i.status, 'received') AS status, i.reason AS reason,
         i.label AS label, s.fields
       ${tables}
-      WHERE ${conditions.sql} AND (? IS NULL OR (s.received_at, s.id) < (?, ?))
+      WHERE ${conditions.sql} ${start.sql}
       ORDER BY s.received_at DESC, s.id DESC LIMIT ?
     `)
-      .bind(
-        ...conditions.bindings,
-        cursor?.[0] ?? null,
-        cursor?.[0] ?? null,
-        cursor?.[1] ?? null,
-        size,
-      )
+      .bind(...conditions.bindings, ...start.bindings, size)
       .all(),
   );
   const rows = yield* decodeRows(result.results).pipe(Effect.mapError(unreadable));

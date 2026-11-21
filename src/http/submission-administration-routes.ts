@@ -15,6 +15,7 @@ import {
   ExportLine,
   exportLine,
   maxExportedSubmissions,
+  maxFieldColumns,
   orderFieldNames,
   type ExportedSubmission,
 } from "../domain/submissions/submission-export.ts";
@@ -87,15 +88,19 @@ const exportSubmissions = Effect.gen(function* () {
     ...(q !== undefined && { search: q }),
   };
   const exports = yield* SubmissionExports;
-  const { fieldNames, truncated } = yield* exports.outline(
+  const { fieldNames, moreFieldNames, truncated } = yield* exports.outline(
     organizationId,
     filter,
     maxExportedSubmissions,
+    maxFieldColumns,
   );
-  const names = orderFieldNames(fieldNames);
+  const columns = { fieldNames: orderFieldNames(fieldNames), otherFields: moreFieldNames };
   const render = (rows: ReadonlyArray<ExportedSubmission>) =>
     format === "csv"
-      ? Effect.succeed(rows.map((row) => csvLine(row, names)).join(""))
+      ? Effect.map(
+          Effect.forEach(rows, (row) => csvLine(row, columns)),
+          (lines) => lines.join(""),
+        )
       : Effect.map(
           Effect.forEach(rows, (row) => encodeLine(exportLine(row))),
           (lines) => lines.map((line) => `${line}\n`).join(""),
@@ -116,7 +121,7 @@ const exportSubmissions = Effect.gen(function* () {
       ),
   );
   const body = Stream.concat(
-    Stream.make(format === "csv" ? csvHeader(names) : ""),
+    Stream.make(format === "csv" ? csvHeader(columns) : ""),
     pages.pipe(Stream.mapEffect(render)),
   ).pipe(Stream.encodeText);
   const now = yield* Clock.currentTimeMillis;

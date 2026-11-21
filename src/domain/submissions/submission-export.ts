@@ -1,4 +1,4 @@
-import { DateTime, Schema } from "effect";
+import { DateTime, Effect, Schema } from "effect";
 
 import { QuarantineReason, SubmissionLabel } from "./classification.ts";
 import { SubmissionStatus } from "./inbox.ts";
@@ -7,6 +7,16 @@ import { SubmissionId } from "./submission.id.ts";
 
 /** An export holds at most this many messages: the newest of the list. */
 export const maxExportedSubmissions = 10_000;
+
+/**
+ * A CSV export has at most this many field columns: the names that the most
+ * messages of the export use. Visitors choose the field names, so without a cap
+ * a few thousand spam messages could give an export a column per name.
+ */
+export const maxFieldColumns = 100;
+
+/** The last column of a CSV export when its messages have more field names than columns. */
+export const otherFieldsColumn = "other_fields";
 
 /** CSV for a spreadsheet, or JSON Lines, one message per line, for a program. */
 export const ExportFormat = Schema.Literals(["csv", "jsonl"]);
@@ -73,17 +83,48 @@ export function csvCell(value: string) {
   return /[",\r\n]/u.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
 }
 
+const encodeOtherFields = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
+);
+
 /**
- * The header of a CSV export: the columns of every message, then one column per
- * field name. A field whose name is one of the first columns gets " (field)".
+ * The field columns of a CSV export: the names, and whether the messages have
+ * other field names, which then share the last column as a JSON object.
  */
-export function csvHeader(fieldNames: ReadonlyArray<string>) {
-  const fields = fieldNames.map((name) => (fixedColumns.includes(name) ? `${name} (field)` : name));
-  return `${[...fixedColumns, ...fields].map(csvCell).join(",")}\r\n`;
+export interface CsvColumns {
+  readonly fieldNames: ReadonlyArray<string>;
+  readonly otherFields: boolean;
 }
 
-/** One message as a CSV line, with an empty cell for a field that it does not have. */
-export function csvLine(submission: ExportedSubmission, fieldNames: ReadonlyArray<string>) {
+/**
+ * The header of a CSV export: the columns of every message, one column per field
+ * name, then `other_fields` if some names have no column. A field whose name is
+ * one of the other columns gets " (field)".
+ */
+export function csvHeader({ fieldNames, otherFields }: CsvColumns) {
+  const reserved = otherFields ? [...fixedColumns, otherFieldsColumn] : fixedColumns;
+  const fields = fieldNames.map((name) => (reserved.includes(name) ? `${name} (field)` : name));
+  const columns = [...fixedColumns, ...fields, ...(otherFields ? [otherFieldsColumn] : [])];
+  return `${columns.map(csvCell).join(",")}\r\n`;
+}
+
+/**
+ * One message as a CSV line, with an empty cell for a field that it does not
+ * have, and its fields without a column as a JSON object in `other_fields`.
+ */
+export const csvLine = Effect.fnUntraced(function* (
+  submission: ExportedSubmission,
+  { fieldNames, otherFields }: CsvColumns,
+) {
+  // A message without the field gets an empty cell, even for a name such as
+  // `toString` that every object inherits.
+  const cell = (name: string) =>
+    Object.hasOwn(submission.fields, name) ? (submission.fields[name] ?? "") : "";
+  const named = new Set(fieldNames);
+  const rest = Object.entries(submission.fields).filter(([name]) => !named.has(name));
+  const other = !otherFields
+    ? []
+    : [rest.length === 0 ? "" : yield* encodeOtherFields(Object.fromEntries(rest))];
   const cells = [
     submission.submissionId,
     receivedAtIso(submission.receivedAt),
@@ -92,14 +133,11 @@ export function csvLine(submission: ExportedSubmission, fieldNames: ReadonlyArra
     submission.status,
     submission.reason ?? "",
     submission.label ?? "",
-    // A message without the field gets an empty cell, even for a name such as
-    // `toString` that every object inherits.
-    ...fieldNames.map((name) =>
-      Object.hasOwn(submission.fields, name) ? (submission.fields[name] ?? "") : "",
-    ),
+    ...fieldNames.map(cell),
+    ...other,
   ];
   return `${cells.map(csvCell).join(",")}\r\n`;
-}
+});
 
 /** Field names in a stable order: array indices first, in numeric order, then the others. */
 export function orderFieldNames(names: ReadonlyArray<string>) {
