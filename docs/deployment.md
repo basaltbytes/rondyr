@@ -44,7 +44,7 @@ The stack deploys the Worker with the Vite assets and the Durable Objects of the
 
 The Worker also gets the Rate Limiting binding `CLIENT_RATE_LIMIT`, which limits each client to 5 submissions per minute on a form. Nothing has to be created on the account for it, and the API token needs no permission beyond `Workers Scripts Write`; the limit and the namespace come from `ratelimits` in `wrangler.json`, which the stack reads. A namespace is shared by every Worker of the account: the stages of one account all use namespace `7001`, and they don't share counts because each key starts with the public ID of a form. Another Worker of the account that uses the same namespace would share a count only for an identical key. Cloudflare doesn't show rate limits in the dashboard; see [Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 
-A second Rate Limiting binding, `TARGET_TEST_RATE_LIMIT` in namespace `7002`, limits the test messages of each destination to 3 per minute. Its keys start with `target-test:` and the ID of the destination, so stages don't share counts either.
+A second Rate Limiting binding, `TARGET_TEST_RATE_LIMIT` in namespace `7002`, limits the test messages of each destination to 3 per minute. Its keys start with `target-test:` and the ID of the destination, so stages don't share counts either. Like the first one, it needs no setting: the stack declares it from `wrangler.json`, and `pnpm doctor` checks that both files declare it. If the binding doesn't answer, a test is refused with `503` and `{"error":"test-limit-unavailable"}`, sends nothing, and the dashboard says so.
 
 The dashboard assets get their security headers from `public/_headers`. After a deployment, check them on the stage origin:
 
@@ -75,7 +75,19 @@ The invited person opens the link. Without an account, they choose a name and a 
 | `reviewer` | Reads the inbox and the delivery history, accepts and archives messages |
 | `admin` | Everything else as well: forms, allowed origins, honeypot field, Turnstile, destinations, delivery retries and test sends, members, settings, API tokens, export, deletion and retention |
 
-An admin can change a member's role or remove them in the same section. The last admin of an organization can be neither removed nor demoted; the SQL statement that changes the member checks it, so two admins who leave at the same time keep one of them. The migration that added roles made every member that existed before it an admin. An API token acts as a reviewer of its organization.
+An admin can change a member's role or remove them in the same section. The last admin of an organization can be neither removed nor demoted; the SQL statement that changes the member checks it, so two admins who leave at the same time keep one of them. The same statement checks that the account that asks is still an admin, so a request that started before its author lost the role changes nothing. An admin who changes their own role to reviewer confirms it first, since only another admin can give it back.
+
+Removing a member also revokes the API tokens that this member created in the organization, and cancels the invitations it issued. Before you confirm, the removal dialog says how many active tokens go with the member: a website or a script that uses one of them gets `401` from then on, so give it a token that another admin created first. A demoted admin keeps its tokens, which have the rights of a reviewer anyway, and loses its pending invitations. An invitation only works while the admin who issued it is still an admin of the organization.
+
+The migration that added roles made every member that existed before it an admin. During the deployment, the previous Worker version still runs for a moment after the migration: a member that it adds, the creator of a new organization, gets the column's default, `admin`, the rights it had before roles. An API token acts as a reviewer of its organization.
+
+## Forgotten passwords
+
+On a stage that sends email, the sign-in screen has **Forgot your password?**. Rondyr emails the account a link of the form `https://<origin>/reset-password#<secret>`, valid once for one hour; D1 keeps only the SHA-256 hash of the secret. The screen answers the same whether an account has the address or not, the email leaves after the answer, and an account gets at most 3 links in 24 hours. Choosing a new password signs the account out of every session and marks its address as verified.
+
+This is also how the owner of an address takes back an account that someone else created at it. An admin who opens a copied invitation link instead of sending it can create the account at the invited address without reading that mailbox; the account then belongs to the admin's organization only, and joining another organization takes that organization's own link, which goes to the mailbox. A reset from the mailbox replaces the admin's password and signs the admin out.
+
+On a stage without email, nobody can prove that they read a mailbox: the sign-in screen says that the server can't reset a password, and the person who chose the password keeps the account.
 
 ## Classifier
 

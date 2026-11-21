@@ -1,6 +1,6 @@
 # API tokens
 
-An admin of the organization can create or revoke tokens in **Settings → API tokens**; a reviewer gets `403`. A token has the rights of a reviewer of its organization, never more, and only on the routes below. Enter a name that identifies the client, then copy the token: Rondyr shows it once, right after creation, and never again. The list shows each token's name, creation date and last four characters. Each organization can have up to ten active tokens. Revoking a token frees a slot, and the next request with that token gets `401`; a revoked token can't be reactivated.
+An admin of the organization can create or revoke tokens in **Settings → API tokens**; a reviewer gets `403`. A token has the rights of a reviewer of its organization, never more, and only on the routes below. Enter a name that identifies the client, then copy the token: Rondyr shows it once, right after creation, and never again. The list shows each token's name, creation date and last four characters. Each organization can have up to ten active tokens. Revoking a token frees a slot, and the next request with that token gets `401`; a revoked token can't be reactivated. Removing a member from the organization revokes the tokens that this member created, in the same transaction; the removal dialog says how many before the admin confirms.
 
 ## Authentication
 
