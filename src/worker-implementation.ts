@@ -15,6 +15,7 @@ import { formOriginsLive } from "./adapters/database/form-origins.ts";
 import { formsLive } from "./adapters/database/forms.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
 import { membersLive } from "./adapters/database/members.ts";
+import { passwordResetsLive } from "./adapters/database/password-resets.ts";
 import { recipientConfirmationsLive } from "./adapters/database/recipient-confirmations.ts";
 import { submissionExportsLive } from "./adapters/database/submission-exports.ts";
 import { submissionRetentionLive } from "./adapters/database/submission-retention.ts";
@@ -36,23 +37,7 @@ import { cronHeartbeatLive } from "./adapters/workers/cron-heartbeat.ts";
 import { turnstileVerifierLive } from "./adapters/workers/siteverify.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { apiTokenAuthentication } from "./http/api-token-authentication.ts";
-import { apiTokenRoutes } from "./http/api-token-routes.ts";
-import { authenticationRoutes } from "./http/authentication.ts";
-import { classificationPolicyRoutes } from "./http/classification-policy-routes.ts";
-import { deliveryRoutes } from "./http/delivery-routes.ts";
-import { formRoutes } from "./http/form-routes.ts";
-import { invitationRoutes } from "./http/invitation-routes.ts";
-import { memberRoutes } from "./http/member-routes.ts";
-import { recipientConfirmationRoutes } from "./http/recipient-confirmation-routes.ts";
-import { submissionAdministrationRoutes } from "./http/submission-administration-routes.ts";
-import { operationsRoute } from "./http/operations-route.ts";
-import { organizationDomainRoutes } from "./http/organization-domain-routes.ts";
-import { organizationQuotaRoutes } from "./http/organization-quota-routes.ts";
-import { originRoutes } from "./http/origin-routes.ts";
-import { publicRoutes } from "./http/public-routes.ts";
-import { reviewRoutes } from "./http/review-routes.ts";
-import { submissionRoutes } from "./http/submission-routes.ts";
-import { targetRoutes } from "./http/target-routes.ts";
+import { routes as applicationRoutes } from "./http/routes.ts";
 import { consumeDeliveries, deliverySchedulerLive } from "./jobs/delivery-outbox.ts";
 import { publishOutboxes } from "./jobs/publish-outboxes.ts";
 import { purgeOnTheHour } from "./jobs/retention-purge.ts";
@@ -77,6 +62,7 @@ const services = Layer.mergeAll(
   formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,
   membersLive,
+  passwordResetsLive,
   organizationQuotasLive,
   classificationPoliciesLive,
   outboxLive,
@@ -104,25 +90,7 @@ const services = Layer.mergeAll(
     ),
   ),
 );
-const routes = Layer.mergeAll(
-  publicRoutes,
-  authenticationRoutes,
-  apiTokenRoutes,
-  submissionRoutes,
-  reviewRoutes,
-  targetRoutes,
-  originRoutes,
-  organizationDomainRoutes,
-  organizationQuotaRoutes,
-  classificationPolicyRoutes,
-  formRoutes,
-  deliveryRoutes,
-  memberRoutes,
-  invitationRoutes,
-  recipientConfirmationRoutes,
-  submissionAdministrationRoutes,
-  operationsRoute,
-).pipe(Layer.provide(apiTokenAuthentication));
+const routes = applicationRoutes.pipe(Layer.provide(apiTokenAuthentication));
 
 const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
@@ -158,9 +126,10 @@ export const workerImplementation = Effect.gen(function* () {
   yield* worker.listen((event) => {
     if (!isWorkerEvent(event)) return;
     if (event.type === "scheduled") {
-      // The purge never fails the Cron, and runs whatever the publication did.
+      // The purge never fails the Cron, and runs whatever the publication did. It
+      // goes by the scheduled time, which a slow publication does not move.
       return publishOutboxes().pipe(
-        Effect.ensuring(purgeOnTheHour()),
+        Effect.ensuring(purgeOnTheHour(event.input.scheduledTime)),
         Effect.provideContext(context),
       );
     }
