@@ -20,7 +20,7 @@ const usageQuery = `
     json_object('submissions', o.daily_submission_limit,
       'classifications', o.daily_classification_limit) AS limits,
     json_object('submissions', COALESCE(u.submissions, 0),
-      'classifications', COALESCE(u.classifications, 0)) AS used
+      'classifications', COALESCE(u.classifications, 0), 'junk', COALESCE(u.junk, 0)) AS used
   FROM organizations o
   LEFT JOIN organization_daily_usage u ON u.organization_id = o.id AND u.day = date('now')
   WHERE o.id = ?2 AND EXISTS (${member})

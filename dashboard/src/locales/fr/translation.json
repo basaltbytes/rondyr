@@ -342,6 +342,8 @@
       "day": "Consommation du {{day}} (UTC)",
       "submissions": "Plafond quotidien de soumissions",
       "classifications": "Plafond quotidien de classifications",
+      "junk": "Indésirables arrêtés à l’entrée",
+      "junkHint": "Les messages qui remplissent le champ piège, échouent à Turnstile ou répètent des envois précédents sont mis en quarantaine et comptent ici, pas dans le plafond de soumissions. Leur plafond quotidien est le même nombre. Une fois ce plafond atteint, Rondyr les refuse jusqu’à minuit UTC et accepte toujours les autres messages.",
       "used": "{{used}} sur {{limit}} utilisés",
       "saving": "Enregistrement des plafonds…",
       "saved": "Plafonds enregistrés.",
