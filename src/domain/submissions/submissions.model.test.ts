@@ -1,9 +1,14 @@
 import * as Domain from "@alchemy.run/domain";
 import { Story } from "@alchemy.run/domain/Story";
 import { assert, it } from "@effect/vitest";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 
 import { ApproveSubmission } from "./approve-submission.command.ts";
+import {
+  ClassificationThresholds,
+  defaultClassificationPolicies,
+  type ClassificationPolicy,
+} from "./classification-policy.ts";
 import { reviewReason, rulesVersion } from "./classification.ts";
 import { ClassificationFailed, Classifier } from "./classifier.external.ts";
 import { DeliveryScheduler } from "./delivery-scheduler.external.ts";
@@ -43,35 +48,137 @@ const story = Story.make(Submissions, {
   stub: [Classifier, DeliveryScheduler],
 });
 
+const policy = defaultClassificationPolicies.jev;
+const lookupPolicy = (resolved: ClassificationPolicy = policy) =>
+  [
+    Story.call(Classifier.policy, { organizationId }),
+    Story.succeed(Classifier.policy, { classifier: "jev", policy: resolved }),
+  ] as const;
+const scoreCall = () =>
+  Story.call(Classifier.score, { submissionId, organizationId, classifier: "jev" });
+
 it("defines a valid Domain model and distinct classification thresholds", () => {
   assert.deepEqual(Domain.verify(Submissions), []);
   const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0 };
-  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }), "probable-spam");
-  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }), "ambiguous");
-  assert.strictEqual(reviewReason({ ...scores, relevance: 0.1 }), "low-relevance");
-  assert.isNull(reviewReason(scores));
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }, policy), "probable-spam");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }, policy), "ambiguous");
+  assert.strictEqual(reviewReason({ ...scores, relevance: 0.1 }, policy), "low-relevance");
+  assert.isNull(reviewReason(scores, policy));
 });
 
 it("quarantines for solicitation above 0.5, after the spam rules and before relevance", () => {
   const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.51, relevance: 0.1 };
 
-  assert.strictEqual(reviewReason(scores), "solicitation");
-  assert.strictEqual(reviewReason({ ...scores, solicitation: 0.5 }), "low-relevance");
-  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }), "ambiguous");
-  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }), "probable-spam");
-  assert.isNull(reviewReason({ model: "jev-fixture", spam: 0.1, solicitation: 0.5 }));
+  assert.strictEqual(reviewReason(scores, policy), "solicitation");
+  assert.strictEqual(reviewReason({ ...scores, solicitation: 0.5 }, policy), "low-relevance");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.3 }, policy), "ambiguous");
+  assert.strictEqual(reviewReason({ ...scores, spam: 0.7 }, policy), "probable-spam");
+  assert.isNull(reviewReason({ model: "jev-fixture", spam: 0.1, solicitation: 0.5 }, policy));
 });
+
+it.effect("decodes decisions recorded before policies and labels", () =>
+  Effect.gen(function* () {
+    const scores = { model: "jev-fixture", spam: 0.1, relevance: 0.2 };
+    const acceptance = { _tag: "Automatic", scores, rulesVersion: 4 } as const;
+    const quarantine = {
+      organizationId,
+      reason: "low-relevance",
+      scores,
+      rulesVersion: 4,
+    } as const;
+    const accepted = yield* Schema.decodeEffect(SubmissionAccepted)({
+      _tag: "SubmissionAccepted",
+      organizationId,
+      acceptance,
+    });
+    const quarantined = yield* Schema.decodeEffect(SubmissionQuarantined)({
+      _tag: "SubmissionQuarantined",
+      ...quarantine,
+    });
+    assert.deepEqual(accepted.acceptance, acceptance);
+    assert.deepInclude(quarantined, quarantine);
+    assert.notProperty(quarantined, "policy");
+  }),
+);
+
+it.effect(
+  "uses the organization's thresholds and accepts a low-relevance message with a label",
+  () => {
+    const scores = { model: "jev-fixture", spam: 0.4, solicitation: 0.6, relevance: 0.3 };
+    const custom: ClassificationPolicy = {
+      thresholds: ClassificationThresholds.make({
+        probableSpam: 0.9,
+        ambiguous: 0.8,
+        solicitation: 0.7,
+        lowRelevance: 0.4,
+      }),
+      offTopic: "accept",
+    };
+    return story(
+      Story.when(submission, RequestClassification.make({ organizationId })),
+      Story.then(submission, ClassificationRequested.make({ organizationId })),
+      ...lookupPolicy(custom),
+      scoreCall(),
+      Story.succeed(Classifier.score, scores),
+      Story.then(
+        submission,
+        SubmissionAccepted.make({
+          organizationId,
+          acceptance: {
+            _tag: "Automatic",
+            scores,
+            rulesVersion,
+            policy: custom,
+            label: "off-topic",
+          },
+        }),
+      ),
+      Story.call(DeliveryScheduler.schedule, {
+        submissionId,
+        organizationId,
+        acceptedAt: storyStart,
+      }),
+      Story.succeed(DeliveryScheduler.schedule, undefined),
+      Story.state(submission, { _tag: "Accepted" }),
+    );
+  },
+);
+
+it.effect("quarantines when the organization's policy cannot be loaded", () =>
+  story(
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    Story.call(Classifier.policy, { organizationId }),
+    Story.fail(Classifier.policy, ClassificationFailed.make({ retryable: false })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+      }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+  ),
+);
 
 it.effect("quarantines a sales pitch with its scores and lets a reviewer accept it", () => {
   const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.93, relevance: 0.8 };
   return story(
     Story.when(submission, RequestClassification.make({ organizationId })),
     Story.then(submission, ClassificationRequested.make({ organizationId })),
-    Story.call(Classifier.score, { submissionId, organizationId }),
+    ...lookupPolicy(),
+    scoreCall(),
     Story.succeed(Classifier.score, scores),
     Story.then(
       submission,
-      SubmissionQuarantined.make({ organizationId, reason: "solicitation", scores, rulesVersion }),
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "solicitation",
+        scores,
+        rulesVersion,
+        policy,
+      }),
     ),
     Story.state(submission, { _tag: "Quarantined" }),
     Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
@@ -100,13 +207,14 @@ it.effect("classifies one logical submission after duplicate intake", () => {
       commandId: "ingestion-1",
     }),
     Story.then(submission, ClassificationRequested.make({ organizationId })),
-    Story.call(Classifier.score, { submissionId, organizationId }),
+    ...lookupPolicy(),
+    scoreCall(),
     Story.succeed(Classifier.score, scores),
     Story.then(
       submission,
       SubmissionAccepted.make({
         organizationId,
-        acceptance: { _tag: "Automatic", scores, rulesVersion },
+        acceptance: { _tag: "Automatic", scores, rulesVersion, policy },
       }),
     ),
     Story.call(DeliveryScheduler.schedule, {
@@ -128,11 +236,17 @@ it.effect("quarantines an incomplete classifier response without retrying", () =
   story(
     Story.when(submission, RequestClassification.make({ organizationId })),
     Story.then(submission, ClassificationRequested.make({ organizationId })),
-    Story.call(Classifier.score, { submissionId, organizationId }),
+    ...lookupPolicy(),
+    scoreCall(),
     Story.fail(Classifier.score, ClassificationFailed.make({ retryable: false })),
     Story.then(
       submission,
-      SubmissionQuarantined.make({ organizationId, reason: "classification-error", rulesVersion }),
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+        policy,
+      }),
     ),
     Story.state(submission, { _tag: "Quarantined" }),
   ),
@@ -142,17 +256,23 @@ it.effect("quarantines exhausted failures and accepts only one authorized review
   story(
     Story.when(submission, RequestClassification.make({ organizationId })),
     Story.then(submission, ClassificationRequested.make({ organizationId })),
-    Story.call(Classifier.score, { submissionId, organizationId }),
+    ...lookupPolicy(),
+    scoreCall(),
     Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
     Story.advance("10 seconds"),
-    Story.call(Classifier.score, { submissionId, organizationId }),
+    scoreCall(),
     Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
     Story.advance("30 seconds"),
-    Story.call(Classifier.score, { submissionId, organizationId }),
+    scoreCall(),
     Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
     Story.then(
       submission,
-      SubmissionQuarantined.make({ organizationId, reason: "classification-error", rulesVersion }),
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+        policy,
+      }),
     ),
     Story.provide(CurrentReviewer, { userId, organizations: [] }),
     Story.query(ListSubmissions, { organizationId }),
@@ -236,7 +356,8 @@ it.effect("ignores a quarantine at intake once classification has started", () =
   return story(
     Story.when(submission, RequestClassification.make({ organizationId })),
     Story.then(submission, ClassificationRequested.make({ organizationId })),
-    Story.call(Classifier.score, { submissionId, organizationId }),
+    ...lookupPolicy(),
+    scoreCall(),
     Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
     Story.then(submission),
     Story.succeed(Classifier.score, scores),
@@ -244,7 +365,7 @@ it.effect("ignores a quarantine at intake once classification has started", () =
       submission,
       SubmissionAccepted.make({
         organizationId,
-        acceptance: { _tag: "Automatic", scores, rulesVersion },
+        acceptance: { _tag: "Automatic", scores, rulesVersion, policy },
       }),
     ),
     Story.call(DeliveryScheduler.schedule, {

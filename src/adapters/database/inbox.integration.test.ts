@@ -111,6 +111,7 @@ it.live(
         version: 2,
         status: "quarantined",
         reason: "solicitation",
+        label: null,
       });
 
       const page = yield* inbox.list(OrganizationId.make("list-fields"), undefined, 25, undefined);

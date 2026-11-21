@@ -2,7 +2,7 @@ import * as Domain from "@alchemy.run/domain";
 import { Effect, Schema } from "effect";
 
 import { ApproveSubmission } from "./approve-submission.command.ts";
-import { reviewReason, rulesVersion } from "./classification.ts";
+import { isOffTopic, reviewReason, rulesVersion } from "./classification.ts";
 import { DismissSubmission, SubmissionDismissed } from "./dismiss-submission.command.ts";
 import { QuarantineAtIntake } from "./quarantine-at-intake.command.ts";
 import { RecordClassification } from "./record-classification.command.ts";
@@ -60,24 +60,27 @@ export class Submission extends Domain.Aggregate(
         if (state._tag !== "Classifying") return [];
         const { organizationId } = state;
         if (result._tag === "ClassificationError") {
+          const failure = { organizationId, reason: "classification-error", rulesVersion } as const;
+          if (result.policy === undefined) return [SubmissionQuarantined.make(failure)];
+          return [SubmissionQuarantined.make({ ...failure, policy: result.policy })];
+        }
+        const { scores, policy } = result;
+        const reason = reviewReason(scores, policy);
+        if (reason !== null) {
           return [
-            SubmissionQuarantined.make({
+            SubmissionQuarantined.make({ organizationId, reason, scores, rulesVersion, policy }),
+          ];
+        }
+        const acceptance = { _tag: "Automatic", scores, rulesVersion, policy } as const;
+        if (isOffTopic(scores, policy)) {
+          return [
+            SubmissionAccepted.make({
               organizationId,
-              reason: "classification-error",
-              rulesVersion,
+              acceptance: { ...acceptance, label: "off-topic" },
             }),
           ];
         }
-        const { scores } = result;
-        const reason = reviewReason(scores);
-        return reason === null
-          ? [
-              SubmissionAccepted.make({
-                organizationId,
-                acceptance: { _tag: "Automatic", scores, rulesVersion },
-              }),
-            ]
-          : [SubmissionQuarantined.make({ organizationId, reason, scores, rulesVersion })];
+        return [SubmissionAccepted.make({ organizationId, acceptance })];
       },
       ApproveSubmission: Effect.fnUntraced(function* (state) {
         const { organizationId, reviewerId } = yield* review(state);
