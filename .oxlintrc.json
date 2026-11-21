@@ -18,7 +18,9 @@
     "node": true
   },
   "settings": {
-    "shadcn": { "ui": "~/components/ui" }
+    "shadcn": {
+      "ui": "~/components/ui"
+    }
   },
   "rules": {
     "import/no-cycle": "error",
@@ -30,7 +32,12 @@
       }
     ],
     "no-console": "warn",
-    "no-underscore-dangle": ["warn", { "allow": ["_tag", "__ALCHEMY_RUNTIME__"] }],
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": ["_tag", "__ALCHEMY_RUNTIME__"]
+      }
+    ],
     "react/react-in-jsx-scope": "off",
     "import/no-unassigned-import": "off",
     "rondyr/pad-exported-consts": "error",
@@ -52,6 +59,26 @@
     "rondyr/require-safety-comment-for-type-assertion": "error"
   },
   "overrides": [
+    {
+      "files": ["src/**", "dashboard/**", "evals/**", "scripts/**", "tests/**", "tooling/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "**/packages/**",
+                  "@basaltbytes/emdash-plugin-rondyr",
+                  "@basaltbytes/emdash-plugin-rondyr/*"
+                ],
+                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
+              }
+            ]
+          }
+        ]
+      }
+    },
     {
       "files": ["src/domain/**"],
       "rules": {
@@ -84,6 +111,14 @@
                   "**/worker*"
                 ],
                 "message": "The domain has no dependencies on application code or adapters."
+              },
+              {
+                "group": [
+                  "**/packages/**",
+                  "@basaltbytes/emdash-plugin-rondyr",
+                  "@basaltbytes/emdash-plugin-rondyr/*"
+                ],
+                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
               }
             ]
           }
@@ -112,6 +147,14 @@
               {
                 "group": ["**/adapters/**", "**/http/**", "**/jobs/**", "**/worker*"],
                 "message": "Application code and ports depend on domain contracts."
+              },
+              {
+                "group": [
+                  "**/packages/**",
+                  "@basaltbytes/emdash-plugin-rondyr",
+                  "@basaltbytes/emdash-plugin-rondyr/*"
+                ],
+                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
               }
             ]
           }
@@ -129,6 +172,14 @@
               {
                 "group": ["**/adapters/**"],
                 "message": "Routes and jobs use ports. src/worker-implementation.ts provides the adapters."
+              },
+              {
+                "group": [
+                  "**/packages/**",
+                  "@basaltbytes/emdash-plugin-rondyr",
+                  "@basaltbytes/emdash-plugin-rondyr/*"
+                ],
+                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
               }
             ]
           }
@@ -147,11 +198,21 @@
         "rondyr/no-outset-state-indicators": "error",
         "rondyr/no-raw-resize-observer": "error",
         "shadcn/no-raw-colors": "error",
-        "shadcn/no-arbitrary-values": ["error", { "allow": ["layout", "*env(safe-area-inset-*"] }],
+        "shadcn/no-arbitrary-values": [
+          "error",
+          {
+            "allow": ["layout", "*env(safe-area-inset-*"]
+          }
+        ],
         "shadcn/no-inline-styles": "error",
         "shadcn/no-unknown-classes": "error",
         "shadcn/require-static-classes": "error",
-        "shadcn/no-restyle": ["error", { "allow": ["layout"] }],
+        "shadcn/no-restyle": [
+          "error",
+          {
+            "allow": ["layout"]
+          }
+        ],
         "import/no-default-export": "error",
         "no-restricted-imports": [
           "error",
@@ -177,6 +238,14 @@
                   "**/src/worker*"
                 ],
                 "message": "The dashboard talks to Rondyr through HTTP."
+              },
+              {
+                "group": [
+                  "**/packages/**",
+                  "@basaltbytes/emdash-plugin-rondyr",
+                  "@basaltbytes/emdash-plugin-rondyr/*"
+                ],
+                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
               }
             ]
           }
@@ -208,6 +277,22 @@
         "rondyr/no-unsafe-dictionary-type": "off",
         "rondyr/no-widen-then-assert": "off",
         "rondyr/require-safety-comment-for-type-assertion": "off"
+      }
+    },
+    {
+      "files": ["packages/emdash-plugin/src/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["../../**"],
+                "message": "The EmDash plugin is MIT-licensed: it imports nothing from outside its package."
+              }
+            ]
+          }
+        ]
       }
     }
   ],

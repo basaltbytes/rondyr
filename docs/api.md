@@ -35,6 +35,48 @@ curl --fail-with-body -X POST \
   "https://rondyr.example.com/api/organizations/${ORGANIZATION_ID}/submissions/${SUBMISSION_ID}/approve"
 ```
 
+## Server intake
+
+A server that validates its own form can send each message to Rondyr with a token of the form's organization. Send the same `POST /f/{publicId}` as a browser, with the token in `Authorization`:
+
+```sh
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer ${RONDYR_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: 01JD8Z3K9QX5M4V7T2N6B8C1RA" \
+  --data '{"name":"Ada Lovelace","email":"ada@example.com","message":"Hello"}' \
+  "https://rondyr.example.com/f/${FORM_PUBLIC_ID}"
+```
+
+A request with an `Authorization` header on this route is a server intake, whatever its scheme or value:
+
+- A header that isn't `Bearer` followed by an active token gets `401`: another scheme, a malformed or unknown token, a revoked token. A token of another organization gets `404`, as an unknown form does. Nothing is stored in either case, and the request never falls back to the browser path.
+- The form's allowed origins and the limit of 5 submissions per minute per client don't apply: every request from your server comes from the same address. The form's cap of 30 submissions per minute and the organization's daily quotas still apply, with `429` and `Retry-After`.
+- The form's honeypot field applies as for a browser. Turnstile doesn't: your server has checked the visitor itself, and the message goes through classification as usual.
+- The body is a flat JSON object of 1 to 32 string fields, at most 16 KiB. Another content type gets `415`.
+- The response is always JSON, `202` with `{"submission-id": "…", "status": "received"}`, never a redirect or the confirmation page.
+
+### Idempotency key
+
+Send an `Idempotency-Key` header to make retries safe. The key has 1 to 128 printable ASCII characters; another value gets `400`. Its scope is the form, and it never expires: it lives as long as the submission it names.
+
+The first request with a key stores the message and answers `202`. A later request with the same key on the same form answers `202` with the ID of the first submission: Rondyr stores nothing, publishes nothing, and doesn't compare the bodies. Two requests with the same key at the same moment store a single submission, and both get its ID. The same key on another form is a different key.
+
+So a client that times out after Rondyr stored the message can send the same request again with the same key and get the original ID, without a second message or a second notification. The key is read only with a token: on a browser request, Rondyr ignores it.
+
+### Intake errors
+
+| Status | Meaning |
+| --- | --- |
+| `400` | A malformed idempotency key, an invalid body, or no field left once the empty honeypot field is removed |
+| `401` | An `Authorization` header that isn't `Bearer` with an active token |
+| `403` | The form is suspended |
+| `404` | The form doesn't exist or belongs to another organization |
+| `413` | A body larger than 16 KiB |
+| `415` | A body that isn't `application/json` |
+| `429` | The form's minute cap (`Retry-After: 60`) or a daily quota of the organization (`Retry-After` in seconds until midnight UTC) |
+| `503` | Authentication or storage is temporarily unavailable |
+
 ## Responses
 
 A submission in a list or a detail has these fields:

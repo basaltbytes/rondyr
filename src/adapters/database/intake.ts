@@ -2,7 +2,7 @@ import { Effect, Layer, Option, Result, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 import { Hex } from "effect/encoding";
 
-import { parseSuccessUrl } from "../../domain/forms/form.ts";
+import { parseSuccessUrl, type SuccessUrl } from "../../domain/forms/form.ts";
 import type { TurnstileToken } from "../../domain/forms/turnstile.ts";
 import { junkIntakeReasons } from "../../domain/organizations/organization-quotas.ts";
 import {
@@ -21,6 +21,7 @@ import {
   OrganizationRateLimited,
   SubmissionIntake,
   type OriginMatch,
+  type ServerIntake,
 } from "../../ports/intake.ts";
 import { SealedSecret } from "../../ports/secret-cipher.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
@@ -39,6 +40,7 @@ const AccessRow = Schema.Struct({
   success_url: Schema.NullOr(Schema.String),
   honeypot_field: Schema.NullOr(Schema.String),
   quota_retry_after: Schema.NullOr(Schema.Int),
+  replay_id: Schema.NullOr(SubmissionId),
 });
 const decodeAccess = Schema.decodeUnknownEffect(Schema.Array(AccessRow));
 
@@ -64,7 +66,9 @@ const junkReasons = junkIntakeReasons.map((reason) => `'${reason}'`).join(", ");
 // that reason has room. ?2 is the fields in JSON, ?5 and ?6 the sender and content
 // fingerprints, ?7 the repetition window, ?8 and ?9 the repetition thresholds, ?10
 // the secret that Siteverify checked the token with or NULL, and ?11 whether it
-// accepted the token. The organization ID is the leading column of each fingerprint
+// accepted the token. ?12 is the organization of a server intake's API token, or
+// NULL for a public request: a server intake finds only its organization's forms,
+// and Turnstile does not apply to it. ?13 is its idempotency key, or NULL. The organization ID is the leading column of each fingerprint
 // index and comes from the form. D1 sets the reception time so concurrent batches
 // count in transaction order, and the budget is the one of that time's UTC day.
 const screening = `
@@ -86,13 +90,14 @@ const screening = `
     JOIN organizations o ON o.id = f.organization_id
     LEFT JOIN organization_daily_usage u ON u.organization_id = f.organization_id
       AND u.day = date(t.received_at / 1000, 'unixepoch')
-    WHERE f.public_id = ?3
+    WHERE f.public_id = ?3 AND (?12 IS NULL OR f.organization_id = ?12)
   ), screened AS (
     SELECT c.*,
       CASE
         WHEN EXISTS (SELECT 1 FROM json_each(?2) WHERE key = c.honeypot_field AND value <> '')
         THEN 'honeypot'
-        WHEN c.turnstile_secret IS NOT NULL AND (?10 IS NOT c.turnstile_secret OR ?11 = 0)
+        WHEN ?12 IS NULL AND c.turnstile_secret IS NOT NULL
+          AND (?10 IS NOT c.turnstile_secret OR ?11 = 0)
         THEN 'turnstile-failed'
         WHEN c.prior_same_sender >= ?8 OR c.prior_same_content >= ?9
         THEN 'repetition'
@@ -109,7 +114,9 @@ const screening = `
 
 // What the batch needs to explain a refusal, read before the insert in the same
 // transaction. The success URL is read only while its origin, the URL up to its
-// first slash after the host, is an allowed origin.
+// first slash after the host, is an allowed origin. `replay_id` is the submission
+// of the form that already has the idempotency key ?13: D1 runs one batch at a
+// time, so a concurrent request with the same key sees the first one's row here.
 const accessQuery = `${screening}
   SELECT
     ${originColumns("?4")},
@@ -119,7 +126,9 @@ const accessQuery = `${screening}
       WHERE o.form_id = f.id AND substr(f.success_url, 1, length(o.origin) + 1) = o.origin || '/'
     ) THEN f.success_url END AS success_url,
     f.honeypot_field AS honeypot_field,
-    CASE WHEN NOT f.within_budget THEN 86400 - unixepoch() % 86400 END AS quota_retry_after
+    CASE WHEN NOT f.within_budget THEN 86400 - unixepoch() % 86400 END AS quota_retry_after,
+    (SELECT p.id FROM submissions p WHERE p.form_id = f.id AND p.idempotency_key = ?13)
+      AS replay_id
   FROM budgeted f
 `;
 
@@ -127,7 +136,8 @@ const accessQuery = `${screening}
 const insertStatement = `${screening}
   INSERT INTO submissions (
     id, organization_id, form_id, fields, received_at, intake_reason,
-    sender_fingerprint, content_fingerprint, prior_same_sender, prior_same_content
+    sender_fingerprint, content_fingerprint, prior_same_sender, prior_same_content,
+    idempotency_key
   )
   SELECT
     ?1,
@@ -146,9 +156,11 @@ const insertStatement = `${screening}
     ?5,
     ?6,
     f.prior_same_sender,
-    f.prior_same_content
+    f.prior_same_content,
+    ?13
   FROM budgeted f
-  WHERE f.status = 'active'
+  WHERE NOT EXISTS (SELECT 1 FROM submissions p WHERE p.form_id = f.id AND p.idempotency_key = ?13)
+    AND f.status = 'active'
     AND ${originAllowed("?4")}
     AND f.within_budget
     AND (
@@ -189,7 +201,9 @@ const originMatch = (row: typeof OriginRow.Type): OriginMatch => {
   return row.listed === 1 ? "listed" : "unlisted";
 };
 
-const readAccess = (rows: ReadonlyArray<unknown> | undefined) =>
+const readAccess = (
+  rows: ReadonlyArray<unknown> | undefined,
+): Effect.Effect<Option.Option<Access>, StorageUnavailable> =>
   decodeAccess(rows ?? []).pipe(
     Effect.mapBoth({
       onFailure: () => StorageUnavailable.make(),
@@ -203,6 +217,7 @@ const readAccess = (rows: ReadonlyArray<unknown> | undefined) =>
           ),
           honeypotField: Option.fromNullOr(row.honeypot_field),
           quotaRetryAfter: row.quota_retry_after,
+          replayId: Option.fromNullOr(row.replay_id),
         })),
     }),
   );
@@ -251,13 +266,20 @@ const verifyTurnstile = Effect.fnUntraced(function* (
   return { secret, passed };
 });
 
-const receive = Effect.fn("Intake.receive")(function* (
+interface IntakeRequest {
+  readonly publicId: string;
+  readonly fields: typeof SubmissionFields.Type;
+  readonly origin: Option.Option<string>;
+  readonly turnstile: Option.Option<TurnstileToken>;
+  readonly server: Option.Option<ServerIntake>;
+}
+
+/** Run the intake batch: one D1 round trip, after a Turnstile verification if any. */
+const runBatch = Effect.fnUntraced(function* (
   verifier: TurnstileVerifier["Service"],
-  publicId: string,
-  fields: typeof SubmissionFields.Type,
-  origin: Option.Option<string>,
-  token: Option.Option<TurnstileToken> = Option.none(),
+  request: IntakeRequest,
 ) {
+  const { publicId, fields } = request;
   const db = yield* database;
   const id = SubmissionId.make(SecureRandom.uuidV4Unsafe());
   const keys = repetitionKeys(fields);
@@ -266,12 +288,14 @@ const receive = Effect.fn("Intake.receive")(function* (
     content: fingerprint(keys.content),
   });
   const encoded = yield* encodeFields(fields).pipe(Effect.orDie);
-  const requestOrigin = Option.getOrNull(origin);
+  const requestOrigin = Option.getOrNull(request.origin);
   // The batch compares the verified ciphertext with the current configuration.
   // A key changed during verification cannot authorize admission to classification.
-  const { secret, passed } = Option.isSome(token)
-    ? yield* verifyTurnstile(verifier, publicId, requestOrigin, token.value)
-    : { secret: null, passed: false };
+  const { secret, passed } =
+    Option.isSome(request.turnstile) && Option.isNone(request.server)
+      ? yield* verifyTurnstile(verifier, publicId, requestOrigin, request.turnstile.value)
+      : { secret: null, passed: false };
+  const server = Option.getOrNull(request.server);
   const parameters = [
     id,
     encoded,
@@ -284,6 +308,8 @@ const receive = Effect.fn("Intake.receive")(function* (
     repetitionThresholds.content,
     secret,
     passed ? 1 : 0,
+    server === null ? null : server.organizationId,
+    server === null ? null : Option.getOrNull(server.idempotencyKey),
   ] as const;
   // The batch is one transaction, so the access row describes the state that the insert checked.
   const accessCheck = db.prepare(accessQuery).bind(...parameters);
@@ -297,7 +323,48 @@ const receive = Effect.fn("Intake.receive")(function* (
   const usage = db.prepare(incrementUsage).bind(id);
   const [accessResult, received] = yield* d1(() => db.batch([accessCheck, insert, outbox, usage]));
   const access = yield* Effect.result(readAccess(accessResult?.results));
-  if (received?.meta.changes === 1) {
+  return { id, stored: received?.meta.changes === 1, access };
+});
+
+interface Access {
+  readonly origins: OriginMatch;
+  readonly active: boolean;
+  readonly successUrl: Option.Option<SuccessUrl>;
+  readonly honeypotField: Option.Option<string>;
+  readonly quotaRetryAfter: number | null;
+  readonly replayId: Option.Option<SubmissionId>;
+}
+
+/** Why a form that the batch found, or did not find, stored nothing. */
+const refuse = Effect.fnUntraced(function* (
+  fields: typeof SubmissionFields.Type,
+  access: Option.Option<Access>,
+) {
+  if (Option.isNone(access)) return yield* FormNotFound.make();
+  const { origins, active, honeypotField, quotaRetryAfter } = access.value;
+  if (!active) return yield* FormSuspended.make({ origins });
+  if (onlyEmptyHoneypot(fields, honeypotField)) return yield* EmptySubmission.make({ origins });
+  if (quotaRetryAfter !== null) {
+    return yield* OrganizationRateLimited.make({ origins, retryAfter: quotaRetryAfter });
+  }
+  return yield* FormRateLimited.make({ origins });
+});
+
+const receive = Effect.fn("Intake.receive")(function* (
+  verifier: TurnstileVerifier["Service"],
+  publicId: string,
+  fields: typeof SubmissionFields.Type,
+  origin: Option.Option<string>,
+  token: Option.Option<TurnstileToken> = Option.none(),
+) {
+  const { id, stored, access } = yield* runBatch(verifier, {
+    publicId,
+    fields,
+    origin,
+    turnstile: token,
+    server: Option.none(),
+  });
+  if (stored) {
     const metadata = Option.flatten(Result.getSuccess(access));
     if (Option.isSome(metadata)) {
       const { origins, successUrl } = metadata.value;
@@ -314,15 +381,33 @@ const receive = Effect.fn("Intake.receive")(function* (
     };
   }
   if (Result.isFailure(access)) return yield* access.failure;
-  if (Option.isNone(access.success)) return yield* FormNotFound.make();
-  const { origins, active, honeypotField, quotaRetryAfter } = access.success.value;
-  if (origins === "unlisted" && requestOrigin !== null) return yield* OriginRefused.make();
-  if (!active) return yield* FormSuspended.make({ origins });
-  if (onlyEmptyHoneypot(fields, honeypotField)) return yield* EmptySubmission.make({ origins });
-  if (quotaRetryAfter !== null) {
-    return yield* OrganizationRateLimited.make({ origins, retryAfter: quotaRetryAfter });
+  if (
+    Option.exists(access.success, ({ origins }) => origins === "unlisted") &&
+    Option.isSome(origin)
+  ) {
+    return yield* OriginRefused.make();
   }
-  return yield* FormRateLimited.make({ origins });
+  return yield* refuse(fields, access.success);
+});
+
+const receiveFromServer = Effect.fn("Intake.receiveFromServer")(function* (
+  verifier: TurnstileVerifier["Service"],
+  publicId: string,
+  fields: typeof SubmissionFields.Type,
+  intake: ServerIntake,
+) {
+  const { id, stored, access } = yield* runBatch(verifier, {
+    publicId,
+    fields,
+    origin: Option.none(),
+    turnstile: Option.none(),
+    server: Option.some(intake),
+  });
+  if (stored) return { submissionId: id, replayed: false };
+  if (Result.isFailure(access)) return yield* access.failure;
+  const replayed = Option.flatMap(access.success, ({ replayId }) => replayId);
+  if (Option.isSome(replayed)) return { submissionId: replayed.value, replayed: true };
+  return yield* refuse(fields, access.success);
 });
 
 const matchOrigin = Effect.fn("Intake.matchOrigin")(function* (
@@ -346,6 +431,7 @@ export const submissionIntakeLive = Layer.effect(
     const verifier = yield* TurnstileVerifier;
     return {
       receive: (...args) => receive(verifier, ...args),
+      receiveFromServer: (...args) => receiveFromServer(verifier, ...args),
       matchOrigin,
     };
   }),
