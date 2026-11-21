@@ -8,6 +8,8 @@ import {
 } from "effect/http";
 
 import { TurnstileToken, turnstileField } from "../domain/forms/turnstile.ts";
+import type { ApiTokenPrincipal } from "../ports/api-tokens.ts";
+import { IdempotencyKey } from "../domain/submissions/idempotency-key.ts";
 import {
   confirmationLanguage,
   confirmationPages,
@@ -28,6 +30,7 @@ import {
   type OrganizationRateLimited,
 } from "../ports/intake.ts";
 import type { StorageUnavailable } from "../ports/storage.ts";
+import { CurrentApiToken, intakePath } from "./api-token-authentication.ts";
 
 const PublicFormPath = Schema.Struct({
   formId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
@@ -42,6 +45,7 @@ const decodeJson = Schema.decodeUnknownEffect(
 );
 const decodeFields = Schema.decodeUnknownEffect(SubmittedFields);
 const decodeToken = Schema.decodeUnknownOption(TurnstileToken);
+const decodeIdempotencyKey = Schema.decodeUnknownOption(IdempotencyKey);
 
 const splitFields = Effect.fnUntraced(function* (fields: Readonly<Record<string, string>>) {
   const { [turnstileField]: value, ...message } = fields;
@@ -237,22 +241,8 @@ const requestOrigin = Effect.map(HttpServerRequest.HttpServerRequest, (request) 
   Option.filter(Option.fromNullishOr(request.headers.origin), (origin) => origin !== "null"),
 );
 
-const receive = Effect.gen(function* () {
-  const request = yield* HttpServerRequest.HttpServerRequest;
-  const origin = yield* requestOrigin;
-  const path = yield* Effect.option(HttpRouter.schemaPathParams(PublicFormPath));
-  if (Option.isNone(path)) return empty(400, corsHeaders("unrestricted", origin));
-  const { formId } = path.value;
-  const read = yield* Effect.result(readFields(request));
-  if (Result.isFailure(read)) return yield* refuseBody(formId, origin, read.failure.status);
-  const { json, fields, token } = read.success;
-  const limited = yield* limitClient(request, formId, origin);
-  if (Option.isSome(limited)) return limited.value;
-  const intake = yield* SubmissionIntake;
-  const received = yield* Effect.result(intake.receive(formId, fields, origin, token));
-  if (Result.isFailure(received)) return refusal(received.failure, origin);
-  const { submissionId, origins, successUrl } = received.success;
-  // The cron publishes the event later if this attempt fails or never runs.
+/** Publish the outbox event now. The cron publishes it later if this attempt fails or never runs. */
+const publishNow = Effect.fnUntraced(function* (submissionId: SubmissionId) {
   const tasks = yield* BackgroundTasks;
   yield* tasks.run(
     publishSubmission(submissionId).pipe(
@@ -262,6 +252,79 @@ const receive = Effect.gen(function* () {
       Effect.ignore,
     ),
   );
+});
+
+function serverRefusal(
+  error:
+    | FormNotFound
+    | FormRateLimited
+    | OrganizationRateLimited
+    | FormSuspended
+    | EmptySubmission
+    | StorageUnavailable,
+) {
+  return Match.valueTags(error, {
+    FormNotFound: () => empty(404, {}),
+    FormSuspended: () => empty(403, {}),
+    EmptySubmission: () => empty(400, {}),
+    FormRateLimited: () => rateLimited({}),
+    OrganizationRateLimited: ({ retryAfter }) => rateLimited({}, retryAfter),
+    StorageUnavailable: () => empty(503, {}),
+  });
+}
+
+/**
+ * A server intake: the request carried an active API token, and the middleware
+ * put its organization in `CurrentApiToken`. Neither the allowed origins, nor the
+ * per-client limit, nor Turnstile apply. The body is JSON and the response is
+ * always JSON, never a redirect or a page. An `Idempotency-Key` header makes a
+ * replay answer with the first submission's ID.
+ */
+const receiveFromServer = Effect.fnUntraced(function* (
+  request: HttpServerRequest.HttpServerRequest,
+  publicId: string,
+  token: ApiTokenPrincipal,
+) {
+  const header = request.headers["idempotency-key"];
+  const idempotencyKey = header === undefined ? Option.none() : decodeIdempotencyKey(header);
+  if (header !== undefined && Option.isNone(idempotencyKey)) return empty(400, {});
+  const read = yield* Effect.result(readFields(request));
+  if (Result.isFailure(read)) return empty(read.failure.status, {});
+  if (!read.success.json) return empty(415, {});
+  const intake = yield* SubmissionIntake;
+  const received = yield* Effect.result(
+    intake.receiveFromServer(publicId, read.success.fields, {
+      organizationId: token.organizationId,
+      idempotencyKey,
+    }),
+  );
+  if (Result.isFailure(received)) return serverRefusal(received.failure);
+  const { submissionId, replayed } = received.success;
+  if (!replayed) yield* publishNow(submissionId);
+  return yield* accepted(
+    { "submission-id": submissionId, status: "received" },
+    { status: 202, headers: { "cache-control": "no-store" } },
+  );
+});
+
+const receive = Effect.gen(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest;
+  const origin = yield* requestOrigin;
+  const path = yield* Effect.option(HttpRouter.schemaPathParams(PublicFormPath));
+  if (Option.isNone(path)) return empty(400, corsHeaders("unrestricted", origin));
+  const { formId } = path.value;
+  const apiToken = yield* CurrentApiToken;
+  if (apiToken !== null) return yield* receiveFromServer(request, formId, apiToken);
+  const read = yield* Effect.result(readFields(request));
+  if (Result.isFailure(read)) return yield* refuseBody(formId, origin, read.failure.status);
+  const { json, fields, token } = read.success;
+  const limited = yield* limitClient(request, formId, origin);
+  if (Option.isSome(limited)) return limited.value;
+  const intake = yield* SubmissionIntake;
+  const received = yield* Effect.result(intake.receive(formId, fields, origin, token));
+  if (Result.isFailure(received)) return refusal(received.failure, origin);
+  const { submissionId, origins, successUrl } = received.success;
+  yield* publishNow(submissionId);
   const headers = { "cache-control": "no-store", ...corsHeaders(origins, origin) };
   const browser =
     request.headers.accept
@@ -313,6 +376,6 @@ const preflight = Effect.gen(function* () {
 });
 
 export const submissionRoutes = Layer.mergeAll(
-  HttpRouter.add("POST", "/f/:formId", receive),
-  HttpRouter.add("OPTIONS", "/f/:formId", preflight),
+  HttpRouter.add("POST", intakePath, receive),
+  HttpRouter.add("OPTIONS", intakePath, preflight),
 );
