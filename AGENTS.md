@@ -5,6 +5,7 @@ Rondyr is a self-hosted form backend on Cloudflare. Read [architecture.md](archi
 ## Code
 
 - Keep a single application Worker. The domain stays independent of Cloudflare, Drizzle and Alchemy. Ports declare the Effect services. Adapters provide the layers.
+- The repository is a pnpm workspace. The Worker is the root package. `packages/emdash-plugin/` is the EmDash plugin, MIT-licensed because sites compile it into their own Worker: the Worker imports nothing from it, and it copies no AGPL code from `src/`. `pnpm check` covers it, and a merge that changes only the plugin deploys nothing.
 - Use Effect 4 and Effect Schema for business logic, errors and data boundaries. Compose the layers at the Worker's entry point. Keep files in kebab-case, except where a tool's convention or a generated file says otherwise.
 - Migrations belong to development tooling and to deployment. Version Drizzle migrations and snapshots in `database/migrations`.
 - For intake, a `202` response means the submission and its outbox event were persisted atomically. Consumers must tolerate duplicated events.
