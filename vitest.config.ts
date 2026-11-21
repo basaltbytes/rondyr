@@ -92,6 +92,11 @@ export default defineConfig({
       const queueProducers = Object.fromEntries(
         wrangler.queues.producers.map(({ binding, queue }) => [binding, queue]),
       );
+      // The tests send messages to the dead-letter queues, which the Worker consumes.
+      const deadLetterProducers = {
+        CLASSIFICATION_DEAD_LETTER_QUEUE: wrangler.vars.CLASSIFICATION_DEAD_LETTER_QUEUE_NAME,
+        DELIVERY_DEAD_LETTER_QUEUE: wrangler.vars.DELIVERY_DEAD_LETTER_QUEUE_NAME,
+      };
       return {
         remoteBindings: false,
         miniflare: {
@@ -101,7 +106,7 @@ export default defineConfig({
             ...wrangler.d1_databases.map(({ binding, database_id }) => [binding, database_id]),
             ["CLOUDFLARE_EMAIL_DB", cloudflareEmailDatabase],
           ]),
-          queueProducers,
+          queueProducers: { ...queueProducers, ...deadLetterProducers },
           durableObjects: {
             "Submissions.SubmissionAggregate": {
               className: "SubmissionAggregate",

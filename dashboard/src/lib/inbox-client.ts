@@ -91,10 +91,14 @@ export async function getSubmission(
   return decodeSubmission(await response.json());
 }
 
+/**
+ * Accept or archive a quarantined message, or send one that the classifier
+ * could not analyze back to classification.
+ */
 export async function reviewSubmission(
   id: Inbox["id"],
   submission: Submission["submissionId"],
-  decision: "approve" | "dismiss",
+  decision: "approve" | "dismiss" | "reclassify",
 ) {
   const response = await send(`${submissions(id)}/${encodeURIComponent(submission)}/${decision}`, {
     method: "POST",

@@ -5,7 +5,7 @@ import { RequestClassification } from "../domain/submissions/request-classificat
 import { Submission } from "../domain/submissions/submission.aggregate.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { ClassificationQueue } from "../ports/classification-queue.ts";
-import { Outbox, type OutboxLease } from "../ports/outbox.ts";
+import { Outbox, type OutboxLease, type StuckScope } from "../ports/outbox.ts";
 
 const Message = Schema.Struct({ submissionId: SubmissionId });
 
@@ -19,6 +19,13 @@ const leaseFor = (now: number): OutboxLease => ({
   republishBefore: now - 300_000,
 });
 
+/**
+ * After this many publications without a hand-off, about an hour, the Cron
+ * stops republishing an event. It stays in D1 with its submission until a
+ * member retries it by hand.
+ */
+export const maxPublications = 12;
+
 const publishClaimed = Effect.fnUntraced(function* (
   lease: OutboxLease,
   events: ReadonlyArray<SubmissionId>,
@@ -30,13 +37,19 @@ const publishClaimed = Effect.fnUntraced(function* (
   yield* outbox.markPublished(lease, events);
 });
 
-/** Cron path: publish up to 100 due events. */
+/** Cron path: set aside the events that reached the limit, then publish up to 100 due events. */
 export const publishPendingSubmissions = Effect.fn("Outbox.publish")(function* () {
   const outbox = yield* Outbox;
   const now = yield* Clock.currentTimeMillis;
   const lease = leaseFor(now);
-  const events = yield* outbox.claimDue(lease, 100);
-  yield* publishClaimed(lease, events);
+  const { claimed, stuck } = yield* outbox.claimDue(lease, 100, maxPublications);
+  for (const submissionId of stuck) {
+    yield* Effect.logError("Outbox event stuck", {
+      submissionId,
+      publications: maxPublications,
+    });
+  }
+  yield* publishClaimed(lease, claimed);
 });
 
 /**
@@ -51,6 +64,27 @@ export const publishSubmission = Effect.fn("Outbox.publishSubmission")(function*
   const lease = leaseFor(now);
   const events = yield* outbox.claim(lease, submissionId);
   yield* publishClaimed(lease, events);
+});
+
+/**
+ * Retry a stuck event by hand: its publication count goes back to zero and it
+ * is published at once. The Cron publishes it if this publication fails.
+ */
+export const retryStuckSubmission = Effect.fn("Outbox.retryStuck")(function* (scope: StuckScope) {
+  const outbox = yield* Outbox;
+  yield* outbox.retryStuck(scope);
+  yield* Effect.logInfo("Stuck outbox event retried by hand", {
+    submissionId: scope.submissionId,
+  });
+  yield* publishSubmission(scope.submissionId).pipe(
+    Effect.tapError((error) =>
+      Effect.logWarning("Direct outbox publication failed", {
+        submissionId: scope.submissionId,
+        tag: error._tag,
+      }),
+    ),
+    Effect.ignore,
+  );
 });
 
 export const consumeSubmissions = Effect.fn("Outbox.consume")(function* (batch: MessageBatch) {
