@@ -92,12 +92,23 @@ The text is fixed, in the language of the destination, and names neither the org
 
 An address is confirmed once per organization: it then gets the messages of every destination of every form of that organization. The dashboard shows **Waiting for confirmation** or **Confirmed** next to each recipient, and **Send again** emails a new link to a pending one; the new link replaces the previous one.
 
-- A delivery goes to the confirmed recipients only. When none is confirmed, it fails without a retry with the summary `No recipient of this destination has confirmed their address yet.`, and the message stays accepted in the inbox.
+- A delivery goes to the recipients that were confirmed when it was created, and only to them. Every attempt of a delivery, retries included, has the same recipients and the same idempotency key; an address confirmed later gets the messages accepted from then on. When none is confirmed, the delivery fails without a retry with the summary `No recipient of this destination has confirmed their address yet.`, and the message stays accepted in the inbox.
 - A [test email](#test-email) goes to the confirmed recipients only, and fails the same way when there is none.
 - An address gets at most 3 confirmation emails per UTC day, counted across every organization of the stage. Beyond that, adding it to a destination sends nothing, and **Send again** answers `429` until midnight UTC.
 - Without an email provider, no confirmation is sent and no email is counted; the recipients stay pending.
 
-The migration that introduced confirmations marked every recipient of the email destinations that existed then as confirmed for its organization, so these destinations kept their deliveries.
+The migration that introduced confirmations marked every recipient of the email destinations that existed then as confirmed for its organization, from before any delivery, so these destinations kept their deliveries, including the ones being retried.
+
+The owner of an address who no longer wants the messages asks an admin of the organization to remove it from the destinations.
+
+## Account emails
+
+The stage's provider also sends two emails about accounts. Both are plain text with fixed wording in English or French and one link, whose secret sits in the URL fragment and whose SHA-256 hash is all that D1 keeps:
+
+- An invitation to an organization, in the language of the inviting admin's dashboard, valid once for 7 days. It names neither the organization nor the person who invited. An address gets at most 3 in 24 hours, across organizations; see [Members and invitations](./deployment.md#members-and-invitations).
+- A password reset, asked for from the sign-in screen and written in its language, valid once for one hour. An account gets at most 3 in 24 hours, and the screen answers the same whether an account has the address or not; see [Forgotten passwords](./deployment.md#forgotten-passwords).
+
+Without an email provider, an admin copies the invitation link from the dashboard, and the sign-in screen says that this server can't reset a password.
 
 ## Message
 
@@ -148,7 +159,7 @@ Sent: 20 November 2026 at 15:42:07 UTC
 Test ID: 4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60
 ```
 
-**Send a test** goes to the confirmed recipients of the destination only, and only an admin of the organization can send one. Each test has a new ID, which Resend uses as its idempotency key. Each test sends an email that is subject to the provider's quota. Rondyr waits up to 30 seconds, makes one attempt, and stores no submission, delivery, or attempt record. The route returns `testId` and an `outcome` of `delivered`, `retryable-failure` or `permanent-failure`. Failed tests include a `summary` with the available status or error code. A destination gets at most 3 tests per minute, counted by the Rate Limiting binding `TARGET_TEST_RATE_LIMIT`: a fourth one answers `429` with `Retry-After: 60`, and if the binding doesn't answer, the test is refused with `503`. While a test of a destination runs, a second test of the same destination answers `409` on that Worker instance.
+**Send a test** goes to the confirmed recipients of the destination only, and only an admin of the organization can send one. Each test has a new ID, which Resend uses as its idempotency key. Each test sends an email that is subject to the provider's quota. Rondyr waits up to 30 seconds, makes one attempt, and stores no submission, delivery, or attempt record. The route returns `testId` and an `outcome` of `delivered`, `retryable-failure` or `permanent-failure`. Failed tests include a `summary` with the available status or error code. A destination gets at most 3 tests per minute, counted by the Rate Limiting binding `TARGET_TEST_RATE_LIMIT`: a fourth one answers `429` with `Retry-After: 60`, and if the binding doesn't answer, the test is refused with `503` and `{"error":"test-limit-unavailable"}`, which the dashboard explains, and nothing is sent. While a test of a destination runs, a second test of the same destination answers `409` on that Worker instance.
 
 ## Responses and retries
 
@@ -194,4 +205,3 @@ The selected provider processes the contents of sent emails. Resend keeps sent e
 ## Not built yet
 
 - The message text can't be changed. It exists in English and in French.
-- A recipient can't withdraw its confirmation from the page; an admin removes the address from the destinations instead.
