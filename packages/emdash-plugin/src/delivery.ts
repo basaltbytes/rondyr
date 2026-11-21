@@ -38,18 +38,20 @@ export async function attempt(
   }
   const http = ctx.http;
   const client = new RondyrClient((url, init) => http.fetch(url, init), options.url, token);
-  const status = await client.submit(link.rondyrFormId, entry.fields, id);
-  const next = afterAttempt(entry, sendOutcome(status), Date.now());
+  const result = await client.submit(link.rondyrFormId, entry.fields, id);
+  const next = afterAttempt(entry, sendOutcome(result.status), Date.now());
   if (next === null) {
     await store.deleteQueueEntry(id);
     return;
   }
   await store.putQueueEntry(id, next);
-  // The submission ID and the status only: the fields stay in storage.
   const log = next.state === "failed" ? ctx.log.warn : ctx.log.info;
+  // The submission ID, the status and the network error only: the fields stay in storage.
+  const reason = result.status === null ? result.reason : null;
   log.call(ctx.log, "Rondyr did not store a queued submission", {
     submissionId: id,
-    status,
+    status: result.status,
+    reason,
     state: next.state,
   });
 }

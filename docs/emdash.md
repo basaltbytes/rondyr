@@ -56,7 +56,7 @@ export default defineConfig({
 });
 ```
 
-`url` is the origin of the Rondyr Worker; the plugin may call that host only. `formsWithoutSubmissions` is the forms plugin without its **Submissions** page and its **Recent Submissions** widget, whose copy becomes a backup. Keep `formsPlugin` if editors should still see that copy, and shorten its retention in the form settings.
+`url` is the HTTPS origin of the Rondyr Worker; the plugin may call that host only. EmDash refuses plugin requests to local and private addresses, so a site can't send to a Rondyr on `localhost`: point a local site at a deployed stage. `formsWithoutSubmissions` is the forms plugin without its **Submissions** page and its **Recent Submissions** widget, whose copy becomes a backup. Keep `formsPlugin` if editors should still see that copy, and shorten its retention in the form settings.
 
 Replace `src/pages/api/form.ts` with the package's route:
 
@@ -114,7 +114,7 @@ Both secrets are optional: the site builds and deploys without them, and the for
 
 - `enqueue` is a public plugin route, so that the site route can call it in the same Worker. It refuses a call whose `Authorization` header is not `Bearer` followed by `RONDYR_API_TOKEN`. On this hop the token stays inside the Worker. Without the token, the header must carry a random key that the Worker isolate creates and never sends anywhere.
 - The `webhook` route reads its body as bytes, and checks the HMAC-SHA-256 signature over exactly those bytes, as [webhooks.md](./webhooks.md#signature) describes. During a secret rotation in Rondyr, either signature is accepted.
-- The plugin may call the Rondyr host only (`allowedHosts`). It logs submission IDs and HTTP statuses, never the fields.
+- The plugin may call the Rondyr host only (`allowedHosts`). It logs submission IDs, HTTP statuses and network errors, never the fields. A refused host shows in the site's logs as `Rondyr did not store a queued submission` with the reason.
 
 ## Choices the issue left open
 

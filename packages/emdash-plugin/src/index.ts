@@ -2,7 +2,7 @@ import { formsPlugin, type FormsPluginOptions } from "@emdash-cms/plugin-forms";
 import type { PluginDescriptor } from "emdash";
 
 import { pluginId, pluginVersion } from "./constants.ts";
-import { RondyrOptions } from "./options.ts";
+import { RondyrOptions, rondyrHost } from "./options.ts";
 import { descriptorStorage } from "./store.ts";
 
 export type { RondyrOptions } from "./options.ts";
@@ -13,7 +13,8 @@ export type { RondyrOptions } from "./options.ts";
  * the Rondyr Worker; the plugin may call that host only.
  */
 export function rondyr(options: RondyrOptions): PluginDescriptor<RondyrOptions> {
-  const { url } = RondyrOptions.parse(options);
+  const resolved = RondyrOptions.parse(options);
+  const { url } = resolved;
   return {
     id: pluginId,
     version: pluginVersion,
@@ -21,7 +22,7 @@ export function rondyr(options: RondyrOptions): PluginDescriptor<RondyrOptions> 
     adminEntry: "@basaltbytes/emdash-plugin-rondyr/admin",
     options: { url },
     capabilities: ["email:send", "network:request"],
-    allowedHosts: [new URL(url).host],
+    allowedHosts: [rondyrHost(resolved)],
     adminPages: [
       { path: "/", label: "Messages", icon: "inbox" },
       { path: "/settings", label: "Rondyr settings", icon: "gear" },

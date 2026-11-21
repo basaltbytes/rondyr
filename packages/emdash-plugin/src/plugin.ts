@@ -14,7 +14,7 @@ import { RondyrError, SubmissionStatus, type Organization } from "./core/rondyr-
 import { pluginId, pluginVersion } from "./constants.ts";
 import { attempt, requeue, sendDue } from "./delivery.ts";
 import { rondyrClient, withRondyr } from "./inbox.ts";
-import { RondyrOptions } from "./options.ts";
+import { RondyrOptions, rondyrHost } from "./options.ts";
 import { rondyrSecrets } from "./secrets.ts";
 import { FormLink, Store, storageConfig } from "./store.ts";
 import { receiveWebhook } from "./webhook.ts";
@@ -51,7 +51,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
     id: pluginId,
     version: pluginVersion,
     capabilities: ["email:send", "network:request"],
-    allowedHosts: [new URL(options.url).host],
+    allowedHosts: [rondyrHost(options)],
     storage: storageConfig,
     hooks: {
       "plugin:activate": {

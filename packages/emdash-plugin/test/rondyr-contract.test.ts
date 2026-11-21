@@ -129,9 +129,9 @@ it("sends, reads, decides and verifies the webhook with the plugin's code", asyn
     _hp: "filled",
   };
   const key = crypto.randomUUID();
-  expect(await client.submit(publicId, fields, key)).toBe(202);
+  expect(await client.submit(publicId, fields, key)).toEqual({ status: 202 });
   // The retry after a timeout: same key, nothing new stored.
-  expect(await client.submit(publicId, fields, key)).toBe(202);
+  expect(await client.submit(publicId, fields, key)).toEqual({ status: 202 });
   const stored = await env.DB.prepare(
     "SELECT COUNT(*) AS count FROM submissions s JOIN forms f ON f.id = s.form_id WHERE f.public_id = ?",
   )
