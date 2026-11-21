@@ -1,21 +1,29 @@
-import { Clock, Effect, Layer, Redacted, Schema } from "effect";
+import { Clock, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
 import { AccountEmail, AccountName, AccountPassword } from "../../domain/organizations/account.ts";
+import { setupState as stateOf, setupTokenLength } from "../../domain/organizations/setup.ts";
 import {
   Authentication,
   AuthOriginRefused,
   AuthUnavailable,
   InvalidSetup,
   SetupClosed,
+  SetupRateLimited,
 } from "../../ports/authentication.ts";
+import { rateLimitedClient } from "../workers/client-rate-limit.ts";
 
-const Secret = Schema.RedactedFromValue(Schema.String.check(Schema.isMinLength(32)));
+const Secret = Schema.RedactedFromValue(
+  Schema.String.check(Schema.isMinLength(setupTokenLength.minimum)),
+);
 const BindingConfig = Schema.Struct({
   BETTER_AUTH_SECRET: Secret,
   BETTER_AUTH_URL: Schema.optional(Schema.String),
 });
 const SetupConfig = Schema.Struct({ RONDYR_SETUP_TOKEN: Secret });
+const SetupToken = Schema.Struct({
+  RONDYR_SETUP_TOKEN: Schema.optionalKey(Schema.RedactedFromValue(Schema.String)),
+});
 // An invited person chooses a name and a password with the same rules.
 const OwnerInput = Schema.Struct({
   name: AccountName,
@@ -37,11 +45,14 @@ const readConfig = Effect.fn("Authentication.readConfig")(function* (request: Re
     Effect.mapError(() => AuthUnavailable.make()),
   );
   const incoming = new URL(request.url);
+  // Without BETTER_AUTH_URL, the Worker's origin is the request's: Cloudflare routes to
+  // a Worker only the hostnames that its account gives it (workers.dev, a custom domain),
+  // so a request cannot name another site. It must be HTTPS on the default port.
   const baseURL = yield* Effect.try({
     try: () => new URL(settings.BETTER_AUTH_URL ?? incoming.origin),
     catch: () => AuthUnavailable.make(),
   });
-  if (settings.BETTER_AUTH_URL === undefined && !loopback(baseURL)) {
+  if (settings.BETTER_AUTH_URL === undefined && baseURL.port !== "" && !loopback(baseURL)) {
     return yield* AuthUnavailable.make();
   }
   if (
@@ -88,6 +99,48 @@ const userId = Effect.fn("Authentication.userId")(function* (request: Request) {
   return session?.user.id ?? null;
 });
 
+const accountExists = Effect.fn("Authentication.accountExists")(function* (database: D1Database) {
+  const existing = yield* Effect.tryPromise({
+    try: () => database.prepare("SELECT 1 FROM auth_users LIMIT 1").first(),
+    catch: () => AuthUnavailable.make(),
+  });
+  return existing !== null;
+});
+
+const setupState = Effect.gen(function* () {
+  const env = yield* bindings;
+  const { RONDYR_SETUP_TOKEN: token } = yield* Schema.decodeUnknownEffect(SetupToken)(env).pipe(
+    Effect.mapError(() => AuthUnavailable.make()),
+  );
+  const exists = yield* accountExists(env.DB);
+  return stateOf(
+    exists,
+    Option.map(Option.fromUndefinedOr(token), (value) => Redacted.value(value)),
+  );
+}).pipe(Effect.withSpan("Authentication.setupState"));
+
+/**
+ * Count one setup attempt of the client in the `CLIENT_RATE_LIMIT` namespace, under a
+ * key of its own: 5 a minute per client. The token is long enough that the limit only
+ * slows a guesser down further; a counter that cannot answer admits the attempt.
+ */
+const admitSetupAttempt = Effect.fn("Authentication.admitSetupAttempt")(function* (
+  request: Request,
+) {
+  // Cloudflare sets the header on every request; only a local run goes without it.
+  const client = request.headers.get("cf-connecting-ip");
+  if (client === null) return true;
+  const env = yield* bindings;
+  return yield* Effect.tryPromise({
+    try: () => env.CLIENT_RATE_LIMIT.limit({ key: `setup:${rateLimitedClient(client)}` }),
+    catch: () => AuthUnavailable.make(),
+  }).pipe(
+    Effect.map(({ success }) => success),
+    Effect.tapError(() => Effect.logWarning("Setup rate limit unavailable; attempt admitted")),
+    Effect.orElseSucceed(() => true),
+  );
+});
+
 const setup = Effect.fn("Authentication.setup")(function* (request: Request) {
   const env = yield* bindings;
   const { RONDYR_SETUP_TOKEN: token } = yield* Schema.decodeUnknownEffect(SetupConfig)(env).pipe(
@@ -95,6 +148,7 @@ const setup = Effect.fn("Authentication.setup")(function* (request: Request) {
   );
   const header = request.headers.get("authorization");
   if (header === null) return yield* SetupClosed.make();
+  if (!(yield* admitSetupAttempt(request))) return yield* SetupRateLimited.make();
 
   const { constantTimeEqual, hashPassword } = yield* Effect.tryPromise({
     try: () => import("better-auth/crypto"),
@@ -106,11 +160,7 @@ const setup = Effect.fn("Authentication.setup")(function* (request: Request) {
   yield* readConfig(request);
 
   const dbBinding = env.DB;
-  const existing = yield* Effect.tryPromise({
-    try: () => dbBinding.prepare("SELECT 1 FROM auth_users LIMIT 1").first(),
-    catch: () => AuthUnavailable.make(),
-  });
-  if (existing !== null) return yield* SetupClosed.make();
+  if (yield* accountExists(dbBinding)) return yield* SetupClosed.make();
 
   const input = yield* Effect.tryPromise({
     try: () => request.json(),
@@ -151,4 +201,9 @@ const setup = Effect.fn("Authentication.setup")(function* (request: Request) {
   if (inserted?.meta.changes !== 1) return yield* SetupClosed.make();
 });
 
-export const authenticationLive = Layer.succeed(Authentication, { handle, setup, userId });
+export const authenticationLive = Layer.succeed(Authentication, {
+  handle,
+  setup,
+  setupState,
+  userId,
+});

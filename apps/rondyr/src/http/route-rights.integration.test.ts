@@ -43,6 +43,7 @@ const rights: ReadonlyArray<RouteRights> = [
   { route: "GET /api/auth/get-session", access: "public" },
   { route: "POST /api/auth/sign-in/email", access: "public" },
   { route: "POST /api/auth/sign-out", access: "public" },
+  { route: "GET /api/setup", access: "public" },
   { route: "POST /api/setup", access: "public" },
   { route: "POST /api/password-resets", access: "public" },
   { route: "POST /api/password-resets/complete", access: "public" },
