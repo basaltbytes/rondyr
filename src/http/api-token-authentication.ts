@@ -18,13 +18,12 @@ export const detailPath = `${submissionsPath}/:submissionId`;
 
 export const decisionPath = `${detailPath}/:decision`;
 
-/** The submission route. A `POST` with a Bearer credential is a server intake. */
+/** The submission route. A `POST` with an `Authorization` header is a server intake. */
 export const intakePath = "/f/:formId";
 
 const tokenReads = new Set<string>([organizationPath, submissionsPath, countsPath, detailPath]);
 const bearer = /^Bearer[ \t]+([^,]+)$/iu;
 const apiCredential = /(?:^|,)[ \t]*Bearer[ \t]+rdr_/iu;
-const bearerScheme = /^[ \t]*Bearer(?:[ \t]|$)/iu;
 
 const empty = (status: number) =>
   HttpServerResponse.empty({ status, headers: { "cache-control": "no-store" } });
@@ -32,9 +31,10 @@ const empty = (status: number) =>
 /**
  * Match against the registered route, which also covers newly added routes by default.
  * On `/api`, a request with an `rdr_` Bearer credential is authenticated by its
- * token. On the submission route, any Bearer credential makes a server intake:
- * a credential that is not an active token gets `401` and never reaches the
- * public path. The route reads the token's organization from `CurrentApiToken`.
+ * token. On the submission route, any `Authorization` header makes a server
+ * intake, whatever its scheme or value: a header that is not the Bearer
+ * credential of an active token gets `401` and never reaches the public path.
+ * The route reads the token's organization from `CurrentApiToken`.
  */
 export const apiTokenAuthentication = HttpRouter.middleware(
   Effect.gen(function* () {
@@ -48,8 +48,7 @@ export const apiTokenAuthentication = HttpRouter.middleware(
         const api = route.path === "/api" || route.path.startsWith("/api/");
         if (
           authorization === undefined ||
-          !(intake ? bearerScheme : apiCredential).test(authorization) ||
-          !(intake || api)
+          !(intake || (api && apiCredential.test(authorization)))
         ) {
           return yield* handler;
         }
