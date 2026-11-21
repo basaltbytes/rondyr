@@ -1,4 +1,4 @@
-import { use, useActionState } from "react";
+import { use, useActionState, useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -40,6 +40,7 @@ function QuotaForm({
     { usage: initial, result: null },
   );
   const number = new Intl.NumberFormat(i18n.language);
+  const junkId = useId();
 
   return (
     <form action={save} className="grid gap-4">
@@ -78,6 +79,18 @@ function QuotaForm({
           required
         />
       </div>
+      <section aria-labelledby={junkId} className="grid gap-1.5">
+        <h2 id={junkId} className="text-sm leading-none font-medium">
+          {t("inbox.quotas.junk")}
+        </h2>
+        <p className="text-xs text-pretty text-muted-foreground">
+          {t("inbox.quotas.used", {
+            used: number.format(usage.used.junk),
+            limit: number.format(usage.limits.submissions),
+          })}
+        </p>
+        <p className="text-xs text-pretty text-muted-foreground">{t("inbox.quotas.junkHint")}</p>
+      </section>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={saving}>
           {saving ? t("inbox.quotas.saving") : t("common.save")}

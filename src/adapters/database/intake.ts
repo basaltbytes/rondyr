@@ -4,6 +4,7 @@ import { Hex } from "effect/encoding";
 
 import { parseSuccessUrl } from "../../domain/forms/form.ts";
 import type { TurnstileToken } from "../../domain/forms/turnstile.ts";
+import { junkIntakeReasons } from "../../domain/organizations/organization-quotas.ts";
 import {
   repetitionKeys,
   repetitionThresholds,
@@ -27,9 +28,13 @@ import { TurnstileVerifier } from "../../ports/turnstile-verifier.ts";
 import { d1, database } from "./d1.ts";
 
 const encodeFields = Schema.encodeEffect(Schema.fromJsonString(SubmissionFields));
-const AccessRow = Schema.Struct({
+const OriginRow = Schema.Struct({
   restricted: Schema.Literals([0, 1]),
   listed: Schema.Literals([0, 1]),
+});
+const decodeOrigins = Schema.decodeUnknownEffect(Schema.Array(OriginRow));
+const AccessRow = Schema.Struct({
+  ...OriginRow.fields,
   active: Schema.Literals([0, 1]),
   success_url: Schema.NullOr(Schema.String),
   honeypot_field: Schema.NullOr(Schema.String),
@@ -37,27 +42,15 @@ const AccessRow = Schema.Struct({
 });
 const decodeAccess = Schema.decodeUnknownEffect(Schema.Array(AccessRow));
 
-// One row for a known form, none for an unknown one. ?1 is the public ID and
-// ?2 the request's origin, or NULL. The success URL is read only while its
-// origin, the URL up to its first slash after the host, is an allowed origin.
-const accessQuery = `
-  SELECT
-    EXISTS (SELECT 1 FROM form_origins o WHERE o.form_id = f.id) AS restricted,
-    EXISTS (SELECT 1 FROM form_origins o WHERE o.form_id = f.id AND o.origin = ?2) AS listed,
-    f.status = 'active' AS active,
-    CASE WHEN EXISTS (
-      SELECT 1 FROM form_origins o
-      WHERE o.form_id = f.id AND substr(f.success_url, 1, length(o.origin) + 1) = o.origin || '/'
-    ) THEN f.success_url END AS success_url,
-    f.honeypot_field AS honeypot_field,
-    CASE WHEN u.submissions >= o.daily_submission_limit
-      THEN 86400 - unixepoch() % 86400 END AS quota_retry_after
-  FROM forms f
-  JOIN organizations o ON o.id = f.organization_id
-  LEFT JOIN organization_daily_usage u ON u.organization_id = f.organization_id
-    AND u.day = date('now')
-  WHERE f.public_id = ?1
+/** Whether the form `f` lists origins, and whether it lists the origin of the parameter. */
+const originColumns = (parameter: "?2" | "?4") => `
+  EXISTS (SELECT 1 FROM form_origins o WHERE o.form_id = f.id) AS restricted,
+  EXISTS (SELECT 1 FROM form_origins o WHERE o.form_id = f.id AND o.origin = ${parameter}) AS listed
 `;
+
+// One row for a known form, none for an unknown one. ?1 is the public ID and
+// ?2 the request's origin, or NULL.
+const originQuery = `SELECT ${originColumns("?2")} FROM forms f WHERE f.public_id = ?1`;
 
 const originAllowed = (parameter: "?2" | "?4") => `(
   ${parameter} IS NULL
@@ -65,14 +58,23 @@ const originAllowed = (parameter: "?2" | "?4") => `(
   OR EXISTS (SELECT 1 FROM form_origins WHERE form_id = f.id AND origin = ${parameter})
 )`;
 
-// The indexed counts and the write use the same D1 transaction. The organization
-// ID is the leading column of each fingerprint index and comes from the form.
-// D1 sets the reception time so concurrent batches count in transaction order.
-const insertStatement = `
+const junkReasons = junkIntakeReasons.map((reason) => `'${reason}'`).join(", ");
+
+// The form ?3 with its counts, its intake reason and whether the daily budget of
+// that reason has room. ?2 is the fields in JSON, ?5 and ?6 the sender and content
+// fingerprints, ?7 the repetition window, ?8 and ?9 the repetition thresholds, ?10
+// the secret that Siteverify checked the token with or NULL, and ?11 whether it
+// accepted the token. The organization ID is the leading column of each fingerprint
+// index and comes from the form. D1 sets the reception time so concurrent batches
+// count in transaction order, and the budget is the one of that time's UTC day.
+const screening = `
   WITH intake_time AS (
     SELECT CAST(ROUND(unixepoch('subsec') * 1000) AS INTEGER) AS received_at
-  ), admitted AS MATERIALIZED (
-    SELECT f.id, f.organization_id, f.honeypot_field, f.turnstile_secret, t.received_at,
+  ), counted AS MATERIALIZED (
+    SELECT f.id, f.organization_id, f.status, f.success_url, f.honeypot_field,
+      f.turnstile_secret, t.received_at, o.daily_submission_limit,
+      COALESCE(u.submissions, 0) AS submissions_used,
+      COALESCE(u.junk, 0) AS junk_used,
       COALESCE(u.classifications, 0) >= o.daily_classification_limit AS classification_limited,
       (SELECT COUNT(*) FROM submissions s
        WHERE s.organization_id = f.organization_id AND s.sender_fingerprint = ?5
@@ -85,17 +87,44 @@ const insertStatement = `
     LEFT JOIN organization_daily_usage u ON u.organization_id = f.organization_id
       AND u.day = date(t.received_at / 1000, 'unixepoch')
     WHERE f.public_id = ?3
-      AND f.status = 'active'
-      AND ${originAllowed("?4")}
-      AND COALESCE(u.submissions, 0) < o.daily_submission_limit
-      AND (
-        f.honeypot_field IS NULL
-        OR EXISTS (SELECT 1 FROM json_each(?2) WHERE key <> f.honeypot_field OR value <> '')
-      )
-      AND (
-        SELECT COUNT(*) FROM submissions WHERE form_id = f.id AND received_at > t.received_at - 60000
-      ) < 30
+  ), screened AS (
+    SELECT c.*,
+      CASE
+        WHEN EXISTS (SELECT 1 FROM json_each(?2) WHERE key = c.honeypot_field AND value <> '')
+        THEN 'honeypot'
+        WHEN c.turnstile_secret IS NOT NULL AND (?10 IS NOT c.turnstile_secret OR ?11 = 0)
+        THEN 'turnstile-failed'
+        WHEN c.prior_same_sender >= ?8 OR c.prior_same_content >= ?9
+        THEN 'repetition'
+        WHEN c.classification_limited THEN 'quota'
+      END AS intake_reason
+    FROM counted c
+  ), budgeted AS (
+    SELECT s.*,
+      CASE WHEN s.intake_reason IN (${junkReasons}) THEN s.junk_used ELSE s.submissions_used END
+        < s.daily_submission_limit AS within_budget
+    FROM screened s
   )
+`;
+
+// What the batch needs to explain a refusal, read before the insert in the same
+// transaction. The success URL is read only while its origin, the URL up to its
+// first slash after the host, is an allowed origin.
+const accessQuery = `${screening}
+  SELECT
+    ${originColumns("?4")},
+    f.status = 'active' AS active,
+    CASE WHEN EXISTS (
+      SELECT 1 FROM form_origins o
+      WHERE o.form_id = f.id AND substr(f.success_url, 1, length(o.origin) + 1) = o.origin || '/'
+    ) THEN f.success_url END AS success_url,
+    f.honeypot_field AS honeypot_field,
+    CASE WHEN NOT f.within_budget THEN 86400 - unixepoch() % 86400 END AS quota_retry_after
+  FROM budgeted f
+`;
+
+// ?1 is the submission ID.
+const insertStatement = `${screening}
   INSERT INTO submissions (
     id, organization_id, form_id, fields, received_at, intake_reason,
     sender_fingerprint, content_fingerprint, prior_same_sender, prior_same_content
@@ -113,30 +142,37 @@ const insertStatement = `
       ELSE ?2
     END,
     f.received_at,
-    CASE
-      WHEN EXISTS (SELECT 1 FROM json_each(?2) WHERE key = f.honeypot_field AND value <> '')
-      THEN 'honeypot'
-      WHEN f.turnstile_secret IS NOT NULL AND (?10 IS NOT f.turnstile_secret OR ?11 = 0)
-      THEN 'turnstile-failed'
-      WHEN prior_same_sender >= ?8 OR prior_same_content >= ?9
-      THEN 'repetition'
-      WHEN f.classification_limited THEN 'quota'
-    END,
+    f.intake_reason,
     ?5,
     ?6,
-    prior_same_sender,
-    prior_same_content
-  FROM admitted f
+    f.prior_same_sender,
+    f.prior_same_content
+  FROM budgeted f
+  WHERE f.status = 'active'
+    AND ${originAllowed("?4")}
+    AND f.within_budget
+    AND (
+      f.honeypot_field IS NULL
+      OR EXISTS (SELECT 1 FROM json_each(?2) WHERE key <> f.honeypot_field OR value <> '')
+    )
+    AND (
+      SELECT COUNT(*) FROM submissions WHERE form_id = f.id AND received_at > f.received_at - 60000
+    ) < 30
 `;
 
+// Junk counts in `junk`, every other stored submission in `submissions`.
 const incrementUsage = `
-  INSERT INTO organization_daily_usage (organization_id, day, submissions, classifications)
-  SELECT organization_id, date(received_at / 1000, 'unixepoch'), 1, intake_reason IS NULL
+  INSERT INTO organization_daily_usage (organization_id, day, submissions, classifications, junk)
+  SELECT organization_id, date(received_at / 1000, 'unixepoch'),
+    COALESCE(intake_reason NOT IN (${junkReasons}), 1),
+    intake_reason IS NULL,
+    COALESCE(intake_reason IN (${junkReasons}), 0)
   FROM submissions WHERE id = ?
   ON CONFLICT (organization_id) DO UPDATE SET
     submissions = excluded.submissions + CASE WHEN day = excluded.day THEN submissions ELSE 0 END,
     classifications = excluded.classifications +
       CASE WHEN day = excluded.day THEN classifications ELSE 0 END,
+    junk = excluded.junk + CASE WHEN day = excluded.day THEN junk ELSE 0 END,
     day = excluded.day
 `;
 
@@ -148,7 +184,7 @@ const fingerprint = (value: string | null) =>
         catch: () => StorageUnavailable.make(),
       }).pipe(Effect.map((hash) => Hex.encode(new Uint8Array(hash))));
 
-const originMatch = (row: typeof AccessRow.Type): OriginMatch => {
+const originMatch = (row: typeof OriginRow.Type): OriginMatch => {
   if (row.restricted === 0) return "unrestricted";
   return row.listed === 1 ? "listed" : "unlisted";
 };
@@ -236,23 +272,22 @@ const receive = Effect.fn("Intake.receive")(function* (
   const { secret, passed } = Option.isSome(token)
     ? yield* verifyTurnstile(verifier, publicId, requestOrigin, token.value)
     : { secret: null, passed: false };
-  // The batch is one transaction, so the access row describes the list that the insert checked.
-  const accessCheck = db.prepare(accessQuery).bind(publicId, requestOrigin);
-  const insert = db
-    .prepare(insertStatement)
-    .bind(
-      id,
-      encoded,
-      publicId,
-      requestOrigin,
-      sender,
-      content,
-      repetitionWindowMs,
-      repetitionThresholds.sender,
-      repetitionThresholds.content,
-      secret,
-      passed ? 1 : 0,
-    );
+  const parameters = [
+    id,
+    encoded,
+    publicId,
+    requestOrigin,
+    sender,
+    content,
+    repetitionWindowMs,
+    repetitionThresholds.sender,
+    repetitionThresholds.content,
+    secret,
+    passed ? 1 : 0,
+  ] as const;
+  // The batch is one transaction, so the access row describes the state that the insert checked.
+  const accessCheck = db.prepare(accessQuery).bind(...parameters);
+  const insert = db.prepare(insertStatement).bind(...parameters);
   const outbox = db
     .prepare(`
     INSERT INTO outbox_events (submission_id)
@@ -296,11 +331,13 @@ const matchOrigin = Effect.fn("Intake.matchOrigin")(function* (
 ) {
   const db = yield* database;
   const found = yield* d1(() =>
-    db.prepare(accessQuery).bind(publicId, Option.getOrNull(origin)).all(),
+    db.prepare(originQuery).bind(publicId, Option.getOrNull(origin)).all(),
   );
-  const access = yield* readAccess(found.results);
-  if (Option.isNone(access)) return yield* FormNotFound.make();
-  return access.value.origins;
+  const [row] = yield* decodeOrigins(found.results).pipe(
+    Effect.mapError(() => StorageUnavailable.make()),
+  );
+  if (row === undefined) return yield* FormNotFound.make();
+  return originMatch(row);
 });
 
 export const submissionIntakeLive = Layer.effect(

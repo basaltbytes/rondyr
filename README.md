@@ -91,7 +91,7 @@ The body can be `application/json`, `application/x-www-form-urlencoded`, or `mul
 | `404` | Unknown form |
 | `413` | Body larger than 16 KiB |
 | `415` | Another content type |
-| `429` | The client or form reached its minute limit, or the organization reached its daily submission quota. `Retry-After` gives the wait in seconds. Nothing is stored |
+| `429` | The client or form reached its minute limit, or the organization reached a daily quota: the submission quota, or the junk quota for a submission that intake would quarantine as junk. `Retry-After` gives the wait in seconds. Nothing is stored |
 | `503` | D1 unavailable |
 
 ### HTML forms
@@ -147,7 +147,9 @@ Both minute limits answer `429` with `Retry-After: 60` and store nothing. A page
 
 **Daily quotas** shows usage across the organization's forms for the current UTC day. The defaults are 2,000 stored submissions and 1,000 submissions admitted to classification. An organization member can change the limits there or with `PUT /api/organizations/:organizationId/quotas`, using integer fields `submissions` (1 to 100,000) and `classifications` (0 to 100,000). A `GET` on the same URL returns the UTC day, limits and usage.
 
-After the storage quota is reached, Rondyr returns `429` with the number of seconds until midnight UTC in `Retry-After`. After the classification quota is reached, Rondyr stores messages and sends them to review with the reason **Daily classification quota reached**. Every stored submission uses one storage slot. A submission uses one classification slot when intake admits it to the classifier. Workflow retries use the same slot.
+Junk has its own storage quota, equal to the submission limit. Junk is a message that intake quarantines because it filled the honeypot field, failed Turnstile, or repeats earlier messages; **Daily quotas** counts it under **Junk caught at intake**, and the API under `used.junk`. A bot that sends junk all day uses up the junk quota, not the one of your visitors. An organization therefore stores at most twice its submission limit per day: 4,000 messages with the default.
+
+After a storage quota is reached, Rondyr returns `429` with the number of seconds until midnight UTC in `Retry-After`, and stores nothing: junk is refused once the junk quota is reached, any other submission once the submission quota is reached. Junk normally gets the same `202` as other messages, so the `429` tells a bot that it was caught; that is the price of not letting it fill the submission quota. After the classification quota is reached, Rondyr stores messages and sends them to review with the reason **Daily classification quota reached**. Those messages can be real, so they use the submission quota, not the junk one. A submission uses one classification slot when intake admits it to the classifier. Workflow retries use the same slot.
 
 ## Features
 

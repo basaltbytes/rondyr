@@ -62,8 +62,12 @@ export const organizationDailyUsage = sqliteTable("organization_daily_usage", {
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   day: text().notNull(),
+  // Stored submissions of `day`, junk excepted.
   submissions: integer().notNull(),
   classifications: integer().notNull(),
+  // Stored junk of `day`: see `junkIntakeReasons`. A statement that changes `day`
+  // must reset this counter with the others.
+  junk: integer().notNull().default(0),
 });
 
 // The browser origins that may submit to a form. A form without a row accepts every origin.

@@ -342,6 +342,8 @@
       "day": "Usage for {{day}} (UTC)",
       "submissions": "Daily submission limit",
       "classifications": "Daily classification limit",
+      "junk": "Junk caught at intake",
+      "junkHint": "Messages that fill the honeypot field, fail Turnstile or repeat earlier ones are quarantined and count here, not against the submission limit. Their daily limit is the same number. Once it’s reached, Rondyr refuses them until midnight UTC and still accepts other messages.",
       "used": "{{used}} of {{limit}} used",
       "saving": "Saving quotas…",
       "saved": "Quotas saved.",

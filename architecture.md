@@ -255,7 +255,7 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `organization_members` | `(organization_id, user_id)`, sans rôle |
 | `organization_domains` | `(organization_id, domain)`, jusqu’à dix par organisation |
 | `organization_classification_policies` | Réglages de classification personnalisés, au plus une ligne par organisation |
-| `organization_daily_usage` | Une ligne par organisation avec le dernier jour UTC `day`, et les compteurs `submissions` et `classifications` |
+| `organization_daily_usage` | One row per organization with the last UTC day `day` and its counters: `submissions` (stored submissions other than junk), `classifications` and `junk` (stored junk, section 8) |
 | `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context`, `status` (`active` par défaut, ou `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (publique) et `turnstile_secret` (chiffrée). Les quatre derniers champs sont facultatifs |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` est normalisée : schéma, hôte et port éventuel, sans chemin ni barre oblique finale |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (facultatif), `sender_fingerprint` et `content_fingerprint` (facultatifs), `prior_same_sender` et `prior_same_content` |
@@ -275,6 +275,8 @@ Deux index servent les lectures fréquentes : `(organization_id, received_at, id
 La migration `submission-repetition` ajoute quatre colonnes avec `ALTER TABLE` et deux index partiels pour le comptage. Chaque index commence par `organization_id`, suivi de l’empreinte de l’expéditeur ou du contenu, puis de `received_at`. Supprimer une soumission supprime ses empreintes et ses compteurs.
 
 La migration `turnstile-and-organization-quotas` ajoute les réglages par `ALTER TABLE` et crée `organization_daily_usage`. Les compteurs commencent à zéro, y compris pour les organisations existantes. Le lot d’ingestion prend l’heure de D1 et utilise la même date UTC pour vérifier les plafonds et compter la soumission. Si la ligne de compteur appartient à une autre date, l’API affiche zéro pour le jour courant et la première soumission enregistrée initialise les compteurs de ce jour.
+
+The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
 Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. Une relance manuelle ouvre une nouvelle série sur la même livraison sans effacer ses tentatives ; l’historique et la relance n’ont demandé aucune migration. L’API d’administration crée les destinations webhook et e-mail ; la table `notification_targets` existante suffit, sans migration. L’adaptateur relit la liste des destinataires avec le même schéma qu’à la création : une ligne modifiée à la main qui ne respecte plus la règle fait échouer la livraison sans reprise.
 
@@ -320,10 +322,12 @@ Les champs sont stockés dans un objet JSON. Les noms qui sont des indices de ta
 | `404` | Formulaire inconnu, pour `POST` comme pour `OPTIONS` |
 | `413` | Corps de plus de 16 Kio |
 | `415` | Autre type de contenu |
-| `429` | Limite à la minute du client ou du formulaire (`Retry-After: 60`), ou plafond quotidien de soumissions de l’organisation (`Retry-After` en secondes jusqu’à minuit UTC). Rien n’est enregistré |
+| `429` | The client or form reached its minute limit (`Retry-After: 60`), or the organization reached a daily quota: the submission quota for a submission that is not junk, the junk quota for junk (`Retry-After` in seconds until midnight UTC). Nothing is stored |
 | `503` | D1 indisponible |
 
 Les réponses ne révèlent rien de la décision anti-spam : une soumission au champ piège rempli reçoit le même `202`, la même page ou la même redirection qu’une autre. `GET /health` renvoie `{"status":"ok"}`.
+
+There is one exception: once the organization's junk quota is reached for the day, junk gets `429` while other submissions still get `202`, so a bot can tell that it was caught. Without the refusal, junk would have to use the quota of real messages again (section 8).
 
 #### Limite par client et champ piège
 
@@ -371,7 +375,7 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `GET /api/organizations/:organizationId/classification-policy` | Renvoie le classificateur, sa politique par défaut et les réglages de l’organisation, ou `null` si elle utilise les réglages par défaut |
 | `PUT /api/organizations/:organizationId/classification-policy` | Remplace les réglages de l’organisation. Accepte `thresholds` et `offTopic`, ensemble ou seuls. Répond `204`, ou `400` pour un réglage invalide |
 | `DELETE /api/organizations/:organizationId/classification-policy` | Rétablit les réglages du classificateur et répond `204` |
-| `GET /api/organizations/:organizationId/quotas` | Renvoie `{ "day", "limits", "used" }`. La date est en UTC et chacun des deux objets contient `submissions` et `classifications` |
+| `GET /api/organizations/:organizationId/quotas` | Returns `{ "day", "limits", "used" }`. The day is in UTC. `limits` contains `submissions` and `classifications`; `used` contains them and `junk`, whose limit is `limits.submissions` |
 | `PUT /api/organizations/:organizationId/quotas` | Remplace les plafonds `{ "submissions", "classifications" }` et renvoie la consommation et les plafonds mis à jour. Accepte des entiers de 1 à 100 000 pour les soumissions et de 0 à 100 000 pour les classifications. Un corps invalide répond `400` |
 | `POST /api/organizations/:organizationId/forms` | Ajoute un formulaire actif (`{"name":…,"businessContext":…}`, contexte facultatif) : `201` et le formulaire |
 | `PATCH /api/organizations/:organizationId/forms/:publicId` | Renomme le formulaire, modifie son contexte métier, ou les deux (`{"name":…}`, `{"businessContext":…}`) ; un contexte vide l’efface |
@@ -430,7 +434,11 @@ Le Worker retire `cf-turnstile-response` avant le calcul des empreintes et le st
 
 #### Plafonds quotidiens
 
-Le plafond de stockage protège l’ensemble des formulaires d’une organisation. Après 2 000 soumissions enregistrées par défaut, la réponse est `429` jusqu’au jour UTC suivant. Le plafond de classification réserve par défaut 1 000 places à l’ingestion. Le lot incrémente le compteur de classification uniquement quand aucun motif d’entrée ne s’applique, et toute soumission enregistrée incrémente le compteur de stockage. D1 sérialise l’admission, l’écriture et les incréments, y compris lorsque plusieurs formulaires reçoivent des messages en même temps.
+The storage quota covers all the forms of an organization. Junk is a submission that intake quarantines with the reason `honeypot`, `turnstile-failed` or `repetition` (`junkIntakeReasons` in `src/domain/organizations/organization-quotas.ts`). It has its own daily quota, equal to `daily_submission_limit` (2,000 by default), and does not count against the quota of the other submissions. A `quota` quarantine is not junk: those messages can be real, so they use the storage quota. An organization therefore stores at most twice its submission limit per UTC day.
+
+Before this split, a bot wave at the form's cap of 30 per minute used up the day's storage quota in about an hour, and every real visitor then got `429` until midnight UTC. Now the wave fills the junk quota; after that, junk gets `429` with `Retry-After` until midnight UTC and nothing is stored, while other submissions are accepted until their own quota is reached. Refused junk is not stored, so it no longer takes places in the form's cap of 30 per minute either.
+
+The classification quota reserves 1,000 places at intake by default. The intake batch computes the intake reason, then checks the quota of that reason, and the same batch increments `classifications` when no intake reason applies, `junk` for junk, and `submissions` for any other stored submission. D1 serializes admission, the write and the increments, including when several forms receive messages at the same time, and an accepted submission still takes one D1 round trip (two with a Turnstile token). The first statement of the batch reads the same state before the insert, so a refusal gets the `Retry-After` of the quota that applied.
 
 ### Authentification et isolation
 
@@ -556,7 +564,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.
 - Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
 - Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
-- Turnstile : clé secrète chiffrée et absente des réponses ; enregistrement refusé sans `RONDYR_SECRETS_KEY`, pour une clé que Siteverify refuse (`400`) et quand Siteverify ne répond pas ou signale `internal-error` (`503`), sans changer les clés enregistrées ; `404` pour un autre compte, sans appel à Siteverify ; jeton valide, absent, refusé avec le statut 200 ou 400, clé devenue inconnue, service indisponible et délai dépassé à l’ingestion, avec un faux Siteverify défini dans `tests/integration/external-workers.ts`. Plafonds quotidiens : frontière exacte des deux plafonds sous concurrence, message de file en double, remise à zéro au changement de jour UTC, bornes et isolation de l’API.
+- Turnstile : clé secrète chiffrée et absente des réponses ; enregistrement refusé sans `RONDYR_SECRETS_KEY`, pour une clé que Siteverify refuse (`400`) et quand Siteverify ne répond pas ou signale `internal-error` (`503`), sans changer les clés enregistrées ; `404` pour un autre compte, sans appel à Siteverify ; jeton valide, absent, refusé avec le statut 200 ou 400, clé devenue inconnue, service indisponible et délai dépassé à l’ingestion, avec un faux Siteverify défini dans `tests/integration/external-workers.ts`. Plafonds quotidiens : frontière exacte des deux plafonds sous concurrence, message de file en double, remise à zéro au changement de jour UTC, bornes et isolation de l’API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, and no counter change on a duplicated queue message. Playwright checks the junk count in Daily quotas.
 - Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
 - Limite par client : un client au-delà de sa limite reçoit `429` avec `Retry-After`, `Access-Control-Expose-Headers` et les en-têtes CORS de la liste, sans enregistrement, pendant qu’un autre client et une requête sans adresse passent ; plafond du formulaire atteint par deux clients sous leur limite ; regroupement des adresses IPv6 par `/64`.
 - Champ piège : nom défini, retiré et refusé par l’API d’administration, `404` pour un autre compte ; champ rempli avec la même page HTML qu’un envoi normal, enregistré avec le motif `honeypot` et un seul événement, sans appel au faux Workers AI ; message de file en double sans seconde décision ; acceptation par un relecteur, puis création de la livraison ; champ vide retiré avant l’enregistrement, ordre des autres champs gardé, message classé normalement ; corps réduit au champ piège vide refusé en `400` ; formulaire sans champ piège inchangé.
@@ -654,6 +662,7 @@ Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la rel
 - Un formulaire sans origine autorisée accepte toutes les origines (`Access-Control-Allow-Origin: *`). Avec une liste, un navigateur d’une autre origine reçoit `403` sans en-tête CORS, et une requête sans `Origin` reste acceptée. Aucune réponse n’autorise les cookies (#19).
 - Chaque client est limité à 5 soumissions par minute sur un formulaire, avec le binding Rate Limiting de Workers et non un compteur D1, pour ne garder aucune adresse IP. Une adresse IPv6 compte pour son `/64`. Le plafond de 30 par formulaire reste le dernier rempart (#7).
 - Un champ piège rempli donne la réponse habituelle et met le message en quarantaine avec le motif `honeypot`, sans appel au modèle ; un champ piège vide est retiré avant l’enregistrement. Le motif d’entrée est enregistré avec la soumission, et la commande `QuarantineAtIntake` le porte à l’agrégat (#7).
+- Junk (`honeypot`, `turnstile-failed`, `repetition`) has its own daily quota, equal to the submission limit, so a bot wave can no longer lock real visitors out until midnight UTC. Junk over that quota gets `429` and is not stored. `quota` quarantines stay in the submission quota (#7).
 
 ---
 

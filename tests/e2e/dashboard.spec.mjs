@@ -309,6 +309,10 @@ test("show today's usage and retain changed daily quotas", async ({ dashboard: p
     t("inbox.quotas.used", { used: "1", limit: "10" }),
   );
   await expect(classifications).toHaveValue("5");
+  // Junk has its own count, under the same limit as the other submissions.
+  await expect(page.getByRole("region", { name: t("inbox.quotas.junk") })).toContainText(
+    t("inbox.quotas.used", { used: "0", limit: "10" }),
+  );
 });
 
 test("confirm and redirect HTML submissions, then refuse JSON from a removed origin", async ({
