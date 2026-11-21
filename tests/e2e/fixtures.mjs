@@ -81,7 +81,7 @@ export const test = base.extend({
   /** The stage's `RONDYR_ESCALATION_CLASSIFIER`. A stage has no second classifier by default. */
   escalationClassifier: [null, { option: true }],
 
-  dashboardOrigin: async ({ request, escalationClassifier }, use) => {
+  dashboardRuntime: async ({ request, escalationClassifier }, use) => {
     const {
       workerOptions: { modulesRules: _rules, ...workerOptions },
     } = unstable_getMiniflareWorkerOptions("./dist/rondyr/wrangler.json");
@@ -129,10 +129,26 @@ export const test = base.extend({
         data: owner,
       });
       expect(setup.status(), "POST /api/setup").toBe(201);
-      await use(origin);
+      await use({ origin, runtime });
     } finally {
       await runtime.dispose();
     }
+  },
+
+  dashboardOrigin: async ({ dashboardRuntime }, use) => {
+    await use(dashboardRuntime.origin);
+  },
+
+  /** The emails that the fake Resend received for an address, oldest first. */
+  sentEmails: async ({ dashboardRuntime }, use) => {
+    await use(async (recipient) => {
+      const resend = await dashboardRuntime.runtime.getWorker("resend-fixture");
+      const response = await resend.fetch(
+        `https://api.resend.com/__received?recipient=${encodeURIComponent(recipient)}`,
+      );
+      const received = await response.json();
+      return received.map((entry) => JSON.parse(entry.body));
+    });
   },
 
   externalOrigin: async ({ dashboardOrigin }, use) => {

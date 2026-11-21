@@ -10,6 +10,7 @@ import {
   type EmailRecipients,
 } from "../../domain/deliveries/email.ts";
 import type { DestinationTarget } from "../../domain/deliveries/targets.ts";
+import { OrganizationId } from "../../domain/submissions/submission.id.ts";
 import type { WebhookUrl } from "../../domain/deliveries/webhook-destination.ts";
 import { secretRotationWindowMillis, WebhookTarget } from "../../domain/deliveries/webhook.ts";
 import { EmailSender } from "../../ports/email-sender.ts";
@@ -66,7 +67,28 @@ const webhookSummary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) 
   });
 });
 
-const emailSummary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
+/** The addresses, in lowercase, that an organization has confirmed. */
+type Confirmed = ReadonlySet<string>;
+
+const decodeConfirmed = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ address: Schema.String })),
+);
+
+// ?1 is the organization in this statement.
+const confirmedQuery = `
+  SELECT address FROM email_recipient_confirmations
+  WHERE organization_id = ?1 AND confirmed_at IS NOT NULL
+`;
+
+const confirmedSet = Effect.fnUntraced(function* (rows: ReadonlyArray<unknown> | undefined) {
+  const decoded = yield* decodeConfirmed(rows ?? []).pipe(Effect.mapError(unreadable));
+  return new Set(decoded.map(({ address }) => address));
+});
+
+const emailSummary = Effect.fnUntraced(function* (
+  row: typeof TargetRow.Type,
+  confirmed: Confirmed,
+) {
   const configuration = yield* decodeEmailConfiguration(row.configuration).pipe(
     Effect.mapError(unreadable),
   );
@@ -75,6 +97,10 @@ const emailSummary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
     type: "email",
     recipients: configuration.recipients,
     language: configuration.language ?? legacyEmailLanguage,
+    recipientStatuses: configuration.recipients.map((address) => ({
+      address,
+      status: confirmed.has(address.toLowerCase()) ? "confirmed" : "pending",
+    })),
     active: row.active === 1,
     createdAt: row.created_at,
   });
@@ -82,8 +108,9 @@ const emailSummary = Effect.fnUntraced(function* (row: typeof TargetRow.Type) {
 
 function summary(
   row: typeof TargetRow.Type,
+  confirmed: Confirmed,
 ): Effect.Effect<typeof DestinationTarget.Type, StorageUnavailable> {
-  return row.type === "webhook" ? webhookSummary(row) : emailSummary(row);
+  return row.type === "webhook" ? webhookSummary(row) : emailSummary(row, confirmed);
 }
 
 const targetColumns = "t.id, t.type, t.configuration, t.active, t.created_at";
@@ -92,7 +119,7 @@ const listedTypes = "t.type IN ('webhook', 'email')";
 
 const list = Effect.fn("NotificationTargets.list")(function* (form: FormScope) {
   const db = yield* database;
-  const [forms, targets] = yield* d1(() =>
+  const [forms, targets, confirmed] = yield* d1(() =>
     db.batch([
       db
         .prepare(`
@@ -109,12 +136,14 @@ const list = Effect.fn("NotificationTargets.list")(function* (form: FormScope) {
       ORDER BY t.created_at, t.id
     `)
         .bind(form.userId, form.organizationId, form.formPublicId),
+      db.prepare(confirmedQuery).bind(form.organizationId),
     ]),
   );
   const found = yield* decodeForms(forms?.results ?? []).pipe(Effect.mapError(unreadable));
   if (found.length === 0) return yield* TargetNotFound.make();
   const rows = yield* decodeTargets(targets?.results ?? []).pipe(Effect.mapError(unreadable));
-  return yield* Effect.forEach(rows, summary);
+  const addresses = yield* confirmedSet(confirmed?.results);
+  return yield* Effect.forEach(rows, (row) => summary(row, addresses));
 });
 
 const createWebhook = Effect.fn("NotificationTargets.createWebhook")(function* (
@@ -208,21 +237,24 @@ const createEmail = Effect.fn("NotificationTargets.createEmail")(function* (
     Effect.orDie,
   );
   const now = yield* Clock.currentTimeMillis;
-  const inserted = yield* d1(() =>
-    db
-      .prepare(`
+  const [inserted, confirmed] = yield* d1(() =>
+    db.batch([
+      db
+        .prepare(`
     INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, active, created_at)
     SELECT ?1, f.organization_id, f.id, 'email', ?2, 1, ?3
     FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
     WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6
     RETURNING ${returnedColumns}
   `)
-      .bind(id, configuration, now, form.userId, form.organizationId, form.formPublicId)
-      .all(),
+        .bind(id, configuration, now, form.userId, form.organizationId, form.formPublicId),
+      db.prepare(confirmedQuery).bind(form.organizationId),
+    ]),
   );
-  const [row] = yield* decodeTargets(inserted.results).pipe(Effect.mapError(unreadable));
+  const [row] = yield* decodeTargets(inserted?.results ?? []).pipe(Effect.mapError(unreadable));
   if (row === undefined) return yield* TargetNotFound.make();
-  return yield* emailSummary(row);
+  const addresses = yield* confirmedSet(confirmed?.results);
+  return yield* emailSummary(row, addresses);
 });
 
 const replaceRecipients = Effect.fn("NotificationTargets.replaceRecipients")(function* (
@@ -235,19 +267,22 @@ const replaceRecipients = Effect.fn("NotificationTargets.replaceRecipients")(fun
     language === undefined ? { recipients } : { recipients, language },
   ).pipe(Effect.orDie);
   // A merge patch replaces the recipients and keeps the stored language when none is given.
-  const updated = yield* d1(() =>
-    db
-      .prepare(`
+  const [updated, confirmed] = yield* d1(() =>
+    db.batch([
+      db
+        .prepare(`
     UPDATE notification_targets AS t SET configuration = json_patch(t.configuration, ?4)
     WHERE ${scopedTarget} AND t.type = 'email'
     RETURNING ${returnedColumns}
   `)
-      .bind(target.targetId, target.organizationId, target.userId, changes)
-      .all(),
+        .bind(target.targetId, target.organizationId, target.userId, changes),
+      db.prepare(confirmedQuery).bind(target.organizationId),
+    ]),
   );
-  const [row] = yield* decodeTargets(updated.results).pipe(Effect.mapError(unreadable));
+  const [row] = yield* decodeTargets(updated?.results ?? []).pipe(Effect.mapError(unreadable));
   if (row === undefined) return yield* TargetNotFound.make();
-  return yield* emailSummary(row);
+  const addresses = yield* confirmedSet(confirmed?.results);
+  return yield* emailSummary(row, addresses);
 });
 
 const setStatus = Effect.fn("NotificationTargets.setStatus")(function* (
@@ -255,22 +290,26 @@ const setStatus = Effect.fn("NotificationTargets.setStatus")(function* (
   status: typeof TargetStatus.Type,
 ) {
   const db = yield* database;
-  const updated = yield* d1(() =>
-    db
-      .prepare(`
+  const [updated, confirmed] = yield* d1(() =>
+    db.batch([
+      db
+        .prepare(`
     UPDATE notification_targets AS t SET active = ?4 WHERE ${scopedTarget} AND ${listedTypes}
     RETURNING ${returnedColumns}
   `)
-      .bind(target.targetId, target.organizationId, target.userId, status === "active" ? 1 : 0)
-      .all(),
+        .bind(target.targetId, target.organizationId, target.userId, status === "active" ? 1 : 0),
+      db.prepare(confirmedQuery).bind(target.organizationId),
+    ]),
   );
-  const [row] = yield* decodeTargets(updated.results).pipe(Effect.mapError(unreadable));
+  const [row] = yield* decodeTargets(updated?.results ?? []).pipe(Effect.mapError(unreadable));
   if (row === undefined) return yield* TargetNotFound.make();
-  return yield* summary(row);
+  const addresses = yield* confirmedSet(confirmed?.results);
+  return yield* summary(row, addresses);
 });
 
 const TestableRow = Schema.Struct({
   id: TargetId,
+  organization_id: OrganizationId,
   type: Schema.Literals(["webhook", "email"]),
   configuration: Schema.fromJsonString(Schema.Json),
   public_id: Schema.String,
@@ -283,7 +322,7 @@ const testable = Effect.fn("NotificationTargets.testable")(function* (target: Ta
   const found = yield* d1(() =>
     db
       .prepare(`
-    SELECT t.id, t.type, t.configuration, f.public_id, f.name
+    SELECT t.id, t.organization_id, t.type, t.configuration, f.public_id, f.name
     FROM notification_targets t JOIN forms f ON f.id = t.form_id AND f.organization_id = t.organization_id
     WHERE ${scopedTarget} AND ${listedTypes}
   `)
@@ -293,7 +332,12 @@ const testable = Effect.fn("NotificationTargets.testable")(function* (target: Ta
   const [row] = yield* decodeTestable(found.results).pipe(Effect.mapError(unreadable));
   if (row === undefined) return yield* TargetNotFound.make();
   return {
-    target: { id: row.id, type: row.type, configuration: row.configuration },
+    target: {
+      id: row.id,
+      organizationId: row.organization_id,
+      type: row.type,
+      configuration: row.configuration,
+    },
     form: { publicId: row.public_id, name: row.name },
   };
 });

@@ -179,6 +179,7 @@ function administrationRoutes(organizationId: string, publicId: string) {
     ["POST", `${target}/activate`],
     ["POST", `${target}/deactivate`],
     ["POST", `${target}/test`],
+    ["POST", `${target}/confirmations`, { address: "team@example.com" }],
     ["POST", `${submission}/deliveries/73123ee4-40bf-4c5f-b8ff-1d56cdaa7642/retry`],
     ["GET", `${org}/members`],
     ["PATCH", `${org}/members/example-user`, { role: "admin" }],
@@ -611,4 +612,62 @@ it.live(
       ]);
     }),
   30_000,
+);
+
+it.live(
+  "revokes the tokens and invitations of a removed member, and the invitations of a demoted one",
+  () =>
+    Effect.gen(function* () {
+      const admin = yield* signIn;
+      const { id } = yield* createInbox("Departures", admin);
+      const leaving = yield* addMember(id, admin, "leaving-admin@example.test", "admin");
+      const demoted = yield* addMember(id, admin, "demoted-admin@example.test", "admin");
+      const token = yield* call(
+        "POST",
+        `/api/organizations/${id}/api-tokens`,
+        { name: "Leaving" },
+        leaving,
+      );
+      assert.strictEqual(token.status, 201);
+      const { token: secret } = yield* json(token).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(Schema.Struct({ token: Schema.String }))),
+      );
+      const byLeaving = yield* invite(id, leaving, "friend-of-leaving@example.test", "admin");
+      const byDemoted = yield* invite(id, demoted, "friend-of-demoted@example.test", "admin");
+      const members = `/api/organizations/${id}/members`;
+      const listed = yield* call("GET", members, undefined, admin).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readMembers),
+      );
+      const userOf = (email: string) =>
+        listed.members.find((member) => member.email === email)?.userId;
+
+      const removed = yield* call(
+        "DELETE",
+        `${members}/${userOf("leaving-admin@example.test")}`,
+        undefined,
+        admin,
+      );
+      const changed = yield* call(
+        "PATCH",
+        `${members}/${userOf("demoted-admin@example.test")}`,
+        { role: "reviewer" },
+        admin,
+      );
+      const withToken = yield* Effect.promise(() =>
+        env.TEST_WORKER.fetch(new URL("/api/organizations", origin), {
+          headers: { authorization: `Bearer ${secret}` },
+        }),
+      );
+      const accepted = yield* Effect.forEach([byLeaving, byDemoted], ({ token: link }) =>
+        call("POST", "/api/invitations/accept", { token: link, name: "Friend", password }),
+      );
+
+      assert.deepEqual([removed.status, changed.status], [204, 200]);
+      assert.strictEqual(withToken.status, 401);
+      assert.deepEqual(
+        accepted.map(({ status }) => status),
+        [404, 404],
+      );
+    }),
 );

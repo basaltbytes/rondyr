@@ -44,6 +44,8 @@ The stack deploys the Worker with the Vite assets and the Durable Objects of the
 
 The Worker also gets the Rate Limiting binding `CLIENT_RATE_LIMIT`, which limits each client to 5 submissions per minute on a form. Nothing has to be created on the account for it, and the API token needs no permission beyond `Workers Scripts Write`; the limit and the namespace come from `ratelimits` in `wrangler.json`, which the stack reads. A namespace is shared by every Worker of the account: the stages of one account all use namespace `7001`, and they don't share counts because each key starts with the public ID of a form. Another Worker of the account that uses the same namespace would share a count only for an identical key. Cloudflare doesn't show rate limits in the dashboard; see [Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 
+A second Rate Limiting binding, `TARGET_TEST_RATE_LIMIT` in namespace `7002`, limits the test messages of each destination to 3 per minute. Its keys start with `target-test:` and the ID of the destination, so stages don't share counts either.
+
 The dashboard assets get their security headers from `public/_headers`. After a deployment, check them on the stage origin:
 
 ```sh

@@ -1,13 +1,18 @@
 import { Clock, Effect, Schema } from "effect";
 
 import type { DeliveryId, NotificationTarget } from "../../domain/deliveries/delivery.ts";
-import { legacyEmailLanguage, type EmailLanguage } from "../../domain/deliveries/email.ts";
+import {
+  EmailRecipients,
+  legacyEmailLanguage,
+  type EmailLanguage,
+} from "../../domain/deliveries/email.ts";
 import {
   emailContent,
   testEmailContent,
   type EmailContent,
 } from "../../domain/deliveries/email-message.ts";
 import { EmailSender } from "../../ports/email-sender.ts";
+import { RecipientConfirmations } from "../../ports/recipient-confirmations.ts";
 import {
   NotificationFailed,
   type Notification,
@@ -25,12 +30,17 @@ function permanent(summary: string) {
 const notConfigured =
   "Email is not configured on this stage. Check the email provider and RONDYR_EMAIL_FROM.";
 
+const noConfirmedRecipient =
+  "No recipient of this destination has confirmed their address yet. Rondyr sends email only to confirmed addresses.";
+
 /**
- * Sends a delivery as one plain text email to the recipients of its target,
- * through the provider of the stage. The delivery ID is the idempotency key.
+ * Sends a delivery as one plain text email to the recipients of its target
+ * that the organization has confirmed, through the provider of the stage. The
+ * delivery ID is the idempotency key.
  */
 export const emailProvider = Effect.gen(function* () {
   const email = yield* EmailSender;
+  const confirmations = yield* RecipientConfirmations;
 
   /**
    * Send an email to the recipients of `target`, written in the language of the
@@ -45,17 +55,28 @@ export const emailProvider = Effect.gen(function* () {
       Effect.mapError(() => permanent("The email target configuration is invalid.")),
     );
     const from = yield* email.sender.pipe(Effect.mapError(() => permanent(notConfigured)));
-    const { replyTo, subject, text } = yield* write(configuration.language ?? legacyEmailLanguage);
-    yield* email
-      .send({ from, to: configuration.recipients, replyTo, subject, text, idempotencyKey: key })
+    // An address that its owner has not confirmed gets nothing, now or later.
+    const confirmed = yield* confirmations
+      .confirmedAmong(target.organizationId, configuration.recipients)
       .pipe(
-        Effect.catchTags({
-          EmailRejected: ({ summary }) => Effect.fail(permanent(summary)),
-          EmailUnavailable: ({ summary }) =>
-            Effect.fail(NotificationFailed.make({ retryable: true, summary })),
-          EmailProviderMissing: () => Effect.fail(permanent(notConfigured)),
-        }),
+        Effect.mapError(() =>
+          NotificationFailed.make({
+            retryable: true,
+            summary: "Rondyr could not read the confirmed recipients.",
+          }),
+        ),
       );
+    if (confirmed.length === 0) return yield* permanent(noConfirmedRecipient);
+    const to = EmailRecipients.make(confirmed);
+    const { replyTo, subject, text } = yield* write(configuration.language ?? legacyEmailLanguage);
+    yield* email.send({ from, to, replyTo, subject, text, idempotencyKey: key }).pipe(
+      Effect.catchTags({
+        EmailRejected: ({ summary }) => Effect.fail(permanent(summary)),
+        EmailUnavailable: ({ summary }) =>
+          Effect.fail(NotificationFailed.make({ retryable: true, summary })),
+        EmailProviderMissing: () => Effect.fail(permanent(notConfigured)),
+      }),
+    );
   });
 
   const send = Effect.fn("EmailProvider.send")(function* (notification: Notification) {

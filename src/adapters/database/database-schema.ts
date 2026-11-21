@@ -155,6 +155,32 @@ export const apiTokens = sqliteTable(
   ],
 );
 
+// An address that an organization may email. It gets deliveries and tests once its
+// owner has confirmed it with the link of a confirmation email; D1 keeps the hash
+// of the link only. `emails_day` and `emails_sent` count the confirmation emails
+// of the address on its last UTC day, summed across organizations.
+export const emailRecipientConfirmations = sqliteTable(
+  "email_recipient_confirmations",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // In lowercase: two recipients that differ only by case are the same.
+    address: text().notNull(),
+    tokenHash: text("token_hash"),
+    tokenExpiresAt: integer("token_expires_at"),
+    confirmedAt: integer("confirmed_at"),
+    emailsDay: text("emails_day"),
+    emailsSent: integer("emails_sent").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.organizationId, table.address] }),
+    uniqueIndex("email_recipient_confirmations_token_unique").on(table.tokenHash),
+    index("email_recipient_confirmations_address_idx").on(table.address, table.emailsDay),
+  ],
+);
+
 export const organizationDomains = sqliteTable(
   "organization_domains",
   {

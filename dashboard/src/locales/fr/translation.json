@@ -456,7 +456,8 @@
         "retryableFailure": "Échec temporaire du message d’essai : {{summary}}",
         "permanentFailure": "Échec du message d’essai : {{summary}}",
         "alreadyRunning": "Un essai est déjà en cours pour cette destination.",
-        "notSent": "Le message d’essai n’a pas pu être envoyé. Réessayez."
+        "notSent": "Le message d’essai n’a pas pu être envoyé. Réessayez.",
+        "limited": "Cette destination a déjà reçu 3 essais cette minute. Attendez une minute et réessayez."
       }
     },
     "webhooks": {
@@ -514,6 +515,20 @@
         "too-many-recipients": "Une destination accepte au plus {{max}} adresses.",
         "invalid-address": "Une adresse n’est pas valide. Saisissez des adresses seules, comme equipe@example.com, sans nom ni chevrons.",
         "duplicate-address": "Une adresse apparaît deux fois."
+      },
+      "confirmationNote": "Rondyr envoie à chaque nouvelle adresse un lien pour la confirmer, une fois pour l’organisation. Les messages et les essais ne partent qu’aux adresses confirmées.",
+      "statuses": {
+        "pending": "En attente de confirmation",
+        "confirmed": "Confirmée"
+      },
+      "resendLabel": "Renvoyer l’e-mail de confirmation à {{address}}",
+      "resend": {
+        "action": "Renvoyer",
+        "sent": "E-mail de confirmation envoyé à {{address}}.",
+        "confirmed": "{{address}} est déjà confirmée. Rechargez la page pour le voir.",
+        "limit": "{{address}} a déjà reçu 3 e-mails de confirmation aujourd’hui. Réessayez demain.",
+        "noProvider": "Ce serveur n’envoie pas d’e-mails : la confirmation ne peut pas partir.",
+        "failed": "L’e-mail de confirmation à {{address}} n’a pas pu être envoyé. Réessayez."
       }
     },
     "members": {
@@ -594,6 +609,21 @@
       "signInRequired": "Un compte utilise déjà cette adresse. Connectez-vous avec ce compte pour accepter.",
       "rejected": "Vérifiez votre nom et choisissez un mot de passe de 12 à 128 caractères.",
       "failed": "L’invitation n’a pas pu être acceptée. Réessayez."
+    }
+  },
+  "recipientConfirmation": {
+    "title": "Confirmez votre adresse e-mail",
+    "description": "Confirmez que cette adresse peut recevoir les messages d’un formulaire de site web géré par Rondyr. Si vous n’en voulez pas, fermez cette page : rien ne vous sera envoyé.",
+    "confirm": "Confirmer mon adresse",
+    "confirming": "Confirmation…",
+    "failed": "L’adresse n’a pas pu être confirmée. Réessayez.",
+    "confirmed": {
+      "title": "Adresse confirmée",
+      "body": "Cette adresse reçoit désormais les messages qui lui sont envoyés par Rondyr. Vous pouvez fermer cette page."
+    },
+    "invalid": {
+      "title": "Lien indisponible",
+      "body": "Ce lien de confirmation a expiré ou a déjà servi. Demandez à la personne qui a ajouté votre adresse d’en envoyer un nouveau."
     }
   }
 }
