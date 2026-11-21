@@ -15,7 +15,7 @@ export class ClassificationPolicyNotFound extends Schema.TaggedError<
 >()("ClassificationPolicyNotFound", {}) {}
 
 /**
- * `RONDYR_CLASSIFIER` names no known classifier, or the organization's stored
+ * The stage names an unknown classifier, or the organization's stored
  * policy does not decode. Reading the policy again gives the same result.
  */
 export class ClassificationPolicyUnreadable extends Schema.TaggedError<

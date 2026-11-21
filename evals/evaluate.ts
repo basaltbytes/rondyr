@@ -12,6 +12,7 @@ import {
   type ClassifierModel,
   type ModelBinding,
   type UnsupportedGatewayOptions,
+  type Transport,
   WorkersAi,
   WorkersAiFailure,
 } from "./workers-ai.ts";
@@ -72,6 +73,22 @@ const callTimeout = "12 seconds";
 const attemptBudget = 3;
 // Advance when the questions or adapter scoring change, including when the input digest stays the same.
 const scoringVersion = 5;
+
+export const inputCacheKey = Effect.fn("Evaluation.inputCacheKey")(function* (
+  transport: Transport,
+  classifier: ClassifierName,
+  entryId: CorpusEntry["id"],
+  input: ClassifierInput,
+) {
+  return cacheKey({
+    transport,
+    classifier,
+    model: classifiers[classifier].model,
+    scoringVersion,
+    entryId,
+    inputDigest: yield* inputDigest(input),
+  });
+});
 
 const decodeUsage = Schema.decodeUnknownEffect(Schema.Struct({ usage: Usage }));
 
@@ -202,15 +219,7 @@ const evaluateClassifier = Effect.fn("Evaluation.classifier")(function* (
       Effect.gen(function* () {
         if (input === null)
           return { entry, firstOccurrence, outcome: { _tag: "Repetition" } } as const;
-        const digest = yield* inputDigest(input);
-        const key = cacheKey({
-          transport: ai.transport,
-          classifier,
-          model,
-          scoringVersion,
-          entryId: entry.id,
-          inputDigest: digest,
-        });
+        const key = yield* inputCacheKey(ai.transport, classifier, entry.id, input);
         const cached = options.cache === "reuse" ? yield* cache.get(key) : Option.none();
         if (Option.isSome(cached)) {
           return {
