@@ -91,6 +91,10 @@ function failureOf(status: number): RondyrFailure {
   return "unexpected";
 }
 
+export type SubmitResult =
+  | { readonly status: number }
+  | { readonly status: null; readonly reason: string };
+
 /** A Rondyr folder: the status its messages have. */
 export type Decision = "approve" | "dismiss";
 
@@ -132,24 +136,34 @@ export class RondyrClient {
   }
 
   /**
-   * Send a submission as a server intake. Returns the HTTP status, or `null`
-   * when Rondyr could not be reached or did not answer in time.
+   * Send a submission as a server intake. Returns the HTTP status, or the reason
+   * Rondyr was not reached: a network error, a timeout, or a host that the
+   * platform refuses. The reason never contains the fields.
    */
   async submit(
     publicId: string,
     fields: FlatFields,
     idempotencyKey: string,
-  ): Promise<number | null> {
+  ): Promise<SubmitResult> {
+    const headers = new Headers({
+      authorization: `Bearer ${this.#token}`,
+      "content-type": "application/json",
+      "idempotency-key": idempotencyKey,
+    });
     try {
-      const response = await this.#request(`/f/${encodeURIComponent(publicId)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
-        body: JSON.stringify(fields),
-      });
+      const response = await this.#fetch(
+        new URL(`/f/${encodeURIComponent(publicId)}`, this.#origin).href,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(fields),
+          signal: AbortSignal.timeout(timeoutMs),
+        },
+      );
       await response.body?.cancel();
-      return response.status;
-    } catch {
-      return null;
+      return { status: response.status };
+    } catch (error) {
+      return { status: null, reason: error instanceof Error ? error.message : "Request failed" };
     }
   }
 
