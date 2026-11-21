@@ -8,7 +8,7 @@ A quarantined message is sent only once someone accepts it. A webhook created af
 
 The Worker needs `RONDYR_SECRETS_KEY` to store signing secrets; [deployment.md](./deployment.md#encryption-key) explains how to set it. Without it, creating a webhook or rotating its secret answers `503` with `{"error":"secrets-key-missing"}`, and the rest of Rondyr works as before.
 
-In the dashboard, open **Destinations**, pick the form, enter the URL of the recipient under **Webhooks**, and click **Add webhook**. Rondyr generates a signing secret and shows it once: copy it into the recipient's configuration before you leave the page. **Rotate secret** issues a new one, **Deactivate** stops deliveries for messages accepted from then on, and **Envoyer un essai** sends a [test request](#test-requests) and shows the answer.
+In the dashboard, open **Destinations**, pick the form, enter the URL of the recipient under **Webhooks**, and click **Add webhook**. Rondyr generates a signing secret and shows it once: copy it into the recipient's configuration before you leave the page. **Rotate secret** issues a new one, **Deactivate** stops deliveries for messages accepted from then on, and **Send a test** sends a [test request](#test-requests) and shows the answer.
 
 The dashboard calls these routes, which need a session cookie and the `Origin` of the Worker:
 
