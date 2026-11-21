@@ -12,6 +12,7 @@
     "deploy": "pnpm build && alchemy deploy --config alchemy-run.ts",
     "deploy:plan": "pnpm build && alchemy plan --config alchemy-run.ts",
     "deploy:dry": "pnpm build && wrangler deploy --dry-run && node scripts/worker-budget.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "cf:types": "wrangler types --strict-vars=false",
     "db:generate": "drizzle-kit generate --config drizzle-config.ts",
     "db:check": "drizzle-kit check --config drizzle-config.ts",

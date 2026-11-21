@@ -13,6 +13,8 @@ import { SidebarTrigger } from "~/components/ui/sidebar";
 import { useFormats } from "~/lib/i18n";
 import { readOperationsStatus } from "~/lib/operations-client";
 
+import { StuckSubmissions } from "./stuck-submissions.tsx";
+
 // A count that asks for attention has the color of its status. Zero is quiet.
 const deliveryTones = {
   pending: "text-foreground",
@@ -49,9 +51,11 @@ function Figure({ label, value, tone, quiet }: FigureProps) {
 
 interface OrganizationMetricsProps {
   readonly organization: typeof OrganizationStatus.Type;
+  /** Reads the status again after a change on this page. */
+  readonly onChanged: () => void;
 }
 
-function OrganizationMetrics({ organization }: OrganizationMetricsProps) {
+function OrganizationMetrics({ organization, onChanged }: OrganizationMetricsProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const { outbox, deliveries, receivedLast24h, quarantinedLast24h } = organization;
@@ -66,7 +70,7 @@ function OrganizationMetrics({ organization }: OrganizationMetricsProps) {
             <h4 className="font-medium">{t("operations.queue.title")}</h4>
             <dl>
               <Figure
-                label={t("operations.queue.undelivered")}
+                label={t("operations.queue.pending")}
                 value={format.count(outbox.count)}
                 tone="text-warning"
                 quiet={outbox.count === 0}
@@ -79,6 +83,12 @@ function OrganizationMetrics({ organization }: OrganizationMetricsProps) {
                     : format.age(outbox.oldestAgeMs)
                 }
                 quiet={outbox.oldestAgeMs === null}
+              />
+              <Figure
+                label={t("operations.queue.stuck")}
+                value={format.count(outbox.stuck)}
+                tone="text-destructive"
+                quiet={outbox.stuck === 0}
               />
             </dl>
           </section>
@@ -126,6 +136,11 @@ function OrganizationMetrics({ organization }: OrganizationMetricsProps) {
             </dl>
           </section>
         </div>
+        {outbox.stuck > 0 && (
+          <div className="mt-6 hairline-t pt-4">
+            <StuckSubmissions organizationId={organization.id} onRetried={onChanged} />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -144,6 +159,11 @@ export function OperationsPanel() {
   const format = useFormats();
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [revision, setRevision] = useState(0);
+
+  function refresh() {
+    setStatus({ kind: "loading" });
+    setRevision((value) => value + 1);
+  }
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Reads the processing status from the Rondyr API when the page opens or refreshes.
   useEffect(() => {
@@ -172,10 +192,7 @@ export function OperationsPanel() {
           size="icon"
           aria-label={t("common.refresh")}
           disabled={status.kind === "loading"}
-          onClick={() => {
-            setStatus({ kind: "loading" });
-            setRevision((value) => value + 1);
-          }}
+          onClick={refresh}
         >
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
@@ -207,7 +224,11 @@ export function OperationsPanel() {
                 <p className="text-sm text-muted-foreground">{t("operations.noOrganizations")}</p>
               )}
               {status.snapshot.organizations.map((organization) => (
-                <OrganizationMetrics key={organization.id} organization={organization} />
+                <OrganizationMetrics
+                  key={organization.id}
+                  organization={organization}
+                  onChanged={refresh}
+                />
               ))}
             </>
           )}

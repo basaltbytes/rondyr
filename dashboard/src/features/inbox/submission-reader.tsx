@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { Schema } from "effect";
-import { Archive, Check, ChevronDown, ChevronLeft, ChevronUp } from "lucide-react";
+import { Archive, Check, ChevronDown, ChevronLeft, ChevronUp, RotateCw } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -24,7 +24,11 @@ const statusTones = {
 const isRequestError = Schema.is(InboxRequestError);
 
 /** Why a decision was not applied. Each one names a message of `inbox.reader.problems`. */
-type DecisionProblem = "notSaved" | "alreadyHandled" | "alreadyHandledRefresh";
+type DecisionProblem =
+  | "notSaved"
+  | "alreadyHandled"
+  | "alreadyHandledRefresh"
+  | "classificationQuotaReached";
 
 interface SubmissionReaderProps {
   readonly inboxId: Inbox["id"];
@@ -39,7 +43,7 @@ interface SubmissionReaderProps {
   readonly onPrevious: (() => void) | null;
   /** Opens the message after this one in the list, if there is one. */
   readonly onNext: (() => void) | null;
-  /** The message as the API returns it once it is accepted or archived. */
+  /** The message as the API returns it once it is accepted, archived or sent back to the filter. */
   readonly onReviewed: (submission: Submission) => void;
   readonly onClose: () => void;
 }
@@ -82,11 +86,15 @@ export function SubmissionReader({
   const [problem, decide, pending] = useActionState(
     async (_: DecisionProblem | null, form: FormData): Promise<DecisionProblem | null> => {
       const decision = form.get("decision");
-      if (decision !== "approve" && decision !== "dismiss") return null;
+      if (decision !== "approve" && decision !== "dismiss" && decision !== "reclassify") {
+        return null;
+      }
       try {
         onReviewed(await reviewSubmission(inboxId, submissionId, decision));
         return null;
       } catch (error) {
+        // Reclassify takes a slot of the organization's daily classification quota.
+        if (isRequestError(error) && error.status === 429) return "classificationQuotaReached";
         if (!isRequestError(error) || error.status !== 409) return "notSaved";
         try {
           onReviewed(await getSubmission(inboxId, submissionId, new AbortController().signal));
@@ -143,6 +151,13 @@ export function SubmissionReader({
         )}
         {entry.status === "quarantined" && (
           <form action={decide} className="ml-auto flex gap-2">
+            {entry.reason === "classification-error" && (
+              // Only a message the filter could not analyze can go back to it.
+              <Button type="submit" name="decision" value="reclassify" disabled={pending}>
+                <RotateCw aria-hidden="true" className="size-4" />
+                <span className="max-sm:sr-only">{t("inbox.reader.reclassify")}</span>
+              </Button>
+            )}
             <Button type="submit" name="decision" value="dismiss" disabled={pending}>
               <Archive aria-hidden="true" className="size-4" />
               {t("inbox.reader.archive")}

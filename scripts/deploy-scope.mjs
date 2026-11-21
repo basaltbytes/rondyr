@@ -16,11 +16,14 @@ export const workerPackage = "rondyr";
 /** Files that change the Worker's build or deployment wherever they are. */
 const workerFiles = [/^pnpm-lock\.yaml$/u, /^pnpm-workspace\.yaml$/u, /^\.github\//u];
 
-/** The workflows that deploy prod, and the name of their prod deployment job. */
-const deployments = [
-  { workflow: "ci.yml", job: "production / Deploy prod" },
-  { workflow: "deploy.yml", job: "Deploy prod" },
-];
+/** The workflows that deploy prod: `ci.yml` after a push, `deploy.yml` by hand. */
+const deployments = ["ci.yml", "deploy.yml"];
+
+/**
+ * The prod deployment job, `Deploy prod` in `deploy.yml`. Called from `ci.yml`,
+ * its name has the calling job's name in front, such as `Production / Deploy prod`.
+ */
+const deployJob = /^(?:[^/]+ \/ )?Deploy prod$/u;
 
 /** How many completed runs of each workflow to look through for the last deployment. */
 const runsToScan = 30;
@@ -63,14 +66,14 @@ export function decide(changes) {
 export async function lastProductionDeployment(github) {
   /** @type {{ sha: string, at: string } | null} */
   let latest = null;
-  for (const { workflow, job } of deployments) {
+  for (const workflow of deployments) {
     const { workflow_runs: runs } = await github(
       `actions/workflows/${workflow}/runs?branch=main&status=completed&per_page=${runsToScan}`,
     );
     for (const workflowRun of runs) {
       const { jobs } = await github(`actions/runs/${workflowRun.id}/jobs?per_page=100`);
       const deployed = jobs.find(
-        (candidate) => candidate.name === job && candidate.conclusion === "success",
+        (candidate) => deployJob.test(candidate.name) && candidate.conclusion === "success",
       );
       if (deployed === undefined) continue;
       if (latest === null || deployed.completed_at > latest.at) {

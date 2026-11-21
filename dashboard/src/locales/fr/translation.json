@@ -73,9 +73,22 @@
     "organization": "État de {{name}}",
     "queue": {
       "title": "File de classification",
-      "undelivered": "Événements non remis",
+      "pending": "Événements en attente",
       "oldestAge": "Âge du plus ancien",
-      "empty": "Aucun"
+      "empty": "Aucun",
+      "stuck": "Bloqués"
+    },
+    "stuck": {
+      "title": "Soumissions bloquées",
+      "description": "Le Cron a cessé de publier ces soumissions après 12 tentatives. Leurs messages sont enregistrés. Une fois la cause corrigée, relancez-les une par une.",
+      "loading": "Chargement des soumissions bloquées…",
+      "loadFailed": "Les soumissions bloquées sont indisponibles. Actualisez la page.",
+      "received": "Reçue le {{date}}",
+      "retry": "Relancer",
+      "retryFailed": "La relance n’a pas pu être enregistrée. Réessayez.",
+      "more_one": "{{count}} autre n’est pas affichée.",
+      "more_many": "{{count}} autres ne sont pas affichées.",
+      "more_other": "{{count}} autres ne sont pas affichées."
     },
     "deliveries": {
       "title": "Livraisons"
@@ -186,6 +199,7 @@
       "archive": "Archiver",
       "accept": "Accepter",
       "acceptAndSend": "Accepter et envoyer",
+      "reclassify": "Relancer l’analyse",
       "analyzing": "Le filtre analyse ce message. Actualisez la liste pour voir son classement.",
       "nothingToReview": "Rien à vérifier",
       "noOpenMessage": "Aucun message ouvert",
@@ -203,7 +217,8 @@
       "problems": {
         "notSaved": "La décision n’a pas pu être enregistrée. Réessayez.",
         "alreadyHandled": "Ce message a déjà été traité.",
-        "alreadyHandledRefresh": "Ce message a déjà été traité. Actualisez la liste pour voir son statut."
+        "alreadyHandledRefresh": "Ce message a déjà été traité. Actualisez la liste pour voir son statut.",
+        "classificationQuotaReached": "Le plafond quotidien de classifications de cette organisation est atteint : le message reste ici. Réessayez après minuit UTC, ou relevez le plafond dans Réglages → Plafonds quotidiens."
       }
     },
     "deliveries": {
