@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const wrangler = JSON.parse(readFileSync(new URL("../wrangler.json", import.meta.url), "utf8"));
@@ -66,6 +67,41 @@ for (const { class_name: className } of wrangler.durable_objects?.bindings ?? []
   if (!migrated.has(className)) {
     errors.push(`Wrangler must create the Durable Object class ${className} in a migration.`);
   }
+}
+
+// Wrangler doesn't inherit bindings or vars into a named environment, so each
+// environment repeats them and must change with the top level.
+const repeatedKeys = ["d1_databases", "queues", "ratelimits", "durable_objects", "workflows"];
+for (const [name, environment] of Object.entries(wrangler.env ?? {})) {
+  for (const key of repeatedKeys) {
+    if (!isDeepStrictEqual(environment[key], wrangler[key])) {
+      errors.push(`Wrangler environment ${name} must repeat the top-level ${key} unchanged.`);
+    }
+  }
+  for (const [variable, value] of Object.entries(vars)) {
+    if (environment.vars?.[variable] !== value) {
+      errors.push(
+        `Wrangler environment ${name} must set ${variable} to "${value}", as the top level does.`,
+      );
+    }
+  }
+}
+
+// Local development with Cloudflare's email simulator uses the cloudflare-email
+// environment; the top level keeps the default provider, Resend.
+const cloudflareEmail = wrangler.env?.["cloudflare-email"];
+if (!cloudflareEmail?.send_email?.some(({ name }) => name === "CLOUDFLARE_EMAIL")) {
+  errors.push(
+    "Wrangler environment cloudflare-email must declare the send_email binding CLOUDFLARE_EMAIL.",
+  );
+}
+if (cloudflareEmail?.vars?.RONDYR_EMAIL_PROVIDER !== "cloudflare") {
+  errors.push(
+    'Wrangler environment cloudflare-email must set RONDYR_EMAIL_PROVIDER to "cloudflare".',
+  );
+}
+if (wrangler.send_email !== undefined) {
+  errors.push("Wrangler must not declare send_email at the top level.");
 }
 
 if (errors.length > 0) {
