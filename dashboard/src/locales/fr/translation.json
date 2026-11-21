@@ -293,6 +293,15 @@
       "turnstile": {
         "title": "Turnstile",
         "description": "Utilisez la clé de site et la clé secrète de votre widget Cloudflare Turnstile.",
+        "key": {
+          "checking": "Vérification de la clé secrète enregistrée auprès de Cloudflare…",
+          "working": "Cloudflare accepte la clé secrète enregistrée.",
+          "off": "Turnstile ne protège plus ce formulaire",
+          "refused": "Cloudflare ne reconnaît plus la clé secrète enregistrée. Rondyr ne peut pas vérifier les jetons Turnstile : il transmet donc à la classification, sans vérification, les messages qui en portent un. Copiez la clé secrète depuis les réglages du widget dans le tableau de bord Cloudflare, puis enregistrez de nouveau les deux clés.",
+          "unreadable": "Rondyr ne peut pas déchiffrer la clé secrète enregistrée, ce qui arrive quand RONDYR_SECRETS_KEY change. Il ne peut pas vérifier les jetons Turnstile : il transmet donc à la classification, sans vérification, les messages qui en portent un. Enregistrez de nouveau les deux clés.",
+          "unchecked": "Impossible de vérifier la clé secrète enregistrée : Cloudflare n’a pas répondu. Rechargez la page pour réessayer.",
+          "requestFailed": "Impossible de vérifier la clé secrète enregistrée. Rechargez la page pour réessayer."
+        },
         "siteKey": "Clé de site",
         "secretKey": "Clé secrète",
         "save": "Enregistrer les clés Turnstile",
@@ -367,6 +376,8 @@
       "day": "Consommation du {{day}} (UTC)",
       "submissions": "Plafond quotidien de soumissions",
       "classifications": "Plafond quotidien de classifications",
+      "junk": "Indésirables arrêtés à l’entrée",
+      "junkHint": "Les messages qui remplissent le champ piège, échouent à Turnstile ou répètent des envois précédents sont mis en quarantaine et comptent ici, pas dans le plafond de soumissions. Leur plafond quotidien est le même nombre. Une fois ce plafond atteint, Rondyr les refuse jusqu’à minuit UTC et accepte toujours les autres messages.",
       "used": "{{used}} sur {{limit}} utilisés",
       "saving": "Enregistrement des plafonds…",
       "saved": "Plafonds enregistrés.",
