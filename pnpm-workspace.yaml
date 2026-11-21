@@ -9,6 +9,8 @@ packages:
 catalog:
   "@alchemy.run/cloudflare": 2.0.0-beta.87
   "@alchemy.run/domain": 2.0.0-beta.87
+  "@astrojs/markdown-remark": 7.3.10
+  "@astrojs/starlight": 0.42.11
   "@babel/core": 8.1.2
   "@base-ui/react": 1.9.0
   "@cloudflare/kumo": 2.15.0
@@ -23,6 +25,8 @@ catalog:
   "@rolldown/plugin-babel": 0.3.1
   "@shadcn/lint": 0.2.5
   "@tailwindcss/vite": 4.3.5
+  "@types/hast": 3.0.5
+  "@types/mdast": 4.0.4
   "@types/node": 24.19.2
   "@types/react": 19.3.0
   "@types/react-dom": 19.3.0
@@ -37,18 +41,27 @@ catalog:
   drizzle-orm: 1.0.0-rc.5
   effect: 4.1.4
   emdash: 1.5.0
+  github-slugger: 2.0.0
+  hast-util-from-html: 2.1.0
+  hast-util-to-string: 3.0.1
   i18next: 27.2.2
   i18next-cli: 1.91.3
   knip: 6.46.1
   lucide-react: 1.76.0
+  lucode-starlight: 1.0.0
+  mdast-util-from-markdown: 2.1.0
+  mdast-util-to-string: 4.0.0
   miniflare: 5.20261118.0-beta
   oxfmt: 0.79.0
   oxlint: 1.94.0
+  pele: 1.13.0
   react: 19.3.1
   react-dom: 19.3.1
   react-i18next: 18.0.3
   tailwindcss: 4.3.5
   typescript: 7.0.2
+  unist-util-visit: 5.2.0
+  vfile: 6.0.3
   vite: 8.3.8
   vitest: 5.1.1
   wrangler: 4.165.0
@@ -74,9 +87,21 @@ minimumReleaseAgeExclude:
   - "@better-auth/telemetry@1.7.26"
   - better-auth@1.7.26
 strictPeerDependencies: true
+# @cloudflare/vite-plugin passes on the optional `workerd` peer of @cloudflare/unenv-preset.
+# apps/rondyr has two workerd versions at the same depth, from wrangler and from
+# @alchemy.run/cloudflare-runtime, and pnpm takes whichever its graph reaches first, so an
+# unrelated workspace package could switch it. This pins it to the workerd of wrangler;
+# scripts/workerd-peer.test.mjs fails when a wrangler update makes them differ.
+packageExtensions:
+  "@cloudflare/vite-plugin":
+    dependencies:
+      workerd: 1.20261118.1
 peerDependencyRules:
   allowedVersions:
     "capnp-es@0.0.16>typescript": "7.0.2"
     "@cloudflare/unenv-preset@2.16.2>unenv": "2.0.0-rc.25"
 patchedDependencies:
   "@alchemy.run/domain@2.0.0-beta.87": patches/@alchemy.run__domain@2.0.0-beta.87.patch
+  # The same patch as usine.dev's docs: pagination links wrap on narrow screens instead of
+  # widening the page, and the links of the mobile menu are 44 pixels high.
+  lucode-starlight@1.0.0: patches/lucode-starlight@1.0.0.patch

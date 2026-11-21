@@ -1,0 +1,54 @@
+.sl-markdown-content .diagram {
+  --pele-bg: var(--sl-color-bg);
+  --pele-fg: var(--sl-color-text);
+  --pele-muted: var(--sl-color-gray-2);
+  --pele-line: var(--sl-color-gray-3);
+  --pele-surface: var(--sl-color-bg-inline-code);
+  --pele-surface-alt: var(--sl-color-gray-6);
+  --pele-border: var(--sl-color-gray-4);
+  --pele-accent: var(--rondyr-accent);
+  --pele-font: var(--sl-font, var(--sl-font-system));
+  --pele-font-mono: var(--sl-font-mono);
+  --pele-radius: 4px;
+  --pele-series-1: var(--sl-color-blue);
+  --pele-series-2: var(--sl-color-purple);
+  --pele-series-3: var(--sl-color-green);
+  --pele-series-4: var(--sl-color-orange);
+  --pele-series-5: var(--sl-color-red);
+  --pele-series-6: var(--sl-color-blue-high);
+  --pele-series-7: var(--sl-color-purple-high);
+  --pele-series-8: var(--sl-color-green-high);
+
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1rem;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: var(--radius);
+  background: var(--pele-bg);
+}
+
+.sl-markdown-content .diagram:focus-visible {
+  outline: 2px solid var(--sl-color-text-accent);
+  outline-offset: 2px;
+}
+
+/* Keep measured label sizes when the diagram is wider than the content column. */
+.sl-markdown-content .diagram > svg.pele {
+  display: block;
+  max-width: none;
+  height: auto;
+  margin-inline: auto;
+}
+
+/* Lucode applies prose sizes and margins to every descendant, including SVG elements. */
+.sl-markdown-content .diagram svg * {
+  margin: 0;
+}
+
+@layer lucode {
+  .sl-markdown-content .diagram svg * {
+    font-size: revert-layer;
+  }
+}

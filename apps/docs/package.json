@@ -1,0 +1,37 @@
+{
+  "name": "@rondyr/docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Rondyr documentation site, built with Astro Starlight from the Markdown files in docs/ and architecture.md.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "typecheck": "astro sync && tsc --noEmit",
+    "test": "node --test \"src/**/*.test.ts\" \"scripts/*.test.ts\" && astro build && node --test \"test/*.test.ts\"",
+    "deploy": "node scripts/deploy.ts"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "catalog:",
+    "@astrojs/starlight": "catalog:",
+    "astro": "catalog:",
+    "github-slugger": "catalog:",
+    "hast-util-from-html": "catalog:",
+    "hast-util-to-string": "catalog:",
+    "lucode-starlight": "catalog:",
+    "mdast-util-from-markdown": "catalog:",
+    "mdast-util-to-string": "catalog:",
+    "pele": "catalog:",
+    "unist-util-visit": "catalog:"
+  },
+  "devDependencies": {
+    "@types/hast": "catalog:",
+    "@types/mdast": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vfile": "catalog:",
+    "wrangler": "catalog:"
+  }
+}
