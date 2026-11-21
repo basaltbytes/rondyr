@@ -206,14 +206,14 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 
 | Topic | Page |
 | --- | --- |
-| What is built, what is planned, and why | [architecture.md](./architecture.md) (French) |
+| What is built, what is planned, and why | [architecture.md](./architecture.md) |
 | Stages, secrets, API token permissions, CI deployment | [docs/deployment.md](./docs/deployment.md) |
 | Queue diagnosis, D1 recovery, Worker rollback, secret rotation | [docs/operations.md](./docs/operations.md) |
 | Webhook payload, signature, verification, retries | [docs/webhooks.md](./docs/webhooks.md) |
 | Email setup with Resend and Cloudflare, limits, message format, retries | [docs/email.md](./docs/email.md) |
 | Evaluating the classifiers on a labeled corpus | [docs/evaluation.md](./docs/evaluation.md) |
 | Development setup, pull requests, license of contributions | [CONTRIBUTING.md](./CONTRIBUTING.md) |
-| Rules for contributors and coding agents | [AGENTS.md](./AGENTS.md) (French) |
+| Rules for contributors and coding agents | [AGENTS.md](./AGENTS.md) |
 | Local lint rules and where they come from | [tooling/oxlint/README.md](./tooling/oxlint/README.md) |
 
 ## Development

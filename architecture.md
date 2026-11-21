@@ -1,525 +1,525 @@
-# Rondyr : architecture technique
+# Rondyr: technical architecture
 
-> **Signature :** *The gatekeeper for your forms.*
-> **Statut :** v0.1 en cours, document mis à jour le 20 novembre 2026.
-> **Production :** `https://rondyr.basaltbytes.com` (stage `prod`).
+> **Tagline:** *The gatekeeper for your forms.*
+> **Status:** v0.1 in progress, document updated on 20 November 2026.
+> **Production:** `https://rondyr.basaltbytes.com` (stage `prod`).
 
-Ce document décrit ce qui est construit et ce qui reste à faire pour la v0.1. Chaque écart entre les deux renvoie à une issue GitHub. La section 12 donne l’ordre des travaux.
+This document describes what is built and what remains to be done for v0.1. Each gap between the two refers to a GitHub issue. Section 12 gives the order of work.
 
-## 1. Vision et périmètre
+## 1. Vision and scope
 
-Rondyr est un backend de formulaires que l’on déploie dans son propre compte Cloudflare. Il reçoit les messages d’un site, écarte les indésirables sans supprimer les demandes réelles, et garde tout message douteux en quarantaine pour une revue humaine. Le nom vient du rondier, le gardien qui filtre les entrées.
+Rondyr is a form backend that you deploy in your own Cloudflare account. It receives the messages of a site, sets aside unwanted ones without deleting real requests, and keeps any doubtful message in quarantine for human review. The name comes from the *rondier*, the guard who screens who comes in.
 
-Un administrateur déploie l’application, crée une organisation, puis des formulaires. Chaque formulaire a une URL publique utilisable depuis un formulaire HTML ou une application. Une organisation peut décrire son activité (par exemple « studio de poterie proposant des ateliers ») ; le classificateur s’en sert pour juger si un message est lié à cette activité.
+An administrator deploys the application, creates an organization, then forms. Each form has a public URL that an HTML form or an application can use. An organization can describe its business (for example "pottery studio offering workshops"); the classifier uses it to judge whether a message is related to that business.
 
-Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du métier de l’organisation, et les données restent dans l’infrastructure de l’opérateur.
+What distinguishes Rondyr from a SaaS form service: the filtering takes the organization's business into account, and the data stays in the operator's infrastructure.
 
-### État de la v0.1
+### v0.1 status
 
-| Capacité | État | Suivi |
+| Capability | Status | Tracking |
 | --- | --- | --- |
-| Déploiement Alchemy, stages `staging` et `prod`, CI | Fait | #12 pour un compte vierge |
-| Premier compte, sessions, inscriptions fermées | Fait | |
-| Organisations et formulaires | Fait : ajout, nom, contexte métier, suspension, redirection de succès et origines autorisées par formulaire | #11 pour les rôles |
-| Réception JSON, `application/x-www-form-urlencoded` et `multipart/form-data` sans fichier | Fait, y compris JSON depuis un navigateur sur une autre origine | |
-| Limites à l’entrée | Fait : taille, schéma, limites à la minute par client et par formulaire, champ piège, Turnstile et plafonds quotidiens par organisation | |
-| Enregistrement durable et outbox | Fait | |
-| Classification et quarantaine | Seuils par classificateur, politique par organisation | #15 |
-| Inbox et revue humaine | Fait | #9 |
-| Livraisons : tables, file, tentatives et reprises | Fait | |
-| Historique des livraisons, relance manuelle, envoi d’essai | Fait, dans le dashboard | #11 pour les rôles |
-| Livraison par webhook signé | Fait | |
-| Livraison par e-mail | Resend par défaut, Cloudflare Email Sending sur les stages qui le choisissent | Confirmation des destinataires (#36) |
-| État du traitement et procédures de reprise | Compteurs par organisation, dernier Cron réussi et runbook | #43 pour le passage en staging, #10 pour les traitements bloqués |
+| Alchemy deployment, `staging` and `prod` stages, CI | Done | #12 for a fresh account |
+| First account, sessions, closed sign-up | Done | |
+| Organizations and forms | Done: adding, name, business context, suspension, success redirect and allowed origins per form | #11 for roles |
+| JSON, `application/x-www-form-urlencoded` and `multipart/form-data` intake without files | Done, including JSON from a browser on another origin | |
+| Intake limits | Done: size, schema, per-minute limits per client and per form, honeypot field, Turnstile and daily quotas per organization | |
+| Durable storage and outbox | Done | |
+| Classification and quarantine | Thresholds per classifier, policy per organization | #15 |
+| Inbox and human review | Done | #9 |
+| Deliveries: tables, queue, attempts and retries | Done | |
+| Delivery history, manual retry, test send | Done, in the dashboard | #11 for roles |
+| Signed webhook delivery | Done | |
+| Email delivery | Resend by default, Cloudflare Email Sending on the stages that choose it | Recipient confirmation (#36) |
+| Processing status and recovery procedures | Counters per organization, last successful Cron and runbook | #43 for the staging gate, #10 for stuck processing |
 
-Un formulaire peut avoir des destinations webhook et des destinations e-mail, configurées depuis le dashboard ou l’API d’administration. Une destination e-mail a de 1 à 10 destinataires ; le message part en texte brut par le fournisseur d’e-mail du stage (Resend ou Cloudflare Email Sending). Un formulaire sans destination garde ses messages acceptés dans l’Inbox seulement. Sous les champs d’un message accepté, le dashboard affiche ses livraisons et leurs tentatives, et permet de relancer une livraison en échec ; chaque destination peut recevoir un message d’essai.
+A form can have webhook destinations and email destinations, configured from the dashboard or the admin API. An email destination has 1 to 10 recipients; the message goes out as plain text through the stage's email provider (Resend or Cloudflare Email Sending). A form without a destination keeps its accepted messages in the Inbox only. Under the fields of an accepted message, the dashboard shows its deliveries and their attempts, and lets you retry a failed delivery; each destination can receive a test message.
 
-Un formulaire peut aussi avoir une liste d’origines autorisées. Une page servie depuis une autre origine peut alors l’appeler avec `fetch`, et un navigateur d’un site absent de la liste reçoit `403`. Une liste vide autorise toutes les origines.
+A form can also have a list of allowed origins. A page served from another origin can then call it with `fetch`, and a browser on a site missing from the list gets `403`. An empty list allows every origin.
 
-Le dashboard ajoute un formulaire à une organisation, le renomme, modifie son contexte métier, le suspend et le réactive ; l’identifiant public ne change jamais. Un formulaire suspendu refuse les nouveaux messages et garde les siens. Un formulaire peut aussi avoir une URL de succès, vers laquelle Rondyr redirige un envoi HTML accepté ; son origine doit figurer dans la liste des origines autorisées. Il peut enfin nommer un champ piège, que les visiteurs laissent vide et que les robots remplissent (section 8).
+The dashboard adds a form to an organization, renames it, edits its business context, suspends and reactivates it; the public ID never changes. A suspended form refuses new messages and keeps the ones it has. A form can also have a success URL, to which Rondyr redirects an accepted HTML post; its origin must be in the list of allowed origins. Finally, a form can set a honeypot field, which visitors leave empty and bots fill in (section 8).
 
-### Hors périmètre de la v0.1
+### Out of scope for v0.1
 
-Form builder, CRM, pièces jointes, automatisations visuelles, moteur de templates, facturation SaaS, analytics marketing et modèle entraîné sur les données des clients.
+Form builder, CRM, attachments, visual automations, template engine, SaaS billing, marketing analytics and a model trained on customer data.
 
-## 2. Stack et conventions
+## 2. Stack and conventions
 
-| Responsabilité | Choix |
+| Responsibility | Choice |
 | --- | --- |
-| Runtime, API, assets | Un seul Cloudflare Worker, `rondyr-<stage>` |
-| Métier, erreurs, concurrence | Effect 4 et Effect Schema |
-| Modèle de domaine | Alchemy Domain (`@alchemy.run/domain`) : agrégat, politique, saga et projection hébergés dans des Durable Objects |
+| Runtime, API, assets | A single Cloudflare Worker, `rondyr-<stage>` |
+| Business logic, errors, concurrency | Effect 4 and Effect Schema |
+| Domain model | Alchemy Domain (`@alchemy.run/domain`): aggregate, policy, saga and projection hosted in Durable Objects |
 | Infrastructure as Code | Alchemy 2 (`alchemy-run.ts`) |
-| Persistance des messages et de la configuration | Cloudflare D1 |
-| Schéma et migrations | Drizzle Kit. Les requêtes d’exécution sont du SQL préparé, et Effect Schema décode chaque ligne lue |
-| Authentification du dashboard | Better Auth, sessions en D1 |
-| Asynchronisme | Cloudflare Queues et un Cron chaque minute |
-| Classificateur | Jev (`typesafe/jev`, binding Workers AI) ou OpenAI Decisions (`openai/decisions`, via AI Gateway), choisi par stage |
-| Dashboard | React 19 et Vite, servi comme assets du Worker |
-| Qualité | Oxlint avec un plugin local, Oxfmt, `effect-tsgo`, Knip, Vitest dans workerd |
+| Message and configuration storage | Cloudflare D1 |
+| Schema and migrations | Drizzle Kit. Runtime queries are prepared SQL, and Effect Schema decodes every row read |
+| Dashboard authentication | Better Auth, sessions in D1 |
+| Asynchronous processing | Cloudflare Queues and a Cron every minute |
+| Classifier | Jev (`typesafe/jev`, Workers AI binding) or OpenAI Decisions (`openai/decisions`, through AI Gateway), chosen per stage |
+| Dashboard | React 19 and Vite, served as Worker assets |
+| Quality | Oxlint with a local plugin, Oxfmt, `effect-tsgo`, Knip, Vitest in workerd |
 
-Les fichiers et dossiers du projet sont en kebab-case, sauf les noms imposés par les outils. Les fichiers du domaine ont un suffixe par type : `.aggregate.ts`, `.command.ts`, `.event.ts`, `.policy.ts`, `.saga.ts`, `.projection.ts`, `.query.ts`, `.external.ts`, `.api.ts`. Les colonnes SQL sont en `snake_case`.
+The project's files and folders are in kebab-case, except names imposed by tools. Domain files have a suffix per type: `.aggregate.ts`, `.command.ts`, `.event.ts`, `.policy.ts`, `.saga.ts`, `.projection.ts`, `.query.ts`, `.external.ts`, `.api.ts`. SQL columns are in `snake_case`.
 
-### Principes de conception
+### Design principles
 
-1. **Monolithe modulaire.** Un Worker, pas de microservices.
-2. **Domaine isolé de la plateforme.** `src/domain` n’importe ni `cloudflare:*`, ni Drizzle, ni l’IaC Alchemy ; une règle Oxlint le vérifie. Il dépend d’Effect et de l’API de modélisation d’Alchemy Domain.
-3. **Ports et adaptateurs.** Les ports de `src/ports` déclarent les services Effect, les adaptateurs fournissent les layers, et `src/worker-implementation.ts` les compose. Les routes et les jobs n’utilisent que des ports : une règle Oxlint leur interdit d’importer `src/adapters`, sauf dans les tests. Le domaine déclare lui-même `InboxStore` et le système externe `Classifier`, puisqu’il ne peut pas importer `src/ports`.
-4. **IA non destructive.** Un doute, une erreur technique ou un message hors sujet mène à la quarantaine, jamais à une suppression.
-5. **Au moins une fois, avec idempotence.** Queues peut remettre deux fois le même message ; chaque consumer le tolère.
-6. **Coût borné.** Les limites par client et par formulaire et le plafond quotidien de soumissions s’appliquent avant l’enregistrement. Le champ piège, Turnstile, la répétition et le plafond quotidien de classification s’appliquent avant l’analyse.
+1. **Modular monolith.** One Worker, no microservices.
+2. **Domain isolated from the platform.** `src/domain` imports neither `cloudflare:*`, nor Drizzle, nor the Alchemy IaC; an Oxlint rule checks this. It depends on Effect and on the Alchemy Domain modeling API.
+3. **Ports and adapters.** The ports in `src/ports` declare the Effect services, the adapters provide the layers, and `src/worker-implementation.ts` composes them. Routes and jobs use ports only: an Oxlint rule forbids them from importing `src/adapters`, except in tests. The domain declares `InboxStore` and the external system `Classifier` itself, since it cannot import `src/ports`.
+4. **Non-destructive AI.** A doubt, a technical error or an off-topic message leads to quarantine, never to deletion.
+5. **At least once, with idempotency.** Queues can deliver the same message twice; each consumer tolerates it.
+6. **Bounded cost.** The per-client and per-form limits and the daily submission quota apply before storage. The honeypot field, Turnstile, repetition and the daily classification quota apply before analysis.
 
-## 3. Parcours d'une soumission
+## 3. Submission flow
 
 ```mermaid
 flowchart TD
-  A["POST /f/:public-id"] --> B["Validation : type, taille, champs"]
-  B -->|refus| C["400, 403, 404, 413, 415, 429"]
-  B --> Y["Limite par client : binding Rate Limiting"]
-  Y -->|dépassée| C
-  Y --> V["Turnstile avec jeton : lecture de la clé et appel à Siteverify"]
-  Y -->|sans jeton| D["Lot D1 · accès, plafonds, soumission, outbox et compteurs"]
+  A["POST /f/:public-id"] --> B["Validation: type, size, fields"]
+  B -->|refused| C["400, 403, 404, 413, 415, 429"]
+  B --> Y["Per-client limit: Rate Limiting binding"]
+  Y -->|exceeded| C
+  Y --> V["Turnstile with a token: key read and Siteverify call"]
+  Y -->|no token| D["D1 batch · access, quotas, submission, outbox and counters"]
   V --> D
-  D -->|refus| C
-  D --> E["202 et submission-id"]
-  D --> T["Publication en arrière-plan de la requête"]
+  D -->|refused| C
+  D --> E["202 and submission-id"]
+  D --> T["Background publication from the request"]
   T --> H["classification-queue"]
-  F["Cron, chaque minute"] --> G["Revendication des événements dus"]
+  F["Cron, every minute"] --> G["Claim of due events"]
   G --> H
-  H --> I["Consumer : RequestClassification, ou QuarantineAtIntake avec un motif d’entrée"]
-  I --> J["Agrégat Submission (Durable Object)"]
-  J --> K["Saga ClassifySubmission"]
-  J -->|motif d’entrée, sans saga| O
-  K --> L["Classificateur : Jev ou OpenAI Decisions"]
-  L --> M{"Règles de décision"}
-  M -->|aucun motif| N["SubmissionAccepted"]
-  M -->|motif de revue ou échec| O["SubmissionQuarantined"]
-  O --> P["Revue humaine"]
-  P -->|accepter| N
-  P -->|archiver| Q["SubmissionDismissed"]
-  J --> R["Projection Inbox vers D1"]
-  N --> S["Politique Delivery : une livraison par destination active"]
+  H --> I["Consumer: RequestClassification, or QuarantineAtIntake with an intake reason"]
+  I --> J["Submission aggregate (Durable Object)"]
+  J --> K["ClassifySubmission saga"]
+  J -->|intake reason, no saga| O
+  K --> L["Classifier: Jev or OpenAI Decisions"]
+  L --> M{"Decision rules"}
+  M -->|no reason| N["SubmissionAccepted"]
+  M -->|review reason or failure| O["SubmissionQuarantined"]
+  O --> P["Human review"]
+  P -->|accept| N
+  P -->|archive| Q["SubmissionDismissed"]
+  J --> R["Inbox projection to D1"]
+  N --> S["Delivery policy: one delivery per active destination"]
   S --> U["delivery-queue"]
   F --> U
-  U --> V["Consumer : NotificationProvider"]
-  V --> W["Webhook signé"]
-  V --> X["E-mail, par EmailSender (Resend ou Cloudflare)"]
+  U --> V["Consumer: NotificationProvider"]
+  V --> W["Signed webhook"]
+  V --> X["Email, through EmailSender (Resend or Cloudflare)"]
 ```
 
-`202 Accepted` signifie que D1 a enregistré la soumission et son événement outbox dans la même transaction. La réponse ne dit rien de la classification ni d’une livraison. Une requête refusée avant cet enregistrement n’entre pas dans la garantie, y compris un `429`.
+`202 Accepted` means that D1 has stored the submission and its outbox event in the same transaction. The response says nothing about classification or about a delivery. A request refused before this write is not covered by the guarantee, including a `429`.
 
-Une soumission dont le champ piège est rempli suit le même chemin jusqu’au `202`, et la réponse est identique : le robot n’apprend rien. Le lot D1 enregistre avec elle le motif d’entrée `honeypot`, puis le consumer envoie `QuarantineAtIntake` au lieu de `RequestClassification`, et l’agrégat la met en quarantaine sans démarrer la saga.
+A submission whose honeypot field is filled follows the same path up to the `202`, and the response is identical: the bot learns nothing. The D1 batch stores the intake reason `honeypot` with it, then the consumer sends `QuarantineAtIntake` instead of `RequestClassification`, and the aggregate quarantines it without starting the saga.
 
-Un envoi `application/x-www-form-urlencoded` ou `multipart/form-data` dont l’en-tête `Accept` contient `text/html` reçoit une page de confirmation en HTML avec le statut `202`, au texte fixe, en français ou en anglais selon l’en-tête `Accept-Language` du visiteur. Si le formulaire a une URL de succès, il reçoit à la place `303` vers cette URL.
+An `application/x-www-form-urlencoded` or `multipart/form-data` post whose `Accept` header contains `text/html` gets an HTML confirmation page with the status `202`, with fixed text, in French or in English depending on the visitor's `Accept-Language` header. If the form has a success URL, it gets `303` to that URL instead.
 
-## 4. Fiabilité : transactional outbox
+## 4. Reliability: transactional outbox
 
-D1 et Queues ne partagent pas de transaction, et Queues remet les messages au moins une fois. Rondyr écrit donc l’intention de publier dans D1, puis la rejoue jusqu’à ce que le modèle de domaine l’ait prise en charge.
+D1 and Queues do not share a transaction, and Queues delivers messages at least once. Rondyr therefore writes the intent to publish in D1, then replays it until the domain model has taken it over.
 
-### Ingestion
+### Intake
 
-Lorsque la requête contient un jeton Turnstile utilisable, l’adaptateur de `SubmissionIntake` lit la clé chiffrée du formulaire dans D1 et appelle Siteverify si Turnstile est actif. Un seul `db.batch` lit ensuite les conditions d’accès, décide de l’admission et du motif d’entrée, écrit la soumission et son événement dans `outbox_events`, puis incrémente les compteurs quotidiens. D1 exécute le lot dans une transaction. Un test force l’échec de l’insertion dans l’outbox avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
+When the request contains a usable Turnstile token, the `SubmissionIntake` adapter reads the form's encrypted key from D1 and calls Siteverify if Turnstile is active. A single `db.batch` then reads the access conditions, decides on admission and on the intake reason, writes the submission and its event in `outbox_events`, then increments the daily counters. D1 runs the batch in a transaction. A test forces the outbox insert to fail with a trigger and checks that the submission does not exist and that the route answers `503`.
 
 ### Publication
 
-`outbox_events` contient une ligne par soumission, avec trois colonnes d’état : `lease_until`, `published_at` et `handed_off_at`. Un événement est dû quand il n’est pas remis, que son bail a expiré et qu’il n’a jamais été publié, ou l’a été depuis plus de 5 minutes. Deux chemins le publient avec la même revendication : ils posent un bail de 60 secondes sur l’événement dû, l’envoient à `classification-queue`, puis renseignent `published_at` et libèrent le bail. Tant que l’un tient le bail, l’autre ne peut pas revendiquer l’événement.
+`outbox_events` has one row per submission, with three state columns: `lease_until`, `published_at` and `handed_off_at`. An event is due when it has not been handed off, its lease has expired, and it has never been published or was published more than 5 minutes ago. Two paths publish it with the same claim: they set a 60-second lease on the due event, send it to `classification-queue`, then set `published_at` and release the lease. While one path has the lease, the other cannot claim the event.
 
-- Après le lot D1, la route d’ingestion publie l’événement de sa soumission en arrière-plan, avec `waitUntil` derrière le port `BackgroundTasks`. La réponse `202` n’attend pas cette publication, et un échec n’apparaît que dans les journaux.
-- Chaque minute, le Cron revendique jusqu’à 100 événements dus. C’est le chemin de reprise : après un échec d’envoi, le bail reste posé et le Cron reprend l’événement à son expiration, soit au plus deux minutes plus tard.
+- After the D1 batch, the intake route publishes its submission's event in the background, with `waitUntil` behind the `BackgroundTasks` port. The `202` response does not wait for this publication, and a failure shows up only in the logs.
+- Every minute, the Cron claims up to 100 due events. This is the recovery path: after a send failure, the lease stays in place and the Cron picks the event up when the lease expires, at most two minutes later.
 
-### Remise au modèle
+### Handoff to the domain model
 
-Le consumer lit des lots de 10 messages. Pour chacun, il lit l’événement non remis et le motif d’entrée de la soumission, envoie à l’agrégat `RequestClassification`, ou `QuarantineAtIntake` si un motif d’entrée est enregistré, avec le `commandId` `submission-received:<id>`, puis renseigne `handed_off_at` et acquitte le message. Un échec relance le message ; après 3 reprises, Queues le place dans la DLQ. Un motif que le Worker ne connaît pas fait échouer la lecture : le message est relancé puis placé dans la DLQ, sans classification.
+The consumer reads batches of 10 messages. For each one, it reads the event that has not been handed off and the submission's intake reason, sends the aggregate `RequestClassification`, or `QuarantineAtIntake` if an intake reason is stored, with the `commandId` `submission-received:<id>`, then sets `handed_off_at` and acknowledges the message. A failure retries the message; after 3 retries, Queues moves it to the DLQ. A reason that the Worker does not know makes the read fail: the message is retried, then moved to the DLQ, without classification.
 
-Le motif d’entrée est une colonne de `submissions`, écrite par la même instruction que la soumission. Un message redistribué par Queues ou republié par le Cron relit donc la même valeur et envoie la même commande, avec le même `commandId`. Deux mécanismes absorbent les doublons : Alchemy Domain ignore une commande dont le `commandId` est déjà connu, et l’agrégat n’émet `ClassificationRequested` ou la quarantaine d’entrée que depuis l’état `Unrecorded`.
+The intake reason is a column of `submissions`, written by the same statement as the submission. A message redelivered by Queues or republished by the Cron therefore reads the same value again and sends the same command, with the same `commandId`. Two mechanisms absorb duplicates: Alchemy Domain ignores a command whose `commandId` is already known, and the aggregate emits `ClassificationRequested` or the intake quarantine only from the `Unrecorded` state.
 
-### Classification durable
+### Durable classification
 
-La politique `Classification` démarre la saga `ClassifySubmission` à chaque `ClassificationRequested`. La saga lit la politique de classification de l’organisation, puis appelle le classificateur avec un délai maximal de 12 secondes par appel. Elle tente chacune de ces deux étapes jusqu’à 3 fois, avec 10 puis 30 secondes d’attente. Une panne de D1 pendant la lecture de la politique se réessaie ; une valeur inconnue de `RONDYR_CLASSIFIER` ou une politique enregistrée illisible ne se réessaie pas. Une erreur non réessayable ou l’épuisement des tentatives produit `SubmissionQuarantined` avec le motif `classification-error`. Les étapes sont des activités durables : un redémarrage du Durable Object reprend la saga là où elle s’est arrêtée.
+The `Classification` policy starts the `ClassifySubmission` saga on each `ClassificationRequested`. The saga reads the organization's classification policy, then calls the classifier with a timeout of 12 seconds per call. It tries each of these two steps up to 3 times, waiting 10 then 30 seconds. A D1 outage while reading the policy is retried; an unknown value of `RONDYR_CLASSIFIER` or an unreadable stored policy is not. A non-retryable error or running out of attempts produces `SubmissionQuarantined` with the reason `classification-error`. The steps are durable activities: a restart of the Durable Object resumes the saga where it stopped.
 
-### Livraison
+### Delivery
 
-La politique `Delivery` du modèle `Submissions` réagit à chaque `SubmissionAccepted`, que l’acceptation soit automatique ou manuelle. Elle appelle le système externe `DeliveryScheduler`, dont l’adaptateur fait deux choses dans l’ordre :
+The `Delivery` policy of the `Submissions` model reacts to each `SubmissionAccepted`, whether the acceptance is automatic or manual. It calls the external system `DeliveryScheduler`, whose adapter does two things in order:
 
-1. Il crée dans `deliveries` une ligne par destination active du formulaire, de la même organisation que la soumission, et créée au plus tard à l’acceptation. La contrainte d’unicité sur `(submission_id, target_id)` rend la création idempotente ; chaque livraison reçoit un UUID v4, son identifiant stable.
-2. Il publie ces livraisons dans `delivery-queue` avec la même revendication que l’outbox de soumission (bail de 60 secondes, puis `published_at`). Un échec de publication est journalisé ; le Cron reprend la livraison.
+1. It creates in `deliveries` one row per active destination of the form that belongs to the same organization as the submission and was created no later than the acceptance. The unique constraint on `(submission_id, target_id)` makes the creation idempotent; each delivery gets a UUID v4, its stable ID.
+2. It publishes these deliveries to `delivery-queue` with the same claim as the submission outbox (60-second lease, then `published_at`). A publication failure is logged; the Cron picks the delivery up.
 
-Sans destination active, la politique ne crée rien et ne publie rien. Une politique Alchemy Domain ne traite que les nouveaux événements : un déploiement ne rejoue pas les acceptations passées, et une destination ajoutée plus tard ne reçoit pas les messages acceptés avant sa création, même si la politique s’exécute une seconde fois. Une projection aurait été rejouée par le backfill, ce qui aurait envoyé d’anciens messages. Si D1 échoue, l’exécution de la politique échoue et la plateforme la relance (30 secondes, puis un délai doublé, puis toutes les heures).
+Without an active destination, the policy creates nothing and publishes nothing. An Alchemy Domain policy handles new events only: a deployment does not replay past acceptances, and a destination added later does not receive the messages accepted before it was created, even if the policy runs a second time. A projection would have been replayed by the backfill, which would have sent old messages. If D1 fails, the policy run fails and the platform retries it (30 seconds, then a doubled delay, then every hour).
 
-Chaque minute, le Cron publie jusqu’à 100 livraisons dues : en attente, en reprise dont le délai est écoulé, ou en cours dont le bail a expiré. Une livraison publiée qu’aucune tentative n’a prise après 5 minutes est republiée.
+Every minute, the Cron publishes up to 100 due deliveries: pending, retrying with an elapsed delay, or processing with an expired lease. A published delivery that no attempt has picked up after 5 minutes is republished.
 
-Le consumer lit des lots de 10 messages et traite chaque livraison séparément. Pour une livraison, il exécute un lot D1 qui démarre la tentative : il passe la livraison à `processing`, incrémente `attempt_count`, pose un bail de 2 minutes et insère la tentative dans `delivery_attempts`. Une livraison terminée, en attente de reprise ou déjà en cours n’est pas démarrée, et le message est acquitté. Le consumer appelle ensuite le port `NotificationProvider` avec la destination, les champs du message et l’identifiant de livraison, avec un délai maximal de 30 secondes, puis enregistre le résultat :
+The consumer reads batches of 10 messages and handles each delivery separately. For a delivery, it runs a D1 batch that starts the attempt: it sets the delivery to `processing`, increments `attempt_count`, sets a 2-minute lease and inserts the attempt in `delivery_attempts`. A delivery that is finished, waiting for a retry or already processing is not started, and the message is acknowledged. The consumer then calls the `NotificationProvider` port with the destination, the message fields and the delivery ID, with a timeout of 30 seconds, then records the result:
 
-| Résultat | Effet |
+| Result | Effect |
 | --- | --- |
-| Succès | `delivered` |
-| Échec permanent | `failed`, avec le résumé d’erreur |
-| Échec réessayable | `retrying`, nouvelle tentative après 1 min, 5 min, 30 min, 2 h puis 6 h ; `failed` après la sixième |
-| Pas de réponse en 30 secondes | Échec réessayable |
-| Aucun fournisseur pour le type de destination | Échec permanent : `No notification provider for target type "…".` |
+| Success | `delivered` |
+| Permanent failure | `failed`, with the error summary |
+| Retryable failure | `retrying`, next attempt after 1 min, 5 min, 30 min, 2 h, then 6 h; `failed` after the sixth |
+| No response within 30 seconds | Retryable failure |
+| No provider for the destination type | Permanent failure: `No notification provider for target type "…".` |
 
-Si le Worker s’arrête entre l’envoi et l’enregistrement du résultat, la tentative reste ouverte. À l’expiration de son bail, le Cron republie la livraison ; la tentative suivante marque la précédente `interrupted` et renvoie le message avec le même identifiant. Une tentative interrompue compte dans les six ; si c’était la dernière, la livraison passe à `failed`. Le consumer ne relance un message de file que si D1 échoue ; après 3 reprises, Queues le place dans la DLQ de livraison.
+If the Worker stops between the send and recording the result, the attempt stays open. When its lease expires, the Cron republishes the delivery; the next attempt marks the previous one `interrupted` and sends the message again with the same ID. An interrupted attempt counts toward the six; if it was the last one, the delivery moves to `failed`. The consumer retries a queue message only if D1 fails; after 3 retries, Queues moves it to the delivery DLQ.
 
-Le destinataire peut donc recevoir deux fois la même livraison. Rondyr promet une reprise fiable et un identifiant de déduplication, pas un envoi unique de bout en bout. Le résumé d’erreur, borné à 300 caractères, vient du fournisseur, qui ne doit pas y mettre les champs du message ; les journaux du consumer ne contiennent que les identifiants, le type de destination et le résultat.
+The recipient can therefore receive the same delivery twice. Rondyr promises reliable retries and a deduplication ID, not exactly-once delivery end to end. The error summary, capped at 300 characters, comes from the provider, which must not put the message fields in it; the consumer logs contain only the IDs, the destination type and the result.
 
-La composition du Worker déclare deux fournisseurs, pour les types `webhook` et `email` ; la section 8 décrit leurs règles. Un type sans fournisseur échoue toujours sans reprise.
+The Worker composition declares two providers, for the `webhook` and `email` types; section 8 describes their rules. A type without a provider always fails without a retry.
 
-#### Relance manuelle
+#### Manual retry
 
-Une livraison `failed` peut être relancée depuis le dashboard. La relance garde l’identifiant de livraison et ouvre une nouvelle série de six tentatives. Une seule instruction D1 la fait passer de `failed` à `pending`, remet `attempt_count` à zéro, efface `last_error` et la rend due tout de suite ; elle ne touche pas `delivery_attempts`. Toute autre livraison répond `409`, et deux relances simultanées n’en font qu’une, puisque la seconde ne trouve plus le statut `failed`. La route publie ensuite la livraison avec la revendication habituelle, et le Cron la reprend si cette publication échoue. La relance passe donc par la même file et le même démarrage qu’une tentative automatique : si elle croise le Cron ou un message en double, une seule tentative démarre.
+A `failed` delivery can be retried from the dashboard. The retry keeps the delivery ID and opens a new series of six attempts. A single D1 statement moves it from `failed` to `pending`, resets `attempt_count` to zero, clears `last_error` and makes it due at once; it does not change `delivery_attempts`. Any other delivery answers `409`, and two simultaneous retries count as one, since the second no longer finds the `failed` status. The route then publishes the delivery with the usual claim, and the Cron picks it up if this publication fails. The retry therefore goes through the same queue and the same start as an automatic attempt: if it coincides with the Cron or a duplicate message, a single attempt starts.
 
-`attempt_count` compte les tentatives de la série en cours ; il décide du délai de reprise et du passage à `failed`. Les lignes de `delivery_attempts` sont numérotées sur tout l’historique : la première tentative après une relance porte le numéro qui suit la dernière, et le nombre de tentatives affiché est le nombre de ces lignes. Avec Resend, l’identifiant de livraison reste la clé d’idempotence, si bien qu’une relance moins de 24 heures après la première tentative, avec d’autres destinataires, reçoit `409 invalid_idempotent_request`.
+`attempt_count` counts the attempts of the current series; it decides the retry delay and the move to `failed`. The rows of `delivery_attempts` are numbered across the whole history: the first attempt after a retry has the number that follows the last one, and the number of attempts shown is the number of these rows. With Resend, the delivery ID stays the idempotency key, so a retry less than 24 hours after the first attempt, with other recipients, gets `409 invalid_idempotent_request`.
 
-#### Envoi d’essai
+#### Test send
 
-L’envoi d’essai passe par la méthode `sendTest` du port `NotificationProvider`, avec le fournisseur du type de la destination et les mêmes vérifications qu’une livraison : configuration, URL, secrets, fournisseur d’e-mail. Chaque essai reçoit un nouvel identifiant et ne crée ni soumission, ni livraison, ni tentative ; la route attend la réponse au plus 30 secondes, sans reprise. Le webhook reçoit la charge utile version 1 avec le type `test`, et l’e-mail porte « Test message » (« Message d’essai » en français) dans son objet et son texte. Un seul essai à la fois par destination : la route garde en mémoire les destinations en cours d’essai, ce qui ne vaut que pour une instance du Worker.
+A test send goes through the `sendTest` method of the `NotificationProvider` port, with the provider for the destination's type and the same checks as a delivery: configuration, URL, secrets, email provider. Each test gets a new ID and creates no submission, delivery or attempt; the route waits at most 30 seconds for the answer, without a retry. The webhook receives version 1 of the payload with the type `test`, and the email has "Test message" ("Message d’essai" in French) in its subject and its text. One test at a time per destination: the route keeps the destinations under test in memory, which only applies within one Worker instance.
 
-Le fournisseur `email` construit le message et appelle le port `EmailSender`, qui ne connaît aucun fournisseur d’e-mail : il reçoit l’expéditeur, les destinataires, le `Reply-To` éventuel, l’objet, le texte et la clé d’idempotence, et distingue un succès, un rejet définitif (`EmailRejected`) et un échec à réessayer (`EmailUnavailable`). `RONDYR_EMAIL_PROVIDER` choisit l’adaptateur du stage dans `src/adapters/email/email-sender.ts`. Il vaut `resend` par défaut et accepte aussi `cloudflare`. Resend utilise l’identifiant de livraison comme clé d’idempotence pendant 24 heures, ce qui couvre les six tentatives automatiques. Avec Cloudflare, une tentative interrompue après acceptation peut envoyer un doublon à la reprise. L’identifiant de livraison reste dans le message.
+The `email` provider builds the message and calls the `EmailSender` port, which does not depend on any email provider: it receives the sender, the recipients, the optional `Reply-To`, the subject, the text and the idempotency key, and tells apart a success, a permanent rejection (`EmailRejected`) and a failure to retry (`EmailUnavailable`). `RONDYR_EMAIL_PROVIDER` chooses the stage's adapter in `src/adapters/email/email-sender.ts`. It is `resend` by default and also accepts `cloudflare`. Resend uses the delivery ID as the idempotency key for 24 hours, which covers the six automatic attempts. With Cloudflare, an attempt interrupted after acceptance can send a duplicate on retry. The delivery ID stays in the message.
 
-### Limites connues
+### Known limitations
 
-- L’outbox ne compte pas ses tentatives. Un événement que le consumer ne parvient jamais à remettre est republié toutes les 5 minutes sans alerte (#10).
-- La DLQ de classification n’a pas de consumer (#10).
-- La saga n’enregistre que le résultat final ; les tentatives échouées ne laissent pas de trace dans les événements.
-- La DLQ de livraison n’a pas de consumer non plus. Elle ne reçoit un message qu’après des échecs de D1, et l’état de la livraison reste dans D1, d’où le Cron la republie (#10).
-- L’envoi d’essai n’est limité qu’à un à la fois par destination et par instance du Worker. Un membre peut en envoyer autant qu’il veut, et chaque e-mail est soumis au quota du fournisseur du stage (#7).
+- The outbox does not count its attempts. An event that the consumer never manages to hand off is republished every 5 minutes without an alert (#10).
+- The classification DLQ has no consumer (#10).
+- The saga records only the final result; failed attempts leave no trace in the events.
+- The delivery DLQ has no consumer either. It receives a message only after D1 failures, and the delivery state stays in D1, from where the Cron republishes it (#10).
+- Test sends are limited only to one at a time per destination and per Worker instance. A member can send as many as they want, and each email counts against the quota of the stage's provider (#7).
 
-## 5. Classification intelligente
+## 5. Intelligent classification
 
-Le classificateur évalue le **spam**, le **démarchage commercial non sollicité** et la **pertinence**. La question sur le spam couvre le marketing non sollicité, le hameçonnage, les sollicitations de masse et les envois automatisés. La question sur le démarchage demande si l’expéditeur cherche à vendre ou à proposer à l’organisation quelque chose qui vient de lui (produit, service, contenu, article invité, fichier de prospects) au lieu de demander ce qu’elle offre. Elle compte les approches indirectes : demander qui s’occupe d’un sujet pour lui envoyer une proposition, ou demander un rendez-vous pour présenter une offre. Elle exclut le prospect qui décrit son besoin, la boutique qui veut acheter, revendre ou mettre en dépôt les produits de l’organisation, la demande de devis, la presse, la candidature, le partenariat d’un pair et l’échange sur une commande ou une prestation en cours. Les deux adaptateurs envoient le même texte, `solicitationInstruction` dans `src/domain/submissions/classifier-input.ts`. La pertinence mesure le lien entre le message et l’activité décrite par l’organisation. Sans contexte métier, le classificateur omet cette question.
+The classifier assesses **spam**, **unsolicited sales outreach** and **relevance**. The spam question covers unsolicited marketing, phishing, mass solicitations and automated sends. The solicitation question asks whether the sender is trying to sell or pitch to the organization something of their own (product, service, content, guest post, lead list) instead of asking for what the organization offers. It counts indirect approaches: asking who handles a topic in order to send them a proposal, or asking for a meeting to present an offer. It excludes the prospect who describes their need, the shop that wants to buy, resell or take on consignment the organization's products, the quote request, the press, the job application, a peer's partnership and an exchange about an order or a service in progress. Both adapters send the same text, `solicitationInstruction` in `src/domain/submissions/classifier-input.ts`. Relevance measures the link between the message and the business that the organization describes. Without a business context, the classifier leaves this question out.
 
-Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant votre atelier » est authentique même s’il ne parle pas de poterie.
+An off-topic message is not spam: "I found your keys outside your workshop" is genuine even though it says nothing about pottery.
 
-### Règles de décision
+### Decision rules
 
-`reviewReason`, dans `src/domain/submissions/classification.ts`, applique ces règles dans l’ordre. La version courante est `rulesVersion = 7`. La version 2 limite le contexte métier sans couper de caractère. La version 3 ajoute la règle de répétition et la nouvelle entrée du classificateur. La version 4 ajoute la comparaison du domaine de l’expéditeur. La version 5 demande le score de démarchage et met en quarantaine un message dont le score dépasse 0,50. La version 6 ajoute les politiques par organisation et relève le seuil de faible pertinence par défaut. La version 7 ajoute l’escalade facultative des décisions `ambiguous`.
+`reviewReason`, in `src/domain/submissions/classification.ts`, applies these rules in order. The current version is `rulesVersion = 7`. Version 2 truncates the business context without splitting a character. Version 3 adds the repetition rule and the new classifier input. Version 4 adds the comparison of the sender's domain. Version 5 asks for the solicitation score and quarantines a message whose score is above 0.50. Version 6 adds per-organization policies and raises the default low-relevance threshold. Version 7 adds the optional escalation of `ambiguous` decisions.
 
-| Condition avec les réglages par défaut | Résultat |
+| Condition with the default settings | Result |
 | --- | --- |
-| Échec du classificateur ou score de démarchage manquant | Quarantaine, motif `classification-error` |
-| Spam ≥ 0,70 | Quarantaine, motif `probable-spam` |
-| Spam ≥ 0,30 | Quarantaine, motif `ambiguous` |
-| Démarchage > 0,50 | Quarantaine, motif `solicitation` |
-| Contexte configuré et pertinence < 0,50 (Jev) ou < 0,45 (OpenAI Decisions) | Quarantaine, motif `low-relevance` |
-| Aucun motif | Acceptation automatique |
+| Classifier failure or missing solicitation score | Quarantine, reason `classification-error` |
+| Spam ≥ 0.70 | Quarantine, reason `probable-spam` |
+| Spam ≥ 0.30 | Quarantine, reason `ambiguous` |
+| Solicitation > 0.50 | Quarantine, reason `solicitation` |
+| Context configured and relevance < 0.50 (Jev) or < 0.45 (OpenAI Decisions) | Quarantine, reason `low-relevance` |
+| No reason | Automatic acceptance |
 
-L’organisation peut remplacer les quatre seuils ensemble et choisir indépendamment que les messages hors sujet soient traités en mode `review` ou `accept`. Les seuils vont de 0 à 1 inclus, et le seuil ambigu doit être inférieur ou égal à celui du spam probable. Le mode `accept` accepte et étiquette `off-topic` un message dont le seul motif de quarantaine serait la faible pertinence. La boîte de réception affiche l’étiquette, et les livraisons suivent le circuit habituel.
+The organization can replace the four thresholds together and choose separately whether off-topic messages are handled in `review` or `accept` mode. Thresholds range from 0 to 1 inclusive, and the ambiguous threshold must be less than or equal to the probable-spam one. The `accept` mode accepts a message whose only quarantine reason would be low relevance, and labels it `off-topic`. The inbox shows the label, and deliveries follow the usual path.
 
-Le workflow lit la politique et le classificateur du stage au début de l’analyse. Il utilise cette politique pendant les tentatives de classement et la transmet à la commande `RecordClassification`. Les décisions automatiques enregistrent la politique résolue, la version des règles et les scores quand le modèle répond. Si la politique reste indisponible après les tentatives, ou si elle est illisible, la soumission attend en quarantaine avec le motif `classification-error`. Les événements enregistrés avant la version 6 restent lisibles.
+The workflow reads the policy and the stage's classifier at the start of the analysis. It uses this policy during the classification attempts and passes it to the `RecordClassification` command. Automatic decisions record the resolved policy, the rules version and the scores when the model answers. If the policy is still unavailable after the attempts, or if it is unreadable, the submission waits in quarantine with the reason `classification-error`. Events recorded before version 6 stay readable.
 
-Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représentées par `duplicates`. La mesure du 21 novembre porte sur trois passages du corpus synthétique et du corpus réel du mainteneur ; avec ces seuils, aucun message légitime n’est mis en quarantaine. Avec Jev, les lignes de spam acceptées passent de 5 à 3 sur le corpus synthétique et de 7 à 5 sur le corpus réel. Avec OpenAI Decisions, elles passent de 4 à 2 sur le corpus synthétique et restent à 3 sur le corpus réel.
+The [evaluation report](docs/evaluation.md) counts the occurrences represented by `duplicates`. The 21 November measurement covers three runs of the synthetic corpus and of the maintainer's real corpus; with these thresholds, no legitimate message is quarantined. With Jev, the accepted spam lines go from 5 to 3 on the synthetic corpus and from 7 to 5 on the real corpus. With OpenAI Decisions, they go from 4 to 2 on the synthetic corpus and stay at 3 on the real corpus.
 
-### Escalade vers un second modèle
+### Escalation to a second model
 
-L’escalade est désactivée par défaut. Le stage doit déclarer un modèle différent du premier avec `RONDYR_ESCALATION_CLASSIFIER`, et l’organisation doit activer le réglage dans **Classification**. Les réglages renvoyés au dashboard indiquent ce second modèle dans `escalationClassifier`, ou `null` si le stage n’en déclare pas ou déclare le premier. Dans ce cas, le dashboard désactive l’interrupteur et une sauvegarde conserve le choix déjà enregistré. Uniquement pour le motif `ambiguous`, `ClassifySubmission` lance un second appel logique. Chaque modèle dispose de 12 secondes par tentative et de deux reprises après un échec réessayable, à 10 puis 30 secondes.
+Escalation is off by default. The stage must declare a model different from the first one with `RONDYR_ESCALATION_CLASSIFIER`, and the organization must turn the setting on in **Classification**. The settings returned to the dashboard give this second model in `escalationClassifier`, or `null` if the stage declares none or declares the first one. In that case, the dashboard disables the switch and saving keeps the choice already stored. For the `ambiguous` reason only, `ClassifySubmission` makes a second logical call. Each model has 12 seconds per attempt and two retries after a retryable failure, at 10 then 30 seconds.
 
-Le second appel compte dans le plafond quotidien de classification de l’organisation, comme une soumission admise à l’ingestion. Avant de l’appeler, la saga réserve une classification pour le jour UTC courant avec l’activité `reserve-escalation-n` de l’opération `Classifier.reserveEscalation`. Une seule instruction D1 vérifie que le compteur du jour est sous `daily_classification_limit` et l’incrémente ; une ligne de compteur d’un autre jour repart de zéro, comme dans le lot d’ingestion. Deux escalades qui visent la dernière place n’en obtiennent qu’une. La réservation a lieu une fois par escalade, quel que soit le nombre de reprises du second appel. Plafond atteint : le second modèle n’est pas appelé, le motif reste `ambiguous` et l’évaluation enregistrée porte `skipped: "quota"`. Une panne de D1 pendant la réservation est réessayée à 10 puis 30 secondes, comme la lecture de la politique ; si elle persiste, le second modèle n’est pas appelé et le motif reste `ambiguous`, sans `skipped`. Si D1 enregistre l’incrément mais que sa réponse se perd, la reprise compte une seconde place : l’erreur va dans le sens du plafond.
+The second call counts against the organization's daily classification quota, like a submission admitted at intake. Before the call, the saga reserves a classification for the current UTC day with the activity `reserve-escalation-n` of the `Classifier.reserveEscalation` operation. A single D1 statement checks that the day's counter is under `daily_classification_limit` and increments it; a counter row of another day starts again from zero, as in the intake batch. Two escalations that target the last slot get only one between them. The reservation happens once per escalation, whatever the number of retries of the second call. Quota reached: the second model is not called, the reason stays `ambiguous` and the recorded evaluation has `skipped: "quota"`. A D1 outage during the reservation is retried at 10 then 30 seconds, like the policy read; if it persists, the second model is not called and the reason stays `ambiguous`, without `skipped`. If D1 records the increment but its response is lost, the retry counts a second slot: the error is on the side of the quota.
 
-Le second modèle tranche seulement le doute sur le spam. Il utilise ses seuils par défaut et le choix de l’organisation pour les messages hors sujet. S’il trouve un motif de quarantaine, ou si le second appel échoue, le motif final reste `ambiguous`. S’il ne trouve rien, `escalatedDecision` applique encore aux scores du premier modèle les règles qui suivent celles du spam, avec la politique de l’organisation : un score de démarchage au-dessus du seuil donne le motif `solicitation`, et une faible pertinence avec le choix `review` donne `low-relevance`. Sinon la soumission est acceptée, avec l’étiquette `off-topic` si l’un des deux modèles la juge hors sujet. L’escalade n’accepte donc qu’une soumission que le premier modèle aurait acceptée sans son score de spam.
+The second model settles only the spam doubt. It uses its default thresholds and the organization's choice for off-topic messages. If it finds a quarantine reason, or if the second call fails, the final reason stays `ambiguous`. If it finds nothing, `escalatedDecision` still applies to the first model's scores the rules that come after the spam rules, with the organization's policy: a solicitation score above the threshold gives the reason `solicitation`, and low relevance with the `review` choice gives `low-relevance`. Otherwise the submission is accepted, with the `off-topic` label if either model judges it off-topic. Escalation therefore accepts only a submission that the first model would have accepted without its spam score.
 
-L’événement de décision conserve les scores et le modèle du premier appel, puis, en cas d’escalade, l’identité du second classificateur et ses scores s’il a répondu, ou `skipped: "quota"` si le plafond a empêché l’appel. Il enregistre une version des règles par évaluation. Les anciennes décisions et les politiques sans ce réglage restent lisibles.
+The decision event keeps the scores and the model of the first call, then, on escalation, the identity of the second classifier and its scores if it answered, or `skipped: "quota"` if the quota prevented the call. It records one rules version per evaluation. Older decisions and policies without this setting stay readable.
 
-`pnpm evaluate --escalation` rejoue cette règle sur les scores en cache de la mesure du 21 novembre, trois passages par corpus. Sur le corpus synthétique, l’escalade n’accepte aucune soumission, dans un sens comme dans l’autre. Sur le corpus réel, avec OpenAI Decisions en premier, elle n’accepte plus aucun spam : la ligne de spam que la première version de la règle acceptait à chaque passage a une pertinence de 0,20 selon OpenAI Decisions, sous son seuil de 0,45, et part en quarantaine avec le motif `low-relevance`. Avec Jev en premier, les lignes étiquetées ambiguës acceptées passent de 1, 1 et 2 à 0, 1 et 1. La ligne acceptée aux trois passages part en quarantaine avec le motif `solicitation` quand Jev lui donne 0,51 ou 0,54, et reste acceptée avec 0,50, qui ne dépasse pas le seuil. L’autre ligne du troisième passage n’a ni démarchage ni faible pertinence selon Jev et reste acceptée.
+`pnpm evaluate --escalation` replays this rule on the cached scores of the 21 November measurement, three runs per corpus. On the synthetic corpus, escalation accepts no submission, in either direction. On the real corpus, with OpenAI Decisions first, it no longer accepts any spam: the spam line that the first version of the rule accepted on every run has a relevance of 0.20 according to OpenAI Decisions, under its threshold of 0.45, and goes to quarantine with the reason `low-relevance`. With Jev first, the accepted lines labeled ambiguous go from 1, 1 and 2 to 0, 1 and 1. The line accepted on all three runs goes to quarantine with the reason `solicitation` when Jev gives it 0.51 or 0.54, and stays accepted with 0.50, which does not exceed the threshold. The other line of the third run has neither solicitation nor low relevance according to Jev and stays accepted.
 
-### Quarantaine sans appel au modèle
+### Quarantine without a model call
 
-L’ingestion enregistre un motif d’entrée dans `submissions.intake_reason` quand l’une de ces conditions s’applique. `QuarantineAtIntake` transmet l’organisation et le motif à l’agrégat. Depuis l’état `Unrecorded`, l’agrégat émet directement `SubmissionQuarantined` avec le motif et la version des règles, sans scores. Un relecteur peut accepter le message et déclencher ses livraisons, ou l’archiver.
+Intake stores an intake reason in `submissions.intake_reason` when one of these conditions applies. `QuarantineAtIntake` passes the organization and the reason to the aggregate. From the `Unrecorded` state, the aggregate emits `SubmissionQuarantined` directly with the reason and the rules version, without scores. A reviewer can accept the message and trigger its deliveries, or archive it.
 
-| Condition | Résultat |
+| Condition | Result |
 | --- | --- |
-| Champ piège du formulaire rempli | Quarantaine, motif `honeypot`, sans appel au classificateur |
-| Turnstile actif et jeton absent ou refusé | Quarantaine, motif `turnstile-failed`, sans appel au classificateur |
-| Au moins 2 soumissions antérieures au même contenu ou 3 du même expéditeur | Quarantaine, motif `repetition`, sans appel au classificateur |
-| Plafond quotidien de classification atteint | Quarantaine, motif `quota`, sans appel au classificateur |
+| Form's honeypot field filled | Quarantine, reason `honeypot`, without a classifier call |
+| Turnstile active and token missing or refused | Quarantine, reason `turnstile-failed`, without a classifier call |
+| At least 2 earlier submissions with the same content or 3 from the same sender | Quarantine, reason `repetition`, without a classifier call |
+| Daily classification quota reached | Quarantine, reason `quota`, without a classifier call |
 
-Les conditions s’appliquent dans l’ordre du tableau. Le comptage de répétition porte sur les soumissions déjà enregistrées dans la même organisation, tous formulaires et statuts confondus, avec une fenêtre de 30 jours dont la borne basse est incluse. Un double envoi isolé reste sous les deux seuils.
+The conditions apply in the order of the table. The repetition count covers the submissions already stored in the same organization, across all forms and statuses, within a 30-day window whose lower bound is included. A single double submission stays under both thresholds.
 
-Le champ `email` sert à comparer les expéditeurs. Le contenu regroupe les paires nom–valeur des autres champs, hors `name`, triées par nom. La normalisation des valeurs retire les espaces aux extrémités, réduit les suites d’espaces, passe en minuscules et applique Unicode NFC. Une valeur vide ne produit pas d’empreinte d’expéditeur et ne contribue pas au contenu. Le Worker calcule le condensat SHA-256 de la valeur normalisée, et les index le préfixent par l’identifiant de l’organisation fourni par le formulaire. Le condensat lui-même ne contient pas cet identifiant : D1 ne connaît l’organisation que dans le lot d’écriture, et son SQL ne propose pas SHA-256. Deux organisations qui reçoivent la même valeur ont donc la même empreinte. Ce choix est accepté : un accès direct à la base donne déjà `submissions.fields` en clair, et les empreintes n’apprennent rien de plus. Les lignes antérieures à la migration restent lisibles avec des compteurs à zéro et ne contribuent pas à l’historique de répétition.
+The `email` field is used to compare senders. The content groups the name–value pairs of the other fields, except `name`, sorted by name. Value normalization trims spaces at both ends, collapses runs of spaces, lowercases and applies Unicode NFC. An empty value produces no sender fingerprint and does not contribute to the content. The Worker computes the SHA-256 hash of the normalized value, and the indexes prefix it with the organization ID that the form provides. The hash itself does not contain this ID: D1 knows the organization only in the write batch, and its SQL does not offer SHA-256. Two organizations that receive the same value therefore have the same fingerprint. This choice is accepted: direct access to the database already gives `submissions.fields` in clear text, and the fingerprints reveal nothing more. Rows from before the migration stay readable with counters at zero and do not contribute to the repetition history.
 
-`QuarantineReason` type l’événement, la projection et l’API. Une seconde remise du message de file réutilise le motif écrit dans `intake_reason` et le même identifiant de commande.
+`QuarantineReason` types the event, the projection and the API. A second delivery of the queue message reuses the reason written in `intake_reason` and the same command ID.
 
-### Classificateurs
+### Classifiers
 
-`RONDYR_CLASSIFIER` choisit le classificateur pour tout un stage : `jev` par défaut, ou `openai`. Les deux sont des adaptateurs du système externe `Classifier` déclaré dans le domaine.
+`RONDYR_CLASSIFIER` chooses the classifier for a whole stage: `jev` by default, or `openai`. Both are adapters of the external system `Classifier` declared in the domain.
 
-Le Worker et le corpus construisent la même entrée dans `src/domain/submissions/classifier-input.ts`, avec le contexte métier, les faits calculés et les champs du visiteur dans cet ordre. Les faits comprennent les deux compteurs enregistrés à l’ingestion et un indicateur de lien ou de balise HTML dans un champ autre que le plus long. En cas d’égalité, le premier champ le plus long sert de référence. Aucun condensat n’est envoyé au modèle.
+The Worker and the corpus build the same input in `src/domain/submissions/classifier-input.ts`, with the business context, the computed facts and the visitor's fields in that order. The facts include the two counters stored at intake and a flag for a link or an HTML tag in a field other than the longest one. On a tie, the first of the longest fields is the reference. No hash is sent to the model.
 
-Une organisation peut déclarer jusqu’à dix noms d’hôte ASCII en minuscules. Lorsque le domaine du champ `email` correspond à un domaine déclaré ou à l’un de ses sous-domaines, les deux modèles reçoivent le fait `sender_matches_organization_domain: true` et un champ `email` vide ; D1 conserve l’adresse soumise. Dans tous les autres cas (adresse d’un autre domaine, adresse absente ou invalide, organisation sans domaine déclaré), le fait est omis et l’entrée du modèle est celle de la version 3. Un `false` envoyé à chaque message déplaçait les scores de messages légitimes sans rapport avec le domaine : sur le corpus synthétique, Jev mettait un message légitime en quarantaine et OpenAI Decisions deux. La comparaison porte sur une adresse déclarée par le visiteur et ne déclenche aucune règle de quarantaine.
+An organization can declare up to ten lowercase ASCII hostnames. When the domain of the `email` field matches a declared domain or one of its subdomains, both models receive the fact `sender_matches_organization_domain: true` and an empty `email` field; D1 keeps the submitted address. In every other case (an address on another domain, a missing or invalid address, an organization without a declared domain), the fact is left out and the model input is the version 3 input. A `false` sent with every message shifted the scores of legitimate messages that had nothing to do with the domain: on the synthetic corpus, Jev quarantined one legitimate message and OpenAI Decisions two. The comparison is on an address that the visitor declares, and it triggers no quarantine rule.
 
-- **Jev** reçoit l’entrée dans un objet `state`, avec deux ou trois questions nommées de type `noul` qui renvoient un score entre 0 et 1. L’appel passe par le binding Workers AI.
-- **OpenAI Decisions** reçoit les mêmes données en JSON et des questions de type `predicate`. L’appel passe par le gateway `default` d’AI Gateway avec la facturation unifiée de Cloudflare, sans clé OpenAI dans Rondyr.
+- **Jev** receives the input in a `state` object, with two or three named questions of type `noul` that return a score between 0 and 1. The call goes through the Workers AI binding.
+- **OpenAI Decisions** receives the same data as JSON and questions of type `predicate`. The call goes through the AI Gateway `default` gateway with Cloudflare unified billing, without an OpenAI key in Rondyr.
 
-La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la première requête authentifiée du compte, avec la collecte de logs activée ; les appels Jev faits par le binding y passent aussi, et leurs journaux contenaient les champs des soumissions tant que l’adaptateur ne s’y opposait pas. Les deux adaptateurs désactivent donc la collecte et le cache à chaque appel, avec les options de `src/adapters/ai/gateway.ts`, et un test par adaptateur vérifie ces options. En développement local, le binding `AI` est absent et chaque message part en quarantaine avec le motif `classification-error`.
+The Alchemy stack creates no gateway. AI Gateway creates `default` on the account's first authenticated request, with log collection on; Jev calls made through the binding go through it too, and their logs contained the submission fields as long as the adapter did not opt out. Both adapters therefore turn off log collection and caching on every call, with the options in `src/adapters/ai/gateway.ts`, and one test per adapter checks these options. In local development, the `AI` binding is missing and every message goes to quarantine with the reason `classification-error`.
 
-### Sécurité du pipeline IA
+### AI pipeline security
 
-Les deux adaptateurs indiquent au modèle que l’entrée est à lire comme des données. Les champs du visiteur figurent dans un objet distinct des instructions. Le corps est limité à 16 Kio. Le contexte métier est limité à 2 000 unités UTF-16 sans couper de caractère. Le plafond quotidien par organisation compte les soumissions admises à la classification à l’ingestion, puis chaque escalade vers un second modèle, réservée par la saga avant l’appel. Les reprises de la saga utilisent la place déjà réservée.
+Both adapters tell the model to read the input as data. The visitor's fields are in an object separate from the instructions. The body is limited to 16 KiB. The business context is limited to 2,000 UTF-16 code units without splitting a character. The daily quota per organization counts the submissions admitted to classification at intake, then each escalation to a second model, reserved by the saga before the call. Saga retries use the slot already reserved.
 
-## 6. Modèle de données
+## 6. Data model
 
-L’état est réparti entre deux stockages. D1 contient la configuration, le contenu des messages et la vue de l’Inbox. Les Durable Objects d’Alchemy Domain contiennent le flux d’événements de chaque soumission, qui fait foi pour son statut.
+State is split between two stores. D1 contains the configuration, the message content and the Inbox view. The Alchemy Domain Durable Objects contain the event stream of each submission, which is the source of truth for its status.
 
-### Tables D1
+### D1 tables
 
-| Table | Contenu |
+| Table | Content |
 | --- | --- |
-| `organizations` | `id`, `name`, `daily_submission_limit` (2 000 par défaut), `daily_classification_limit` (1 000 par défaut) |
-| `organization_members` | `(organization_id, user_id)`, sans rôle |
-| `organization_domains` | `(organization_id, domain)`, jusqu’à dix par organisation |
-| `organization_classification_policies` | Réglages de classification personnalisés, au plus une ligne par organisation |
+| `organizations` | `id`, `name`, `daily_submission_limit` (2,000 by default), `daily_classification_limit` (1,000 by default) |
+| `organization_members` | `(organization_id, user_id)`, without a role |
+| `organization_domains` | `(organization_id, domain)`, up to ten per organization |
+| `organization_classification_policies` | Custom classification settings, at most one row per organization |
 | `organization_daily_usage` | One row per organization with the last UTC day `day` and its counters: `submissions` (stored submissions other than junk), `classifications` and `junk` (stored junk, section 8) |
-| `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context`, `status` (`active` par défaut, ou `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (publique) et `turnstile_secret` (chiffrée). Les quatre derniers champs sont facultatifs |
-| `form_origins` | `(form_id, origin)`, `created_at`. `origin` est normalisée : schéma, hôte et port éventuel, sans chemin ni barre oblique finale |
-| `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (facultatif), `sender_fingerprint` et `content_fingerprint` (facultatifs), `prior_same_sender` et `prior_same_content` |
+| `forms` | `id`, `organization_id`, unique `public_id`, `name`, `business_context`, `status` (`active` by default, or `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (public) and `turnstile_secret` (encrypted). The last four fields are optional |
+| `form_origins` | `(form_id, origin)`, `created_at`. `origin` is normalized: scheme, host and optional port, without a path or a trailing slash |
+| `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (optional), `sender_fingerprint` and `content_fingerprint` (optional), `prior_same_sender` and `prior_same_content` |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
-| `submission_inbox` | `submission_id`, `version`, `status`, `reason`, `label` (facultatif) |
-| `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON lu par le fournisseur du type), `active`, `created_at`. Pour un webhook, `configuration` contient `url`, `secret` (chiffré) et `previousSecret` (`null`, ou le secret chiffré précédent et la fin de sa validité). Pour un e-mail, elle contient `recipients`, la liste des destinataires |
-| `deliveries` | `id` (UUID v4 stable), `submission_id`, `target_id`, `status`, `attempt_count` (tentatives de la série en cours), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at` ; unique sur `(submission_id, target_id)` |
-| `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numérote les tentatives sur tout l’historique, relances manuelles comprises |
-| `auth_*` | Comptes, sessions, vérifications et limites de débit de Better Auth |
+| `submission_inbox` | `submission_id`, `version`, `status`, `reason`, `label` (optional) |
+| `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON read by the provider of the type), `active`, `created_at`. For a webhook, `configuration` contains `url`, `secret` (encrypted) and `previousSecret` (`null`, or the previous encrypted secret and the end of its validity). For an email, it contains `recipients`, the list of recipients |
+| `deliveries` | `id` (stable UUID v4), `submission_id`, `target_id`, `status`, `attempt_count` (attempts of the current series), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at`; unique on `(submission_id, target_id)` |
+| `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numbers the attempts across the whole history, manual retries included |
+| `auth_*` | Better Auth accounts, sessions, verifications and rate limits |
 
-La migration `form-administration` ajoute `status` et `success_url` par `ALTER TABLE` : les formulaires existants passent à `active` par la valeur par défaut. `status` n’a pas de contrainte `CHECK`, car l’ajouter reconstruirait la table, et la suppression de `forms` sur D1 se propagerait à `form_origins` ; les adaptateurs ne l’écrivent qu’avec les deux valeurs, et Effect Schema refuse une autre valeur à la lecture.
+The `form-administration` migration adds `status` and `success_url` with `ALTER TABLE`: existing forms become `active` through the default value. `status` has no `CHECK` constraint, because adding one would rebuild the table, and dropping `forms` on D1 would cascade to `form_origins`; the adapters write it only with the two values, and Effect Schema refuses any other value on read.
 
-La migration `form-honeypot` ajoute `forms.honeypot_field` et `submissions.intake_reason` de la même façon, sans valeur par défaut : un formulaire existant n’a pas de champ piège, et une soumission existante n’a pas de motif d’entrée. `intake_reason` n’a pas de contrainte `CHECK` non plus ; seule l’instruction d’insertion l’écrit, et le consumer le relit avec Effect Schema.
+The `form-honeypot` migration adds `forms.honeypot_field` and `submissions.intake_reason` the same way, without a default value: an existing form has no honeypot field, and an existing submission has no intake reason. `intake_reason` has no `CHECK` constraint either; only the insert statement writes it, and the consumer reads it back with Effect Schema.
 
-Deux index servent les lectures fréquentes : `(organization_id, received_at, id)` pour la pagination de l’Inbox et `(form_id, received_at)` pour le plafond par formulaire. La clé primaire `(form_id, origin)` de `form_origins` sert la vérification de l’origine à l’ingestion. Un index partiel sur `(next_attempt_at, lease_until)` sert la recherche des livraisons dues.
+Two indexes serve frequent reads: `(organization_id, received_at, id)` for Inbox pagination and `(form_id, received_at)` for the per-form cap. The primary key `(form_id, origin)` of `form_origins` serves the origin check at intake. A partial index on `(next_attempt_at, lease_until)` serves the search for due deliveries.
 
-La migration `submission-repetition` ajoute quatre colonnes avec `ALTER TABLE` et deux index partiels pour le comptage. Chaque index commence par `organization_id`, suivi de l’empreinte de l’expéditeur ou du contenu, puis de `received_at`. Supprimer une soumission supprime ses empreintes et ses compteurs.
+The `submission-repetition` migration adds four columns with `ALTER TABLE` and two partial indexes for counting. Each index starts with `organization_id`, followed by the sender or content fingerprint, then `received_at`. Deleting a submission deletes its fingerprints and its counters.
 
-La migration `turnstile-and-organization-quotas` ajoute les réglages par `ALTER TABLE` et crée `organization_daily_usage`. Les compteurs commencent à zéro, y compris pour les organisations existantes. Le lot d’ingestion prend l’heure de D1 et utilise la même date UTC pour vérifier les plafonds et compter la soumission. Si la ligne de compteur appartient à une autre date, l’API affiche zéro pour le jour courant et la première soumission enregistrée, ou la première réservation d’escalade, initialise les compteurs de ce jour.
+The `turnstile-and-organization-quotas` migration adds the settings with `ALTER TABLE` and creates `organization_daily_usage`. The counters start at zero, including for existing organizations. The intake batch takes the time from D1 and uses the same UTC date to check the quotas and to count the submission. If the counter row belongs to another date, the API shows zero for the current day, and the first stored submission, or the first escalation reservation, initializes that day's counters.
 
 The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
-Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. Une relance manuelle ouvre une nouvelle série sur la même livraison sans effacer ses tentatives ; l’historique et la relance n’ont demandé aucune migration. L’API d’administration crée les destinations webhook et e-mail ; la table `notification_targets` existante suffit, sans migration. L’adaptateur relit la liste des destinataires avec le même schéma qu’à la création : une ligne modifiée à la main qui ne respecte plus la règle fait échouer la livraison sans reprise.
+A delivery has one of the statuses `pending`, `processing`, `delivered`, `retrying` or `failed`. `next_attempt_at` says when an attempt can start: the creation, the end of the retry delay or the end of the current attempt's lease. An attempt has the outcome `delivered`, `retryable-failure`, `permanent-failure` or `interrupted`, or none while it runs. A manual retry opens a new series on the same delivery without erasing its attempts; the history and the retry needed no migration. The admin API creates webhook and email destinations; the existing `notification_targets` table is enough, without a migration. The adapter reads the recipient list back with the same schema as at creation: a row edited by hand that no longer follows the rule makes the delivery fail without a retry.
 
-### Événements de l’agrégat `Submission`
+### `Submission` aggregate events
 
-| Événement | Données |
+| Event | Data |
 | --- | --- |
-| `ClassificationRequested` | Organisation |
-| `SubmissionQuarantined` | Organisation, motif, scores éventuels (absents pour un motif d’entrée ou un échec du classificateur), version des règles |
-| `SubmissionAccepted` | Organisation, puis scores et version des règles (automatique) ou relecteur (manuelle) |
-| `SubmissionDismissed` | Organisation, relecteur |
+| `ClassificationRequested` | Organization |
+| `SubmissionQuarantined` | Organization, reason, optional scores (absent for an intake reason or a classifier failure), rules version |
+| `SubmissionAccepted` | Organization, then scores and rules version (automatic) or reviewer (manual) |
+| `SubmissionDismissed` | Organization, reviewer |
 
-L’agrégat passe de `Unrecorded` à `Classifying`, puis à `Quarantined` ou `Accepted`. Avec un motif d’entrée, il passe directement de `Unrecorded` à `Quarantined`. Seul un message `Quarantined` peut être accepté ou archivé à la main. La projection `Inbox` écrit le dernier statut dans `submission_inbox`, protégée par le numéro de séquence de l’événement. Une soumission sans ligne de projection a le statut `received`.
+The aggregate goes from `Unrecorded` to `Classifying`, then to `Quarantined` or `Accepted`. With an intake reason, it goes directly from `Unrecorded` to `Quarantined`. Only a `Quarantined` message can be accepted or archived by hand. The `Inbox` projection writes the latest status in `submission_inbox`, guarded by the event's sequence number. A submission without a projection row has the status `received`.
 
-Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. Le champ `reason` de l’Inbox contient le motif de quarantaine, dont `turnstile-failed` ou `quota` pour ces contrôles d’entrée.
+The visible statuses are `received`, `classifying`, `quarantined`, `accepted` and `archived`. The Inbox `reason` field contains the quarantine reason, including `turnstile-failed` or `quota` for these intake checks.
 
-Le contenu des messages n’existe que dans `submissions.fields`, et n’en sort que dans le corps des requêtes webhook et dans le texte des e-mails. Les événements ne contiennent que des identifiants, des scores et l’identifiant du relecteur, et les livraisons que des identifiants, des états et des résumés d’erreur, ce qui limite une purge aux lignes D1 (#9). Supprimer une soumission supprime ses livraisons et leurs tentatives.
+Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the reviewer's ID, and deliveries only IDs, states and error summaries, which limits a purge to D1 rows (#9). Deleting a submission deletes its deliveries and their attempts.
 
-### Tables à venir
+### Planned tables
 
-- Rôle dans `organization_members` et invitations (#11).
-- Durées de conservation (#9).
+- Role in `organization_members` and invitations (#11).
+- Retention periods (#9).
 
-Les tables `classification-attempts` et `audit-events` du document initial ne sont pas prévues : le flux d’événements de l’agrégat enregistre les décisions et leurs auteurs.
+The `classification-attempts` and `audit-events` tables of the initial document are not planned: the aggregate's event stream records the decisions and who made them.
 
-## 7. API et expérience développeur
+## 7. API and developer experience
 
-### API publique
+### Public API
 
-`POST /f/:public-id` accepte `application/json`, `application/x-www-form-urlencoded` et `multipart/form-data`. Le corps pèse au plus 16 Kio et contient de 1 à 32 champs texte en plus du champ facultatif `cf-turnstile-response`. Un nom de champ a de 1 à 100 caractères, sans caractère de contrôle ni saut de ligne (y compris U+0085, U+2028 et U+2029), et une valeur de message au plus 4 000. Les noms `__proto__`, `constructor` et `prototype` restent refusés, et un nom qui commence par `_` n’a pas de sens particulier.
+`POST /f/:public-id` accepts `application/json`, `application/x-www-form-urlencoded` and `multipart/form-data`. The body is at most 16 KiB and contains 1 to 32 text fields in addition to the optional `cf-turnstile-response` field. A field name has 1 to 100 characters, with no control character or line break (including U+0085, U+2028 and U+2029), and a message value at most 4,000. The names `__proto__`, `constructor` and `prototype` are still refused, and a name that starts with `_` has no special meaning.
 
-Un objet JSON imbriqué ou une valeur non textuelle sont refusés. Dans un corps de formulaire, un nom répété (cases à cocher, liste à choix multiples) est accepté : ses valeurs sont jointes par `, ` dans l’ordre reçu, et la valeur jointe doit tenir en 4 000 caractères. Un corps `multipart/form-data` ne contient que des champs texte : une partie avec un paramètre `filename`, même vide comme celle d’un champ fichier laissé vide, fait refuser le corps en `400`, sans rien enregistrer. L’analyseur multipart d’Effect (`MultipartParser`) lit le corps déjà borné à 16 Kio. Les messages reçus avant la règle des caractères de contrôle restent lisibles : seule l’ingestion l’applique.
+A nested JSON object or a non-text value is refused. In a form body, a repeated name (checkboxes, multiple-choice list) is accepted: its values are joined with `, ` in the order received, and the joined value must fit in 4,000 characters. A `multipart/form-data` body contains only text fields: a part with a `filename` parameter, even an empty one like that of a file input left empty, gets the body refused with `400`, and nothing is stored. Effect's multipart parser (`MultipartParser`) reads the body already capped at 16 KiB. Messages received before the control-character rule stay readable: only intake applies it.
 
-Les champs sont stockés dans un objet JSON. Les noms qui sont des indices de tableau JavaScript (par exemple `"1"` et `"2"`) passent en tête, par ordre numérique. Pour conserver l’ordre de réception de bout en bout, il faudrait changer le format de stockage et transmettre l’ordre dans le payload webhook.
+The fields are stored in a JSON object. Names that are JavaScript array indices (for example `"1"` and `"2"`) come first, in numeric order. Keeping the order of reception end to end would require changing the storage format and passing the order in the webhook payload.
 
-| Statut | Cas |
+| Status | Case |
 | --- | --- |
-| `202` | Soumission enregistrée ; le JSON contient `submission-id` et `status: "received"`, ou la page de confirmation pour un envoi HTML |
-| `204` | Prérequête CORS (`OPTIONS`) acceptée |
-| `303` | Soumission enregistrée, envoi HTML d’un formulaire qui a une URL de succès ; `Location` vaut cette URL |
-| `400` | Corps ou champs invalides, fichier dans un corps multipart, ou aucun champ de message après retrait du jeton et du champ piège vide |
-| `403` | En-tête `Origin` absent de la liste des origines autorisées du formulaire, ou formulaire suspendu ; rien n’est enregistré |
-| `404` | Formulaire inconnu, pour `POST` comme pour `OPTIONS` |
-| `413` | Corps de plus de 16 Kio |
-| `415` | Autre type de contenu |
+| `202` | Submission stored; the JSON contains `submission-id` and `status: "received"`, or the confirmation page for an HTML post |
+| `204` | CORS preflight request (`OPTIONS`) accepted |
+| `303` | Submission stored, HTML post of a form that has a success URL; `Location` is that URL |
+| `400` | Invalid body or fields, a file in a multipart body, or no message field after removing the token and the empty honeypot field |
+| `403` | `Origin` header not in the form's list of allowed origins, or suspended form; nothing is stored |
+| `404` | Unknown form, for `POST` as for `OPTIONS` |
+| `413` | Body larger than 16 KiB |
+| `415` | Another content type |
 | `429` | The client or form reached its minute limit (`Retry-After: 60`), or the organization reached a daily quota: the submission quota for a submission that is not junk, the junk quota for junk (`Retry-After` in seconds until midnight UTC). Nothing is stored |
-| `503` | D1 indisponible |
+| `503` | D1 unavailable |
 
-Les réponses ne révèlent rien de la décision anti-spam : une soumission au champ piège rempli reçoit le même `202`, la même page ou la même redirection qu’une autre. `GET /health` renvoie `{"status":"ok"}`.
+Responses reveal nothing about the anti-spam decision: a submission with a filled honeypot field gets the same `202`, the same page or the same redirect as any other. `GET /health` returns `{"status":"ok"}`.
 
 There is one exception: once the organization's junk quota is reached for the day, junk gets `429` while other submissions still get `202`, so a bot can tell that it was caught. Without the refusal, junk would have to use the quota of real messages again (section 8).
 
-#### Limite par client et champ piège
+#### Per-client limit and honeypot field
 
-La route compte chaque soumission valide du client, identifié par `CF-Connecting-IP`, sur le formulaire de l’URL, avant le lot D1 : 5 par fenêtre de 60 secondes, avec le binding Rate Limiting `CLIENT_RATE_LIMIT`. Une adresse IPv6 compte pour son réseau `/64`. La clé est `<public-id>:<client>` ; le compteur est chez Cloudflare et Rondyr ne garde aucune adresse. Un client limité reçoit `429` avec `Retry-After: 60` et les en-têtes CORS d’une requête invalide : sans en-tête `Origin`, aucun en-tête CORS et aucun accès à D1 ; avec `Origin`, la liste du formulaire, lue en un aller-retour. La limite passe avant la vérification de l’origine : un client limité reçoit `429` même depuis une origine refusée, et rien n’est enregistré dans les deux cas. Une requête sans `CF-Connecting-IP`, en développement local ou dans les tests, n’est pas comptée ; si le binding échoue, la soumission passe et l’échec est journalisé. Le plafond de 30 par minute et par formulaire reste dans l’instruction d’insertion, pour tous les clients ensemble.
+The route counts each valid submission from the client, identified by `CF-Connecting-IP`, on the form of the URL, before the D1 batch: 5 per 60-second window, with the Rate Limiting binding `CLIENT_RATE_LIMIT`. An IPv6 address counts as its `/64` network. The key is `<public-id>:<client>`; the counter is at Cloudflare and Rondyr keeps no address. A limited client gets `429` with `Retry-After: 60` and the CORS headers of an invalid request: without an `Origin` header, no CORS header and no D1 access; with `Origin`, the form's list, read in one round trip. The limit comes before the origin check: a limited client gets `429` even from a refused origin, and nothing is stored in either case. A request without `CF-Connecting-IP`, in local development or in tests, is not counted; if the binding fails, the submission goes through and the failure is logged. The cap of 30 per minute per form stays in the insert statement, for all clients together.
 
-Le champ piège d’un formulaire, s’il est défini, s’applique dans l’instruction d’insertion. Vide, il est retiré des champs enregistrés et n’atteint ni le classificateur, ni un webhook, ni un e-mail. Rempli, il reste dans les champs, pour que le relecteur voie ce qui a été envoyé, et la soumission reçoit le motif d’entrée `honeypot` (section 5). Un corps dont le seul champ est le champ piège vide répond `400`. Sans champ piège, un champ `_hp` est un champ comme un autre.
+A form's honeypot field, if set, is applied in the insert statement. When empty, it is removed from the stored fields and reaches neither the classifier, nor a webhook, nor an email. When filled, it stays in the fields, so that the reviewer sees what was sent, and the submission gets the intake reason `honeypot` (section 5). A body whose only field is the empty honeypot field gets `400`. Without a honeypot field, a `_hp` field is an ordinary field.
 
-#### Formulaire suspendu et redirection de succès
+#### Suspended form and success redirect
 
-Un formulaire suspendu répond `403` à toute soumission valide et n’enregistre rien. Ses en-têtes CORS suivent la liste des origines, comme ceux d’un `429` : une page d’une origine autorisée peut lire le refus. Une origine absente d’une liste non vide reçoit le refus d’origine, vérifié en premier. Une requête invalide garde son statut (`400`, `413`, `415`), et la prérequête répond comme pour un formulaire actif. Les messages déjà reçus, les destinations, les origines et l’URL publique ne changent pas ; la réactivation rétablit l’ingestion.
+A suspended form answers `403` to every valid submission and stores nothing. Its CORS headers follow the list of origins, like those of a `429`: a page on an allowed origin can read the refusal. An origin missing from a non-empty list gets the origin refusal, which is checked first. An invalid request keeps its status (`400`, `413`, `415`), and the preflight request gets the same answer as for an active form. The messages already received, the destinations, the origins and the public URL do not change; reactivation restores intake.
 
-Une soumission acceptée envoyée en `application/x-www-form-urlencoded` ou `multipart/form-data`, dont l’en-tête `Accept` contient `text/html`, reçoit `303` vers l’URL de succès du formulaire, avec les mêmes en-têtes CORS et `Cache-Control: no-store` que le `202`. Sans URL de succès, elle reçoit la page de confirmation. Un client JSON ou un client qui n’accepte pas HTML reçoit toujours le `202` en JSON. L’URL vient toujours de D1, jamais de la requête : aucun champ, paramètre ou en-tête ne la choisit.
+An accepted submission sent as `application/x-www-form-urlencoded` or `multipart/form-data`, whose `Accept` header contains `text/html`, gets `303` to the form's success URL, with the same CORS headers and `Cache-Control: no-store` as the `202`. Without a success URL, it gets the confirmation page. A JSON client or a client that does not accept HTML always gets the `202` as JSON. The URL always comes from D1, never from the request: no field, parameter or header chooses it.
 
-`parseSuccessUrl`, dans `src/domain/forms/form.ts`, accepte une URL HTTPS absolue sans identifiants et la normalise (`invalid-url`, `not-https`, `credentials`). L’adaptateur ne l’enregistre que si son origine est dans la liste du formulaire (`origin-not-listed`), dans la même instruction `UPDATE`. Le retrait de cette origine de la liste est refusé en `409` tant que l’URL de succès est définie : le retrait silencieux de la redirection aurait changé la page vue par les visiteurs sans que la personne qui modifie la liste le voie. L’instruction `DELETE` porte la vérification, donc deux modifications simultanées ne laissent pas une URL de succès sur une origine retirée. À l’ingestion, la requête d’accès ne lit l’URL de succès que si son origine est encore dans la liste, et la règle de `parseSuccessUrl` s’applique encore : une ligne modifiée à la main qui ne la respecte plus donne la page de confirmation.
+`parseSuccessUrl`, in `src/domain/forms/form.ts`, accepts an absolute HTTPS URL without credentials and normalizes it (`invalid-url`, `not-https`, `credentials`). The adapter stores it only if its origin is in the form's list (`origin-not-listed`), in the same `UPDATE` statement. Removing this origin from the list is refused with `409` while the success URL is set: silently removing the redirect would have changed the page that visitors see without the person editing the list noticing. The `DELETE` statement performs the check, so two simultaneous edits do not leave a success URL on a removed origin. At intake, the access query reads the success URL only if its origin is still in the list, and the `parseSuccessUrl` rule still applies: a row edited by hand that no longer follows it gives the confirmation page.
 
-#### CORS et origines autorisées
+#### CORS and allowed origins
 
-`OPTIONS /f/:public-id` répond aux prérequêtes, et chaque réponse de la route porte les en-têtes CORS, erreurs comprises. Les en-têtes dépendent de la liste des origines autorisées du formulaire :
+`OPTIONS /f/:public-id` answers preflight requests, and every response of the route has the CORS headers, errors included. The headers depend on the form's list of allowed origins:
 
-| Cas | En-têtes |
+| Case | Headers |
 | --- | --- |
-| Liste vide, formulaire inconnu, D1 indisponible | `Access-Control-Allow-Origin: *` |
-| `Origin` dans la liste | `Access-Control-Allow-Origin` égal à l’origine reçue, et `Vary: Origin` |
-| `Origin` absente de la liste, ou requête sans `Origin` | `Vary: Origin` seulement |
+| Empty list, unknown form, D1 unavailable | `Access-Control-Allow-Origin: *` |
+| `Origin` in the list | `Access-Control-Allow-Origin` equal to the received origin, and `Vary: Origin` |
+| `Origin` not in the list, or request without `Origin` | `Vary: Origin` only |
 
-La prérequête autorise `POST` et l’en-tête `Content-Type`, avec `Access-Control-Max-Age: 7200`. Aucune réponse ne porte `Access-Control-Allow-Credentials` : un appel avec cookies échoue dans le navigateur. Un `429` expose aussi `Retry-After` par `Access-Control-Expose-Headers`.
+The preflight allows `POST` and the `Content-Type` header, with `Access-Control-Max-Age: 7200`. No response has `Access-Control-Allow-Credentials`: a call with cookies fails in the browser. A `429` also exposes `Retry-After` through `Access-Control-Expose-Headers`.
 
-Une requête sans en-tête `Origin` (curl, serveur) est traitée comme avant, quelle que soit la liste. Il en va de même pour `Origin: null`, qu’un navigateur envoie quand la page masque son origine (politique `no-referrer`, iframe isolée) : la refuser ferait perdre les messages d’un site pourtant autorisé. Une requête dont l’`Origin` est absente d’une liste non vide reçoit `403` avant tout enregistrement, qu’elle vienne de `fetch` ou d’un formulaire HTML posté depuis un autre site : un site absent de la liste ne peut pas remplir l’Inbox par le navigateur de ses visiteurs. La comparaison porte sur la valeur exacte de l’en-tête, que les navigateurs envoient déjà normalisée. Une requête invalide (`400`, `413`, `415`) garde son statut ; la liste ne décide alors que des en-têtes.
+A request without an `Origin` header (curl, a server) is handled as before, whatever the list. The same goes for `Origin: null`, which a browser sends when the page hides its origin (a `no-referrer` policy, a sandboxed iframe): refusing it would lose the messages of a site that is allowed. A request whose `Origin` is missing from a non-empty list gets `403` before anything is stored, whether it comes from `fetch` or from an HTML form posted from another site: a site missing from the list cannot fill the Inbox through its visitors' browsers. The comparison uses the exact value of the header, which browsers already send normalized. An invalid request (`400`, `413`, `415`) keeps its status; the list then decides only the headers.
 
-Le lot D1 vérifie l’origine et le statut du formulaire, applique les plafonds et lit l’URL de succès. Une soumission sans jeton Turnstile utilisable demande un aller-retour D1. Avec un jeton utilisable, la lecture préalable de la clé ajoute un aller-retour D1, et Siteverify est appelé si Turnstile est actif. Une prérequête, ou une requête invalide qui porte un en-tête `Origin`, lit la liste en un aller-retour.
+The D1 batch checks the origin and the form's status, applies the caps and quotas, and reads the success URL. A submission without a usable Turnstile token takes one D1 round trip. With a usable token, reading the key first adds a D1 round trip, and Siteverify is called if Turnstile is active. A preflight request, or an invalid request that has an `Origin` header, reads the list in one round trip.
 
-### API d’administration
+### Admin API
 
-Elle sert le dashboard et n’est pas publiée pour des clients tiers.
+It serves the dashboard and is not published for third-party clients.
 
-| Route | Rôle |
+| Route | Purpose |
 | --- | --- |
-| `POST /api/setup` | Crée le premier compte, avec le jeton d’installation |
-| `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Session Better Auth |
-| `GET /api/organizations` | Organisations du compte et leurs formulaires |
-| `POST /api/organizations` | Crée une organisation et son premier formulaire |
-| `GET /api/organizations/:organizationId/domains` | Liste les domaines déclarés par ordre alphabétique |
-| `POST /api/organizations/:organizationId/domains` | Ajoute un domaine (`{"domain":…}`). Répond `201` pour une création, `200` pour un doublon, `400` pour un nom invalide ou `409` si la liste est pleine |
-| `DELETE /api/organizations/:organizationId/domains?domain=…` | Retire un domaine et répond `204`, ou `404` si le domaine n’est pas déclaré |
-| `GET /api/organizations/:organizationId/classification-policy` | Renvoie le classificateur, le second classificateur que le stage propose pour l’escalade ou `null`, la politique par défaut et les réglages de l’organisation, ou `null` si elle utilise les réglages par défaut |
-| `PUT /api/organizations/:organizationId/classification-policy` | Remplace les réglages de l’organisation. Accepte `thresholds`, `offTopic` et `escalation`, ensemble ou seuls. Répond `204`, ou `400` pour un réglage invalide |
-| `DELETE /api/organizations/:organizationId/classification-policy` | Rétablit les réglages du classificateur et répond `204` |
+| `POST /api/setup` | Creates the first account, with the setup token |
+| `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Better Auth session |
+| `GET /api/organizations` | The account's organizations and their forms |
+| `POST /api/organizations` | Creates an organization and its first form |
+| `GET /api/organizations/:organizationId/domains` | Lists the declared domains in alphabetical order |
+| `POST /api/organizations/:organizationId/domains` | Adds a domain (`{"domain":…}`). Answers `201` for a creation, `200` for a duplicate, `400` for an invalid name or `409` if the list is full |
+| `DELETE /api/organizations/:organizationId/domains?domain=…` | Removes a domain and answers `204`, or `404` if the domain is not declared |
+| `GET /api/organizations/:organizationId/classification-policy` | Returns the classifier, the second classifier that the stage offers for escalation or `null`, the default policy and the organization's settings, or `null` if it uses the default settings |
+| `PUT /api/organizations/:organizationId/classification-policy` | Replaces the organization's settings. Accepts `thresholds`, `offTopic` and `escalation`, together or alone. Answers `204`, or `400` for an invalid setting |
+| `DELETE /api/organizations/:organizationId/classification-policy` | Restores the classifier's settings and answers `204` |
 | `GET /api/organizations/:organizationId/quotas` | Returns `{ "day", "limits", "used" }`. The day is in UTC. `limits` contains `submissions` and `classifications`; `used` contains them and `junk`, whose limit is `limits.submissions` |
-| `PUT /api/organizations/:organizationId/quotas` | Remplace les plafonds `{ "submissions", "classifications" }` et renvoie la consommation et les plafonds mis à jour. Accepte des entiers de 1 à 100 000 pour les soumissions et de 0 à 100 000 pour les classifications. Un corps invalide répond `400` |
-| `POST /api/organizations/:organizationId/forms` | Ajoute un formulaire actif (`{"name":…,"businessContext":…}`, contexte facultatif) : `201` et le formulaire |
-| `PATCH /api/organizations/:organizationId/forms/:publicId` | Renomme le formulaire, modifie son contexte métier, ou les deux (`{"name":…}`, `{"businessContext":…}`) ; un contexte vide l’efface |
-| `POST /api/organizations/:organizationId/forms/:publicId/suspend` ou `/reactivate` | Suspend ou réactive le formulaire |
-| `PUT /api/organizations/:organizationId/forms/:publicId/success-url` | Définit l’URL de succès (`{"url":…}`) |
-| `DELETE /api/organizations/:organizationId/forms/:publicId/success-url` | Retire l’URL de succès |
-| `PUT /api/organizations/:organizationId/forms/:publicId/honeypot` | Nomme le champ piège (`{"field":…}`) |
-| `DELETE /api/organizations/:organizationId/forms/:publicId/honeypot` | Retire le champ piège |
-| `PUT /api/organizations/:organizationId/forms/:publicId/turnstile` | Active Turnstile ou remplace les deux clés (`{ "siteKey", "secretKey" }`) si Siteverify reconnaît la clé secrète. Une clé refusée répond `400` avec `{"error":"turnstile-secret-refused"}`, et Siteverify injoignable `503` avec `{"error":"siteverify-unavailable"}` ; les clés enregistrées ne changent pas. Sans clé de chiffrement, répond `503` avec `{"error":"secrets-key-missing"}` |
+| `PUT /api/organizations/:organizationId/quotas` | Replaces the quotas `{ "submissions", "classifications" }` and returns the updated usage and quotas. Accepts integers from 1 to 100,000 for submissions and from 0 to 100,000 for classifications. An invalid body answers `400` |
+| `POST /api/organizations/:organizationId/forms` | Adds an active form (`{"name":…,"businessContext":…}`, optional context): `201` and the form |
+| `PATCH /api/organizations/:organizationId/forms/:publicId` | Renames the form, edits its business context, or both (`{"name":…}`, `{"businessContext":…}`); an empty context clears it |
+| `POST /api/organizations/:organizationId/forms/:publicId/suspend` or `/reactivate` | Suspends or reactivates the form |
+| `PUT /api/organizations/:organizationId/forms/:publicId/success-url` | Sets the success URL (`{"url":…}`) |
+| `DELETE /api/organizations/:organizationId/forms/:publicId/success-url` | Removes the success URL |
+| `PUT /api/organizations/:organizationId/forms/:publicId/honeypot` | Sets the honeypot field name (`{"field":…}`) |
+| `DELETE /api/organizations/:organizationId/forms/:publicId/honeypot` | Removes the honeypot field |
+| `PUT /api/organizations/:organizationId/forms/:publicId/turnstile` | Turns Turnstile on or replaces both keys (`{ "siteKey", "secretKey" }`) if Siteverify recognizes the secret key. A refused key answers `400` with `{"error":"turnstile-secret-refused"}`, and an unreachable Siteverify `503` with `{"error":"siteverify-unavailable"}`; the stored keys do not change. Without an encryption key, answers `503` with `{"error":"secrets-key-missing"}` |
 | `GET /api/organizations/:organizationId/forms/:publicId/turnstile` | Decrypts the stored secret key, asks Siteverify about it with `checkSecret`, and returns `{"state":…}`: `working`, `refused` (Siteverify no longer knows the key), `unreadable` (the key does not decrypt with the current `RONDYR_SECRETS_KEY`, or that variable is missing) or `unchecked` (Siteverify did not answer). Writes nothing. A form without Turnstile answers `404`, like another organization's form, and neither calls Siteverify |
-| `DELETE /api/organizations/:organizationId/forms/:publicId/turnstile` | Désactive Turnstile et efface les deux clés |
-| `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `form`, `after`), 25 messages par page, chacun avec un aperçu de ses champs (`preview`) : chaque valeur est coupée à 240 caractères, pour qu’une page de longs messages reste légère. `form` est l’identifiant public d’un formulaire et réduit la liste à ses messages |
-| `GET /api/organizations/:organizationId/submission-counts` | Nombre de messages de l’organisation par statut, et dans `forms` le même décompte pour chaque formulaire qui a au moins un message (`[{"publicId", "counts"}]`) |
-| `GET /api/organizations/:organizationId/submissions/:submissionId` | Détail d’un message |
-| `POST /api/organizations/:organizationId/submissions/:submissionId/approve` ou `/dismiss` | Décision de revue |
-| `GET /api/organizations/:organizationId/forms/:publicId/targets` | Destinations webhook et e-mail du formulaire, chacune avec son `type`, sans les secrets |
-| `POST /api/organizations/:organizationId/forms/:publicId/targets` | Crée un webhook (`{"type":"webhook","url":…}`) et renvoie son secret, une seule fois, ou une destination e-mail (`{"type":"email","recipients":[…],"language":"en"}`, langue `en` ou `fr`, `en` par défaut) |
-| `POST /api/organizations/:organizationId/targets/:targetId/rotate-secret` | Renvoie un nouveau secret de webhook |
-| `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Remplace les destinataires d’une destination e-mail (`{"recipients":[…]}`), et sa langue si le corps contient aussi `"language"` |
-| `POST /api/organizations/:organizationId/targets/:targetId/activate` ou `/deactivate` | Active ou désactive la destination |
-| `POST /api/organizations/:organizationId/targets/:targetId/test` | Envoie un message d’essai et renvoie `{"testId","outcome","summary"}` ; `409` si un essai de cette destination est en cours |
-| `GET /api/organizations/:organizationId/submissions/:submissionId/deliveries` | Livraisons du message, chacune avec sa destination (URL du webhook ou destinataires), son statut, son nombre de tentatives, sa prochaine tentative si elle attend une reprise et ses tentatives horodatées |
-| `POST /api/organizations/:organizationId/submissions/:submissionId/deliveries/:deliveryId/retry` | Relance une livraison `failed` et renvoie la liste ; `409` pour un autre statut |
-| `GET /api/organizations/:organizationId/forms/:publicId/origins` | Origines autorisées du formulaire, `[{"origin", "createdAt"}]` |
-| `POST /api/organizations/:organizationId/forms/:publicId/origins` | Ajoute une origine (`{"origin":…}`) : `201`, ou `200` si elle est déjà dans la liste |
-| `DELETE /api/organizations/:organizationId/forms/:publicId/origins?origin=…` | Retire une origine : `204`, `404` si elle n’est pas dans la liste, ou `409` avec `{"error":"origin-in-use"}` si c’est l’origine de l’URL de succès |
+| `DELETE /api/organizations/:organizationId/forms/:publicId/turnstile` | Turns Turnstile off and erases both keys |
+| `GET /api/organizations/:organizationId/submissions` | Paginated list (`status`, `form`, `after`), 25 messages per page, each with a preview of its fields (`preview`): each value is cut at 240 characters, so that a page of long messages stays light. `form` is the public ID of a form and narrows the list to its messages |
+| `GET /api/organizations/:organizationId/submission-counts` | Number of the organization's messages per status, and in `forms` the same count for each form that has at least one message (`[{"publicId", "counts"}]`) |
+| `GET /api/organizations/:organizationId/submissions/:submissionId` | Message detail |
+| `POST /api/organizations/:organizationId/submissions/:submissionId/approve` or `/dismiss` | Review decision |
+| `GET /api/organizations/:organizationId/forms/:publicId/targets` | The form's webhook and email destinations, each with its `type`, without the secrets |
+| `POST /api/organizations/:organizationId/forms/:publicId/targets` | Creates a webhook (`{"type":"webhook","url":…}`) and returns its secret, only once, or an email destination (`{"type":"email","recipients":[…],"language":"en"}`, language `en` or `fr`, `en` by default) |
+| `POST /api/organizations/:organizationId/targets/:targetId/rotate-secret` | Returns a new webhook secret |
+| `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Replaces the recipients of an email destination (`{"recipients":[…]}`), and its language if the body also contains `"language"` |
+| `POST /api/organizations/:organizationId/targets/:targetId/activate` or `/deactivate` | Activates or deactivates the destination |
+| `POST /api/organizations/:organizationId/targets/:targetId/test` | Sends a test message and returns `{"testId","outcome","summary"}`; `409` if a test of this destination is running |
+| `GET /api/organizations/:organizationId/submissions/:submissionId/deliveries` | The message's deliveries, each with its destination (webhook URL or recipients), its status, its number of attempts, its next attempt if it is waiting for a retry, and its timestamped attempts |
+| `POST /api/organizations/:organizationId/submissions/:submissionId/deliveries/:deliveryId/retry` | Retries a `failed` delivery and returns the list; `409` for another status |
+| `GET /api/organizations/:organizationId/forms/:publicId/origins` | The form's allowed origins, `[{"origin", "createdAt"}]` |
+| `POST /api/organizations/:organizationId/forms/:publicId/origins` | Adds an origin (`{"origin":…}`): `201`, or `200` if it is already in the list |
+| `DELETE /api/organizations/:organizationId/forms/:publicId/origins?origin=…` | Removes an origin: `204`, `404` if it is not in the list, or `409` with `{"error":"origin-in-use"}` if it is the origin of the success URL |
 
-`GET /api/organizations` renvoie les formulaires triés par nom avec `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` et `turnstileSiteKey`. Les routes des formulaires renvoient le formulaire modifié avec les mêmes champs. Sans Turnstile, `turnstileSiteKey` vaut `null`. Le nom a de 1 à 100 caractères et le contexte au plus 2 000, espaces de début et de fin retirés, comme à la création d’une organisation ; un corps invalide répond `400`. Le nom du champ piège suit la règle des noms de champs de l’ingestion, espaces de début et de fin retirés : de 1 à 100 caractères, sans caractère de contrôle ni saut de ligne, ni `__proto__`, `constructor` ou `prototype` (`HoneypotField`, dans `src/domain/forms/form.ts`). Le nom `cf-turnstile-response` est réservé au jeton. Un nom refusé répond `400`.
+`GET /api/organizations` returns the forms sorted by name with `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` and `turnstileSiteKey`. The form routes return the updated form with the same fields. Without Turnstile, `turnstileSiteKey` is `null`. The name has 1 to 100 characters and the context at most 2,000, after trimming leading and trailing spaces, as when creating an organization; an invalid body answers `400`. The honeypot field name follows the intake rule for field names, after trimming leading and trailing spaces: 1 to 100 characters, with no control character or line break, and not `__proto__`, `constructor` or `prototype` (`HoneypotField`, in `src/domain/forms/form.ts`). The name `cf-turnstile-response` is reserved for the token. A refused name answers `400`.
 
-Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Les routes de livraisons passent par les ports `DeliveryHistory` (lecture), `DeliveryStore` (relance) et `NotificationTargets` (destination à tester) ; le résumé d’erreur qu’elles renvoient est celui de la base, sans les champs du message. Les routes de destinations passent par le port `NotificationTargets`, celles des origines par le port `FormOrigins` et celles des formulaires par le port `Forms` ; leurs adaptateurs D1 joignent `organization_members` à chaque requête. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`, comme deux rotations simultanées du même secret.
+The submission routes go through `ReviewApi`, the domain model's API, called in the same process. The delivery routes go through the ports `DeliveryHistory` (read), `DeliveryStore` (retry) and `NotificationTargets` (destination to test); the error summary they return is the one in the database, without the message fields. The destination routes go through the `NotificationTargets` port, the origin routes through the `FormOrigins` port and the form routes through the `Forms` port; their D1 adapters join `organization_members` on every query. A resource of another organization answers `404`, like a resource that does not exist. A second decision on a message already handled answers `409`, as do two simultaneous rotations of the same secret.
 
-Une URL de succès refusée répond `400` avec `{"error":"success-url-refused","reason":…}`. Une URL de webhook refusée répond `400` avec `{"error":"destination-refused","reason":…}`. Une origine refusée répond `400` avec `{"error":"origin-refused","reason":…}` ; `parseAllowedOrigin`, dans `src/domain/forms/allowed-origin.ts`, accepte HTTPS, et HTTP seulement pour `localhost`, `127.0.0.0/8` et `[::1]`, puis normalise l’origine. Elle refuse un chemin, des paramètres, une ancre, des identifiants et les caractères génériques (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Sans `RONDYR_SECRETS_KEY`, la création et la rotation répondent `503` avec `{"error":"secrets-key-missing"}` ; la liste et l’activation fonctionnent. Une liste de destinataires refusée répond `400` avec `{"error":"recipients-refused","reason":…}` (`no-recipients`, `too-many-recipients`, `invalid-address`, `duplicate-address`). Sans `RONDYR_EMAIL_FROM` ou sans la clé ou le binding du fournisseur d’e-mail choisi, la création d’une destination e-mail répond `503` avec `{"error":"email-provider-missing"}` ; la liste, la modification des destinataires et l’activation fonctionnent. Les réponses qui contiennent un secret portent `Cache-Control: no-store`, comme toutes celles de l’API d’administration. [docs/webhooks.md](docs/webhooks.md) documente le contrat pour les destinataires, et [docs/email.md](docs/email.md) la configuration des fournisseurs et le format du message.
+A refused success URL answers `400` with `{"error":"success-url-refused","reason":…}`. A refused webhook URL answers `400` with `{"error":"destination-refused","reason":…}`. A refused origin answers `400` with `{"error":"origin-refused","reason":…}`; `parseAllowedOrigin`, in `src/domain/forms/allowed-origin.ts`, accepts HTTPS, and HTTP only for `localhost`, `127.0.0.0/8` and `[::1]`, then normalizes the origin. It refuses a path, query parameters, a fragment, credentials and wildcards (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Without `RONDYR_SECRETS_KEY`, creation and rotation answer `503` with `{"error":"secrets-key-missing"}`; listing and activation work. A refused recipient list answers `400` with `{"error":"recipients-refused","reason":…}` (`no-recipients`, `too-many-recipients`, `invalid-address`, `duplicate-address`). Without `RONDYR_EMAIL_FROM`, or without the key or binding of the chosen email provider, creating an email destination answers `503` with `{"error":"email-provider-missing"}`; listing, editing recipients and activation work. Responses that contain a secret have `Cache-Control: no-store`, like every admin API response. [docs/webhooks.md](docs/webhooks.md) documents the contract for recipients, and [docs/email.md](docs/email.md) the provider setup and the message format.
 
-Restent à ajouter : les membres et les rôles (#11), la recherche et l’export (#9).
+Still to add: members and roles (#11), search and export (#9).
 
-## 8. Défenses et confidentialité
+## 8. Defenses and privacy
 
-### Entrée publique
+### Public intake
 
-En place : limite de taille, schéma des champs, refus des noms `__proto__`, `constructor` et `prototype` et des noms qui contiennent un caractère de contrôle ou un saut de ligne, refus des fichiers, limite de 5 soumissions par minute et par client sur un formulaire, plafond de 30 soumissions par minute et par formulaire, calculé dans D1 par l’instruction d’insertion elle-même, et champ piège facultatif.
+In place: size limit, field schema, refusal of the names `__proto__`, `constructor` and `prototype` and of names that contain a control character or a line break, refusal of files, a limit of 5 submissions per minute per client on a form, a cap of 30 submissions per minute per form, computed in D1 by the insert statement itself, and an optional honeypot field.
 
-Le plafond par formulaire est commun à tous les visiteurs. Sans autre limite, un seul client pouvait le remplir et faire refuser les messages légitimes. La limite par client passe donc avant : un client isolé atteint la sienne après 5 messages, bien avant les 30 du formulaire, qui restent le dernier rempart contre un envoi réparti sur beaucoup d’adresses. Plusieurs clients derrière une même adresse (NAT d’entreprise, réseau mobile, relais de confidentialité) partagent une limite ; c’est la mise en garde de Cloudflare pour les clés fondées sur l’adresse IP, acceptée ici faute d’autre identifiant pour un visiteur anonyme.
+The per-form cap is shared by all visitors. Without another limit, a single client could fill it and get legitimate messages refused. The per-client limit therefore comes first: a single client reaches its own limit after 5 messages, well before the form's 30, which remain the last line of defense against sending spread across many addresses. Several clients behind the same address (corporate NAT, mobile network, privacy relay) share a limit; this is Cloudflare's warning for keys based on the IP address, accepted here for lack of another identifier for an anonymous visitor.
 
-Le binding Rate Limiting est approximatif et local à chaque emplacement Cloudflare : un client peut dépasser un peu ses 5 messages, ou davantage en passant par plusieurs emplacements, et la fenêtre est fixe. Ce n’est pas une garantie, c’est ce qui garde le plafond du formulaire disponible pour les autres visiteurs. Les compteurs restent chez Cloudflare : D1 ne contient aucune adresse IP, et le code de Rondyr n’en journalise pas.
+The Rate Limiting binding is approximate and local to each Cloudflare location: a client can go a little over its 5 messages, or further by going through several locations, and the window is fixed. It is not a guarantee; it is what keeps the form's cap available to other visitors. The counters stay at Cloudflare: D1 contains no IP address, and Rondyr's code does not log any.
 
-Le champ piège coûte une instruction SQL et ne demande rien au visiteur. Il arrête les robots qui remplissent chaque champ, pas ceux qui lisent le CSS ou visent Rondyr en particulier. Un champ rempli met le message en quarantaine, sans le supprimer : un remplissage automatique du navigateur ou un lecteur d’écran mal guidé peut remplir le champ pour une vraie personne, et le relecteur accepte alors son message.
+The honeypot field costs one SQL statement and asks nothing of the visitor. It stops bots that fill in every field, not those that read the CSS or target Rondyr specifically. A filled field quarantines the message without deleting it: browser autofill or a poorly guided screen reader can fill in the field for a real person, and the reviewer then accepts their message.
 
-Les origines autorisées servent l’intégration navigateur et ne protègent pas contre l’abus : un client hors navigateur n’envoie pas d’en-tête `Origin`, ou en choisit la valeur. Elles empêchent seulement un autre site de faire envoyer des messages par le navigateur de ses visiteurs. Les limites s’appliquent quelle que soit l’origine.
+Allowed origins serve browser integration and do not protect against abuse: a client outside a browser sends no `Origin` header, or chooses its value. They only prevent another site from having its visitors' browsers send messages. The limits apply whatever the origin.
 
 #### Turnstile
 
-Chaque formulaire peut utiliser son propre widget Cloudflare Turnstile. Le dashboard affiche la clé de site dans l’extrait HTML. Le port `SecretCipher` chiffre la clé secrète dans D1 avec `RONDYR_SECRETS_KEY` et le propriétaire `turnstile/<publicId>`. Les réponses d’administration contiennent uniquement la clé de site.
+Each form can use its own Cloudflare Turnstile widget. The dashboard shows the site key in the HTML snippet. The `SecretCipher` port encrypts the secret key in D1 with `RONDYR_SECRETS_KEY` and the owner `turnstile/<publicId>`. Admin responses contain only the site key.
 
-Avant d’enregistrer les clés, l’adaptateur de `Forms` chiffre la clé secrète, vérifie que le formulaire appartient au compte, puis demande à Siteverify s’il connaît la clé (`checkSecret` du port `TurnstileVerifier`). L’appel envoie la clé et le jeton factice de Cloudflare, `XXXX.DUMMY.TOKEN.XXXX`, que les clés de production refusent et que les [clés de test](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) acceptent. Une réponse qui juge le jeton (`success`, ou seulement `invalid-input-response` et `timeout-or-duplicate`) prouve que Siteverify connaît la clé, et les clés sont enregistrées. Siteverify répond à une clé inconnue par le statut HTTP 400 et `invalid-input-secret` : la clé est refusée, comme pour tout autre code d’erreur. Une erreur réseau, un délai de cinq secondes dépassé, un autre statut HTTP ou `internal-error` répondent `503`. Ce contrôle existe parce que l’ingestion traite une clé inconnue de Siteverify comme une indisponibilité et laisse passer le message : une clé mal copiée désactiverait Turnstile sans le signaler.
+Before storing the keys, the `Forms` adapter encrypts the secret key, checks that the form belongs to the account, then asks Siteverify whether it knows the key (`checkSecret` of the `TurnstileVerifier` port). The call sends the key and Cloudflare's dummy token, `XXXX.DUMMY.TOKEN.XXXX`, which production keys refuse and [test keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) accept. A response that judges the token (`success`, or only `invalid-input-response` and `timeout-or-duplicate`) proves that Siteverify knows the key, and the keys are stored. Siteverify answers an unknown key with HTTP status 400 and `invalid-input-secret`: the key is refused, as for any other error code. A network error, a five-second timeout, another HTTP status or `internal-error` answer `503`. This check exists because intake treats a key unknown to Siteverify as an outage and lets the message through: a badly copied key would turn Turnstile off without any warning.
 
-Le Worker retire `cf-turnstile-response` avant le calcul des empreintes et le stockage, y compris si Turnstile est désactivé. Sur un formulaire actif et protégé, il envoie le jeton de 1 à 2 048 caractères et la clé secrète à Siteverify, avec un délai de cinq secondes et sans transmettre l’adresse IP. Le Worker décide d’après le corps JSON d’une réponse HTTP 200 ou 400, puisque Cloudflare ne documente pas le statut d’un refus : un refus du jeton, quel que soit le statut, ou l’absence d’un jeton utilisable conduit à la quarantaine. La vérification est indisponible en cas d’erreur réseau, de délai dépassé, d’un autre statut HTTP, de `internal-error` ou de `invalid-input-secret` (clé que Siteverify ne reconnaît plus) ; le Worker journalise alors le formulaire et la source de l’incident, puis applique les autres contrôles d’entrée. Si les clés changent pendant la vérification, le résultat précédent ne peut pas autoriser la classification avec la nouvelle configuration.
+The Worker removes `cf-turnstile-response` before computing the fingerprints and storing, even if Turnstile is off. On an active, protected form, it sends the token of 1 to 2,048 characters and the secret key to Siteverify, with a five-second timeout and without passing the IP address. The Worker decides from the JSON body of an HTTP 200 or 400 response, since Cloudflare does not document the status of a refusal: a refused token, whatever the status, or the absence of a usable token leads to quarantine. Verification is unavailable on a network error, a timeout, another HTTP status, `internal-error` or `invalid-input-secret` (a key that Siteverify no longer recognizes); the Worker then logs the form and the source of the incident, and applies the other intake checks. If the keys change during verification, the earlier result cannot allow classification with the new configuration.
 
 Intake keeps that behaviour for a key that Siteverify no longer knows and for a key that no longer decrypts: no visitor can cause either case, and quarantining every real message of the form until someone noticed would cost more than it protects. The owner learns about it in the dashboard instead. Each time the dashboard shows a form's Turnstile settings, it calls `GET …/forms/:publicId/turnstile`, and the `Forms` adapter decrypts the key and calls `checkSecret` at that moment. For `refused` and `unreadable`, the Turnstile card shows a warning that Turnstile is not protecting the form and that both keys must be saved again; for `unchecked`, it says that Cloudflare did not answer. Intake writes nothing about it, and no column stores the result.
 
-#### Plafonds quotidiens
+#### Daily quotas
 
 The storage quota covers all the forms of an organization. Junk is a submission that intake quarantines with the reason `honeypot`, `turnstile-failed` or `repetition` (`junkIntakeReasons` in `src/domain/organizations/organization-quotas.ts`). It has its own daily quota, equal to `daily_submission_limit` (2,000 by default), and does not count against the quota of the other submissions. A `quota` quarantine is not junk: those messages can be real, so they use the storage quota. An organization therefore stores at most twice its submission limit per UTC day.
 
-Before this split, a bot wave at the form's cap of 30 per minute used up the day's storage quota in about an hour, and every real visitor then got `429` until midnight UTC. Now the wave fills the junk quota; after that, junk gets `429` with `Retry-After` until midnight UTC and nothing is stored, while other submissions are accepted until their own quota is reached. Refused junk is not stored, so it no longer takes places in the form's cap of 30 per minute either.
+Before this split, a bot wave at the form's cap of 30 per minute used up the day's storage quota in about an hour, and every real visitor then got `429` until midnight UTC. Now the wave fills the junk quota; after that, junk gets `429` with `Retry-After` until midnight UTC and nothing is stored, while other submissions are accepted until their own quota is reached. Refused junk is not stored, so it no longer takes slots in the form's cap of 30 per minute either.
 
-The classification quota counts 1,000 places per day by default. The intake batch computes the intake reason, then checks the quota of that reason, and the same batch increments `classifications` when no intake reason applies, `junk` for junk, and `submissions` for any other stored submission. D1 serializes admission, the write and the increments, including when several forms receive messages at the same time, and an accepted submission still takes one D1 round trip (two with a Turnstile token). The first statement of the batch reads the same state before the insert, so a refusal gets the `Retry-After` of the quota that applied. An escalation to a second model takes one more classification place, reserved by the saga in a single D1 statement before the call (section 5); without a free place, the message stays in quarantine with the reason `ambiguous`. When that statement finds a counter row of an earlier day, it starts every counter over, `junk` included.
+The classification quota counts 1,000 slots per day by default. The intake batch computes the intake reason, then checks the quota of that reason, and the same batch increments `classifications` when no intake reason applies, `junk` for junk, and `submissions` for any other stored submission. D1 serializes admission, the write and the increments, including when several forms receive messages at the same time, and an accepted submission still takes one D1 round trip (two with a Turnstile token). The first statement of the batch reads the same state before the insert, so a refusal gets the `Retry-After` of the quota that applied. An escalation to a second model takes one more classification slot, reserved by the saga in a single D1 statement before the call (section 5); without a free slot, the message stays in quarantine with the reason `ambiguous`. When that statement finds a counter row of an earlier day, it starts every counter over, `junk` included.
 
-### Authentification et isolation
+### Authentication and isolation
 
-- Les inscriptions publiques sont fermées. `/api/setup` exige `RONDYR_SETUP_TOKEN`, comparé en temps constant, et D1 refuse la création d’un second compte par ce chemin. Le jeton se retire après l’installation.
-- Les routes d’authentification et d’administration refusent toute requête dont l’origine diffère de `BETTER_AUTH_URL`. Le cookie de session est `Secure`, `HttpOnly` et `SameSite=Lax`.
-- Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
-- Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages, les destinations, les origines autorisées, les formulaires, l’historique des livraisons, la relance et l’envoi d’essai.
+- Public sign-up is closed. `/api/setup` requires `RONDYR_SETUP_TOKEN`, compared in constant time, and D1 refuses to create a second account through this path. The token is removed after setup.
+- The authentication and admin routes refuse any request whose origin differs from `BETTER_AUTH_URL`. The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`.
+- Better Auth rate-limits sign-in attempts, with a counter in D1.
+- Every admin query is scoped to the account's organizations, and the aggregate checks this membership again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, the delivery history, retries and test sends.
 
-Tout membre a aujourd’hui tous les droits sur son organisation, y compris l’ajout, la modification et la suspension de ses formulaires, et tout compte connecté peut en créer une (#11). Pour les livraisons, `deliveryOperator`, dans `src/http/delivery-routes.ts`, décide qui lit l’historique, relance et envoie un essai : c’est là que #11 vérifiera le rôle.
+Today every member has all rights over their organization, including adding, editing and suspending its forms, and any signed-in account can create one (#11). For deliveries, `deliveryOperator`, in `src/http/delivery-routes.ts`, decides who reads the history, retries and sends a test: that is where #11 will check the role.
 
-L’URL de succès ne permet pas de redirection ouverte : elle vient de D1, son origine est une origine autorisée du formulaire, et seul un membre de l’organisation la modifie.
+The success URL does not allow an open redirect: it comes from D1, its origin is an allowed origin of the form, and only a member of the organization can change it.
 
-### En-têtes HTTP
+### HTTP headers
 
-`public/_headers`, que Vite copie dans `dist/client`, fixe les en-têtes des assets du dashboard. Alchemy et Wrangler le lisent au déploiement et ne le publient pas comme fichier.
+`public/_headers`, which Vite copies to `dist/client`, sets the headers of the dashboard assets. Alchemy and Wrangler read it at deployment and do not publish it as a file.
 
-- Une CSP sans script ni style en ligne : `default-src 'none'`, puis `'self'` pour les scripts, les styles, les images, les polices, le manifeste et les requêtes `fetch`, avec `base-uri 'none'`, `form-action 'self'` et `frame-ancestors 'none'`. Le build Vite de production ne contient ni script ni style en ligne, et le client Better Auth appelle `/api/auth/*` sur la même origine.
-- `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` et `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
+- A CSP with no inline script or style: `default-src 'none'`, then `'self'` for scripts, styles, images, fonts, the manifest and `fetch` requests, with `base-uri 'none'`, `form-action 'self'` and `frame-ancestors 'none'`. The production Vite build contains no inline script or style, and the Better Auth client calls `/api/auth/*` on the same origin.
+- `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Strict-Transport-Security: max-age=31536000; includeSubDomains`.
 
-Ce fichier ne s’applique pas aux réponses du Worker (`/health`, `/f`, `/api`). Le Worker ajoute `X-Content-Type-Options: nosniff` à chacune d’elles, et un test workerd le vérifie. La connexion et la revue d’un message ont été vérifiées avec cette CSP dans Chrome, sur le build de production servi par `vite preview`.
+This file does not apply to the Worker's responses (`/health`, `/f`, `/api`). The Worker adds `X-Content-Type-Options: nosniff` to each of them, and a workerd test checks it. Sign-in and the review of a message were checked with this CSP in Chrome, on the production build served by `vite preview`.
 
-Les en-têtes CORS de `/f` sont décrits en section 7. `run_worker_first` couvre `/f/*` pour toutes les méthodes, donc une prérequête atteint le Worker et non les assets ; cela a été vérifié avec `wrangler dev` sur le build, pas par un test workerd, dont le Worker n’a pas d’assets. `vite preview` répond lui-même aux prérequêtes et ne permet pas cette vérification.
+The CORS headers of `/f` are described in section 7. `run_worker_first` covers `/f/*` for all methods, so a preflight request reaches the Worker and not the assets; this was checked with `wrangler dev` on the build, not by a workerd test, whose Worker has no assets. `vite preview` answers preflight requests itself and does not allow this check.
 
-### Sorties et secrets
+### Outputs and secrets
 
-Le webhook et l’e-mail sont les deux sorties. `parseWebhookUrl`, dans `src/domain/deliveries/webhook-destination.ts`, vérifie l’URL à la création et avant chaque tentative. Elle accepte HTTPS sur le port par défaut, sans identifiants, et refuse `localhost` et les noms locaux (`.localhost`, `.local`, `.internal`, `.home.arpa`, nom sans point), les adresses IPv4 littérales des plages réservées (privées, boucle locale, lien local, CGNAT, documentation, multicast), les adresses IPv6 littérales hors de `2000::/3` et les blocs réservés de celui-ci, ainsi que l’hôte de `BETTER_AUTH_URL`. Un Worker ne résout pas le nom avant `fetch` : un nom public dont l’enregistrement DNS pointe vers une adresse privée passe la règle, et la documentation le dit.
+Webhook and email are the two outputs. `parseWebhookUrl`, in `src/domain/deliveries/webhook-destination.ts`, checks the URL at creation and before each attempt. It accepts HTTPS on the default port, without credentials, and refuses `localhost` and local names (`.localhost`, `.local`, `.internal`, `.home.arpa`, a name without a dot), IPv4 literals in reserved ranges (private, loopback, link-local, CGNAT, documentation, multicast), IPv6 literals outside `2000::/3` and the reserved blocks inside it, and the host of `BETTER_AUTH_URL`. A Worker does not resolve the name before `fetch`: a public name whose DNS record points to a private address passes the rule, and the documentation says so.
 
-Le fournisseur envoie un `POST` avec `redirect: "manual"`. Une réponse `3xx` est un échec définitif, comme les `4xx` autres que `408`, `425` et `429` ; ces trois-là, les `5xx`, les erreurs réseau et l’absence de réponse en 30 secondes sont réessayés. Le corps de la réponse n’est jamais lu, et le résumé d’erreur ne contient que le statut. Le corps envoyé est borné à 64 Kio.
+The provider sends a `POST` with `redirect: "manual"`. A `3xx` response is a permanent failure, like `4xx` responses other than `408`, `425` and `429`; those three, `5xx`, network errors and no response within 30 seconds are retried. The response body is never read, and the error summary contains only the status. The body sent is capped at 64 KiB.
 
-Chaque requête porte `Rondyr-Delivery-Id`, `Rondyr-Timestamp` (secondes Unix) et `Rondyr-Signature` : `v1=` suivi du HMAC-SHA-256 en hexadécimal de `<horodatage>.<corps>`, calculé avec Web Crypto. Le corps est la version 1 du schéma `WebhookPayload` : `version`, `type` (`submission.accepted`, ou `test` pour un essai), `deliveryId`, `submission` (`id`, `receivedAt`, `fields`) et `form` (`id` public, `name`).
+Each request has `Rondyr-Delivery-Id`, `Rondyr-Timestamp` (Unix seconds) and `Rondyr-Signature`: `v1=` followed by the hexadecimal HMAC-SHA-256 of `<timestamp>.<body>`, computed with Web Crypto. The body is version 1 of the `WebhookPayload` schema: `version`, `type` (`submission.accepted`, or `test` for a test), `deliveryId`, `submission` (`id`, `receivedAt`, `fields`) and `form` (public `id`, `name`).
 
-Le secret de signature fait 32 octets aléatoires, préfixés de `whsec_`. Il n’apparaît que dans la réponse de création ou de rotation. D1 le stocke chiffré en AES-256-GCM avec la clé `RONDYR_SECRETS_KEY`, un secret facultatif du Worker, et l’identifiant de la destination comme donnée authentifiée : un secret copié sur une autre ligne ne se déchiffre pas. Après une rotation, l’ancien secret signe aussi pendant 24 heures, et l’en-tête contient alors deux signatures, la nouvelle en premier. Une livraison dont le secret ne se déchiffre pas échoue sans reprise. Les autres secrets de la plateforme sont des secrets du Worker, dont `RESEND_API_KEY`.
+The signing secret is 32 random bytes, prefixed with `whsec_`. It appears only in the creation or rotation response. D1 stores it encrypted with AES-256-GCM under the key `RONDYR_SECRETS_KEY`, an optional Worker secret, with the destination ID as authenticated data: a secret copied to another row does not decrypt. After a rotation, the old secret also signs for 24 hours, and the header then contains two signatures, the new one first. A delivery whose secret does not decrypt fails without a retry. The platform's other secrets are Worker secrets, including `RESEND_API_KEY`.
 
-#### E-mail
+#### Email
 
-`EmailAddress`, dans `src/domain/deliveries/email.ts`, n’accepte qu’une adresse ASCII nue : une partie locale en dot-atom et un nom d’hôte d’au moins deux labels DNS, sans espace, guillemet, chevron, virgule, point-virgule, parenthèse ni caractère de contrôle. Un nom affiché, deux adresses dans une entrée et un saut de ligne sont donc refusés. Une destination a de 1 à 10 destinataires distincts, sans tenir compte de la casse ; chaque destinataire compte comme un e-mail dans le quota de Resend. `RONDYR_EMAIL_FROM` passe la même règle au déploiement et à chaque lecture par le Worker.
+`EmailAddress`, in `src/domain/deliveries/email.ts`, accepts only a bare ASCII address: a dot-atom local part and a hostname of at least two DNS labels, with no space, quote, angle bracket, comma, semicolon, parenthesis or control character. A display name, two addresses in one entry and a line break are therefore refused. A destination has 1 to 10 distinct recipients, ignoring case; each recipient counts as one email in the Resend quota. `RONDYR_EMAIL_FROM` goes through the same rule at deployment and on every read by the Worker.
 
-Les en-têtes ne contiennent aucune saisie d’un visiteur, sauf `Reply-To` : il vaut le champ nommé exactement `email` quand sa valeur passe `EmailAddress`, et il est absent sinon. L’objet est `New message: <nom du formulaire>` (ou `Nouveau message : <nom du formulaire>` en français), sans saut de ligne ni caractère de contrôle, borné à 150 caractères. Le corps, en texte brut, commence par les champs dont le nom est un indice de tableau JavaScript, par ordre numérique, puis liste les autres dans l’ordre reçu. Les sauts de ligne d’un nom deviennent des espaces, ceux d’une valeur des `\n`. Le nom du formulaire, la date de réception en UTC et l’identifiant de livraison suivent les champs. Le texte est en anglais ou en français, selon la langue de la destination, dans le seul module `src/domain/deliveries/email-message.ts`. Aucun en-tête personnalisé n’est envoyé.
+The headers contain no visitor input, except `Reply-To`: it is the field named exactly `email` when its value passes `EmailAddress`, and it is absent otherwise. The subject is `New message: <form name>` (or `Nouveau message : <form name>` in French), with no line break or control character, capped at 150 characters. The plain-text body starts with the fields whose name is a JavaScript array index, in numeric order, then lists the others in the order received. Line breaks in a name become spaces, and those in a value become `\n`. The form name, the date of reception in UTC and the delivery ID follow the fields. The text is in English or in French, depending on the destination's language, in the single module `src/domain/deliveries/email-message.ts`. No custom header is sent.
 
-L’adaptateur Resend envoie `POST https://api.resend.com/emails` avec `Idempotency-Key` égal à l’identifiant de livraison, `redirect: "manual"` et sans propagation de trace. `2xx` est un succès. `429` (débit ou quota), `5xx`, `409 concurrent_idempotent_requests`, une erreur réseau et l’absence de réponse en 30 secondes sont réessayés ; tout autre statut, dont `400`, `401`, `403` (domaine non vérifié), `409 invalid_idempotent_request` et `422`, est un échec définitif. Le résumé d’erreur ne contient que le statut et le code d’erreur de Resend (`name`, vérifié par le motif `[a-z_]{1,64}`), jamais son message, qui peut reprendre un champ de la requête.
+The Resend adapter sends `POST https://api.resend.com/emails` with `Idempotency-Key` equal to the delivery ID, `redirect: "manual"` and no trace propagation. `2xx` is a success. `429` (rate or quota), `5xx`, `409 concurrent_idempotent_requests`, a network error and no response within 30 seconds are retried; any other status, including `400`, `401`, `403` (unverified domain), `409 invalid_idempotent_request` and `422`, is a permanent failure. The error summary contains only the status and Resend's error code (`name`, checked against the pattern `[a-z_]{1,64}`), never its message, which can repeat a field of the request.
 
-L’adaptateur Cloudflare appelle `CLOUDFLARE_EMAIL.send()` avec le même e-mail en texte brut. Il réessaie pendant l’activation du domaine, après un dépassement de débit ou de quota, ou en cas d’erreur interne ou inconnue. Les autres codes documentés et les arguments invalides terminent la livraison. Seul un code connu entre dans le résumé, sans texte d’erreur ni contenu du message.
+The Cloudflare adapter calls `CLOUDFLARE_EMAIL.send()` with the same plain-text email. It retries while the domain is being activated, after a rate or quota overrun, or on an internal or unknown error. Other documented codes and invalid arguments end the delivery. Only a known code goes into the summary, without error text or message content.
 
-### Données personnelles
+### Personal data
 
-Le contenu des messages est dans D1, et les journaux techniques n’en contiennent pas : le consumer n’écrit que le type de l’erreur. La conservation est illimitée tant que #9 n’a pas ajouté les durées de rétention, la purge planifiée, l’export et la suppression à la demande. L’auto-hébergement ne dispense pas l’opérateur de ses obligations RGPD ; la documentation doit lister les sous-traitants, dont le fournisseur du modèle et le fournisseur d’e-mail du stage, Resend ou Cloudflare Email Sending. Resend garde les e-mails envoyés selon la durée de son offre ; `docs/email.md` le signale.
+Message content is in D1, and the technical logs contain none of it: the consumer writes only the error type. Retention is unlimited until #9 adds retention periods, scheduled purge, export and deletion on request. Self-hosting does not exempt the operator from its GDPR obligations; the documentation must list the subprocessors, including the model provider and the stage's email provider, Resend or Cloudflare Email Sending. Resend keeps sent emails for the period of its plan; `docs/email.md` points this out.
 
-## 9. Arborescence
+## 9. Directory tree
 
 ```text
 .
-├── alchemy-run.ts                  # pile Alchemy : D1, files, consumers
-├── wrangler.json                   # développement local, tests et dry-run
+├── alchemy-run.ts                  # Alchemy stack: D1, queues, consumers
+├── wrangler.json                   # local development, tests and dry run
 ├── drizzle-config.ts
-├── database/migrations/            # migrations et snapshots Drizzle
+├── database/migrations/            # Drizzle migrations and snapshots
 ├── src/
-│   ├── worker.ts                   # entrée Wrangler et workerd
-│   ├── alchemy-worker.ts           # ressource Worker et bindings par stage
-│   ├── worker-implementation.ts    # composition des layers, fetch, queue, scheduled
-│   ├── domain/submissions/         # agrégat, commandes, événements, politiques, saga,
-│   │                               # projection, requêtes, ReviewApi, schémas partagés
-│   ├── domain/deliveries/          # identifiants, statuts, règles de reprise, règle des URL
-│   │                               # de webhook, charge utile, règle des adresses e-mail,
-│   │                               # texte de l’e-mail et contrats de l’API des destinations
-│   ├── domain/forms/               # règle des origines autorisées, statut, règle de l’URL
-│   │                               # de succès et contrats de l’API des formulaires
+│   ├── worker.ts                   # Wrangler and workerd entry point
+│   ├── alchemy-worker.ts           # Worker resource and bindings per stage
+│   ├── worker-implementation.ts    # layer composition, fetch, queue, scheduled
+│   ├── domain/submissions/         # aggregate, commands, events, policies, saga,
+│   │                               # projection, queries, ReviewApi, shared schemas
+│   ├── domain/deliveries/          # IDs, statuses, retry rules, webhook URL rule,
+│   │                               # payload, email address rule, email text
+│   │                               # and destination API contracts
+│   ├── domain/forms/               # allowed origin rule, status, success URL rule
+│   │                               # and form API contracts
 │   ├── ports/                      # authentication, intake, outbox, classification-queue,
 │   │                               # background-tasks, organization-directory,
 │   │                               # stored-messages, storage, delivery-store,
@@ -531,156 +531,156 @@ Le contenu des messages est dans D1, et les journaux techniques n’en contienne
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
 │   │   ├── crypto/                 # secret-cipher (AES-GCM, RONDYR_SECRETS_KEY)
-│   │   ├── email/                  # choix du fournisseur par stage, Resend et Cloudflare
-│   │   ├── database/               # schémas Drizzle, d1, intake, outbox, inbox,
+│   │   ├── email/                  # provider choice per stage, Resend and Cloudflare
+│   │   ├── database/               # Drizzle schemas, d1, intake, outbox, inbox,
 │   │   │                           # organization-directory, stored-messages, delivery-store,
 │   │   │                           # notification-targets, form-origins, forms,
 │   │   │                           # delivery-history
-│   │   ├── notifications/          # fournisseurs par type, webhook, e-mail, adaptateur de test
+│   │   ├── notifications/          # providers per type, webhook, email, test adapter
 │   │   ├── queues/                 # classification-queue, delivery-queue
-│   │   └── workers/                # background-tasks (waitUntil d’Alchemy), client-rate-limit
-│   │                               # (binding Rate Limiting)
+│   │   └── workers/                # background-tasks (Alchemy's waitUntil), client-rate-limit
+│   │                               # (Rate Limiting binding)
 │   ├── http/                       # public, submission, authentication, review, target, origin,
 │   │                               # form, delivery
 │   └── jobs/
-│       ├── submission-outbox.ts    # publication (ingestion et Cron), consumer de file
-│       └── delivery-outbox.ts      # DeliveryScheduler, publication (politique et Cron),
-│                                   # consumer de livraison, relance, envoi d’essai
+│       ├── submission-outbox.ts    # publication (intake and Cron), queue consumer
+│       └── delivery-outbox.ts      # DeliveryScheduler, publication (policy and Cron),
+│                                   # delivery consumer, retry, test send
 ├── dashboard/src/
 │   ├── routes/
 │   ├── features/                   # authentication, inbox, operations
-│   ├── components/                 # text-field, et ui/ : composants shadcn/ui (Base UI) adaptés au thème
+│   ├── components/                 # text-field, and ui/: shadcn/ui (Base UI) components adapted to the theme
 │   ├── hooks/                      # use-mobile
-│   ├── lib/                        # clients HTTP
-│   └── dashboard.css               # thème Tailwind
-├── docs/                           # déploiement, webhooks, e-mail, évaluation, exemple de vérification testé
-├── evals/                          # harnais d’évaluation des classificateurs, corpus synthétique
-├── public/_headers                 # en-têtes HTTP des assets du dashboard
+│   ├── lib/                        # HTTP clients
+│   └── dashboard.css               # Tailwind theme
+├── docs/                           # deployment, webhooks, email, evaluation, tested verification example
+├── evals/                          # classifier evaluation harness, synthetic corpus
+├── public/_headers                 # HTTP headers of the dashboard assets
 ├── scripts/                        # doctor, worker-budget, setup-owner
-├── tooling/oxlint/                 # règles de lint locales et leurs tests
-└── tests/integration/              # fixtures partagées
+├── tooling/oxlint/                 # local lint rules and their tests
+└── tests/integration/              # shared fixtures
 ```
 
-Les tests sont à côté du code qu’ils couvrent, dans `src/**/*.test.ts` et `dashboard/src/**/*.test.ts`. Le dashboard importe les schémas du domaine par les alias `@rondyr/contracts` (soumissions), `@rondyr/deliveries` (destinations) et `@rondyr/forms` (origines autorisées et formulaires), ce qui lui donne les mêmes contrats que l’API. Il n’y a pas de couche `application/` : les cas d’usage sont les commandes, la politique et la saga du modèle.
+Tests are next to the code they cover, in `src/**/*.test.ts` and `dashboard/src/**/*.test.ts`. The dashboard imports the domain schemas through the aliases `@rondyr/contracts` (submissions), `@rondyr/deliveries` (destinations) and `@rondyr/forms` (allowed origins and forms), which gives it the same contracts as the API. There is no `application/` layer: the use cases are the commands, the policy and the saga of the model.
 
-## 10. Tests et critères de qualité
+## 10. Tests and quality criteria
 
-`pnpm check` enchaîne le lint, le format, le typage, les tests, Knip, la vérification des migrations et `scripts/doctor.mjs`. Les tests d’intégration tournent dans workerd contre le Worker construit, avec D1, les files et les Durable Objects émulés. Un faux Workers AI, défini dans `tests/integration/external-workers.ts` et utilisé par Vitest et Playwright, répond selon le champ `fixture-verdict` du message : `accept` reçoit des scores d’acceptation, `solicitation` un score de démarchage au-dessus du seuil, `ambiguous` un score de spam ambigu sans démarchage, `ambiguous-solicitation` un score de spam ambigu et un démarchage au-dessus du seuil, et `missing-solicitation` une réponse sans score de démarchage. Pour `ambiguous` et `ambiguous-solicitation`, OpenAI Decisions répond par des scores de spam et de démarchage bas et une pertinence élevée. La pertinence est faible si le contexte métier contient `fixture-relevance: low`. Les autres messages reçoivent une réponse invalide, que le classificateur met en quarantaine avec le motif `classification-error`. Il enregistre l’entrée reçue à chaque appel. Les tests relisent les champs ou l’entrée complète par un service binding, pour vérifier que le modèle ne voit jamais un message au champ piège rempli et qu’il reçoit les faits de répétition.
+`pnpm check` runs lint, formatting, type checking, tests, Knip, the migration check and `scripts/doctor.mjs` in sequence. Integration tests run in workerd against the built Worker, with D1, the queues and the Durable Objects emulated. A fake Workers AI, defined in `tests/integration/external-workers.ts` and used by Vitest and Playwright, answers according to the message's `fixture-verdict` field: `accept` gets acceptance scores, `solicitation` a solicitation score above the threshold, `ambiguous` an ambiguous spam score without solicitation, `ambiguous-solicitation` an ambiguous spam score and solicitation above the threshold, and `missing-solicitation` an answer without a solicitation score. For `ambiguous` and `ambiguous-solicitation`, OpenAI Decisions answers with low spam and solicitation scores and high relevance. Relevance is low if the business context contains `fixture-relevance: low`. Other messages get an invalid answer, which the classifier quarantines with the reason `classification-error`. The fake records the input it receives on each call. The tests read back the fields or the full input through a service binding, to check that the model never sees a message with a filled honeypot field and that it receives the repetition facts.
 
-Le Worker de test reçoit le binding `CLIENT_RATE_LIMIT` de `wrangler.json`, que Miniflare simule avec des fenêtres fixes alignées sur l’horloge. Le test envoie deux fois la limite plus une requête : au moins une fenêtre dépasse alors la limite, même si une fenêtre se termine pendant le test, et les 5 premières requêtes passent toujours. Il ne dépend donc pas du moment où il s’exécute.
+The test Worker gets the `CLIENT_RATE_LIMIT` binding from `wrangler.json`, which Miniflare simulates with fixed windows aligned on the clock. The test sends twice the limit plus one request: at least one window then exceeds the limit, even if a window ends during the test, and the first 5 requests always go through. It therefore does not depend on when it runs.
 
-Un Worker destinataire, déclaré au même endroit, enregistre chaque requête et répond selon le dernier segment du chemin (`ok`, `fail-once`, `bad-request-once`, `bad-request`, `redirect`). Les tests du fournisseur l’appellent par un service binding ; le Worker de test l’atteint par son `outboundService`, qui reçoit tous ses `fetch` sortants. Les URL des tests ont donc un nom public, et aucune règle de destination n’est assouplie pour eux. Le destinataire passe les requêtes vers `api.resend.com` à un faux Resend, déclaré au même endroit, qui les enregistre et répond selon la partie locale du premier destinataire (`once-<statut>`, `always-<statut>`, sinon `200`), avec le corps d’erreur que documente Resend. Le Worker de test a une `RONDYR_SECRETS_KEY`, une `RESEND_API_KEY` et un `RONDYR_EMAIL_FROM`, pas le Worker qui exécute les tests.
+A recipient Worker, declared in the same place, records each request and answers according to the last path segment (`ok`, `fail-once`, `bad-request-once`, `bad-request`, `redirect`). The provider tests call it through a service binding; the test Worker reaches it through its `outboundService`, which receives all its outgoing `fetch` calls. The test URLs therefore have a public name, and no destination rule is relaxed for them. The recipient passes requests for `api.resend.com` to a fake Resend, declared in the same place, which records them and answers according to the local part of the first recipient (`once-<status>`, `always-<status>`, otherwise `200`), with the error body that Resend documents. The test Worker has a `RONDYR_SECRETS_KEY`, a `RESEND_API_KEY` and a `RONDYR_EMAIL_FROM`; the Worker that runs the tests does not.
 
-### Couverture actuelle
+### Current coverage
 
-- `pnpm test:e2e` exerce le dashboard dans Chromium, dans un job CI dédié. La suite couvre le cycle de session, la création d’une organisation, la gestion des formulaires et des origines, les envois HTML avec confirmation ou redirection, le refus CORS d’un envoi JSON et la revue d’un message au champ piège rempli. Elle couvre aussi la création de destinations, les essais et la relance d’un webhook en échec, ainsi que le filtre d’un dossier par formulaire. Un dernier test vérifie que la page État compte un nouveau message après son actualisation. Playwright vérifie la CSP de `public/_headers` sur le dashboard compilé et surveille la console du navigateur.
-- Stories du modèle : seuils, ordre des règles de spam, de démarchage et de pertinence, quarantaine d’un démarchage avec ses scores puis acceptation par un relecteur, doublon de `RequestClassification`, trois échecs du classificateur, revue autorisée et refusée ; quarantaine d’entrée sans appel au classificateur, doublon de `QuarantineAtIntake` avec le même `commandId` ou un autre, `RequestClassification` ignoré après elle, quarantaine d’entrée ignorée pendant une classification, acceptation et archivage d’un message mis en quarantaine à l’entrée.
-- Escalade : stories de l’escalade désactivée, du second modèle qui accepte, qui confirme le doute ou qui échoue, des règles de démarchage et de pertinence du premier modèle qui s’appliquent encore, du plafond de classification atteint et de la réservation en échec. Par le Worker construit, avec deux Workers de test dont le second classificateur diffère du premier ou lui est identique : aucune escalade sans second classificateur ou avec le même, une place de plus au compteur du jour pour une escalade, aucun second appel au plafond, un seul second appel pour deux escalades qui visent la dernière place ; réservations concurrentes et changement de jour par l’adaptateur. Second classificateur renvoyé par la route des réglages, interrupteur désactivé et choix conservé dans Playwright.
-- Décodage des réponses de Jev et d’OpenAI Decisions, y compris les réponses invalides.
-- Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.
-- Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
-- Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
-- Turnstile : clé secrète chiffrée et absente des réponses ; enregistrement refusé sans `RONDYR_SECRETS_KEY`, pour une clé que Siteverify refuse (`400`) et quand Siteverify ne répond pas ou signale `internal-error` (`503`), sans changer les clés enregistrées ; `404` pour un autre compte, sans appel à Siteverify ; jeton valide, absent, refusé avec le statut 200 ou 400, clé devenue inconnue, service indisponible et délai dépassé à l’ingestion, avec un faux Siteverify défini dans `tests/integration/external-workers.ts`. Plafonds quotidiens : frontière exacte des deux plafonds sous concurrence, message de file en double, remise à zéro au changement de jour UTC, bornes et isolation de l’API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
-- Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
-- Limite par client : un client au-delà de sa limite reçoit `429` avec `Retry-After`, `Access-Control-Expose-Headers` et les en-têtes CORS de la liste, sans enregistrement, pendant qu’un autre client et une requête sans adresse passent ; plafond du formulaire atteint par deux clients sous leur limite ; regroupement des adresses IPv6 par `/64`.
-- Champ piège : nom défini, retiré et refusé par l’API d’administration, `404` pour un autre compte ; champ rempli avec la même page HTML qu’un envoi normal, enregistré avec le motif `honeypot` et un seul événement, sans appel au faux Workers AI ; message de file en double sans seconde décision ; acceptation par un relecteur, puis création de la livraison ; champ vide retiré avant l’enregistrement, ordre des autres champs gardé, message classé normalement ; corps réduit au champ piège vide refusé en `400` ; formulaire sans champ piège inchangé.
-- Règle des URL de webhook : chaque classe refusée, dont les écritures numériques d’IPv4 et les adresses IPv6 réservées.
-- Origines autorisées : normalisation et chaque motif de refus ; prérequête pour une liste vide, une origine de la liste, une origine refusée et un formulaire inconnu ; `fetch` JSON accepté depuis une origine de la liste, refusé en `403` sans enregistrement depuis une autre, accepté sans `Origin` ; formulaire HTML posté depuis une origine refusée ; en-têtes CORS sur `400`, `404`, `413`, `415`, `429` et `503` ; refus des origines invalides par l’API d’administration ; refus entre organisations pour la liste, l’ajout et le retrait.
-- Formulaires : ajout, renommage, contexte métier, suspension, réactivation, définition et retrait de l’URL de succès par le Worker construit, avec chaque refus de validation ; identifiant public inchangé après chaque modification ; `404` pour un formulaire ou une organisation d’un autre compte, sans modification de ses réglages ; retrait de l’origine de l’URL de succès refusé en `409`. Formulaire suspendu : `403` avec les en-têtes CORS de la liste, rien d’enregistré, prérequête inchangée, anciens messages lisibles dans l’Inbox, ingestion rétablie après réactivation. Classification du message suivant avec le contexte modifié. Redirection `303` pour un envoi HTML urlencoded ou multipart, vers l’URL enregistrée malgré un champ, un paramètre ou un `Referer` qui en propose une autre ; `202` JSON pour un client JSON ou qui n’accepte pas HTML ; page de confirmation si l’origine de l’URL n’est plus dans la liste.
-- Champs : valeurs d’un nom répété jointes, en urlencoded et en multipart, valeur jointe de 4 000 caractères acceptée et de 4 002 refusée ; corps multipart texte accepté, fichier, champ fichier vide, frontière absente et corps de plus de 16 Kio refusés ; caractères de contrôle et sauts de ligne dans un nom refusés en JSON, urlencoded et multipart.
-- Webhooks : signature vérifiée par l’exemple de `docs/examples/verify-webhook.ts`, refus d’une signature expirée, d’un autre secret ou d’un corps modifié ; `500` puis `200` avec le même identifiant de livraison ; `400` et redirection sans reprise, sans suivre `Location` ; URL privée et secret chiffré avec une autre clé refusés avant l’envoi ; deux signatures pendant la rotation, une seule après 24 heures ; création par l’API, envoi par la composition déployée et vérification de la requête reçue ; refus entre organisations pour la liste, la création, la rotation et la désactivation ; création et rotation refusées sans `RONDYR_SECRETS_KEY`. Un test vérifie que `docs/webhooks.md` contient l’exemple testé.
-- E-mail : une requête par livraison avec l’expéditeur, les destinataires, l’objet, le texte complet et la clé d’idempotence attendus ; `500` puis `200` et `429` puis `200` avec la même clé et le même corps ; `422`, `401` et `403` sans reprise ; `Reply-To` pris d’un champ `email` valide, absent pour une valeur sur plusieurs lignes, avec un nom affiché, deux adresses ou une valeur invalide ; tentative d’injection d’en-têtes par un nom ou une valeur de champ, sans effet sur les en-têtes ni sur l’objet ; sans clé ou sans expéditeur, création refusée et livraison en échec définitif sans requête ; un webhook et un e-mail du même formulaire livrés indépendamment, l’échec de l’un ne bloquant pas l’autre. Par le Worker construit : refus des destinataires avec leur motif, création, liste des deux types, remplacement des destinataires, désactivation et envoi par la composition déployée ; liste, création, modification et désactivation refusées en `404` pour une autre organisation ; création refusée en `503` sans fournisseur, liste et modification possibles.
-- Livraisons : création après une acceptation automatique et après une acceptation manuelle, jusqu’au consumer ; une seule livraison par destination malgré une politique exécutée deux fois ou un message de file en double ; aucune livraison sans destination active, pour une destination créée après l’acceptation ou pour une destination d’une autre organisation ; nouvel envoi avec le même identifiant après une panne entre l’envoi et l’enregistrement ; une destination en échec à côté d’une destination livrée ; six échecs réessayables jusqu’à `failed`, avec les délais de reprise.
-- Historique, relance et essai, par les routes : historique d’une livraison livrée, d’une livraison en reprise et d’une livraison en échec, avec destination, tentatives et résumés, sans aucun champ du message dans la réponse ; message sans livraison ; relance d’une livraison en échec, livrée ensuite avec le même identifiant, les deux tentatives et la même clé d’idempotence ; relance refusée en `409` pour une livraison livrée ou en reprise ; deux relances simultanées qui ne publient et ne démarrent qu’une tentative, Cron et message en double compris ; nouvelle série après six tentatives, numérotée à partir de 7 ; essai d’un webhook (signature vérifiée, type `test`) et d’une destination e-mail, refusé pour une URL privée, en échec pour un `400` ou un `500`, sans aucune ligne créée ; second essai simultané de la même destination refusé en `409` ; lecture, relance et essai refusés en `404` pour une autre organisation.
+- `pnpm test:e2e` exercises the dashboard in Chromium, in a dedicated CI job. The suite covers the session cycle, creating an organization, managing forms and origins, HTML posts with confirmation or redirect, the CORS refusal of a JSON post and the review of a message with a filled honeypot field. It also covers creating destinations, tests and the retry of a failed webhook, and filtering a folder by form. A last test checks that the **Status** page counts a new message after a refresh. Playwright checks the CSP of `public/_headers` on the built dashboard and watches the browser console.
+- Model stories: thresholds, order of the spam, solicitation and relevance rules, quarantine of a solicitation with its scores then acceptance by a reviewer, duplicate `RequestClassification`, three classifier failures, review allowed and refused; intake quarantine without a classifier call, duplicate `QuarantineAtIntake` with the same `commandId` or another one, `RequestClassification` ignored after it, intake quarantine ignored during a classification, acceptance and archiving of a message quarantined at intake.
+- Escalation: stories for escalation turned off, for the second model that accepts, confirms the doubt or fails, for the first model's solicitation and relevance rules that still apply, for the classification quota reached and for a failed reservation. Through the built Worker, with two test Workers whose second classifier differs from the first or is identical to it: no escalation without a second classifier or with the same one, one more slot on the day's counter for an escalation, no second call at the quota, a single second call for two escalations that target the last slot; concurrent reservations and day change through the adapter. Second classifier returned by the settings route, switch disabled and choice kept in Playwright.
+- Decoding of Jev and OpenAI Decisions answers, including invalid answers.
+- Creation of the first account under concurrency, refusal of a foreign origin, session cycle.
+- Intake atomicity, recovery through the outbox, double delivery of a queue message, isolation between organizations, concurrent review decisions.
+- Publication at intake without republication by the Cron, send failure picked up by the Cron after the lease expires, Cron kept out during a direct publication.
+- Turnstile: secret key encrypted and absent from responses; storage refused without `RONDYR_SECRETS_KEY`, for a key that Siteverify refuses (`400`) and when Siteverify does not answer or reports `internal-error` (`503`), without changing the stored keys; `404` for another account, without a Siteverify call; valid token, missing token, token refused with status 200 or 400, key that became unknown, service unavailable and timeout at intake, with a fake Siteverify defined in `tests/integration/external-workers.ts`. Daily quotas: exact boundary of both quotas under concurrency, duplicate queue message, reset at the UTC day change, bounds and isolation of the API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
+- Intake responses `400`, `413`, `415` and `429`, including a body of exactly 16 KiB accepted, and `X-Content-Type-Options` on the Worker's responses.
+- Per-client limit: a client over its limit gets `429` with `Retry-After`, `Access-Control-Expose-Headers` and the list's CORS headers, without storage, while another client and a request without an address go through; form cap reached by two clients under their limit; grouping of IPv6 addresses by `/64`.
+- Honeypot field: name set, removed and refused through the admin API, `404` for another account; filled field with the same HTML page as a normal post, stored with the reason `honeypot` and a single event, without a call to the fake Workers AI; duplicate queue message without a second decision; acceptance by a reviewer, then creation of the delivery; empty field removed before storage, order of the other fields kept, message classified normally; body reduced to the empty honeypot field refused with `400`; form without a honeypot field unchanged.
+- Webhook URL rule: each refused class, including numeric notations of IPv4 and reserved IPv6 addresses.
+- Allowed origins: normalization and each refusal reason; preflight for an empty list, an origin in the list, a refused origin and an unknown form; JSON `fetch` accepted from an origin in the list, refused with `403` without storage from another one, accepted without `Origin`; HTML form posted from a refused origin; CORS headers on `400`, `404`, `413`, `415`, `429` and `503`; refusal of invalid origins by the admin API; refusal across organizations for listing, adding and removing.
+- Forms: adding, renaming, business context, suspension, reactivation, setting and removing the success URL through the built Worker, with each validation refusal; public ID unchanged after each edit; `404` for a form or an organization of another account, without changing its settings; removal of the success URL's origin refused with `409`. Suspended form: `403` with the list's CORS headers, nothing stored, preflight unchanged, old messages readable in the Inbox, intake restored after reactivation. Classification of the next message with the edited context. `303` redirect for an urlencoded or multipart HTML post, to the stored URL despite a field, a parameter or a `Referer` that suggests another one; JSON `202` for a JSON client or one that does not accept HTML; confirmation page if the URL's origin is no longer in the list.
+- Fields: values of a repeated name joined, in urlencoded and in multipart, joined value of 4,000 characters accepted and of 4,002 refused; text multipart body accepted, and file, empty file input, missing boundary and body over 16 KiB refused; control characters and line breaks in a name refused in JSON, urlencoded and multipart.
+- Webhooks: signature verified by the example in `docs/examples/verify-webhook.ts`, refusal of an expired signature, another secret or a modified body; `500` then `200` with the same delivery ID; `400` and redirect without a retry, without following `Location`; private URL and secret encrypted with another key refused before sending; two signatures during rotation, a single one after 24 hours; creation through the API, sending through the deployed composition and verification of the received request; refusal across organizations for listing, creation, rotation and deactivation; creation and rotation refused without `RONDYR_SECRETS_KEY`. A test checks that `docs/webhooks.md` contains the tested example.
+- Email: one request per delivery with the expected sender, recipients, subject, full text and idempotency key; `500` then `200` and `429` then `200` with the same key and the same body; `422`, `401` and `403` without a retry; `Reply-To` taken from a valid `email` field, absent for a multi-line value, a display name, two addresses or an invalid value; header injection attempt through a field name or value, with no effect on the headers or the subject; without a key or a sender, creation refused and delivery failed permanently without a request; a webhook and an email of the same form delivered independently, a failure of one not blocking the other. Through the built Worker: recipients refused with their reason, creation, listing of both types, replacement of recipients, deactivation and sending through the deployed composition; listing, creation, editing and deactivation refused with `404` for another organization; creation refused with `503` without a provider, listing and editing still possible.
+- Deliveries: creation after an automatic acceptance and after a manual acceptance, through to the consumer; a single delivery per destination despite a policy run twice or a duplicate queue message; no delivery without an active destination, for a destination created after the acceptance or for a destination of another organization; new send with the same ID after a crash between the send and the record; a failed destination next to a delivered destination; six retryable failures up to `failed`, with the retry delays.
+- History, retry and test, through the routes: history of a delivered delivery, a retrying delivery and a failed delivery, with destination, attempts and summaries, without any message field in the response; message without a delivery; retry of a failed delivery, then delivered with the same ID, both attempts and the same idempotency key; retry refused with `409` for a delivered or retrying delivery; two simultaneous retries that publish and start only one attempt, Cron and duplicate message included; new series after six attempts, numbered from 7; test of a webhook (signature verified, type `test`) and of an email destination, refused for a private URL, failed for a `400` or a `500`, without any row created; second simultaneous test of the same destination refused with `409`; read, retry and test refused with `404` for another organization.
 
-### Couverture manquante
+### Missing coverage
 
-- Soumissions concurrentes à la frontière du plafond par formulaire (#7).
-- La limite par client n’est vérifiée que contre la simulation de Miniflare, exacte et locale. Le comportement du vrai binding (compte approximatif, par emplacement, mis à jour en arrière-plan) et la présence de `CF-Connecting-IP` en production ne sont pas testés.
-- Événement que le consumer ne parvient jamais à remettre (#10).
-- Un nom d’hôte public qui pointe vers une adresse privée : la règle ne le voit pas, et aucun test ne le simule.
+- Concurrent submissions at the boundary of the per-form cap (#7).
+- The per-client limit is checked only against Miniflare's simulation, which is exact and local. The behavior of the real binding (approximate count, per location, updated in the background) and the presence of `CF-Connecting-IP` in production are not tested.
+- An event that the consumer never manages to hand off (#10).
+- A public hostname that points to a private address: the rule does not see it, and no test simulates it.
 
-### Évaluation du filtrage
+### Filtering evaluation
 
-Les mesures consignées dans #31 et #40 donnent les premiers résultats sur des soumissions réelles. Le critère qui prime est de ne perdre aucune demande réelle.
+The measurements recorded in #31 and #40 give the first results on real submissions. The criterion that comes first is to lose no real request.
 
-`pnpm evaluate`, dans `evals/`, lit un corpus JSON Lines étiqueté (`legitimate`, `spam`, `ambiguous`, `off-topic`) et le contexte métier du formulaire, dans un fichier `.context.txt` à côté. Il appelle `scoreWithJev` et `scoreWithOpenAi` par l’API REST de Workers AI (`POST /ai/run`), avec les options de `src/adapters/ai/gateway.ts` transmises en en-têtes `cf-aig-*`, puis applique `reviewReason`. Le rapport donne par classificateur les messages légitimes mis en quarantaine, le spam accepté, la matrice entre étiquette et décision, pondérée ou non par `duplicates`, la précision et le rappel de la quarantaine du spam, la latence, le coût estimé, les échecs et un balayage des seuils calculé sur les scores enregistrés. Il ne contient aucune valeur de champ. Un cache par classificateur, modèle, version du calcul des scores, ligne et empreinte de l’entrée évite de payer deux fois le même appel.
+`pnpm evaluate`, in `evals/`, reads a labeled JSON Lines corpus (`legitimate`, `spam`, `ambiguous`, `off-topic`) and the form's business context, in a `.context.txt` file next to it. It calls `scoreWithJev` and `scoreWithOpenAi` through the Workers AI REST API (`POST /ai/run`), with the options of `src/adapters/ai/gateway.ts` passed as `cf-aig-*` headers, then applies `reviewReason`. For each classifier, the report gives the legitimate messages quarantined, the spam accepted, the matrix of label against decision, weighted by `duplicates` or not, the precision and recall of the spam quarantine, the latency, the estimated cost, the failures and a threshold sweep computed on the recorded scores. It contains no field value. A cache per classifier, model, scoring version, line and input fingerprint avoids paying twice for the same call.
 
-Le corpus synthétique `evals/corpus/synthetic.jsonl`, versionné, couvre les quatre étiquettes en plusieurs langues. Les corpus réels restent dans `evals/corpus/local/`, ignoré par Git. Pour toute mesure via Workers AI, le contenu des messages part chez le fournisseur du modèle, comme en production. Le mode `--dry` remplace Workers AI par des scores factices. Les tests du harnais tournent dans Node, sans réseau, dans le projet Vitest `evals`. Voir [docs/evaluation.md](docs/evaluation.md).
+The synthetic corpus `evals/corpus/synthetic.jsonl`, under version control, covers the four labels in several languages. Real corpora stay in `evals/corpus/local/`, which Git ignores. For any measurement through Workers AI, the message content goes to the model provider, as in production. The `--dry` mode replaces Workers AI with fake scores. The harness tests run in Node, without network, in the `evals` Vitest project. See [docs/evaluation.md](docs/evaluation.md).
 
-## 11. Déploiement et exploitation
+## 11. Deployment and operations
 
-Alchemy crée et relie le Worker, D1, les deux files et leurs DLQ, les deux consumers, le Cron, les Durable Objects et le Workflow de backfill d’Alchemy Domain. Le binding Rate Limiting `CLIENT_RATE_LIMIT` n’a pas de ressource à créer : la pile lit sa déclaration dans `wrangler.json` (espace de noms `7001`, 5 requêtes par 60 secondes) et l’ajoute au Worker. L’espace de noms est commun au compte Cloudflare ; les stages ne partagent pas de compteur, puisque chaque clé commence par l’identifiant public d’un formulaire. Les noms des files sont générés par stage ; la pile les transmet au Worker (`CLASSIFICATION_QUEUE_NAME`, `DELIVERY_QUEUE_NAME`), et le handler `queue` choisit le consumer d’après le nom de la file du lot. Un lot dont la file n’est pas celle des livraisons va au consumer de classification ; si son nom n’est pas non plus celui de la file de classification, le Worker l’écrit dans les journaux comme une erreur. Les migrations D1 sont versionnées dans `database/migrations` et appliquées au déploiement.
+Alchemy creates and connects the Worker, D1, the two queues and their DLQs, the two consumers, the Cron, the Durable Objects and the Alchemy Domain backfill Workflow. The Rate Limiting binding `CLIENT_RATE_LIMIT` has no resource to create: the stack reads its declaration in `wrangler.json` (namespace `7001`, 5 requests per 60 seconds) and adds it to the Worker. The namespace is shared across the Cloudflare account; the stages do not share a counter, since each key starts with the public ID of a form. Queue names are generated per stage; the stack passes them to the Worker (`CLASSIFICATION_QUEUE_NAME`, `DELIVERY_QUEUE_NAME`), and the `queue` handler chooses the consumer from the queue name of the batch. A batch whose queue is not the delivery queue goes to the classification consumer; if its name is not the classification queue's either, the Worker logs it as an error. D1 migrations are versioned in `database/migrations` and applied at deployment.
 
-Chaque stage a ses propres ressources. `prod` utilise un domaine personnalisé dérivé de `BETTER_AUTH_URL` et les autres stages utilisent `workers.dev`. Un push sur `main` lance `pnpm check`, `pnpm deploy:dry` et les tests du dashboard dans un navigateur (`pnpm test:e2e`), puis déploie `prod` si les deux jobs réussissent. Le passage par staging est facultatif et désactivé tant qu’il n’est pas configuré : il l’est quand les deux variables `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` et `RONDYR_SMOKE_FORM_ID_STAGING` et les deux secrets `RONDYR_SMOKE_EMAIL_STAGING` et `RONDYR_SMOKE_PASSWORD_STAGING` sont définis dans GitHub. La CI déploie alors `staging`, vérifie `/health` et le classement d’une soumission dans la boîte de réception de staging, et ne déploie `prod` que si cette vérification réussit. Sans ces réglages, la CI déploie `prod` directement et le signale par un avis dans l’exécution. Une configuration partielle fait échouer l’exécution avant tout déploiement. Le workflow **Deploy** permet aussi de déployer `staging` ou `prod` à la main, `prod` seulement depuis `main`. La mise en place est décrite dans [docs/deployment.md](docs/deployment.md#staging-gate).
+Each stage has its own resources. `prod` uses a custom domain derived from `BETTER_AUTH_URL` and the other stages use `workers.dev`. A push to `main` runs `pnpm check`, `pnpm deploy:dry` and the dashboard browser tests (`pnpm test:e2e`), then deploys `prod` if both jobs pass. The staging gate is optional and off until it is configured: it is configured when the two variables `RONDYR_SMOKE_ORGANIZATION_ID_STAGING` and `RONDYR_SMOKE_FORM_ID_STAGING` and the two secrets `RONDYR_SMOKE_EMAIL_STAGING` and `RONDYR_SMOKE_PASSWORD_STAGING` are set in GitHub. CI then deploys `staging`, checks `/health` and the classification of a submission in the staging inbox, and deploys `prod` only if this check passes. Without these settings, CI deploys `prod` directly and reports it with a notice in the run. A partial configuration makes the run fail before any deployment. The **Deploy** workflow can also deploy `staging` or `prod` by hand, `prod` only from `main`. The setup is described in [docs/deployment.md](docs/deployment.md#staging-gate).
 
-La route authentifiée `GET /api/operations` alimente la section « État » du dashboard. Elle renvoie pour chaque organisation du compte le nombre d’événements outbox non remis et l’âge du plus ancien, les livraisons par statut et les messages reçus au cours des dernières 24 heures, dont ceux encore en quarantaine par motif. Un Durable Object par stage conserve l’heure de la dernière exécution réussie du Cron, après les deux publications. Les procédures de diagnostic, de reprise et de rotation des secrets sont dans [docs/operations.md](docs/operations.md).
+The authenticated route `GET /api/operations` feeds the **Status** section of the dashboard. For each organization of the account, it returns the number of outbox events not handed off and the age of the oldest one, the deliveries by status and the messages received in the last 24 hours, including those still in quarantine, by reason. A Durable Object per stage keeps the time of the last successful Cron run, after both publications. The diagnosis, recovery and secret rotation procedures are in [docs/operations.md](docs/operations.md).
 
-`RONDYR_SECRETS_KEY` est facultative, comme `RONDYR_SETUP_TOKEN` : la pile ne la transmet au Worker que si l’environnement du stage la définit. Sans elle, seuls la création et la rotation des webhooks et l’enregistrement des clés Turnstile sont refusés. `RONDYR_EMAIL_FROM` est facultative. Si elle est renseignée, elle doit être une adresse nue. `RONDYR_EMAIL_PROVIDER` vaut `resend` par défaut et la pile le transmet toujours, comme `RONDYR_CLASSIFIER`. La pile transmet `RESEND_API_KEY` si le stage utilise Resend et fournit la clé. Elle ajoute le binding `CLOUDFLARE_EMAIL` si le stage sélectionne `cloudflare` et renseigne un expéditeur. Sans expéditeur ou sans la clé ou le binding du fournisseur sélectionné, la création d’une destination e-mail est refusée et une livraison vers une destination existante échoue sans reprise.
+`RONDYR_SECRETS_KEY` is optional, like `RONDYR_SETUP_TOKEN`: the stack passes it to the Worker only if the stage environment sets it. Without it, only creating and rotating webhooks and storing Turnstile keys are refused. `RONDYR_EMAIL_FROM` is optional. If it is set, it must be a bare address. `RONDYR_EMAIL_PROVIDER` is `resend` by default and the stack always passes it, like `RONDYR_CLASSIFIER`. The stack passes `RESEND_API_KEY` if the stage uses Resend and provides the key. It adds the `CLOUDFLARE_EMAIL` binding if the stage selects `cloudflare` and sets a sender. Without a sender, or without the key or binding of the selected provider, creating an email destination is refused and a delivery to an existing destination fails without a retry.
 
-`wrangler.json` sert au développement local, aux tests et au dry-run ; `alchemy-run.ts` et `src/alchemy-worker.ts` servent au déploiement. Les bindings, les réglages du consumer et les classes de Durable Objects sont donc déclarés deux fois. `scripts/doctor.mjs` vérifie une partie de cette cohérence, et `scripts/worker-budget.mjs` limite le JavaScript du Worker à 2 Mio.
+`wrangler.json` is used for local development, tests and the dry run; `alchemy-run.ts` and `src/alchemy-worker.ts` are used for deployment. The bindings, the consumer settings and the Durable Object classes are therefore declared twice. `scripts/doctor.mjs` checks part of this consistency, and `scripts/worker-budget.mjs` limits the Worker's JavaScript to 2 MiB.
 
-### Dépendances en préversion
+### Pre-release dependencies
 
-Le projet dépend d’Alchemy 2.0 beta, de Drizzle 1.0 RC et d’Effect 4, épinglés à des versions exactes. `@alchemy.run/domain` a un patch local, dans `patches/`, qui corrige l’ordre entre la publication du Worker et le backfill. Le flux d’événements de chaque soumission dépend de cette bibliothèque : chaque montée de version demande de relire ses notes de migration et de rejouer les tests workerd.
+The project depends on Alchemy 2.0 beta, Drizzle 1.0 RC and Effect 4, pinned to exact versions. `@alchemy.run/domain` has a local patch, in `patches/`, that fixes the order between the Worker publication and the backfill. The event stream of each submission depends on this library: each version upgrade requires reading its migration notes and running the workerd tests again.
 
-### À faire
+### To do
 
-- Faire un exercice de restauration D1 et de rollback du Worker sur Cloudflare (#43).
-- Alertes et reprise des traitements bloqués (#10).
-- Guide d’installation vérifié sur un compte Cloudflare vierge, avec les coûts et les limites, sans promettre un coût nul (#12).
+- Run a D1 restore and Worker rollback exercise on Cloudflare (#43).
+- Alerts and recovery of stuck processing (#10).
+- Installation guide verified on a fresh Cloudflare account, with the costs and limits, without promising zero cost (#12).
 
-## 12. Ordre de réalisation
+## 12. Order of work
 
-En production le 20 novembre 2026 : ingestion fiable, classification par Jev ou OpenAI Decisions, quarantaine et revue, livraison par webhook signé et par e-mail (Resend), historique et relance des livraisons, JSON depuis un navigateur avec origines autorisées, administration des formulaires, limite par client et champ piège. `pnpm evaluate` mesure les classificateurs sur un corpus étiqueté.
+In production on 20 November 2026: reliable intake, classification with Jev or OpenAI Decisions, quarantine and review, delivery by signed webhook and by email (Resend), delivery history and retry, JSON from a browser with allowed origins, form administration, per-client limit and honeypot field. `pnpm evaluate` measures the classifiers on a labeled corpus.
 
-Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la relation « blocked by » de GitHub. Une issue sans blocage ouvert peut démarrer.
+Each issue states what blocks it, in its "Order" section and through GitHub's "blocked by" relation. An issue with no open blocker can start.
 
-**File des migrations.** Une seule migration D1 à la fois (label `migration`), dans cet ordre :
+**Migration queue.** One D1 migration at a time (label `migration`), in this order:
 
-1. Répétition et entrée du classificateur (#31). La mesure du 20 novembre montre que c’est ce qui manque le plus au filtrage.
-2. Domaines de l’organisation (#39).
-3. Seuils par classificateur et politique par organisation (#6).
-4. Turnstile et plafonds par organisation (#7).
-5. Confirmation des destinataires e-mail (#36).
-6. Rôles et invitations (#11).
-7. Recherche, export et purge (#9).
-8. Traitements bloqués : outbox, files d’échec, reclassement (#10).
+1. Repetition and classifier input (#31). The 20 November measurement shows that this is what the filtering lacks most.
+2. Organization domains (#39).
+3. Thresholds per classifier and policy per organization (#6).
+4. Turnstile and quotas per organization (#7).
+5. Email recipient confirmation (#36).
+6. Roles and invitations (#11).
+7. Search, export and purge (#9).
+8. Stuck processing: outbox, dead-letter queues, reclassification (#10).
 
-**Après une étape de la file.** Question « démarchage commercial » après #31 (#40). Escalade vers un second modèle après #6 (#15).
+**After a step of the queue.** The "sales outreach" question after #31 (#40). Escalation to a second model after #6 (#15).
 
-**Sans migration, à tout moment et en parallèle.** Défauts relevés en revue (#41), tests du dashboard dans un navigateur (#42), état d’exploitation, runbook et passage par `staging` (#43), adaptateur e-mail de Cloudflare (#33).
+**Without a migration, at any time and in parallel.** Defects found in review (#41), dashboard browser tests (#42), operations status, runbook and the `staging` gate (#43), Cloudflare email adapter (#33).
 
-**Demande une personne.** Guide d’installation sur un compte Cloudflare vierge (#12).
+**Needs a person.** Installation guide on a fresh Cloudflare account (#12).
 
-## 13. Décisions ouvertes
+## 13. Open decisions
 
-| Décision | Suivi |
+| Decision | Tracking |
 | --- | --- |
-| Message hors sujet : revue humaine (comportement actuel) ou acceptation avec étiquette | #6 |
-| Durées de conservation par défaut, export et purge | #9 |
+| Off-topic message: human review (current behavior) or acceptance with a label | #6 |
+| Default retention periods, export and purge | #9 |
 
-### Décisions prises
+### Decisions made
 
-- Rondyr est sous licence AGPL-3.0, comme usine : toute personne qui propose une version modifiée comme service doit en publier les sources, et un auto-hébergeur n’a aucune obligation. Les dépendances sont sous MIT ou Apache-2.0, et le plugin Oxlint repris d’usine est déjà sous AGPL-3.0 (#21).
-- Le statut d’une soumission est un flux d’événements dans un Durable Object, projeté dans D1 pour l’Inbox.
-- Les requêtes d’exécution restent du SQL préparé, dans les adaptateurs de `src/adapters/database`, et Effect Schema décode les lignes qu’elles renvoient. Drizzle sert au schéma, aux migrations et à Better Auth (#23).
-- Jev passe par le binding Workers AI ; OpenAI Decisions passe par AI Gateway avec la facturation unifiée. Le choix se fait par stage.
-- Les deux classificateurs passent par le gateway `default`, que AI Gateway crée lui-même, et chaque appel y désactive la collecte de logs et le cache. La pile ne provisionne pas de gateway (#22).
-- Le premier compte se crée avec un jeton d’installation et `scripts/setup-owner.sh`.
-- Un envoi HTML reçoit une page de confirmation avec le statut `202`, ou `303` vers l’URL de succès du formulaire si elle est définie. Son origine doit être une origine autorisée du formulaire, et le retrait de cette origine est refusé tant que l’URL est définie (#8).
-- Un formulaire suspendu répond `403` sans rien enregistrer et garde ses messages, ses destinations et son URL publique (#8).
-- Un nom de champ répété dans un corps de formulaire est accepté, valeurs jointes par `, `. `multipart/form-data` est accepté sans fichier ; une partie avec un nom de fichier est refusée en `400`. Un nom de champ avec un caractère de contrôle ou un saut de ligne est refusé, quel que soit le type de contenu (#8).
-- Les webhooks signent `<horodatage>.<corps>` en HMAC-SHA-256 et envoient l’identifiant de livraison dans `Rondyr-Delivery-Id`. Après une rotation, l’ancien secret signe aussi pendant 24 heures (#13).
-- Les secrets des destinations sont chiffrés dans D1 avec `RONDYR_SECRETS_KEY`, facultative au déploiement (#13).
-- Chaque organisation a deux plafonds par jour UTC. Au-delà du plafond de soumissions, l’ingestion répond `429` sans rien enregistrer. Au-delà du plafond de classification, le message est enregistré et mis en quarantaine avec le motif `quota`. Ce plafond compte les soumissions admises à la classification, réservées dans le lot d’ingestion, et non chaque tentative réseau de la saga. Une escalade vers un second modèle réserve une place de plus avant l’appel ; plafond atteint, le motif reste `ambiguous` (#15). Une soumission qui porte un jeton Turnstile demande une lecture D1 de la clé chiffrée avant le lot d’ingestion ; toute autre soumission acceptée reste à un aller-retour D1 (#7).
-- Le port `EmailSender` propose deux adaptateurs sélectionnés par stage avec `RONDYR_EMAIL_PROVIDER`. Resend reste le choix par défaut et utilise l’identifiant de livraison comme clé d’idempotence (#14). Cloudflare Email Sending utilise le binding `CLOUDFLARE_EMAIL` et un domaine expéditeur activé sur Workers Paid. Cloudflare ne documente aucune clé de déduplication pour ce binding. Une reprise peut donc envoyer un doublon avec le même identifiant de livraison (#33).
-- Un formulaire sans origine autorisée accepte toutes les origines (`Access-Control-Allow-Origin: *`). Avec une liste, un navigateur d’une autre origine reçoit `403` sans en-tête CORS, et une requête sans `Origin` reste acceptée. Aucune réponse n’autorise les cookies (#19).
-- Chaque client est limité à 5 soumissions par minute sur un formulaire, avec le binding Rate Limiting de Workers et non un compteur D1, pour ne garder aucune adresse IP. Une adresse IPv6 compte pour son `/64`. Le plafond de 30 par formulaire reste le dernier rempart (#7).
-- Un champ piège rempli donne la réponse habituelle et met le message en quarantaine avec le motif `honeypot`, sans appel au modèle ; un champ piège vide est retiré avant l’enregistrement. Le motif d’entrée est enregistré avec la soumission, et la commande `QuarantineAtIntake` le porte à l’agrégat (#7).
+- Rondyr is licensed under AGPL-3.0, like usine: anyone who offers a modified version as a service must publish its source, and a self-hoster has no obligation. The dependencies are under MIT or Apache-2.0, and the Oxlint plugin taken from usine is already under AGPL-3.0 (#21).
+- A submission's status is an event stream in a Durable Object, projected into D1 for the Inbox.
+- Runtime queries remain prepared SQL, in the adapters of `src/adapters/database`, and Effect Schema decodes the rows they return. Drizzle is used for the schema, the migrations and Better Auth (#23).
+- Jev goes through the Workers AI binding; OpenAI Decisions goes through AI Gateway with unified billing. The choice is made per stage.
+- Both classifiers go through the `default` gateway, which AI Gateway creates itself, and each call turns off log collection and caching there. The stack provisions no gateway (#22).
+- The first account is created with a setup token and `scripts/setup-owner.sh`.
+- An HTML post gets a confirmation page with the status `202`, or `303` to the form's success URL if one is set. Its origin must be an allowed origin of the form, and removing that origin is refused while the URL is set (#8).
+- A suspended form answers `403` without storing anything and keeps its messages, its destinations and its public URL (#8).
+- A repeated field name in a form body is accepted, with values joined by `, `. `multipart/form-data` is accepted without files; a part with a filename is refused with `400`. A field name with a control character or a line break is refused, whatever the content type (#8).
+- Webhooks sign `<timestamp>.<body>` with HMAC-SHA-256 and send the delivery ID in `Rondyr-Delivery-Id`. After a rotation, the old secret also signs for 24 hours (#13).
+- Destination secrets are encrypted in D1 with `RONDYR_SECRETS_KEY`, which is optional at deployment (#13).
+- Each organization has two quotas per UTC day. Beyond the submission quota, intake answers `429` without storing anything. Beyond the classification quota, the message is stored and quarantined with the reason `quota`. This quota counts the submissions admitted to classification, reserved in the intake batch, and not each network attempt of the saga. An escalation to a second model reserves one more slot before the call; when the quota is reached, the reason stays `ambiguous` (#15). A submission that has a Turnstile token requires a D1 read of the encrypted key before the intake batch; any other accepted submission stays at one D1 round trip (#7).
+- The `EmailSender` port offers two adapters selected per stage with `RONDYR_EMAIL_PROVIDER`. Resend stays the default choice and uses the delivery ID as the idempotency key (#14). Cloudflare Email Sending uses the `CLOUDFLARE_EMAIL` binding and a sender domain onboarded on Workers Paid. Cloudflare documents no deduplication key for this binding. A retry can therefore send a duplicate with the same delivery ID (#33).
+- A form without an allowed origin accepts every origin (`Access-Control-Allow-Origin: *`). With a list, a browser on another origin gets `403` without a CORS header, and a request without `Origin` is still accepted. No response allows cookies (#19).
+- Each client is limited to 5 submissions per minute on a form, with the Workers Rate Limiting binding and not a D1 counter, so that no IP address is kept. An IPv6 address counts as its `/64`. The cap of 30 per form remains the last line of defense (#7).
+- A filled honeypot field gives the usual response and quarantines the message with the reason `honeypot`, without a model call; an empty honeypot field is removed before storage. The intake reason is stored with the submission, and the `QuarantineAtIntake` command passes it to the aggregate (#7).
 - Junk (`honeypot`, `turnstile-failed`, `repetition`) has its own daily quota, equal to the submission limit, so a bot wave can no longer lock real visitors out until midnight UTC. Junk over that quota gets `429` and is not stored. `quota` quarantines stay in the submission quota (#7).
 - A Turnstile key that Siteverify no longer knows, or that no longer decrypts, still lets messages go on to classification at intake. The dashboard checks the stored key each time it shows the form's Turnstile settings and warns the owner; intake records nothing about it (#7).
 
 ---
 
-**Définition du succès de la v0.1 :** un développeur déploie Rondyr dans son compte Cloudflare, copie une URL de formulaire dans son site, reçoit les vrais messages par e-mail ou webhook malgré les pannes temporaires, et peut consulter ou accepter tout message suspect sans exploiter de serveur.
+**Definition of success for v0.1:** a developer deploys Rondyr in their Cloudflare account, copies a form URL into their site, receives the real messages by email or webhook despite temporary outages, and can view or accept any suspicious message without running a server.

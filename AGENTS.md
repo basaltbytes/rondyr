@@ -8,7 +8,7 @@ Rondyr is a self-hosted form backend on Cloudflare. Read [architecture.md](archi
 - Use Effect 4 and Effect Schema for business logic, errors and data boundaries. Compose the layers at the Worker's entry point. Keep files in kebab-case, except where a tool's convention or a generated file says otherwise.
 - Migrations belong to development tooling and to deployment. Version Drizzle migrations and snapshots in `database/migrations`.
 - For intake, a `202` response means the submission and its outbox event were persisted atomically. Consumers must tolerate duplicated events.
-- Write everything in English: code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions. `architecture.md` and older issues are still in French; do not add French text to them.
+- Write everything in English: code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions. Older issues are still in French; do not add French text to them.
 - Write in English first everything a user of the product reads: dashboard text, the confirmation page, emails, script prompts. The dashboard, the confirmation page and the emails also exist in French: a dashboard text is an i18next key present in `dashboard/src/locales/en` and `dashboard/src/locales/fr`, never a string in a component.
 
 ## Working on an issue
