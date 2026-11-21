@@ -128,5 +128,109 @@
       "binding": "Submissions.DomainBackfill",
       "class_name": "DomainBackfill"
     }
-  ]
+  ],
+  "env": {
+    "cloudflare-email": {
+      "vars": {
+        "CLASSIFICATION_QUEUE_NAME": "rondyr-classification",
+        "DELIVERY_QUEUE_NAME": "rondyr-delivery",
+        "RONDYR_EMAIL_PROVIDER": "cloudflare"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "rondyr-local",
+          "database_id": "00000000-0000-0000-0000-000000000000",
+          "migrations_dir": "./database/migrations",
+          "migrations_pattern": "./database/migrations/*/migration.sql"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "CLASSIFICATION_QUEUE",
+            "queue": "rondyr-classification"
+          },
+          {
+            "binding": "DELIVERY_QUEUE",
+            "queue": "rondyr-delivery"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "rondyr-classification",
+            "dead_letter_queue": "rondyr-classification-dead-letter",
+            "max_batch_size": 10,
+            "max_batch_timeout": 1,
+            "max_retries": 3
+          },
+          {
+            "queue": "rondyr-delivery",
+            "dead_letter_queue": "rondyr-delivery-dead-letter",
+            "max_batch_size": 10,
+            "max_batch_timeout": 1,
+            "max_retries": 3
+          }
+        ]
+      },
+      "ratelimits": [
+        {
+          "name": "CLIENT_RATE_LIMIT",
+          "namespace_id": "7001",
+          "simple": {
+            "limit": 5,
+            "period": 60
+          }
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "Submissions.DomainDirectory",
+            "class_name": "DomainDirectory"
+          },
+          {
+            "name": "Submissions.SubmissionAggregate",
+            "class_name": "SubmissionAggregate"
+          },
+          {
+            "name": "Submissions.ClassificationPolicy",
+            "class_name": "ClassificationPolicy"
+          },
+          {
+            "name": "Submissions.DeliveryPolicy",
+            "class_name": "DeliveryPolicy"
+          },
+          {
+            "name": "Submissions.InboxProjection",
+            "class_name": "InboxProjection"
+          },
+          {
+            "name": "Submissions.InboxProjectionRun",
+            "class_name": "InboxProjectionRun"
+          },
+          {
+            "name": "Submissions.ClassifySubmissionWorkflow",
+            "class_name": "ClassifySubmissionWorkflow"
+          },
+          {
+            "name": "CronHeartbeatObject",
+            "class_name": "CronHeartbeatObject"
+          }
+        ]
+      },
+      "workflows": [
+        {
+          "name": "rondyr-submissions-backfill",
+          "binding": "Submissions.DomainBackfill",
+          "class_name": "DomainBackfill"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "CLOUDFLARE_EMAIL"
+        }
+      ]
+    }
+  }
 }
