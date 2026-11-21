@@ -46,6 +46,8 @@ export function TargetFailureNote({ failure, fallback }: TargetFailureNoteProps)
         return t("inbox.webhooks.missingSecretsKey");
       case "email-provider-missing":
         return t("inbox.emails.missingProvider");
+      case "test-limit-unavailable":
+        return t("inbox.destinations.test.limitUnavailable");
     }
   }
 
