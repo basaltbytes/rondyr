@@ -13,9 +13,10 @@ import { queueNameVars, wranglerConfigPath } from "./worker-config.ts";
 /**
  * The secrets of local development, from apps/rondyr/.env. Wrangler would read a .env
  * next to the root wrangler.json, which the Deploy to Cloudflare button also reads.
+ * scripts/dev-server-check.mjs names another file with RONDYR_DEV_ENV_FILE.
  */
 function localSecrets(): Record<string, string> {
-  const file = fileURLToPath(new URL(".env", import.meta.url));
+  const file = process.env.RONDYR_DEV_ENV_FILE ?? fileURLToPath(new URL(".env", import.meta.url));
   if (!existsSync(file)) return {};
   return Object.fromEntries(
     Object.entries(parseEnv(readFileSync(file, "utf8"))).filter(
@@ -67,6 +68,11 @@ export default defineConfig(({ command }) => ({
       ? undefined
       : cloudflare({
           configPath: wranglerConfigPath,
+          // .wrangler/state, unless scripts/dev-server-check.mjs runs on a database of its own.
+          persistState:
+            process.env.RONDYR_DEV_STATE === undefined
+              ? true
+              : { path: process.env.RONDYR_DEV_STATE },
           config: (worker) => {
             const queueNames = queueNameVars(worker.queues);
             if (command !== "serve") return { vars: { ...queueNames } };
