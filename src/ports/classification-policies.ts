@@ -14,6 +14,15 @@ export class ClassificationPolicyNotFound extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("ClassificationPolicyNotFound", {}) {}
 
+/**
+ * `RONDYR_CLASSIFIER` names no known classifier, or the organization's stored
+ * policy does not decode. Reading the policy again gives the same result.
+ */
+export class ClassificationPolicyUnreadable extends Schema.TaggedError<
+  ClassificationPolicyUnreadable,
+  { readonly brand: unique symbol }
+>()("ClassificationPolicyUnreadable", {}) {}
+
 type ScopedError = ClassificationPolicyNotFound | StorageUnavailable;
 
 export class ClassificationPolicies extends Context.Service<
@@ -21,10 +30,16 @@ export class ClassificationPolicies extends Context.Service<
   {
     readonly resolve: (
       organizationId: OrganizationId,
-    ) => Effect.Effect<typeof ResolvedClassificationPolicy.Type, StorageUnavailable>;
+    ) => Effect.Effect<
+      typeof ResolvedClassificationPolicy.Type,
+      StorageUnavailable | ClassificationPolicyUnreadable
+    >;
     readonly settings: (
       scope: OrganizationScope,
-    ) => Effect.Effect<typeof OrganizationClassificationSettings.Type, ScopedError>;
+    ) => Effect.Effect<
+      typeof OrganizationClassificationSettings.Type,
+      ScopedError | ClassificationPolicyUnreadable
+    >;
     readonly save: (
       scope: OrganizationScope,
       override: OrganizationClassificationPolicy | null,

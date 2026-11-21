@@ -14,10 +14,15 @@ export const classifierLive = Classifier.toLayer(
     const messages = yield* StoredMessages;
     const policies = yield* ClassificationPolicies;
     return {
+      // An unavailable database can recover; an unknown classifier or an invalid policy cannot.
       policy: ({ organizationId }) =>
-        policies
-          .resolve(organizationId)
-          .pipe(Effect.mapError(() => ClassificationFailed.make({ retryable: false }))),
+        policies.resolve(organizationId).pipe(
+          Effect.catchTags({
+            StorageUnavailable: () => Effect.fail(ClassificationFailed.make({ retryable: true })),
+            ClassificationPolicyUnreadable: () =>
+              Effect.fail(ClassificationFailed.make({ retryable: false })),
+          }),
+        ),
       score: Effect.fn("Classifier.score")(function* ({
         submissionId,
         organizationId,

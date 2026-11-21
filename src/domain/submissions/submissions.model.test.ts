@@ -56,9 +56,10 @@ const story = Story.make(Submissions, {
 });
 
 const policy = defaultClassificationPolicies.jev;
+const policyCall = () => Story.call(Classifier.policy, { organizationId });
 const lookupPolicy = (resolved: ClassificationPolicy = policy) =>
   [
-    Story.call(Classifier.policy, { organizationId }),
+    policyCall(),
     Story.succeed(Classifier.policy, { classifier: "jev", policy: resolved }),
   ] as const;
 const scoreCall = () =>
@@ -157,6 +158,58 @@ it.effect("quarantines when the organization's policy cannot be loaded", () =>
     Story.then(submission, ClassificationRequested.make({ organizationId })),
     Story.call(Classifier.policy, { organizationId }),
     Story.fail(Classifier.policy, ClassificationFailed.make({ retryable: false })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({
+        organizationId,
+        reason: "classification-error",
+        rulesVersion,
+      }),
+    ),
+    Story.state(submission, { _tag: "Quarantined" }),
+  ),
+);
+
+it.effect("looks up the policy again 10 seconds after a retryable failure, then scores", () => {
+  const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.15 };
+  return story(
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    policyCall(),
+    Story.fail(Classifier.policy, ClassificationFailed.make({ retryable: true })),
+    Story.advance("10 seconds"),
+    ...lookupPolicy(),
+    scoreCall(),
+    Story.succeed(Classifier.score, scores),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Automatic", scores, rulesVersion, policy },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart + 10_000,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
+  );
+});
+
+it.effect("quarantines after three retryable failures of the policy lookup", () =>
+  story(
+    Story.when(submission, RequestClassification.make({ organizationId })),
+    Story.then(submission, ClassificationRequested.make({ organizationId })),
+    policyCall(),
+    Story.fail(Classifier.policy, ClassificationFailed.make({ retryable: true })),
+    Story.advance("10 seconds"),
+    policyCall(),
+    Story.fail(Classifier.policy, ClassificationFailed.make({ retryable: true })),
+    Story.advance("30 seconds"),
+    policyCall(),
+    Story.fail(Classifier.policy, ClassificationFailed.make({ retryable: true })),
     Story.then(
       submission,
       SubmissionQuarantined.make({

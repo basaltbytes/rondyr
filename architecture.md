@@ -133,7 +133,7 @@ Le motif d’entrée est une colonne de `submissions`, écrite par la même inst
 
 ### Classification durable
 
-La politique `Classification` démarre la saga `ClassifySubmission` à chaque `ClassificationRequested`. La saga appelle le classificateur jusqu’à 3 fois, avec 10 puis 30 secondes d’attente et un délai maximal de 12 secondes par appel. Une erreur non réessayable ou l’épuisement des tentatives produit `SubmissionQuarantined` avec le motif `classification-error`. Les étapes sont des activités durables : un redémarrage du Durable Object reprend la saga là où elle s’est arrêtée.
+La politique `Classification` démarre la saga `ClassifySubmission` à chaque `ClassificationRequested`. La saga lit la politique de classification de l’organisation, puis appelle le classificateur avec un délai maximal de 12 secondes par appel. Elle tente chacune de ces deux étapes jusqu’à 3 fois, avec 10 puis 30 secondes d’attente. Une panne de D1 pendant la lecture de la politique se réessaie ; une valeur inconnue de `RONDYR_CLASSIFIER` ou une politique enregistrée illisible ne se réessaie pas. Une erreur non réessayable ou l’épuisement des tentatives produit `SubmissionQuarantined` avec le motif `classification-error`. Les étapes sont des activités durables : un redémarrage du Durable Object reprend la saga là où elle s’est arrêtée.
 
 ### Livraison
 
@@ -203,7 +203,7 @@ Un message hors sujet n’est pas un spam : « J’ai trouvé vos clés devant v
 
 L’organisation peut remplacer les quatre seuils ensemble et choisir indépendamment que les messages hors sujet soient traités en mode `review` ou `accept`. Les seuils vont de 0 à 1 inclus, et le seuil ambigu doit être inférieur ou égal à celui du spam probable. Le mode `accept` accepte et étiquette `off-topic` un message dont le seul motif de quarantaine serait la faible pertinence. La boîte de réception affiche l’étiquette, et les livraisons suivent le circuit habituel.
 
-Le workflow lit la politique et le classificateur du stage au début de l’analyse. Il utilise cette politique pendant les tentatives de classement et la transmet à la commande `RecordClassification`. Les décisions automatiques enregistrent la politique résolue, la version des règles et les scores quand le modèle répond. Si la politique est indisponible, la soumission attend en quarantaine avec le motif `classification-error`. Les événements enregistrés avant la version 6 restent lisibles.
+Le workflow lit la politique et le classificateur du stage au début de l’analyse. Il utilise cette politique pendant les tentatives de classement et la transmet à la commande `RecordClassification`. Les décisions automatiques enregistrent la politique résolue, la version des règles et les scores quand le modèle répond. Si la politique reste indisponible après les tentatives, ou si elle est illisible, la soumission attend en quarantaine avec le motif `classification-error`. Les événements enregistrés avant la version 6 restent lisibles.
 
 Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représentées par `duplicates`. Le corpus synthétique du 21 novembre donne 0 message légitime en quarantaine avec les deux classificateurs. Les indésirables acceptés passent de 4 à 3 pour Jev et de 4 à 2 pour OpenAI Decisions. Le mainteneur vérifie les seuils sur le corpus réel avant la fusion de #6. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
 

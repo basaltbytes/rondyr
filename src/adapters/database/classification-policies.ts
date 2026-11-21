@@ -10,6 +10,7 @@ import type { OrganizationId } from "../../domain/submissions/submission.id.ts";
 import {
   ClassificationPolicies,
   ClassificationPolicyNotFound,
+  ClassificationPolicyUnreadable,
 } from "../../ports/classification-policies.ts";
 import type { OrganizationScope } from "../../ports/organization-directory.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
@@ -22,11 +23,12 @@ const decodePolicy = Schema.decodeUnknownEffect(
 );
 const decodeProvider = Schema.decodeUnknownEffect(ClassifierProvider);
 const unavailable = () => StorageUnavailable.make();
+const unreadable = () => ClassificationPolicyUnreadable.make();
 
 const configuredClassifier = Effect.gen(function* () {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
   return yield* decodeProvider(env.RONDYR_CLASSIFIER ?? defaultClassifier).pipe(
-    Effect.mapError(unavailable),
+    Effect.mapError(unreadable),
   );
 });
 
@@ -50,7 +52,7 @@ const resolve = Effect.fn("ClassificationPolicies.resolve")(function* (
       .bind(organizationId)
       .first(),
   );
-  const { policy: override } = yield* decodePolicy(row).pipe(Effect.mapError(unavailable));
+  const { policy: override } = yield* decodePolicy(row).pipe(Effect.mapError(unreadable));
   const defaults = defaultClassificationPolicies[classifier];
   return { classifier, policy: { ...defaults, ...override } };
 });
@@ -61,7 +63,7 @@ const settings = Effect.fn("ClassificationPolicies.settings")(function* (scope: 
     db.prepare(scopedPolicy).bind(scope.userId, scope.organizationId).first(),
   );
   if (row === null) return yield* ClassificationPolicyNotFound.make();
-  const { policy: override } = yield* decodePolicy(row).pipe(Effect.mapError(unavailable));
+  const { policy: override } = yield* decodePolicy(row).pipe(Effect.mapError(unreadable));
   const classifier = yield* configuredClassifier;
   return { classifier, defaults: defaultClassificationPolicies[classifier], override };
 });
