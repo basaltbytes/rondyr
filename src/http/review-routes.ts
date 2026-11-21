@@ -38,7 +38,7 @@ const SubmissionPath = Schema.Struct({
 });
 const ReviewPath = SubmissionPath.mapFields((fields) => ({
   ...fields,
-  decision: Schema.Literals(["approve", "dismiss"]),
+  decision: Schema.Literals(["approve", "dismiss", "reclassify"]),
 }));
 const ListParams = OrganizationPath.mapFields((fields) => ({
   ...fields,
@@ -96,6 +96,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         AuthOriginRefused: () => errorResponse(403),
         SubmissionNotFound: () => errorResponse(404),
         SubmissionNotReviewable: () => errorResponse(409),
+        SubmissionNotReclassifiable: () => errorResponse(409),
         SchemaError: () => errorResponse(400),
         InvalidInboxCursor: () => errorResponse(400),
       }).pipe(Effect.catch(() => errorResponse(503)));
@@ -157,11 +158,16 @@ const detail = Effect.gen(function* () {
 const review = Effect.gen(function* () {
   const client = yield* reviewClient;
   const { decision, ...input } = yield* HttpRouter.schemaPathParams(ReviewPath);
-  yield* client.GetSubmission(input);
+  const { reason } = yield* client.GetSubmission(input);
   const receipt =
     decision === "approve"
       ? yield* client.ApproveSubmission(input.submissionId)
-      : yield* client.DismissSubmission(input.submissionId);
+      : decision === "dismiss"
+        ? yield* client.DismissSubmission(input.submissionId)
+        : yield* client.ReclassifySubmission(
+            input.submissionId,
+            reason === null ? {} : { inboxReason: reason },
+          );
   const submission = yield* client.GetSubmission(input, { atLeast: receipt });
   return yield* HttpServerResponse.schemaJson(SubmissionDetail)(submission, jsonOptions);
 });

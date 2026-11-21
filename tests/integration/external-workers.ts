@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 // low spam score and a solicitation score above the threshold, `ambiguous` an
 // ambiguous spam score and a low solicitation score, `ambiguous-solicitation`
 // an ambiguous spam score and a solicitation score above the threshold, and
-// `missing-solicitation` a low spam score without the solicitation answer. The
+// `missing-solicitation` a low spam score without the solicitation answer.
+// `accept-after-error` gets an answer that does not decode on the first call for
+// its message, as during a model outage, then the scores of `accept`. The
 // relevance score is high, or low when the business context contains
 // `fixture-relevance: low`. Any other request gets an answer that does not
 // decode, so the classifier quarantines it with `classification-error`, as it
@@ -18,6 +20,7 @@ const calls = [];
 const models = [];
 const verdicts = new Map([
   ["accept", { spam: 0.02, solicitation: 0.03 }],
+  ["accept-after-error", { spam: 0.02, solicitation: 0.03 }],
   ["solicitation", { spam: 0.02, solicitation: 0.93 }],
   ["ambiguous", { spam: 0.3, solicitation: 0.03 }],
   ["ambiguous-solicitation", { spam: 0.3, solicitation: 0.93 }],
@@ -40,6 +43,10 @@ export default {
     calls.push(state ?? null);
     models.push({ model, message: state?.submission_fields?.message });
     const kind = state?.submission_fields?.["fixture-verdict"];
+    if (kind === "accept-after-error") {
+      const message = state.submission_fields.message;
+      if (models.filter((call) => call.message === message).length === 1) return Response.json({});
+    }
     if (model === "openai/decisions" && (kind === "ambiguous" || kind === "ambiguous-solicitation")) {
       const scores = { spam: 0.2, solicitation: 0.03, relevance: 0.98 };
       const answers = input.questions.map(({ type, name }) => ({ type, name, probability: scores[name] }));

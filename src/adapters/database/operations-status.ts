@@ -5,6 +5,7 @@ import {
   OrganizationStatus,
   OutboxStatus,
   QuarantineCount,
+  StuckSubmission,
 } from "../../domain/submissions/operations-status.ts";
 import { OrganizationId, type UserId } from "../../domain/submissions/submission.id.ts";
 import { OperationsStore } from "../../ports/operations-status.ts";
@@ -13,6 +14,8 @@ import { d1, database } from "./d1.ts";
 
 const members = `SELECT organization_id FROM organization_members WHERE user_id = ?`;
 const last24hMs = 24 * 60 * 60 * 1000;
+/** The stuck submissions a page lists; the count covers them all. */
+const stuckListLimit = 50;
 
 const decodeOrganizations = Schema.decodeUnknownEffect(
   Schema.Array(
@@ -32,6 +35,10 @@ const decodeDeliveries = Schema.decodeUnknownEffect(
 const decodeQuarantines = Schema.decodeUnknownEffect(
   Schema.Array(QuarantineCount.mapFields((fields) => ({ ...fields, id: OrganizationId }))),
 );
+const decodeStuckCount = Schema.decodeUnknownEffect(
+  Schema.Struct({ count: OutboxStatus.fields.stuck }),
+);
+const decodeStuck = Schema.decodeUnknownEffect(Schema.Array(StuckSubmission));
 
 const read = Effect.fn("OperationsStore.read")(
   function* (userId: typeof UserId.Type) {
@@ -51,8 +58,10 @@ const read = Effect.fn("OperationsStore.read")(
           .bind(since, userId),
         db
           .prepare(`
-        SELECT s.organization_id AS id, COUNT(*) AS count,
-          MAX(0, ? - MIN(s.received_at)) AS oldestAgeMs
+        SELECT s.organization_id AS id,
+          COUNT(*) FILTER (WHERE e.stuck_at IS NULL) AS count,
+          MAX(0, ? - MIN(s.received_at) FILTER (WHERE e.stuck_at IS NULL)) AS oldestAgeMs,
+          COUNT(*) FILTER (WHERE e.stuck_at IS NOT NULL) AS stuck
         FROM outbox_events e JOIN submissions s ON s.id = e.submission_id
         WHERE e.handed_off_at IS NULL AND s.organization_id IN (${members})
         GROUP BY s.organization_id
@@ -84,7 +93,7 @@ const read = Effect.fn("OperationsStore.read")(
     const quarantinesById = Map.groupBy(quarantineRows, ({ id }) => id);
     return rows.map((organization) => ({
       ...organization,
-      outbox: outboxById.get(organization.id) ?? { count: 0, oldestAgeMs: null },
+      outbox: outboxById.get(organization.id) ?? { count: 0, oldestAgeMs: null, stuck: 0 },
       deliveries: (deliveriesById.get(organization.id) ?? []).map(({ status, count }) => ({
         status,
         count,
@@ -98,4 +107,38 @@ const read = Effect.fn("OperationsStore.read")(
   Effect.mapError(() => StorageUnavailable.make()),
 );
 
-export const operationsStoreLive = Layer.succeed(OperationsStore, { read });
+const stuck = Effect.fn("OperationsStore.stuck")(
+  function* (userId: typeof UserId.Type, organizationId: OrganizationId) {
+    const db = yield* database;
+    const stuckIn = `e.stuck_at IS NOT NULL AND e.handed_off_at IS NULL
+      AND s.organization_id = ? AND s.organization_id IN (${members})`;
+    const [count, rows] = yield* d1(() =>
+      db.batch([
+        db
+          .prepare(`
+        SELECT COUNT(*) AS count
+        FROM outbox_events e JOIN submissions s ON s.id = e.submission_id
+        WHERE ${stuckIn}
+      `)
+          .bind(organizationId, userId),
+        db
+          .prepare(`
+        SELECT s.id AS submissionId, f.public_id AS formPublicId, f.name AS formName,
+          s.received_at AS receivedAt, e.stuck_at AS stuckAt
+        FROM outbox_events e
+        JOIN submissions s ON s.id = e.submission_id
+        JOIN forms f ON f.id = s.form_id
+        WHERE ${stuckIn}
+        ORDER BY s.received_at, s.id LIMIT ?
+      `)
+          .bind(organizationId, userId, stuckListLimit),
+      ]),
+    );
+    const total = yield* decodeStuckCount(count?.results[0]);
+    const submissions = yield* decodeStuck(rows?.results);
+    return { count: total.count, submissions };
+  },
+  Effect.mapError(() => StorageUnavailable.make()),
+);
+
+export const operationsStoreLive = Layer.succeed(OperationsStore, { read, stuck });

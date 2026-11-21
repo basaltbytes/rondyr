@@ -592,6 +592,75 @@ test("see a new message in the processing status after refreshing it", async ({
   await expect(status).toContainText(figure(received, 1));
 });
 
+test("retry a stuck submission from the processing status", async ({
+  dashboard: page,
+  database,
+}) => {
+  await createOrganization(page);
+  // The Cron marks an event stuck after an hour of publications without a hand-off.
+  const form = await database
+    .prepare("SELECT id, organization_id FROM forms WHERE name = ?")
+    .bind(formName)
+    .first();
+  const submissionId = crypto.randomUUID();
+  const message = "Request stuck before classification";
+  const now = Date.now();
+  await database.batch([
+    database
+      .prepare(
+        "INSERT INTO submissions (id, organization_id, form_id, fields, received_at) VALUES (?, ?, ?, ?, ?)",
+      )
+      .bind(
+        submissionId,
+        form.organization_id,
+        form.id,
+        JSON.stringify({ message, "fixture-verdict": "accept" }),
+        now,
+      ),
+    database
+      .prepare(
+        "INSERT INTO outbox_events (submission_id, published_at, publication_count, stuck_at) VALUES (?, ?, 12, ?)",
+      )
+      .bind(submissionId, now, now),
+  ]);
+
+  await openSection(page, t("operations.title"), t("inbox.navigation.operations"));
+  const status = page.getByRole("region", {
+    name: t("operations.organization", { name: organizationName }),
+  });
+  await expect(status).toContainText(figure(t("operations.queue.stuck"), 1));
+  const stuck = status.getByRole("region", { name: t("operations.stuck.title") });
+  const row = stuck.getByRole("listitem").filter({ hasText: submissionId });
+  await expect(row).toContainText(formName);
+  await expect(stuck).not.toContainText(message);
+  await row.getByRole("button", { name: t("operations.stuck.retry") }).click();
+
+  await expect(status).toContainText(figure(t("operations.queue.stuck"), 0));
+  await expect(stuck).toHaveCount(0);
+  await openSubmission(page, t("inbox.folders.accepted"), message);
+});
+
+test("send a message back to the filter after an analysis error", async ({
+  dashboard: page,
+  request,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  // The fake model fails on this message once, then accepts it.
+  const message = "Request analyzed after an outage";
+  const posted = await request.post(endpoint.href, {
+    data: { message, "fixture-verdict": "accept-after-error" },
+  });
+  expect(posted.status()).toBe(202);
+
+  const reader = await openSubmission(page, t("inbox.folders.quarantined"), message);
+  await expect(reader).toContainText(t("status.reasons.classification-error"));
+  await reader.getByRole("button", { name: t("inbox.reader.reclassify") }).click();
+  await expect(reader.getByText(message, { exact: true })).toHaveCount(0);
+  await openSubmission(page, t("inbox.folders.accepted"), message);
+});
+
 test("narrow a folder to one form, show every form again, and keep the folder unfolded after a reload", async ({
   dashboard: page,
   context,

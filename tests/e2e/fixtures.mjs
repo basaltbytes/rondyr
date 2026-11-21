@@ -81,7 +81,7 @@ export const test = base.extend({
   /** The stage's `RONDYR_ESCALATION_CLASSIFIER`. A stage has no second classifier by default. */
   escalationClassifier: [null, { option: true }],
 
-  dashboardOrigin: async ({ request, escalationClassifier }, use) => {
+  dashboardRuntime: async ({ request, escalationClassifier }, use) => {
     const {
       workerOptions: { modulesRules: _rules, ...workerOptions },
     } = unstable_getMiniflareWorkerOptions("./dist/rondyr/wrangler.json");
@@ -129,10 +129,19 @@ export const test = base.extend({
         data: owner,
       });
       expect(setup.status(), "POST /api/setup").toBe(201);
-      await use(origin);
+      await use({ origin, database: db });
     } finally {
       await runtime.dispose();
     }
+  },
+
+  dashboardOrigin: async ({ dashboardRuntime }, use) => {
+    await use(dashboardRuntime.origin);
+  },
+
+  /** The D1 database of the dashboard's Worker, for a state that only hours of processing reach. */
+  database: async ({ dashboardRuntime }, use) => {
+    await use(dashboardRuntime.database);
   },
 
   externalOrigin: async ({ dashboardOrigin }, use) => {

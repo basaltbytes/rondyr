@@ -155,9 +155,9 @@ After a storage quota is reached, Rondyr returns `429` with the number of second
 
 ## Features
 
-- Stores each submission and its outbox event atomically before answering, then publishes the event to the classification queue in the background of the same request. A cron job runs every minute as the recovery path: it publishes the events whose first publication failed, and republishes any event that wasn't handed to the classifier within 5 minutes. A duplicate queue message produces one decision.
+- Stores each submission and its outbox event atomically before answering, then publishes the event to the classification queue in the background of the same request. A cron job runs every minute as the recovery path: it publishes the events whose first publication failed, and republishes any event that wasn't handed to the classifier within 5 minutes. After 12 publications without a hand-off, about an hour, the event is marked stuck: the message stays stored, **Status** lists it, and a member retries it by hand. A duplicate queue message produces one decision.
 - Scores spam, unsolicited sales outreach, and business relevance with Jev or OpenAI Decisions. Both use Workers AI and the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment.
-- Quarantines instead of deleting. Probable spam, ambiguous scores, sales pitches, off-topic messages, and classifier failures all go to human review, each with its reason.
+- Quarantines instead of deleting. Probable spam, ambiguous scores, sales pitches, off-topic messages, and classifier failures all go to human review, each with its reason. Once the model answers again, **Reclassify** sends a message that the classifier failed on back to it.
 - Limits each client per form with Cloudflare's Rate Limiting binding before anything is stored, without keeping IP addresses. A form can have a honeypot field: a filled one sends the message to quarantine without a classifier call, and the visitor gets the usual answer.
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
 - Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
@@ -201,7 +201,7 @@ pnpm deploy:plan --stage staging --env-file .env.staging
 pnpm run deploy --stage staging --env-file .env.staging
 ```
 
-The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues, the cron trigger, the Durable Objects, and the client rate limit. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, the email settings, and deployment from GitHub Actions.
+The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues and consumers, the cron trigger, the Durable Objects, and the client rate limit. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account on a remote stage, the classifier choice, the email settings, and deployment from GitHub Actions.
 
 ## Documentation
 
@@ -209,7 +209,7 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 | --- | --- |
 | What is built, what is planned, and why | [architecture.md](./architecture.md) |
 | Stages, secrets, Cloudflare API token permissions, CI deployment | [docs/deployment.md](./docs/deployment.md) |
-| Queue diagnosis, D1 recovery, Worker rollback, secret rotation | [docs/operations.md](./docs/operations.md) |
+| Queue diagnosis, stuck processing, D1 recovery, Worker rollback, secret rotation | [docs/operations.md](./docs/operations.md) |
 | Rondyr API tokens: authentication, the review routes they allow, errors | [docs/api.md](./docs/api.md) |
 | Webhook payload, signature, verification, retries | [docs/webhooks.md](./docs/webhooks.md) |
 | Email setup with Resend and Cloudflare, limits, message format, retries | [docs/email.md](./docs/email.md) |
