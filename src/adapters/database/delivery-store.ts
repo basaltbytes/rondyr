@@ -33,6 +33,7 @@ const Started = Schema.Struct({ attempt_count: Schema.Int });
 const Recorded = Schema.Struct({ attempt: Schema.Int });
 const Status = Schema.Struct({ status: DeliveryStatus });
 const Context = Schema.Struct({
+  delivery_created_at: Schema.Int,
   target_id: TargetId,
   organization_id: OrganizationId,
   type: TargetType,
@@ -88,13 +89,16 @@ const create = Effect.fn("DeliveryStore.create")(function* (
   );
   const targets = yield* decodeTargets(rows.results).pipe(Effect.mapError(unreadable));
   if (targets.length === 0) return 0;
+  // A message deleted since the read above gets no delivery: without the
+  // condition, its foreign key would fail the insert, and the policy would retry
+  // a schedule that can never succeed.
   yield* d1(() =>
     db.batch(
       targets.map(({ id }) =>
         db
           .prepare(`
       INSERT INTO deliveries (id, submission_id, target_id, next_attempt_at, created_at, updated_at)
-      VALUES (?1, ?2, ?3, ?4, ?4, ?4)
+      SELECT ?1, ?2, ?3, ?4, ?4, ?4 WHERE EXISTS (SELECT 1 FROM submissions WHERE id = ?2)
       ON CONFLICT (submission_id, target_id) DO NOTHING
     `)
           .bind(SecureRandom.uuidV4Unsafe(), accepted.submissionId, id, now),
@@ -194,7 +198,8 @@ const start = Effect.fn("DeliveryStore.start")(function* (
         .bind(deliveryId, lease.now, lease.until),
       db
         .prepare(`
-      SELECT t.id AS target_id, t.organization_id, t.type, t.configuration, s.id AS submission_id,
+      SELECT d.created_at AS delivery_created_at, t.id AS target_id, t.organization_id, t.type,
+        t.configuration, s.id AS submission_id,
         s.received_at,
         f.public_id AS form_public_id, f.name AS form_name, s.fields
       FROM deliveries d
@@ -217,6 +222,7 @@ const start = Effect.fn("DeliveryStore.start")(function* (
     deliveryId,
     attempt: attempt.attempt,
     seriesAttempt: series.attempt_count,
+    createdAt: row.delivery_created_at,
     target: {
       id: row.target_id,
       organizationId: row.organization_id,

@@ -64,10 +64,14 @@ export class RecipientConfirmations extends Context.Service<
     readonly confirm: (
       token: Redacted.Redacted<string>,
     ) => Effect.Effect<void, ConfirmationNotFound | StorageUnavailable>;
-    /** The addresses of the list that the organization has confirmed, in the order of the list. */
+    /**
+     * The addresses of the list that the organization had confirmed at `asOf`,
+     * in the order of the list.
+     */
     readonly confirmedAmong: (
       organizationId: OrganizationId,
       addresses: ReadonlyArray<EmailAddress>,
+      asOf: number,
     ) => Effect.Effect<ReadonlyArray<EmailAddress>, StorageUnavailable>;
   }
 >()("rondyr/ports/recipient-confirmations/RecipientConfirmations") {}

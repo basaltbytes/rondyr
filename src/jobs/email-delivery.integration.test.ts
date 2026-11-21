@@ -345,6 +345,69 @@ it.effect("retries a 500 and a 429 with the same idempotency key and the same me
   return withServices(services(configured), scenario);
 });
 
+it.effect(
+  "keeps the recipients of a delivery for its retries when an address is confirmed meanwhile",
+  () => {
+    const first = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b31");
+    const later = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b32");
+    const scenario = Effect.gen(function* () {
+      const form = yield* seedForm("confirmed-meanwhile", first, contact);
+      const stored = yield* encodeFields(contact);
+      yield* Effect.promise(() =>
+        env.DB.prepare(
+          "INSERT INTO submissions (id, organization_id, form_id, fields, received_at) VALUES (?, ?, 'confirmed-meanwhile-form', ?, 0)",
+        )
+          .bind(later, form.organizationId, stored)
+          .run(),
+      );
+      const targets = yield* NotificationTargets;
+      yield* targets.createEmail(
+        form,
+        recipientsOf(["once-500@meanwhile.example.com", "late-confirmed@example.com"]),
+        "en",
+      );
+      yield* confirmRecipients(form.organizationId, ["once-500@meanwhile.example.com"]);
+      yield* deliverAccepted(form, first);
+      const [failed] = yield* consume(first);
+      assert.strictEqual(failed?.status, "retrying");
+
+      // The second address is confirmed between the two attempts of the delivery.
+      yield* TestClock.adjust("30 seconds");
+      const now = yield* Clock.currentTimeMillis;
+      yield* Effect.promise(() =>
+        env.DB.prepare(`
+        INSERT INTO email_recipient_confirmations (organization_id, address, confirmed_at, created_at)
+        VALUES (?, 'late-confirmed@example.com', ?, ?)
+      `)
+          .bind(form.organizationId, now, now)
+          .run(),
+      );
+      yield* TestClock.adjust("1 minute");
+      const [delivered] = yield* consume(first);
+      yield* deliverAccepted(form, later);
+      yield* consume(later);
+
+      const requests = yield* sentTo("once-500@meanwhile.example.com");
+      const [attempt, retry, next] = yield* Effect.forEach(requests, ({ body }) => readEmail(body));
+      assert.strictEqual(delivered?.status, "delivered");
+      assert.deepEqual(requests.map(({ headers }) => headers["idempotency-key"]).slice(0, 2), [
+        failed?.id,
+        failed?.id,
+      ]);
+      assert.deepEqual(
+        [attempt?.to, retry?.to, next?.to],
+        [
+          ["once-500@meanwhile.example.com"],
+          ["once-500@meanwhile.example.com"],
+          ["once-500@meanwhile.example.com", "late-confirmed@example.com"],
+        ],
+      );
+      assert.strictEqual(requests[1]?.body, requests[0]?.body);
+    });
+    return withServices(services(configured), scenario);
+  },
+);
+
 it.effect("ends the delivery without a retry when Resend refuses the request", () => {
   const ids = [
     SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b04"),

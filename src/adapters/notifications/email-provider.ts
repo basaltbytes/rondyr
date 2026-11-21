@@ -49,15 +49,18 @@ export const emailProvider = Effect.gen(function* () {
   const mail = Effect.fnUntraced(function* (
     target: typeof NotificationTarget.Type,
     key: DeliveryId,
+    confirmedBy: number,
     write: (language: EmailLanguage) => Effect.Effect<EmailContent>,
   ) {
     const configuration = yield* decodeConfiguration(target.configuration).pipe(
       Effect.mapError(() => permanent("The email target configuration is invalid.")),
     );
     const from = yield* email.sender.pipe(Effect.mapError(() => permanent(notConfigured)));
-    // An address that its owner has not confirmed gets nothing, now or later.
+    // An address that its owner has not confirmed gets nothing. The recipients are
+    // those confirmed at `confirmedBy`, so a confirmation between two attempts of a
+    // delivery changes neither its message nor the meaning of its idempotency key.
     const confirmed = yield* confirmations
-      .confirmedAmong(target.organizationId, configuration.recipients)
+      .confirmedAmong(target.organizationId, configuration.recipients, confirmedBy)
       .pipe(
         Effect.mapError(() =>
           NotificationFailed.make({
@@ -84,16 +87,17 @@ export const emailProvider = Effect.gen(function* () {
       deliveryId: notification.deliveryId,
       targetId: notification.target.id,
     });
-    yield* mail(notification.target, notification.deliveryId, (language) =>
+    yield* mail(notification.target, notification.deliveryId, notification.createdAt, (language) =>
       Effect.sync(() => emailContent(notification, language)),
     );
   });
 
   const sendTest = Effect.fn("EmailProvider.sendTest")(function* (test: TestNotification) {
     yield* Effect.annotateCurrentSpan({ testId: test.testId, targetId: test.target.id });
-    yield* mail(test.target, test.testId, (language) =>
-      Effect.map(Clock.currentTimeMillis, (sentAt) =>
-        testEmailContent({ testId: test.testId, formName: test.form.name, sentAt }, language),
+    const now = yield* Clock.currentTimeMillis;
+    yield* mail(test.target, test.testId, now, (language) =>
+      Effect.sync(() =>
+        testEmailContent({ testId: test.testId, formName: test.form.name, sentAt: now }, language),
       ),
     );
   });
