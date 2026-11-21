@@ -6,6 +6,7 @@ declare global {
       TEST_WORKER: Fetcher;
       CLOUDFLARE_EMAIL_WORKER: Fetcher;
       KEYLESS_WORKER: Fetcher;
+      DERIVED_ORIGIN_WORKER: Fetcher;
       CLOUDFLARE_EMAIL_FIXTURE: Fetcher;
       CLOUDFLARE_EMAIL_DB: D1Database;
       WEBHOOK_RECEIVER: Fetcher;

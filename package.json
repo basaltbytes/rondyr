@@ -23,10 +23,11 @@
   "scripts": {
     "dev": "pnpm --filter rondyr run dev",
     "dev:alchemy": "pnpm --filter rondyr run dev:alchemy",
-    "build": "pnpm --recursive --sequential --if-present run build",
+    "build": "pnpm --filter rondyr run build",
     "start": "pnpm --filter rondyr run start",
     "deploy": "pnpm --filter rondyr run deploy",
-    "deploy:plan": "pnpm --filter rondyr run deploy:plan",
+    "deploy:alchemy": "pnpm --filter rondyr run deploy:alchemy",
+    "deploy:alchemy:plan": "pnpm --filter rondyr run deploy:alchemy:plan",
     "deploy:dry": "pnpm --filter rondyr run deploy:dry",
     "smoke": "pnpm --filter rondyr run smoke",
     "cf:types": "pnpm --filter rondyr run cf:types",
@@ -40,7 +41,7 @@
     "test": "pnpm --recursive --sequential --if-present run test",
     "test:e2e": "pnpm --filter rondyr run test:e2e",
     "test:lint": "pnpm --filter @rondyr/oxlint run test",
-    "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "test:scripts": "node --test \"scripts/*.test.mjs\" \"apps/rondyr/scripts/*.test.mjs\"",
     "knip": "knip",
     "doctor": "pnpm --filter rondyr run doctor",
     "evaluate": "pnpm --filter rondyr run evaluate",
@@ -57,5 +58,12 @@
   "engines": {
     "node": ">=24.22.2"
   },
-  "packageManager": "pnpm@11.28.9"
+  "packageManager": "pnpm@11.28.9",
+  "cloudflare": {
+    "bindings": {
+      "RONDYR_SETUP_TOKEN": {
+        "description": "A passphrase of at least 32 characters that you choose now, for example from your password manager's generator. Rondyr asks for it once, on its setup page, to create the owner account, so nobody else who finds the address first can claim the instance. [Deployment guide](https://github.com/basaltbytes/rondyr/blob/main/docs/deployment.md#first-account)"
+      }
+    }
+  }
 }

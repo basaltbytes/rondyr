@@ -81,9 +81,13 @@ export const test = base.extend({
   /** The stage's `RONDYR_ESCALATION_CLASSIFIER`. A stage has no second classifier by default. */
   escalationClassifier: [null, { option: true }],
 
-  dashboardRuntime: async ({ request, escalationClassifier }, use) => {
+  /** Whether the owner account exists. A new instance shows its setup page instead. */
+  claimed: [true, { option: true }],
+
+  dashboardRuntime: async ({ request, escalationClassifier, claimed }, use) => {
     const {
-      workerOptions: { modulesRules: _rules, ...workerOptions },
+      // Workers AI is the fixture of tests/integration/external-workers.ts.
+      workerOptions: { modulesRules: _rules, ai: _ai, ...workerOptions },
     } = unstable_getMiniflareWorkerOptions("./dist/rondyr/wrangler.json");
     const files = await readdir("./dist/rondyr", { recursive: true });
     const chunks = files.filter((file) => file !== "index.js" && file.endsWith(".js"));
@@ -124,11 +128,13 @@ export const test = base.extend({
       for (const { queries } of migrations) {
         await db.batch(queries.map((query) => db.prepare(query)));
       }
-      const setup = await request.post(`${origin}/api/setup`, {
-        headers: { authorization: `Bearer ${testSetupToken}` },
-        data: owner,
-      });
-      expect(setup.status(), "POST /api/setup").toBe(201);
+      if (claimed) {
+        const setup = await request.post(`${origin}/api/setup`, {
+          headers: { authorization: `Bearer ${testSetupToken}` },
+          data: owner,
+        });
+        expect(setup.status(), "POST /api/setup").toBe(201);
+      }
       await use({ origin, runtime, database: db });
     } finally {
       await runtime.dispose();

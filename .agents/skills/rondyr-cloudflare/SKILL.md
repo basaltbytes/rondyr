@@ -5,7 +5,7 @@ description: Work on Rondyr's Cloudflare Worker, Alchemy stack, D1 migrations, b
 
 # Cloudflare in Rondyr
 
-`apps/rondyr/alchemy-run.ts` defines the remote resources. `apps/rondyr/wrangler.json` describes the local bindings used by Vite, type generation and Vitest. Check both files when a binding changes. Alchemy injects its Vite plugin into its own runs. Respect the `ALCHEMY_CLOUDFLARE_VITE_INJECTED` guard in the Vite configuration.
+The root `wrangler.json` defines the Worker and its resources: the Deploy to Cloudflare button, `pnpm run deploy`, Vite, type generation, Vitest and Playwright read it, the tools of `apps/rondyr/` through `worker-config.ts`. `apps/rondyr/alchemy-run.ts` deploys the Basaltbytes production from it until that production moves to Wrangler. Check both when a binding changes; `pnpm doctor` compares them. A build leaves `apps/rondyr/.wrangler/deploy/config.json`, so a Wrangler command run in `apps/rondyr/` names its configuration with `-c`. Alchemy injects its Vite plugin into its own runs. Respect the `ALCHEMY_CLOUDFLARE_VITE_INJECTED` guard in the Vite configuration.
 
 The headers of the dashboard assets are in `apps/rondyr/public/_headers`. Vite copies the file to `apps/rondyr/dist/client`, and Alchemy and Wrangler both apply it to the assets, not to the Worker's responses. Keep the Cloudflare APIs in the adapters and the entry points. Describe the services that the business logic uses with Effect, and expose errors through Effect's typed channel.
 

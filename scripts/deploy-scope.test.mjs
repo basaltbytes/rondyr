@@ -56,9 +56,10 @@ test("deploys when a package the Worker depends on changed", () => {
   });
 });
 
-test("counts the app, the lockfile, the workspace file, the root manifest, the Node version, the patches and .github as a Worker change", () => {
+test("counts the app, the Wrangler configuration, the lockfile, the workspace file, the root manifest, the Node version, the patches and .github as a Worker change", () => {
   for (const path of [
-    "apps/rondyr/wrangler.json",
+    "apps/rondyr/src/worker.ts",
+    "wrangler.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
     "package.json",

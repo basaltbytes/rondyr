@@ -70,6 +70,11 @@ jobs:
 
   dashboard-e2e:
     name: Dashboard browser tests
+    # A copy made by the Deploy to Cloudflare button deploys through Workers Builds and
+    # skips the browser tests, which cost several minutes of Actions on each push; the
+    # repository variable RONDYR_BROWSER_TESTS=true runs them there too. Without them,
+    # the production job below does not run in a copy either.
+    if: github.repository == 'basaltbytes/rondyr' || vars.RONDYR_BROWSER_TESTS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

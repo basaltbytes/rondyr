@@ -1,0 +1,44 @@
+name: Update Rondyr
+
+# For a copy of Rondyr made by the Deploy to Cloudflare button, which GitHub cannot sync
+# like a fork. Run it from the Actions tab: it puts the chosen version of Rondyr on a new
+# branch. Merge that branch, and Workers Builds applies the migrations and deploys it.
+# See docs/deployment.md, "Updates".
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Branch or tag of github.com/basaltbytes/rondyr to update to
+        default: main
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    name: Update from upstream
+    # The upstream repository has nothing to update from.
+    if: github.repository != 'basaltbytes/rondyr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+      - name: Update to the chosen version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+            echo "::error::Give a branch or tag name, such as main or v1.0.0."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags https://github.com/basaltbytes/rondyr.git "$VERSION"
+          # The update script of the version being installed does the update.
+          git show FETCH_HEAD:scripts/update-from-upstream.mjs > "$RUNNER_TEMP/update-from-upstream.mjs"
+          node "$RUNNER_TEMP/update-from-upstream.mjs" "$(git rev-parse FETCH_HEAD)" "$VERSION"

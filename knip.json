@@ -11,7 +11,13 @@
       "project": ["**/*.{ts,astro,mdx}"]
     },
     "apps/rondyr": {
-      "entry": ["alchemy-run.ts", "drizzle-config.ts", "i18next.config.ts", "scripts/*.mjs"],
+      "entry": [
+        "alchemy-run.ts",
+        "drizzle-config.ts",
+        "i18next.config.ts",
+        "scripts/*.mjs",
+        "src/worker.ts"
+      ],
       "project": ["**/*.{ts,tsx,mjs}"],
       "ignoreDependencies": ["tailwindcss"]
     },

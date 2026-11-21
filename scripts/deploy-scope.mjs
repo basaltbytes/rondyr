@@ -17,12 +17,14 @@ import { pathToFileURL } from "node:url";
 export const workerPackage = "rondyr";
 
 /**
- * Files that change the Worker's build or deployment: the app itself, the lockfile, the
- * workspace file with the catalog of versions, the root manifest whose scripts run the
- * deployment, the Node version, the dependency patches and the workflows.
+ * Files that change the Worker's build or deployment: the app itself, its Wrangler
+ * configuration, the lockfile, the workspace file with the catalog of versions, the root
+ * manifest whose scripts run the deployment, the Node version, the dependency patches and
+ * the workflows.
  */
 const workerFiles = [
   /^apps\/rondyr\//u,
+  /^wrangler\.json$/u,
   /^pnpm-lock\.yaml$/u,
   /^pnpm-workspace\.yaml$/u,
   /^package\.json$/u,
