@@ -330,3 +330,110 @@ it.live(
     }),
   45_000,
 );
+
+it.live(
+  "publishes a stuck submission once when two retries arrive together",
+  () =>
+    Effect.gen(function* () {
+      const { cookie } = yield* signIn;
+      const inbox = yield* createInbox("Double retry studio", { cookie });
+      const form = inbox.forms[0];
+      if (form === undefined) return assert.fail("The new inbox should have a form");
+      const submissionId = yield* stuckSubmission(form.publicId, {
+        message: "Retried twice at once",
+        "fixture-verdict": "accept",
+      });
+
+      const retry = call("POST", `${stuckPath(inbox.id)}/${submissionId}/retry`, undefined, {
+        cookie,
+      });
+      const responses = yield* Effect.all([retry, retry], { concurrency: 2 });
+      assert.deepEqual(
+        responses.map(({ status }) => status).toSorted((a, b) => a - b),
+        [200, 409],
+      );
+      yield* waitForInbox(submissionId, { status: "accepted", reason: null });
+      const count = yield* Effect.promise(() =>
+        env.DB.prepare("SELECT publication_count FROM outbox_events WHERE submission_id = ?")
+          .bind(submissionId)
+          .first("publication_count"),
+      );
+      assert.strictEqual(count, 1);
+    }),
+  45_000,
+);
+
+it.live(
+  "takes a classification slot for a reclassification, refuses one over the daily quota, and runs one for two clicks",
+  () =>
+    Effect.gen(function* () {
+      const { cookie } = yield* signIn;
+      const inbox = yield* createInbox("Quota studio", { cookie }, "Pottery classes");
+      const form = inbox.forms[0];
+      if (form === undefined) return assert.fail("The new inbox should have a form");
+      const reclassify = (submissionId: SubmissionId) =>
+        call(
+          "POST",
+          `/api/organizations/${inbox.id}/submissions/${submissionId}/reclassify`,
+          undefined,
+          { cookie },
+        );
+      const classificationsUsed = Effect.promise(() =>
+        env.DB.prepare(
+          "SELECT classifications FROM organization_daily_usage WHERE organization_id = ?",
+        )
+          .bind(inbox.id)
+          .first("classifications"),
+      );
+      const limitClassifications = (limit: number) =>
+        Effect.promise(() =>
+          env.DB.prepare("UPDATE organizations SET daily_classification_limit = ? WHERE id = ?")
+            .bind(limit, inbox.id)
+            .run(),
+        );
+
+      const submissionId = yield* submit(form.publicId, {
+        message: "Is the Sunday class full? Reference reclassify-quota-41d2.",
+        "fixture-verdict": "accept-after-error",
+      });
+      yield* waitForInbox(submissionId, { status: "quarantined", reason: "classification-error" });
+      const usedAtIntake = yield* classificationsUsed;
+      assert.strictEqual(usedAtIntake, 1);
+
+      // The day's classifications are used up: the message stays in quarantine.
+      yield* limitClassifications(1);
+      const refused = yield* reclassify(submissionId);
+      assert.strictEqual(refused.status, 429);
+      assert.strictEqual(refused.headers.get("cache-control"), "no-store");
+      const refusal = yield* json(refused);
+      assert.deepEqual(refusal, { error: "classification-quota-reached" });
+      const usedAfterRefusal = yield* classificationsUsed;
+      assert.strictEqual(usedAfterRefusal, 1);
+      const kept = yield* Effect.promise(() => inboxRow(submissionId));
+      assert.deepEqual(kept, { status: "quarantined", reason: "classification-error" });
+      const unchanged = yield* recordedEvents(submissionId);
+      assert.deepEqual(unchanged, ["ClassificationRequested", "SubmissionQuarantined"]);
+
+      // Two clicks at once start one run; the second gets 409. Each click that found the
+      // message in quarantine took a slot before the aggregate decided.
+      yield* limitClassifications(10);
+      const responses = yield* Effect.all([reclassify(submissionId), reclassify(submissionId)], {
+        concurrency: 2,
+      });
+      assert.deepEqual(
+        responses.map(({ status }) => status).toSorted((a, b) => a - b),
+        [200, 409],
+      );
+      yield* waitForInbox(submissionId, { status: "accepted", reason: null });
+      const events = yield* recordedEvents(submissionId);
+      assert.deepEqual(events, [
+        "ClassificationRequested",
+        "SubmissionQuarantined",
+        "ReclassificationRequested",
+        "SubmissionAccepted",
+      ]);
+      const used = yield* classificationsUsed;
+      assert.include([2, 3], used);
+    }),
+  45_000,
+);

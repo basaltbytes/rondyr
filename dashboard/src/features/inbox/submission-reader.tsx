@@ -24,7 +24,11 @@ const statusTones = {
 const isRequestError = Schema.is(InboxRequestError);
 
 /** Why a decision was not applied. Each one names a message of `inbox.reader.problems`. */
-type DecisionProblem = "notSaved" | "alreadyHandled" | "alreadyHandledRefresh";
+type DecisionProblem =
+  | "notSaved"
+  | "alreadyHandled"
+  | "alreadyHandledRefresh"
+  | "classificationQuotaReached";
 
 interface SubmissionReaderProps {
   readonly inboxId: Inbox["id"];
@@ -89,6 +93,8 @@ export function SubmissionReader({
         onReviewed(await reviewSubmission(inboxId, submissionId, decision));
         return null;
       } catch (error) {
+        // Reclassify takes a slot of the organization's daily classification quota.
+        if (isRequestError(error) && error.status === 429) return "classificationQuotaReached";
         if (!isRequestError(error) || error.status !== 409) return "notSaved";
         try {
           onReviewed(await getSubmission(inboxId, submissionId, new AbortController().signal));

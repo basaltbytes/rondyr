@@ -217,7 +217,8 @@
       "problems": {
         "notSaved": "La décision n’a pas pu être enregistrée. Réessayez.",
         "alreadyHandled": "Ce message a déjà été traité.",
-        "alreadyHandledRefresh": "Ce message a déjà été traité. Actualisez la liste pour voir son statut."
+        "alreadyHandledRefresh": "Ce message a déjà été traité. Actualisez la liste pour voir son statut.",
+        "classificationQuotaReached": "Le plafond quotidien de classifications de cette organisation est atteint : le message reste ici. Réessayez après minuit UTC, ou relevez le plafond dans Réglages → Plafonds quotidiens."
       }
     },
     "deliveries": {
