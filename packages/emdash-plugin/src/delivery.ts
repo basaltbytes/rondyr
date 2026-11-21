@@ -22,6 +22,13 @@ const runBudgetMs = 60_000;
 /** Rondyr retries a webhook for about nine hours; delivery IDs are kept for 30 days. */
 const deliveryMemoryMs = 30 * 24 * 3_600_000;
 
+/**
+ * A quarantined message can be accepted at any time, so the origin of each
+ * message is kept for a year. A message accepted later is emailed as one of
+ * unknown origin.
+ */
+export const originMemoryMs = 365 * 24 * 3_600_000;
+
 /** What sending needs from a plugin context: storage, a logger and `ctx.http`. */
 export interface DeliveryHost extends StorageHost {
   readonly http?: Pick<NonNullable<PluginContext["http"]>, "fetch">;
@@ -37,7 +44,8 @@ export type AttemptResult = "sent" | "retry" | "failed" | "unlinked" | "skipped"
  * Send one queue entry to Rondyr and record what happened. The attempt first
  * claims the entry with a conditional write, so no other attempt sends it at the
  * same time; the outcome is written against that claim. The entry is deleted
- * only after a `202`. Without a token, or before the entry is due, nothing
+ * only after a `202`, once the submission ID that Rondyr returned is recorded
+ * with the entry's EmDash form. Without a token, or before the entry is due, nothing
  * happens. An entry of a form without a Rondyr form becomes `unlinked`.
  */
 export async function attempt(
@@ -65,6 +73,15 @@ export async function attempt(
   const result = await client.submit(link.rondyrFormId, entry.fields, id);
   const next = afterAttempt(entry, sendOutcome(result.status), clock());
   if (next === null) {
+    // Recorded before the entry goes: while the entry is pending, the webhook can wait for it.
+    const submissionId = result.status === null ? null : result.submissionId;
+    if (submissionId === null) {
+      ctx.log.warn("Rondyr stored a queued submission without returning its ID", {
+        submissionId: id,
+      });
+    } else {
+      await store.putOrigin(submissionId, { formSlug: entry.formSlug, recordedAt: clock() });
+    }
     await store.deleteQueueEntry(id, claim);
     return "sent";
   }
@@ -85,7 +102,7 @@ export async function attempt(
 
 /**
  * Send the entries that are due, oldest first, at most `batchSize` and for at
- * most `runBudgetMs`, then forget old webhook deliveries. An entry that throws
+ * most `runBudgetMs`, then forget old webhook deliveries and origins. An entry that throws
  * stays claimed until its lease ends, then the next run finds it due.
  */
 export async function sendDue(
@@ -111,6 +128,7 @@ export async function sendDue(
     }
   }
   await store.forgetDeliveries(started - deliveryMemoryMs);
+  await store.forgetOrigins(started - originMemoryMs);
 }
 
 /**

@@ -2,7 +2,9 @@
 
 `@basaltbytes/emdash-plugin-rondyr` connects an EmDash site to Rondyr. The site keeps `@emdash-cms/plugin-forms` to build, validate and display its forms. Each submission that the forms plugin accepts goes to Rondyr, which classifies it. Editors read the result in the EmDash admin, in **Messages**, and decide there without a Rondyr account. The notification email goes out through the site's own mailer, and only for messages that Rondyr accepts.
 
-Rondyr is the source of truth. The plugin keeps a queue of submissions that Rondyr hasn't stored yet, the layout of each form for the emails, and nothing else: the **Messages** page reads the Rondyr API each time it opens.
+Rondyr is the source of truth. The plugin keeps a queue of submissions that Rondyr hasn't stored yet, the layout of each form for the emails, the slug of the EmDash form each message came from, and nothing else: the **Messages** page reads the Rondyr API each time it opens.
+
+Several EmDash forms can share one Rondyr form, one webhook and one signing secret. A site that keeps the same contact form in two languages, `contact-en` and `contact-fr`, links both to a single Rondyr form, and each message is emailed to the recipients of the form the visitor used, with that form's labels.
 
 The package is in this repository, under `packages/emdash-plugin/`, with the MIT license. It isn't on npm.
 
@@ -11,8 +13,8 @@ The package is in this repository, under `packages/emdash-plugin/`, with the MIT
 1. The site's contact form posts to the site route that the package exports, `/api/form`, with or without JavaScript, or to a route or page of the site that calls the package's `submitForm`.
 2. The route calls the forms plugin's `submit` in the same Worker. The forms plugin validates the fields and stores its own copy, files included, as before.
 3. When the forms plugin accepts, the route calls the Rondyr plugin's `enqueue` route, still in the same Worker, before it answers the visitor. The plugin writes a queue entry under a new submission ID.
-4. Right after the response, the plugin sends the entry to `POST /f/{publicId}` on Rondyr with the API token and an `Idempotency-Key` equal to the submission ID ([server intake](./api.md#server-intake)). Rondyr's `202` deletes the entry.
-5. Rondyr classifies the message. An accepted message, automatically or after a review, goes to the form's webhook: the site's `webhook` route checks the signature and sends one email per recipient through the site's mailer.
+4. Right after the response, the plugin sends the entry to `POST /f/{publicId}` on Rondyr with the API token and an `Idempotency-Key` equal to the submission ID ([server intake](./api.md#server-intake)). On Rondyr's `202`, the plugin records the `submission-id` of the answer with the slug of the EmDash form, then deletes the entry.
+5. Rondyr classifies the message. An accepted message, automatically or after a review, goes to the form's webhook: the site's `webhook` route checks the signature, looks up the EmDash form by the payload's `submission.id`, and sends one email per recipient of that form through the site's mailer.
 
 A quarantined message sends no email. Accepting it later, in EmDash or in the Rondyr dashboard, sends the emails then.
 
@@ -30,9 +32,9 @@ Only forms that post to `/api/form`, or to a site route that calls `submitForm`,
 ### Rondyr
 
 1. In the Rondyr dashboard, create an organization for the site, or open the existing one.
-2. Add a form for each EmDash form that should go through Rondyr, and note its public ID. Rondyr's honeypot field, Turnstile and allowed origins don't matter here: a server intake skips Turnstile and the origin check, and the forms plugin keeps its own spam protection.
+2. Add a form for each EmDash form that should go through Rondyr, and note its public ID. Language versions of one form can share a single Rondyr form, which then has one inbox filter, one classification and one webhook for all of them. Rondyr's honeypot field, Turnstile and allowed origins don't matter here: a server intake skips Turnstile and the origin check, and the forms plugin keeps its own spam protection.
 3. In **Settings → API tokens**, create a token named after the site, and copy it: Rondyr shows it once. This is `RONDYR_API_TOKEN`. Only an admin of the organization can create one. The token belongs to the admin who created it: removing that admin from the organization revokes it, and the site's sending stops until you set a new token: each submission gets `401` and is marked as failed in the queue, and **Retry failed submissions** sends them once the new token is set. The removal dialog says how many tokens go with the member.
-4. In **Destinations**, add a webhook to each of these forms with the URL `https://<your site>/_emdash/api/plugins/rondyr/webhook`, and copy its signing secret, which Rondyr also shows once. Every form uses the same URL, and each webhook has its own secret: `RONDYR_WEBHOOK_SECRET` lists them all (see [Webhook secrets](#webhook-secrets)).
+4. In **Destinations**, add one webhook to each of these Rondyr forms with the URL `https://<your site>/_emdash/api/plugins/rondyr/webhook`, and copy its signing secret, which Rondyr also shows once. Every Rondyr form uses the same URL, and each webhook has its own secret: `RONDYR_WEBHOOK_SECRET` lists them all (see [Webhook secrets](#webhook-secrets)). A Rondyr form shared by several EmDash forms needs one webhook, not one per EmDash form.
 
 ### Package
 
@@ -142,17 +144,19 @@ Then deploy the site.
 
 ### EmDash admin
 
-Open **Rondyr settings**, which only administrators can change. For each EmDash form, choose its Rondyr form and enter the notification recipients, one address per line, at most 20. The page shows the webhook URL to give Rondyr. Linking a form sends the submissions that were waiting for it.
+Open **Rondyr settings**, which only administrators can change. For each EmDash form, choose its Rondyr form and enter the notification recipients, one address per line, at most 20. Several EmDash forms can choose the same Rondyr form, and each keeps its own recipients. The page shows the webhook URL to give Rondyr. Linking a form sends the submissions that were waiting for it.
 
 Then, in **Forms**, remove the form's own notification emails and its auto-reply. Both go out the moment the forms plugin accepts a message, before Rondyr classifies it. The settings page warns about a linked form that still has either.
 
 ## Webhook secrets
 
-Rondyr generates a secret for each webhook, so a site linked to several Rondyr forms receives webhooks signed with several secrets. `RONDYR_WEBHOOK_SECRET` contains all of them, separated by spaces, commas or line breaks, and the route accepts a request signed with any of them:
+Rondyr generates a secret for each webhook. A site whose EmDash forms all share one Rondyr form has one webhook, so `RONDYR_WEBHOOK_SECRET` is that one secret. A site linked to several Rondyr forms receives webhooks signed with several secrets: `RONDYR_WEBHOOK_SECRET` contains all of them, separated by spaces, commas or line breaks, and the route accepts a request signed with any of them:
 
 ```sh
 printf '%s' "whsec_contact… whsec_quotes…" | pnpm exec wrangler secret put RONDYR_WEBHOOK_SECRET
 ```
+
+A site that set up one Rondyr form per language can move to a shared one: in **Rondyr settings**, link the EmDash forms to the Rondyr form you keep. Once the other Rondyr form has no delivery left to retry, deactivate its webhook in Rondyr and remove its secret from `RONDYR_WEBHOOK_SECRET`.
 
 After **Rotate secret** in Rondyr, both secrets sign every request for 24 hours. Replace the old secret with the new one in `RONDYR_WEBHOOK_SECRET` and deploy the site within that window.
 
@@ -180,9 +184,15 @@ If the queue itself can't be written, the forms plugin has already stored the su
 
 ## Notification emails
 
-On `submission.accepted`, the `webhook` route sends one email per recipient of each EmDash form linked to the Rondyr form, through `ctx.email.send`. The text follows the forms plugin's format, `New submission for "<form>"` and one `Label: value` line per field, with the labels of the last submission of that form. `Reply-To` is chosen as the forms plugin chooses it: the first filled email field of the form, a required one before an optional one, when its value is a plain address. A form with no filled email field falls back to a field named `email`.
+On `submission.accepted`, the `webhook` route emails the recipients of the EmDash form the message came from, through `ctx.email.send`. It finds that form by the payload's `submission.id`, which is the `submission-id` that Rondyr answered when the queue sent the message. The text follows the forms plugin's format, `New submission for "<form>"` with the EmDash form's name and one `Label: value` line per field, with the labels of the last submission of that form. `Reply-To` is chosen as the forms plugin chooses it: the first filled email field of the form, a required one before an optional one, when its value is a plain address. A form with no filled email field falls back to a field named `email`.
 
-The route answers `2xx` only once the mailer has taken every email. Otherwise it answers `503`, Rondyr retries the delivery, and the recipients already emailed for that delivery are skipped: the route records each recipient as soon as the mailer takes the email. While one request sends a delivery's emails, another request for the same delivery gets `503`. The route refuses a wrong signature and a timestamp more than 5 minutes away with `401`, and answers a delivery ID it has already processed with `2xx` and no email. A `test` request from the Rondyr dashboard gets `2xx` and sends nothing.
+An address gets one email per message, compared without case, even when it's listed twice or on several forms.
+
+The origin of a message is unknown when the plugin has no record of it: a message sent before this version of the plugin, one created in Rondyr by another client such as a browser form, one accepted more than a year after it was sent, or one whose EmDash form has since been linked to another Rondyr form. The route then emails every recipient of the EmDash forms linked to the Rondyr form, each address once, with the layout of the first of those forms in slug order. A Rondyr form linked to a single EmDash form gets the same emails either way.
+
+When Rondyr's `202` never reached the site, because of a timeout for example, the queue sends the message again with the same `Idempotency-Key` and records the same `submission-id`. Until then, a webhook for a message of unknown origin on a Rondyr form shared by several EmDash forms gets `503` with the code `ORIGIN_PENDING` while one of those forms has a submission waiting in the queue, so that Rondyr retries after 1 minute and then 5. The route stops waiting 15 minutes after Rondyr received the message and emails every recipient, as for any unknown origin.
+
+The route answers `2xx` only once the mailer has taken every email. Otherwise it answers `503`, Rondyr retries the delivery, and the addresses already emailed for that delivery are skipped, including those recorded by an earlier version of the plugin: the route records each address as soon as the mailer takes the email. While one request sends a delivery's emails, another request for the same delivery gets `503`. The route refuses a wrong signature and a timestamp more than 5 minutes away with `401`, and answers a delivery ID it has already processed with `2xx` and no email. A `test` request from the Rondyr dashboard gets `2xx` and sends nothing.
 
 ## Missing secrets
 
@@ -203,3 +213,4 @@ Both secrets are optional: the site builds and deploys without them, and the for
 - A filled honeypot field (`_hp`) gets a silent success from the forms plugin, which stores nothing. The route doesn't send that submission to Rondyr either.
 - Fields go to Rondyr by their name. Empty values, file fields and fields the form doesn't define (`_hp`, the Turnstile token) are left out. A list is joined with `, `, and numbers and booleans become text. Values come from the posted body, trimmed as the forms plugin trims what it stores, but not otherwise converted: a checkbox is `on`.
 - Delivery IDs are kept for 30 days. Rondyr stops retrying a delivery after about nine hours.
+- The origin of a message (its Rondyr submission ID and the slug of its EmDash form, no field) is kept for a year, because a quarantined message can wait for a review that long. The plugin learns the submission ID from Rondyr's `202`, so the Rondyr Worker and its webhook payload don't change; a plugin-side record also needs no reserved field in the message, which would show up in the inbox and reach the classifier.

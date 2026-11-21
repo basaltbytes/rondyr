@@ -112,9 +112,25 @@ export function networkFailure(error: Error | null): NetworkFailure {
   return "network";
 }
 
+/**
+ * What `POST /f/:publicId` answered. `submissionId` is the ID in a `202`
+ * answer, which a replay with the same idempotency key returns again, or null
+ * for another status or a body without it.
+ */
 export type SubmitResult =
-  | { readonly status: number }
+  | { readonly status: number; readonly submissionId: string | null }
   | { readonly status: null; readonly reason: NetworkFailure };
+
+const Stored = z.object({ "submission-id": z.string().min(1).max(128) });
+
+function submissionIdOf(body: string): string | null {
+  try {
+    const stored = Stored.safeParse(JSON.parse(body));
+    return stored.success ? stored.data["submission-id"] : null;
+  } catch {
+    return null;
+  }
+}
 
 /** A Rondyr folder: the status its messages have. */
 export type Decision = "approve" | "dismiss";
@@ -157,9 +173,10 @@ export class RondyrClient {
   }
 
   /**
-   * Send a submission as a server intake. Returns the HTTP status, or why
-   * Rondyr was not reached: a timeout, a host that EmDash refuses, or another
-   * network error. Neither carries the fields or the token.
+   * Send a submission as a server intake. Returns the HTTP status and, with a
+   * `202`, the ID Rondyr gave the submission; or why Rondyr was not reached: a
+   * timeout, a host that EmDash refuses, or another network error. Neither
+   * carries the fields or the token.
    */
   async submit(
     publicId: string,
@@ -181,8 +198,12 @@ export class RondyrClient {
           signal: AbortSignal.timeout(attemptTimeoutMs),
         },
       );
-      await response.body?.cancel();
-      return { status: response.status };
+      if (response.status !== 202) {
+        await response.body?.cancel();
+        return { status: response.status, submissionId: null };
+      }
+      // A body cut off while it is read counts as a network error: the next attempt replays the key.
+      return { status: 202, submissionId: submissionIdOf(await response.text()) };
     } catch (error) {
       return { status: null, reason: networkFailure(error instanceof Error ? error : null) };
     }

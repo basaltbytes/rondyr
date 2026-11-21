@@ -131,6 +131,7 @@ export function memoryHost() {
     layouts: new MemoryCollection(),
     links: new MemoryCollection(),
     deliveries: new MemoryCollection(),
+    origins: new MemoryCollection(),
     unqueued: new MemoryCollection(),
   };
   const host: StorageHost = {

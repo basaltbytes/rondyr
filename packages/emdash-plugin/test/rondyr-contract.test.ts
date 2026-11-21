@@ -130,9 +130,10 @@ it("sends, reads, decides and verifies the webhook with the plugin's code", asyn
     _hp: "filled",
   };
   const key = crypto.randomUUID();
-  expect(await client.submit(publicId, fields, key)).toEqual({ status: 202 });
-  // The retry after a timeout: same key, nothing new stored.
-  expect(await client.submit(publicId, fields, key)).toEqual({ status: 202 });
+  const intake = await client.submit(publicId, fields, key);
+  expect(intake).toEqual({ status: 202, submissionId: expect.any(String) });
+  // The retry after a timeout: same key, nothing new stored, the same submission ID.
+  expect(await client.submit(publicId, fields, key)).toEqual(intake);
   const stored = await env.DB.prepare(
     "SELECT COUNT(*) AS count FROM submissions s JOIN forms f ON f.id = s.form_id WHERE f.public_id = ?",
   )
@@ -153,6 +154,8 @@ it("sends, reads, decides and verifies the webhook with the plugin's code", asyn
   const [entry] = page.entries;
   if (entry === undefined) throw new Error("Expected an entry");
   expect(entry.reason).toBe("honeypot");
+  // The ID of the `202` is the submission's ID, which the webhook payload carries.
+  expect(intake).toEqual({ status: 202, submissionId: entry.submissionId });
   const counts = await client.counts(organizationId);
   expect(counts.quarantined).toBe(1);
   expect(counts.forms).toEqual([{ publicId, counts: expect.objectContaining({ quarantined: 1 }) }]);
@@ -193,11 +196,15 @@ it("sends, reads, decides and verifies the webhook with the plugin's code", asyn
     form: { id: publicId },
   });
 
-  // The plugin's webhook route on the request Rondyr sent: one email per recipient, once.
+  // The plugin's webhook route on the request Rondyr sent: one email per recipient of the
+  // EmDash form the message came from, once. A second EmDash form shares the Rondyr form.
   const { host, lines } = memoryHost();
   const store = new Store(host);
   await store.putLink("contact", { rondyrFormId: publicId, recipients: ["team@example.com"] });
+  await store.putLink("contact-fr", { rondyrFormId: publicId, recipients: ["equipe@example.com"] });
   await store.putLayout(layout);
+  // What the queue records from the `202` above.
+  await store.putOrigin(entry.submissionId, { formSlug: "contact", recordedAt: Date.now() });
   const sent: { to: string; subject: string; text: string; replyTo?: string }[] = [];
   const email = { send: async (message: (typeof sent)[number]) => void sent.push(message) };
   const site = { ...host, email, input: body, request: { headers } };
