@@ -98,6 +98,7 @@
       "all": "All messages"
     },
     "folderTotal": "{{folder}} · {{total}}",
+    "folderForms": "Forms in “{{folder}}”",
     "sections": {
       "forms": "Forms",
       "destinations": "Destinations",
@@ -159,6 +160,17 @@
         "all": {
           "title": "No messages received",
           "note": "Messages sent from your forms arrive here. The address of each form is in Forms."
+        }
+      },
+      "form": {
+        "remove": "Remove the filter on {{name}}",
+        "empty": {
+          "title": "No messages from {{name}}",
+          "others_zero": "The other forms have none here either.",
+          "others_one": "The other forms have {{count}} message here.",
+          "others_many": "The other forms have {{count}} messages here.",
+          "others_other": "The other forms have {{count}} messages here.",
+          "showAll": "Show all forms"
         }
       }
     },

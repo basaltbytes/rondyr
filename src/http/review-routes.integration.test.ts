@@ -7,7 +7,7 @@ import { testOrigin as origin, testSetupToken } from "../../tests/integration/au
 import { outboxLive } from "../adapters/database/outbox.ts";
 import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { InboxOrganizationWithForms } from "../domain/submissions/inbox-setup.ts";
-import { InboxCounts, InboxPage, SubmissionDetail } from "../domain/submissions/inbox.ts";
+import { InboxPage, OrganizationCounts, SubmissionDetail } from "../domain/submissions/inbox.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { publishPendingSubmissions } from "../jobs/submission-outbox.ts";
 
@@ -15,7 +15,7 @@ const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));
 const readInboxes = Schema.decodeUnknownEffect(Schema.Array(InboxOrganizationWithForms));
 const readPage = Schema.decodeUnknownEffect(InboxPage);
-const readCounts = Schema.decodeUnknownEffect(InboxCounts);
+const readCounts = Schema.decodeUnknownEffect(OrganizationCounts);
 const readSubmission = Schema.decodeUnknownEffect(SubmissionDetail);
 const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
 const outboxLayer = Layer.mergeAll(outboxLive, classificationQueueLive);
@@ -171,6 +171,17 @@ it.live(
       );
       // A list entry has a preview of its message, so the inbox shows who wrote and what.
       assert.deepEqual(page.entries[0]?.preview, incompleteContact);
+      const ofForm = yield* request(`${listPath}?form=${form.publicId}`, { headers });
+      const rawOfForm = yield* Effect.promise(() => ofForm.json());
+      const ofFormPage = yield* readPage(rawOfForm);
+      assert.deepEqual(
+        ofFormPage.entries.map((entry) => [entry.submissionId, entry.formPublicId]),
+        [[submissionId, form.publicId]],
+      );
+      const ofUnknownForm = yield* request(`${listPath}?form=unknown`, { headers });
+      const rawOfUnknownForm = yield* Effect.promise(() => ofUnknownForm.json());
+      const unknownFormPage = yield* readPage(rawOfUnknownForm);
+      assert.deepEqual(unknownFormPage.entries, []);
       const counted = yield* request(`/api/organizations/${inbox.id}/submission-counts`, {
         headers,
       });
@@ -178,6 +189,10 @@ it.live(
       const totals = yield* readCounts(rawCounts);
       // The counts themselves are checked against D1 in the inbox adapter's tests.
       assert.strictEqual(totals.quarantined, 1);
+      assert.deepEqual(
+        totals.forms.map(({ publicId, counts }) => [publicId, counts.quarantined]),
+        [[form.publicId, 1]],
+      );
 
       yield* Effect.promise(() =>
         env.DB.batch([

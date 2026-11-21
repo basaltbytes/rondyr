@@ -1,9 +1,9 @@
 import * as Domain from "@alchemy.run/domain";
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import { InboxStore } from "./inbox-store.ts";
 import { Inbox } from "./inbox.projection.ts";
-import { InboxEntry, SubmissionStatus } from "./inbox.ts";
+import { InboxEntry, InboxFilter } from "./inbox.ts";
 import { CurrentReviewer, ReviewSession } from "./review-session.middleware.ts";
 import {
   InboxUnavailable,
@@ -15,7 +15,7 @@ import { OrganizationId } from "./submission.id.ts";
 export class ListSubmissions extends Domain.Query(
   "ListSubmissions",
   {
-    input: { organizationId: OrganizationId, status: Schema.optionalKey(SubmissionStatus) },
+    input: { organizationId: OrganizationId, ...InboxFilter.fields },
     success: InboxEntry,
     paged: true,
     waitsFor: [Inbox],
@@ -28,10 +28,10 @@ export class ListSubmissions extends Domain.Query(
 export const listSubmissionsLive = ListSubmissions.toLayer(
   Effect.gen(function* () {
     const store = yield* InboxStore;
-    return Effect.fnUntraced(function* ({ organizationId, status }, { take, after }) {
+    return Effect.fnUntraced(function* ({ organizationId, ...filter }, { take, after }) {
       const reviewer = yield* CurrentReviewer;
       if (!reviewer.organizations.includes(organizationId)) return yield* SubmissionNotFound.make();
-      return yield* store.list(organizationId, status, take, after);
+      return yield* store.list(organizationId, filter, take, after);
     });
   }),
   { take: { default: 25, max: 50 } },

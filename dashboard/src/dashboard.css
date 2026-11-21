@@ -50,6 +50,10 @@
   border-right-width: var(--hairline);
 }
 
+@utility hairline-l {
+  border-left-width: var(--hairline);
+}
+
 /* The list and the reader of the inbox, next to the sidebar, from 64rem. */
 @utility inbox-panes {
   grid-template-columns: minmax(18.75rem, 23.25rem) minmax(0, 1fr);
