@@ -4,6 +4,7 @@ import "~/lib/i18n";
 import { Dashboard } from "~/routes/dashboard";
 import { Invitation } from "~/routes/invitation";
 import { RecipientConfirmation } from "~/routes/recipient-confirmation";
+import { ResetPassword } from "~/routes/reset-password";
 
 import "./dashboard.css";
 
@@ -11,6 +12,7 @@ import "./dashboard.css";
 const pages = new Map([
   ["/invitation", Invitation],
   ["/confirm-recipient", RecipientConfirmation],
+  ["/reset-password", ResetPassword],
 ]);
 const Page = pages.get(window.location.pathname) ?? Dashboard;
 

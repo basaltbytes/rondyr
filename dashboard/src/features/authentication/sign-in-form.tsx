@@ -1,10 +1,12 @@
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { authClient } from "~/lib/auth-client";
+
+import { PasswordResetRequest } from "./password-reset-request.tsx";
 
 type SignInProblem = "rateLimited" | "unavailable" | "refused" | "failed";
 
@@ -30,7 +32,9 @@ async function signIn(
 export function SignInForm() {
   const { t } = useTranslation();
   const [problem, action, pending] = useActionState(signIn, null);
+  const [resetting, setResetting] = useState(false);
 
+  if (resetting) return <PasswordResetRequest onBack={() => setResetting(false)} />;
   return (
     <Card>
       <CardHeader>
@@ -58,6 +62,9 @@ export function SignInForm() {
           </FormProblem>
           <Button type="submit" variant="default" disabled={pending}>
             {pending ? t("authentication.signIn.pending") : t("authentication.signIn.submit")}
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => setResetting(true)}>
+            {t("authentication.signIn.forgotPassword")}
           </Button>
         </form>
       </CardContent>
