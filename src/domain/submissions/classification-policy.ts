@@ -30,6 +30,7 @@ const OffTopicHandling = Schema.Literals(["review", "accept"]);
 export const ClassificationPolicy = Schema.Struct({
   thresholds: ClassificationThresholds,
   offTopic: OffTopicHandling,
+  escalation: Schema.optionalKey(Schema.Boolean),
 });
 export type ClassificationPolicy = typeof ClassificationPolicy.Type;
 
@@ -49,4 +50,5 @@ export const defaultClassificationPolicies = {
 export const ResolvedClassificationPolicy = Schema.Struct({
   classifier: ClassifierProvider,
   policy: ClassificationPolicy,
+  escalationClassifier: Schema.optionalKey(ClassifierProvider),
 });

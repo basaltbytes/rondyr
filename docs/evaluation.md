@@ -94,6 +94,7 @@ The first command calls each classifier once and is the quickest check that the 
 | `--concurrency` | 4 | Calls in flight at once, from 1 to 16 |
 | `--limit` | none | Evaluate only the first N lines |
 | `--refresh` | off | Call the model again even when the cache has a result |
+| `--escalation` | off | Compare decisions with escalation using cached scores only |
 | `--policy` | classifier defaults | JSON file with the full policy to apply to every selected classifier |
 | `--out` | `evals/out` | Directory for the cache and the reports, ignored by git |
 | `--dry` | off | Fake scores, no credentials |
@@ -120,6 +121,19 @@ pnpm evaluate --classifier both --policy policy.json evals/corpus/synthetic.json
 ```
 
 Keep the same output directory and omit `--refresh` to reuse the cached scores. The runner calls Workers AI for inputs without a cached score, including failed calls from the first run. Save a copy of the first report before the second command, which writes to the same report paths. Set `offTopic` to `review` to quarantine for low relevance or to `accept` to accept those messages with the `off-topic` label. Spam and sales outreach still take priority.
+
+### Comparing escalation
+
+```sh
+pnpm evaluate --escalation evals/corpus/synthetic.jsonl
+pnpm evaluate --escalation --classifier jev --policy policy.json evals/corpus/synthetic.jsonl
+```
+
+Use an output directory from a previous run with both classifiers. By default the report compares both directions. Select `--classifier jev` or `--classifier openai` to choose the primary model. The mode simulates an organization that has enabled escalation, and it applies `escalatedDecision` from `src/domain/submissions/classification.ts`, the function the Worker uses.
+
+The second model only settles the spam doubt. It uses its default thresholds with the primary policy's off-topic choice, and any reason it finds keeps the submission ambiguous. When it finds nothing, the primary model's solicitation and low relevance rules still apply to the primary scores, so a submission can end up in quarantine as `solicitation` or `low-relevance`. An accepted submission gets the off-topic label when either model finds it off-topic.
+
+The replay reads cached scores without credentials or new calls, and rejects `--refresh`. With `--dry`, it reads previously cached fake scores. For each expected label, the `.escalation.json` and `.escalation.md` reports count the final decision of every submission that the primary model left ambiguous: accepted, accepted with the off-topic label, still ambiguous, quarantined for solicitation, or quarantined for low relevance. A missing second score leaves the submission ambiguous and has its own column. A missing primary score leaves the original decision unknown.
 
 ### Calls
 

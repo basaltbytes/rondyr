@@ -3,11 +3,13 @@ import { assert, layer } from "@effect/vitest";
 import { Context, Effect, FileSystem, Layer, Ref } from "effect";
 import { Digest } from "effect/crypto";
 
-import { fileCache } from "./cache.ts";
+import { ResultCache, fileCache } from "./cache.ts";
 import { type Corpus, loadCorpus, parseCorpus, weight } from "./corpus.ts";
-import { type EvaluationOptions, evaluate } from "./evaluate.ts";
+import { evaluateEscalation } from "./escalation.ts";
+import { type EvaluationOptions, evaluate, inputCacheKey } from "./evaluate.ts";
 import { buildReport, encodeReport } from "./report.ts";
 import { renderMarkdown } from "./render.ts";
+import { replay } from "./replay.ts";
 import { WorkersAi, WorkersAiFailure, workersAiDry } from "./workers-ai.ts";
 
 const options: EvaluationOptions = {
@@ -133,6 +135,70 @@ layer(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))((it) => {
   ).pipe(Effect.map((parsed) => ({ name: "one", ...parsed })));
   const jevOnly = { ...options, classifiers: ["jev"] } as const;
   const refreshed = { ...jevOnly, cache: "refresh" } as const;
+
+  it.effect("replays ambiguous cached scores without a Workers AI service", () =>
+    Effect.gen(function* () {
+      const corpus = yield* oneEntry;
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const [occurrence] = replay(corpus);
+      if (occurrence === undefined || occurrence.input === null) {
+        return assert.fail("Expected an occurrence eligible for classification");
+      }
+      const { entry, input } = occurrence;
+      const firstKey = yield* inputCacheKey("workers-ai", "jev", entry.id, input);
+      const secondKey = yield* inputCacheKey("workers-ai", "openai", entry.id, input);
+      const cache = yield* Layer.build(fileCache(directory));
+      yield* Context.get(cache, ResultCache).put(firstKey, {
+        scores: { model: "jev", spam: 0.4, solicitation: 0.03 },
+        latencyMs: 1,
+      });
+      const escalate = Effect.gen(function* () {
+        const readOnly = yield* Layer.build(fileCache(directory, "read-only"));
+        return yield* evaluateEscalation(corpus, ["jev"], "workers-ai", 1).pipe(
+          Effect.provideContext(readOnly),
+        );
+      });
+      const missing = yield* escalate;
+      assert.deepEqual(missing.directions[0]?.byLabel.legitimate.secondMissing, {
+        entries: 1,
+        submissions: 1,
+      });
+
+      yield* Context.get(cache, ResultCache).put(secondKey, {
+        scores: { model: "openai", spam: 0.2, solicitation: 0.03 },
+        latencyMs: 1,
+      });
+      const complete = yield* escalate;
+      assert.deepEqual(complete.directions[0]?.byLabel.legitimate.accepted, {
+        entries: 1,
+        submissions: 1,
+      });
+      assert.deepEqual(complete.directions[0]?.byLabel.legitimate.secondMissing, {
+        entries: 0,
+        submissions: 0,
+      });
+
+      // The second model settles the spam doubt only; the primary scores keep their other rules.
+      const primaryFinds = Effect.fnUntraced(function* (scores: {
+        readonly solicitation: number;
+        readonly relevance: number;
+      }) {
+        yield* Context.get(cache, ResultCache).put(firstKey, {
+          scores: { model: "jev", spam: 0.4, ...scores },
+          latencyMs: 1,
+        });
+        const report = yield* escalate;
+        return report.directions[0]?.byLabel.legitimate;
+      });
+      const pitch = yield* primaryFinds({ solicitation: 0.93, relevance: 0.9 });
+      assert.deepEqual(pitch?.solicitation, { entries: 1, submissions: 1 });
+      assert.deepEqual(pitch?.accepted, { entries: 0, submissions: 0 });
+      const offTopic = yield* primaryFinds({ solicitation: 0.03, relevance: 0.1 });
+      assert.deepEqual(offTopic?.lowRelevance, { entries: 1, submissions: 1 });
+      assert.deepEqual(offTopic?.accepted, { entries: 0, submissions: 0 });
+    }),
+  );
 
   it.effect("retries what the adapter marks retryable, with the saga's budget of three calls", () =>
     Effect.gen(function* () {
