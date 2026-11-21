@@ -9,7 +9,7 @@ describe("readSecrets", () => {
     expect(readSecrets(` ${token}\n`, " whsec_secret ")).toEqual({
       token,
       tokenProblem: null,
-      webhookSecret: "whsec_secret",
+      webhookSecrets: ["whsec_secret"],
     });
   });
 
@@ -18,9 +18,17 @@ describe("readSecrets", () => {
       expect(readSecrets(value, undefined)).toEqual({
         token: null,
         tokenProblem: "token-missing",
-        webhookSecret: null,
+        webhookSecrets: [],
       });
     }
+  });
+
+  it("reads one webhook secret per Rondyr webhook", () => {
+    expect(readSecrets(token, "whsec_one, whsec_two\nwhsec_three").webhookSecrets).toEqual([
+      "whsec_one",
+      "whsec_two",
+      "whsec_three",
+    ]);
   });
 
   it("never uses a value that is not a Rondyr API token", () => {

@@ -8,8 +8,13 @@ export interface RondyrSecrets {
   /** `RONDYR_API_TOKEN`, when it is a Rondyr API token. */
   readonly token: string | null;
   readonly tokenProblem: TokenProblem | null;
-  /** `RONDYR_WEBHOOK_SECRET`: the signing secret of the Rondyr webhook destination. */
-  readonly webhookSecret: string | null;
+  /**
+   * `RONDYR_WEBHOOK_SECRET`: the signing secrets of the site's Rondyr webhook
+   * destinations, separated by spaces, commas or line breaks. Rondyr gives
+   * each webhook its own secret, so a site linked to several Rondyr forms
+   * lists one per form.
+   */
+  readonly webhookSecrets: readonly string[];
 }
 
 function present(value: string | undefined): string | null {
@@ -36,6 +41,6 @@ export function readSecrets(
   return {
     token: tokenProblem === null ? value : null,
     tokenProblem,
-    webhookSecret: present(webhookSecret),
+    webhookSecrets: (webhookSecret ?? "").split(/[\s,]+/u).filter((secret) => secret !== ""),
   };
 }
