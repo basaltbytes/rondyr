@@ -10,7 +10,7 @@ import type { Target, TestResult } from "~/lib/targets-client";
 const isFailed = Schema.is(TargetRequestFailed);
 
 /** How a test ended: the answer of the recipient, or why the test did not run. */
-type TestOutcome = TestResult | "alreadyRunning" | "notSent";
+type TestOutcome = TestResult | "alreadyRunning" | "limited" | "notSent";
 
 interface TargetTestProps {
   readonly inboxId: Inbox["id"];
@@ -24,13 +24,16 @@ export function TargetTest({ inboxId, targetId }: TargetTestProps) {
     try {
       return await testTarget(inboxId, targetId);
     } catch (error) {
-      return isFailed(error) && error.status === 409 ? "alreadyRunning" : "notSent";
+      if (isFailed(error) && error.status === 409) return "alreadyRunning";
+      if (isFailed(error) && error.status === 429) return "limited";
+      return "notSent";
     }
   }, null);
 
   function describe(shown: TestOutcome) {
     if (shown === "alreadyRunning") return t("inbox.destinations.test.alreadyRunning");
     if (shown === "notSent") return t("inbox.destinations.test.notSent");
+    if (shown === "limited") return t("inbox.destinations.test.limited");
     switch (shown.outcome) {
       case "delivered":
         return t("inbox.destinations.test.deliveredWithId", { id: shown.testId });

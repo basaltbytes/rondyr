@@ -8,6 +8,7 @@ import { OrganizationId, SubmissionId } from "../domain/submissions/submission.i
 import { retryDelivery, sendTestNotification } from "../jobs/delivery-outbox.ts";
 import { DeliveryHistory } from "../ports/delivery-history.ts";
 import { NotificationTargets } from "../ports/notification-targets.ts";
+import { TestSendLimit } from "../ports/test-send-limit.ts";
 import { authorize } from "./organization-access.ts";
 
 const SubmissionPath = Schema.Struct({
@@ -16,6 +17,12 @@ const SubmissionPath = Schema.Struct({
 });
 const DeliveryPath = SubmissionPath.mapFields((fields) => ({ ...fields, deliveryId: DeliveryId }));
 const TargetPath = Schema.Struct({ organizationId: OrganizationId, targetId: TargetId });
+
+/** The target had its number of tests for the minute. */
+class TestLimited extends Schema.TaggedError<TestLimited, { readonly brand: unique symbol }>()(
+  "TestLimited",
+  {},
+) {}
 
 /** A test of this target is running in this Worker instance. */
 class TestRunning extends Schema.TaggedError<TestRunning, { readonly brand: unique symbol }>()(
@@ -45,6 +52,13 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         TargetNotFound: () => empty(404),
         DeliveryNotRetryable: () => empty(409),
         TestRunning: () => empty(409),
+        TestLimited: () =>
+          Effect.succeed(
+            HttpServerResponse.empty({
+              status: 429,
+              headers: { ...jsonOptions.headers, "retry-after": "60" },
+            }),
+          ),
         SchemaError: () => empty(400),
       }).pipe(Effect.catch(() => empty(503)));
     }),
@@ -97,6 +111,9 @@ export const deliveryRoutes = Layer.unwrap(
       const userId = yield* deliveryOperator(organizationId, "test-destinations");
       const targets = yield* NotificationTargets;
       const testable = yield* targets.testable({ userId, organizationId, targetId });
+      // 3 tests a minute per destination, across Worker instances.
+      const limit = yield* TestSendLimit;
+      if (!(yield* limit.admit(testable.target.id))) return yield* TestLimited.make();
       const result = yield* Effect.acquireUseRelease(
         claim(testable.target.id),
         () => sendTestNotification(testable),

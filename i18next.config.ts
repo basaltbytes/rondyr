@@ -33,6 +33,10 @@ export default defineConfig({
       "inbox.members.problems.*",
       "invitation.as.*",
       "invitation.problems.*",
+      "inbox.emails.statuses.*",
+      "inbox.emails.resend.*",
+      "recipientConfirmation.confirmed.*",
+      "recipientConfirmation.invalid.*",
     ],
   },
   status: {

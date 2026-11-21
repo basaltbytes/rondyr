@@ -456,7 +456,8 @@
         "retryableFailure": "The test message failed temporarily: {{summary}}",
         "permanentFailure": "The test message failed: {{summary}}",
         "alreadyRunning": "A test is already running for this destination.",
-        "notSent": "The test message could not be sent. Try again."
+        "notSent": "The test message could not be sent. Try again.",
+        "limited": "This destination already got 3 tests this minute. Wait a minute and try again."
       }
     },
     "webhooks": {
@@ -514,6 +515,20 @@
         "too-many-recipients": "A destination accepts at most {{max}} addresses.",
         "invalid-address": "An address is not valid. Enter bare addresses, such as team@example.com, without a name or angle brackets.",
         "duplicate-address": "An address appears twice."
+      },
+      "confirmationNote": "Rondyr emails each new address a link to confirm it, once for the organization. Messages and tests go to confirmed addresses only.",
+      "statuses": {
+        "pending": "Waiting for confirmation",
+        "confirmed": "Confirmed"
+      },
+      "resendLabel": "Send the confirmation email to {{address}} again",
+      "resend": {
+        "action": "Send again",
+        "sent": "Confirmation email sent to {{address}}.",
+        "confirmed": "{{address}} is already confirmed. Refresh the page to see it.",
+        "limit": "{{address}} already got 3 confirmation emails today. Try again tomorrow.",
+        "noProvider": "This server does not send email, so the confirmation cannot be sent.",
+        "failed": "The confirmation email to {{address}} could not be sent. Try again."
       }
     },
     "members": {
@@ -594,6 +609,21 @@
       "signInRequired": "An account already uses this address. Sign in with it to accept.",
       "rejected": "Check your name, and choose a password of 12 to 128 characters.",
       "failed": "The invitation could not be accepted. Try again."
+    }
+  },
+  "recipientConfirmation": {
+    "title": "Confirm your email address",
+    "description": "Confirm that this address may receive the messages of a website form handled by Rondyr. If you do not want them, close this page: nothing will be sent to you.",
+    "confirm": "Confirm my address",
+    "confirming": "Confirming…",
+    "failed": "The address could not be confirmed. Try again.",
+    "confirmed": {
+      "title": "Address confirmed",
+      "body": "This address now receives the messages sent to it through Rondyr. You can close this page."
+    },
+    "invalid": {
+      "title": "Link unavailable",
+      "body": "This confirmation link has expired or was already used. Ask the person who added your address to send a new one."
     }
   }
 }

@@ -189,16 +189,29 @@ const memberQuery = `
   WHERE m.organization_id = ?2 AND m.user_id = ?3 AND EXISTS (${actor})
 `;
 
+// ?2 is the organization, ?3 the member and ?4 the time. A member who loses the
+// admin role, or the organization, keeps no invitation that it issued: one of
+// them could bring it back, as an admin or under another address.
+const withdrawInvitations = `
+  UPDATE organization_invitations SET cancelled_at = ?4
+  WHERE organization_id = ?2 AND created_by = ?3 AND accepted_at IS NULL AND cancelled_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM organization_members
+      WHERE organization_id = ?2 AND user_id = ?3 AND role = 'admin'
+    )
+`;
+
 const changeRole = Effect.fn("Members.changeRole")(function* (
   scope: OrganizationScope,
   member: typeof UserId.Type,
   role: MemberRole,
 ) {
   const db = yield* database;
+  const now = yield* Clock.currentTimeMillis;
   const key = [scope.userId, scope.organizationId, member] as const;
   // The last admin keeps the role: the condition is part of the statement, so two
   // admins who demote each other at the same time cannot both succeed.
-  const [changed, current] = yield* d1(() =>
+  const [changed, , current] = yield* d1(() =>
     db.batch([
       db
         .prepare(`
@@ -208,6 +221,7 @@ const changeRole = Effect.fn("Members.changeRole")(function* (
         RETURNING user_id AS id
       `)
         .bind(...key, role),
+      db.prepare(withdrawInvitations).bind(...key, now),
       db.prepare(memberQuery).bind(...key),
     ]),
   );
@@ -223,8 +237,11 @@ const remove = Effect.fn("Members.remove")(function* (
   member: typeof UserId.Type,
 ) {
   const db = yield* database;
+  const now = yield* Clock.currentTimeMillis;
   const key = [scope.userId, scope.organizationId, member] as const;
-  const [removed, current] = yield* d1(() =>
+  // A removed member knows the API tokens it created and the links it issued:
+  // the same transaction revokes them, so none of them keeps the access.
+  const [removed, , , current] = yield* d1(() =>
     db.batch([
       db
         .prepare(`
@@ -234,6 +251,16 @@ const remove = Effect.fn("Members.remove")(function* (
         RETURNING user_id AS id
       `)
         .bind(...key),
+      db
+        .prepare(`
+        UPDATE api_tokens SET revoked_at = ?4
+        WHERE organization_id = ?2 AND created_by = ?3 AND revoked_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM organization_members WHERE organization_id = ?2 AND user_id = ?3
+          )
+      `)
+        .bind(...key, now),
+      db.prepare(withdrawInvitations).bind(...key, now),
       db.prepare(memberQuery).bind(...key),
     ]),
   );

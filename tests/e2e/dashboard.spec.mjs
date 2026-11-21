@@ -472,10 +472,11 @@ test("quarantine a message with a filled honeypot field and review it", async ({
   await expect(accepted.getByRole("button", { name: accept })).toHaveCount(0);
 });
 
-test("add destinations, send a test and retry a failed webhook", async ({
+test("add destinations, confirm a recipient, send a test and retry a failed webhook", async ({
   dashboard: page,
   context,
   externalOrigin,
+  sentEmails,
 }) => {
   await createOrganization(page);
   await openSection(page, t("inbox.sections.forms"));
@@ -510,6 +511,21 @@ test("add destinations, send a test and retry a failed webhook", async ({
   await emails.getByRole("button", { name: t("inbox.emails.add") }).click();
   const destination = emails.getByRole("listitem").filter({ hasText: email });
   await expect(destination).toBeVisible();
+  await expect(destination.getByText(t("inbox.emails.statuses.pending"))).toBeVisible();
+  // The owner of the address confirms it from the link of the email that Rondyr sent.
+  const [confirmation] = await sentEmails(email);
+  const link = confirmation.text.match(/https?:\/\/\S+\/confirm-recipient#[\w-]{43}/u)?.[0];
+  expect(link).toBeDefined();
+  const mailbox = await context.newPage();
+  await mailbox.goto(link);
+  await mailbox.getByRole("button", { name: t("recipientConfirmation.confirm") }).click();
+  await expect(
+    mailbox.getByRole("heading", { name: t("recipientConfirmation.confirmed.title") }),
+  ).toBeVisible();
+  await mailbox.close();
+  await openSection(page, t("inbox.sections.forms"));
+  await openSection(page, t("inbox.sections.destinations"));
+  await expect(destination.getByText(t("inbox.emails.statuses.confirmed"))).toBeVisible();
   await destination.getByRole("button", { name: sendTest }).click();
   await expect(destination.getByRole("status")).toContainText(testDelivered);
 

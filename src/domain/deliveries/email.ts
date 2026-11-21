@@ -82,6 +82,15 @@ export const defaultEmailLanguage: EmailLanguage = "en";
 /** A destination stored before the language setting got its emails in French, and keeps them. */
 export const legacyEmailLanguage: EmailLanguage = "fr";
 
+/** An address gets messages once its owner has confirmed it for the organization. */
+export const RecipientStatus = Schema.Literals(["pending", "confirmed"]);
+export type RecipientStatus = typeof RecipientStatus.Type;
+
+export const RecipientConfirmationStatus = Schema.Struct({
+  address: EmailAddress,
+  status: RecipientStatus,
+});
+
 /** An email target as the admin API returns it. */
 export const EmailTarget = Schema.Struct({
   id: TargetId,
@@ -89,6 +98,11 @@ export const EmailTarget = Schema.Struct({
   recipients: EmailRecipients,
   /** The language of the emails that the recipients get. */
   language: EmailLanguage,
+  /**
+   * Each recipient, `pending` until its owner confirms it for the organization.
+   * Deliveries and tests go to the confirmed ones only.
+   */
+  recipientStatuses: Schema.Array(RecipientConfirmationStatus),
   active: Schema.Boolean,
   createdAt: Schema.Int,
 });

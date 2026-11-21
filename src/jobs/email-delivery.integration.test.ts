@@ -6,9 +6,11 @@ import { FetchHttpClient } from "effect/http";
 import { TestClock } from "effect/testing";
 
 import { testSecretsKey } from "../../tests/integration/auth-fixture.ts";
+import { confirmRecipients } from "../../tests/integration/recipient-fixture.ts";
 import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";
 import { deliveryStoreLive } from "../adapters/database/delivery-store.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
+import { recipientConfirmationsLive } from "../adapters/database/recipient-confirmations.ts";
 import { emailSenderLayer, type EmailEnvironment } from "../adapters/email/email-sender.ts";
 import { notificationProvidersLive } from "../adapters/notifications/notification-providers.ts";
 import { DeliveryId, DeliveryStatus } from "../domain/deliveries/delivery.ts";
@@ -84,7 +86,7 @@ function services(email: EmailEnvironment) {
     stored,
     deliverySchedulerLive.pipe(Layer.provide(stored)),
     Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
-      Layer.provide(Layer.mergeAll(cipher, emailSender)),
+      Layer.provide(Layer.mergeAll(cipher, emailSender, recipientConfirmationsLive)),
     ),
     Layer.succeed(FetchHttpClient.Fetch, outboundFetch),
   );
@@ -134,12 +136,15 @@ const recipientsOf = (addresses: ReadonlyArray<string>) =>
     onFailure: (reason) => assert.fail(`${addresses.join(", ")} is refused: ${reason}`),
   });
 
+/** An email target whose recipients have all confirmed their address. */
 const addEmailTarget = Effect.fnUntraced(function* (
   form: FormScope,
   addresses: ReadonlyArray<string>,
 ) {
   const targets = yield* NotificationTargets;
-  return yield* targets.createEmail(form, recipientsOf(addresses), "en");
+  const created = yield* targets.createEmail(form, recipientsOf(addresses), "en");
+  yield* confirmRecipients(form.organizationId, addresses);
+  return created;
 });
 
 const deliverAccepted = Effect.fnUntraced(function* (form: FormScope, submissionId: SubmissionId) {
@@ -280,6 +285,7 @@ it.effect("writes in French the email of a target stored before the language set
         .bind('{"recipients":["legacy-team@example.com"]}')
         .run(),
     );
+    yield* confirmRecipients(form.organizationId, ["legacy-team@example.com"]);
     yield* deliverAccepted(form, submissionId);
     yield* consume(submissionId);
 
