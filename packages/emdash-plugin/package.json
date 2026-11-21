@@ -2,7 +2,24 @@
   "name": "@basaltbytes/emdash-plugin-rondyr",
   "version": "0.1.0",
   "description": "EmDash plugin that sends form submissions to Rondyr and shows its inbox in the EmDash admin",
+  "keywords": [
+    "astro",
+    "emdash",
+    "emdash-plugin",
+    "forms",
+    "rondyr",
+    "spam-filter"
+  ],
+  "homepage": "https://github.com/basaltbytes/rondyr/blob/main/docs/emdash.md",
+  "bugs": {
+    "url": "https://github.com/basaltbytes/rondyr/issues"
+  },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/basaltbytes/rondyr.git",
+    "directory": "packages/emdash-plugin"
+  },
   "files": [
     "src",
     "LICENSE",

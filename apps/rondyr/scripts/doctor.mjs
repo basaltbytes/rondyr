@@ -4,8 +4,8 @@ import { isDeepStrictEqual, parseEnv } from "node:util";
 import { queueNameVars } from "../worker-config.ts";
 
 // The root wrangler.json is the deployment definition: the Deploy to Cloudflare button
-// and `pnpm run deploy` read it. The Alchemy stack, which deploys the prod stage for now,
-// reads it too; these checks keep the two in step until that stack is deleted.
+// and `pnpm run deploy` read it. The Alchemy stack, the second supported way to deploy,
+// reads it too; these checks fail when the two definitions drift apart.
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const pkg = JSON.parse(read("../package.json"));
 const rootPkg = JSON.parse(read("../../../package.json"));

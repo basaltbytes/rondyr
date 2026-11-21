@@ -6,4 +6,12 @@ In `apps/rondyr/dashboard/src`, routes import features. Features can import thei
 
 `pnpm test:lint` at the repository root runs the plugin tests with Oxlint. The root `.oxlintrc.json` loads the plugin.
 
-Redistribution of the code taken from Usine keeps its [original license](LICENSE).
+## Licenses
+
+The code taken from Usine is under the GNU Affero General Public License v3.0, in [LICENSE](LICENSE).
+
+These files come from [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop) at commit `6d53855` and are under the MIT license, with its copyright notice, in [LICENSE-ANTI-SLOP](LICENSE-ANTI-SLOP):
+
+- `rules/no-chained-type-assertions.ts`, `rules/no-conditional-empty-object-spread.ts`, `rules/no-known-value-widening.ts`, `rules/no-module-mocking.ts`, `rules/no-object-parameters.ts`, `rules/no-reflect-apply.ts`, `rules/no-reflect-get.ts`, `rules/no-runtime-typeof.ts`
+- `rules/no-service-constructor-imports.ts`, `rules/no-shape-in-symbol-names.ts`, `rules/no-unknown-parameters.ts`, `rules/no-unknown-returns.ts`, `rules/no-unknown-type-aliases.ts`, `rules/no-unsafe-dictionary-type.ts`, `rules/no-widen-then-assert.ts`, `rules/require-safety-comment-for-type-assertion.ts`
+- `shared/dictionary-types.ts`, `shared/lexical-type-parameters.ts`, `shared/reflect-method.ts`

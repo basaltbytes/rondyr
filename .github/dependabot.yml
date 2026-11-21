@@ -1,0 +1,53 @@
+# Weekly update pull requests for the SHA-pinned actions in .github/workflows and for
+# the npm dependencies of the workspace. Dependabot bumps an action's pin and its
+# trailing version comment; without it, the pins stop receiving upstream security fixes.
+#
+# npm versions live in the `catalog:` of pnpm-workspace.yaml, which Dependabot updates
+# along with pnpm-lock.yaml. pnpm 11 refuses a version published less than a day ago
+# (`minimumReleaseAge`, 1,440 minutes by default), so the cooldown waits longer than that
+# before proposing a new version. Security updates skip the cooldown.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 2
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 2
+    # The catalog pins exact versions, which a new version always replaces. The peer
+    # dependency ranges of packages/emdash-plugin change only when a new version falls
+    # outside them, so sites keep the oldest versions the plugin supports.
+    versioning-strategy: increase-if-necessary
+    open-pull-requests-limit: 10
+    groups:
+      # Packages released together, which only work at the same version.
+      effect:
+        patterns: ["effect", "@effect/*"]
+      alchemy:
+        patterns: ["alchemy", "@alchemy.run/*"]
+      cloudflare:
+        patterns: ["wrangler", "miniflare", "@cloudflare/*"]
+      drizzle:
+        patterns: ["drizzle-orm", "drizzle-kit"]
+      better-auth:
+        patterns: ["better-auth", "@better-auth/*"]
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      emdash:
+        patterns: ["emdash", "@emdash-cms/*", "astro"]
+      lint-and-format:
+        patterns: ["oxlint", "@oxlint/*", "oxfmt", "knip", "@shadcn/lint"]
+      # Everything else, minor and patch versions in one pull request.
+      other:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

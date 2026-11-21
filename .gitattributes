@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Generated files: GitHub folds them in diffs and leaves them out of the language stats.
+pnpm-lock.yaml linguist-generated
+apps/rondyr/database/migrations/*/snapshot.json linguist-generated

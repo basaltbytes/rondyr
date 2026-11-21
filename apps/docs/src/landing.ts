@@ -13,7 +13,7 @@ export interface FirstRunStep {
 export const firstRun: readonly FirstRunStep[] = [
   {
     title: "Deploy",
-    html: "Select <strong>Deploy to Cloudflare</strong>. Cloudflare copies the repository to your GitHub or GitLab account and deploys the Worker to your Cloudflare account. When it asks for the setup token, enter a long random value, such as the output of <code>openssl rand -hex 32</code>, and keep it for the next step.",
+    html: "Select <strong>Deploy to Cloudflare</strong>. Cloudflare copies the repository to your GitHub or GitLab account and deploys the Worker to your Cloudflare account. When it asks for the setup token, enter a long random value of at least 32 characters, such as the output of <code>openssl rand -hex 32</code>, and keep it for the next step.",
   },
   {
     title: "Create the owner account",
