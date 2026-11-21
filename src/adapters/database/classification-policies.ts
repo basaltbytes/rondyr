@@ -25,8 +25,16 @@ const decodeProvider = Schema.decodeUnknownEffect(ClassifierProvider);
 const unavailable = () => StorageUnavailable.make();
 const unreadable = () => ClassificationPolicyUnreadable.make();
 
-const configuredClassifier = (value: string | undefined) =>
-  decodeProvider(value ?? defaultClassifier).pipe(Effect.mapError(unreadable));
+const stageClassifier = (value: string) => decodeProvider(value).pipe(Effect.mapError(unreadable));
+
+/** The stage's classifier, and its second classifier unless it is absent or the same. */
+const stageClassifiers = Effect.gen(function* () {
+  const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
+  const classifier = yield* stageClassifier(env.RONDYR_CLASSIFIER ?? defaultClassifier);
+  const configured = env.RONDYR_ESCALATION_CLASSIFIER;
+  const second = configured === undefined ? undefined : yield* stageClassifier(configured);
+  return { classifier, escalationClassifier: second === classifier ? undefined : second };
+});
 
 const membership = "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2";
 const scopedPolicy = `
@@ -37,12 +45,7 @@ const scopedPolicy = `
 const resolve = Effect.fn("ClassificationPolicies.resolve")(function* (
   organizationId: OrganizationId,
 ) {
-  const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
-  const classifier = yield* configuredClassifier(env.RONDYR_CLASSIFIER);
-  const escalationClassifier =
-    env.RONDYR_ESCALATION_CLASSIFIER === undefined
-      ? undefined
-      : yield* decodeProvider(env.RONDYR_ESCALATION_CLASSIFIER).pipe(Effect.mapError(unreadable));
+  const { classifier, escalationClassifier } = yield* stageClassifiers;
   const db = yield* database;
   const row = yield* d1(() =>
     db
@@ -67,9 +70,13 @@ const settings = Effect.fn("ClassificationPolicies.settings")(function* (scope: 
   );
   if (row === null) return yield* ClassificationPolicyNotFound.make();
   const { policy: override } = yield* decodePolicy(row).pipe(Effect.mapError(unreadable));
-  const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
-  const classifier = yield* configuredClassifier(env.RONDYR_CLASSIFIER);
-  return { classifier, defaults: defaultClassificationPolicies[classifier], override };
+  const { classifier, escalationClassifier } = yield* stageClassifiers;
+  return {
+    classifier,
+    escalationClassifier: escalationClassifier ?? null,
+    defaults: defaultClassificationPolicies[classifier],
+    override,
+  };
 });
 
 const save = Effect.fn("ClassificationPolicies.save")(function* (
