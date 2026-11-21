@@ -34,7 +34,7 @@ CI runs the suite in the **Dashboard browser tests** job. To inspect a failed te
 - Work on a branch. In the Basaltbytes repository, a push to `main` deploys production and applies the D1 migrations.
 - Keep one issue per pull request, and reference it with `Closes #n` or `Refs #n`.
 - Add tests for the behavior you change. Integration tests run in workerd against the built Worker and don't mock modules.
-- Code and comments are in English, like the README and `docs/`. Issues, pull request descriptions, `architecture.md`, and the dashboard text are in French.
+- Code, comments, the README, `docs/`, `architecture.md`, issues, and pull request descriptions are in English. The dashboard text, the confirmation page, and the emails are written in English first and also exist in French.
 
 ## License of contributions
 

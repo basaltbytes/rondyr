@@ -1,9 +1,9 @@
-# Règles Oxlint de Rondyr
+# Rondyr Oxlint rules
 
-Le plugin provient de `basaltbytes/usine@011c3f740`, qui reprend entre autres `dmmulroy/anti-slop@6d53855`. La configuration applique au dashboard les règles React d’Usine et reprend les vérifications de nommage et d’imports du dépôt de formation.
+The plugin comes from `basaltbytes/usine@011c3f740`, which takes, among others, rules from `dmmulroy/anti-slop@6d53855`. The configuration applies Usine's React rules to the dashboard and reuses the naming and import checks of the training repository.
 
-Dans `dashboard/src`, les routes importent les fonctionnalités. Les fonctionnalités peuvent importer leur propre code et les modules partagés. Les modules partagés restent indépendants des routes et des fonctionnalités.
+In `dashboard/src`, routes import features. Features can import their own code and the shared modules. The shared modules stay independent of routes and features.
 
-`pnpm test:lint` lance les tests du plugin avec Oxlint.
+`pnpm test:lint` runs the plugin tests with Oxlint.
 
-La redistribution du code repris d’Usine conserve sa [licence d’origine](LICENSE).
+Redistribution of the code taken from Usine keeps its [original license](LICENSE).
