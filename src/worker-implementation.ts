@@ -74,7 +74,9 @@ const services = Layer.mergeAll(
       Layer.mergeAll(
         DomainCloudflare.layerDurableObjects(),
         classifierLive.pipe(
-          Layer.provide(Layer.mergeAll(storedMessagesLive, classificationPoliciesLive)),
+          Layer.provide(
+            Layer.mergeAll(storedMessagesLive, classificationPoliciesLive, organizationQuotasLive),
+          ),
         ),
         inboxStoreLive,
         deliverySchedulerLive.pipe(Layer.provide(deliveries)),

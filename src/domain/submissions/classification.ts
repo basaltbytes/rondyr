@@ -20,11 +20,22 @@ export const ClassifierScores = Schema.Struct({
   solicitation: Score,
 });
 
+/**
+ * The second evaluation of an ambiguous submission. Without `scores`, the
+ * second model was not called or did not answer; `skipped: "quota"` says that
+ * the organization's daily classification limit stopped the call.
+ */
 export const EscalationEvaluation = Schema.Struct({
   classifier: ClassifierProvider,
   rulesVersion: Schema.Int,
   scores: Schema.optionalKey(ClassificationScores),
-});
+  skipped: Schema.optionalKey(Schema.Literal("quota")),
+}).check(
+  Schema.makeFilter(
+    ({ scores, skipped }) =>
+      scores === undefined || skipped === undefined || "A skipped evaluation has no scores.",
+  ),
+);
 
 /** Why the classification rules quarantine a submission. */
 export const ClassificationReason = Schema.Literals([
