@@ -6,7 +6,7 @@ A quarantined message is sent only once someone accepts it. A webhook created af
 
 ## Setup
 
-The Worker needs `RONDYR_SECRETS_KEY` to store signing secrets; [deployment.md](./deployment.md#encryption-key) explains how to set it. Without it, creating a webhook or rotating its secret answers `503` with `{"error":"secrets-key-missing"}`, and the rest of Rondyr works as before.
+The Worker needs `RONDYR_SECRETS_KEY` to store signing secrets; the first deployment generates it; [deployment.md](./deployment.md#encryption-key) explains it. Without it, creating a webhook or rotating its secret answers `503` with `{"error":"secrets-key-missing"}`, and the rest of Rondyr works as before.
 
 In the dashboard, open **Destinations**, pick the form, enter the URL of the recipient under **Webhooks**, and click **Add webhook**. Rondyr generates a signing secret and shows it once: copy it into the recipient's configuration before you leave the page. **Rotate secret** issues a new one, **Deactivate** stops deliveries for messages accepted from then on, and **Send a test** sends a [test request](#test-requests) and shows the answer.
 
@@ -32,7 +32,7 @@ Rondyr checks the URL when the webhook is created and again before each attempt.
 - `localhost`, names under `.localhost`, `.local`, `.internal` and `.home.arpa`, and names without a dot;
 - IPv4 literals in reserved ranges: `0.0.0.0/8`, `10.0.0.0/8`, `100.64.0.0/10` (CGNAT), `127.0.0.0/8`, `169.254.0.0/16`, `172.16.0.0/12`, `192.0.0.0/24`, `192.0.2.0/24`, `192.88.99.0/24`, `192.168.0.0/16`, `198.18.0.0/15`, `198.51.100.0/24`, `203.0.113.0/24`, `224.0.0.0/4` and `240.0.0.0/4`;
 - IPv6 literals outside `2000::/3`, which covers loopback, IPv4-mapped addresses, NAT64, unique local, link-local and multicast addresses, and inside it `2001::/23`, `2001:db8::/32`, `2002::/16` and `3fff::/20`;
-- the host of the Worker itself, from `BETTER_AUTH_URL`.
+- the host of the Worker itself: at creation, the address the dashboard is on; before each attempt, `BETTER_AUTH_URL` when it is set ([Address](./deployment.md#address)).
 
 The URL parser normalizes hosts first, so `https://2130706433/` and `https://0x7f.1/` are refused as `127.0.0.1`.
 
