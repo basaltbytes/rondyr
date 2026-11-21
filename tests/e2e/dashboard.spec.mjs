@@ -877,6 +877,91 @@ test("invite a reviewer, who creates an account from the link and sees no settin
   await expect(page.getByText(t("inbox.members.noInvitations"))).toBeVisible();
 });
 
+test("count the API tokens of a member before removing it, and confirm before stepping down", async ({
+  dashboard: page,
+  browser,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.members"));
+  const second = { name: "Second admin", email: "second-admin@example.test" };
+  await page.getByRole("textbox", { name: t("inbox.members.email") }).fill(second.email);
+  await page
+    .getByRole("combobox", { name: t("inbox.members.role"), exact: true })
+    .selectOption("admin");
+  await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
+  const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
+
+  // The second admin joins and creates a token for a website.
+  const context = await browser.newContext();
+  const invited = await context.newPage();
+  await invited.goto(link);
+  await invited.getByRole("textbox", { name: t("invitation.name") }).fill(second.name);
+  await invited.getByLabel(t("invitation.password")).fill("playwright-second-admin-password");
+  await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
+  await openSection(invited, t("inbox.sections.apiTokens"));
+  await invited.getByRole("textbox", { name: t("inbox.apiTokens.name") }).fill("Website");
+  await invited.getByRole("button", { name: t("inbox.apiTokens.create"), exact: true }).click();
+  await expect(invited.getByText(/^rdr_[A-Za-z0-9_-]{43}$/u)).toBeVisible();
+  await context.close();
+
+  await page.reload();
+  await openSection(page, t("inbox.sections.members"));
+  const remove = page.getByRole("button", {
+    name: t("inbox.members.removeLabel", { name: second.name }),
+  });
+  await remove.click();
+  const removal = page.getByRole("alertdialog", { name: t("inbox.members.confirmTitle") });
+  await expect(removal.getByText(t("inbox.members.confirmTokens", { count: 1 }))).toBeVisible();
+  await removal.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(remove).toBeFocused();
+
+  const ownRole = page.getByRole("combobox", {
+    name: t("inbox.members.roleOf", { name: owner.name }),
+  });
+  await ownRole.selectOption("reviewer");
+  const stepDown = page.getByRole("alertdialog", { name: t("inbox.members.stepDownTitle") });
+  await stepDown.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(ownRole).toHaveValue("admin");
+  await ownRole.selectOption("reviewer");
+  await stepDown.getByRole("button", { name: t("inbox.members.stepDown"), exact: true }).click();
+  await expect(
+    page.getByRole("navigation", { name: t("inbox.navigation.settings"), exact: true }),
+  ).toHaveCount(0);
+});
+
+test("reset a forgotten password from the sign-in screen", async ({
+  page,
+  dashboardOrigin,
+  sentEmails,
+}) => {
+  await page.goto(dashboardOrigin);
+  await page.getByRole("button", { name: t("authentication.signIn.forgotPassword") }).click();
+  await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
+  await page.getByRole("button", { name: t("authentication.passwordReset.submit") }).click();
+  await expect(
+    page.getByText(t("authentication.passwordReset.sent", { email: owner.email })),
+  ).toBeVisible();
+  const linkPattern = /https?:\/\/\S+\/reset-password#[\w-]{43}/u;
+  await expect
+    .poll(async () => (await sentEmails(owner.email)).some(({ text }) => linkPattern.test(text)))
+    .toBe(true);
+  const emails = await sentEmails(owner.email);
+  const link = emails.at(-1).text.match(linkPattern)[0];
+
+  const password = "playwright-new-password-43";
+  await page.goto(link);
+  await page.getByLabel(t("passwordReset.password")).fill(password);
+  await page.getByRole("button", { name: t("passwordReset.submit") }).click();
+  await expect(
+    page.getByRole("heading", { name: t("passwordReset.changed.title"), exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: t("passwordReset.signIn") }).click();
+  await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
+  await page.getByLabel(t("authentication.signIn.password")).fill(password);
+  await page.getByRole("button", { name: t("authentication.signIn.submit"), exact: true }).click();
+  await expect(page.getByRole("heading", { name: t("inbox.sections.organization") })).toBeVisible();
+});
+
 test("search the messages, export the list, delete a message and keep messages 30 days", async ({
   dashboard: page,
 }) => {

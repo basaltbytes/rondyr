@@ -28,12 +28,23 @@
       "password": "Mot de passe",
       "submit": "Se connecter",
       "pending": "Connexion en cours…",
+      "forgotPassword": "Mot de passe oublié ?",
       "problems": {
         "rateLimited": "Trop de tentatives. Réessayez dans un moment.",
         "unavailable": "Le service de connexion est indisponible.",
         "refused": "Vérifiez votre adresse e-mail et votre mot de passe.",
         "failed": "La connexion a échoué. Réessayez."
       }
+    },
+    "passwordReset": {
+      "title": "Réinitialiser votre mot de passe",
+      "description": "Saisissez l’adresse de votre compte. Si un compte l’utilise, Rondyr lui envoie un lien pour choisir un nouveau mot de passe.",
+      "submit": "M’envoyer un lien",
+      "sending": "Envoi…",
+      "sent": "Si un compte utilise {{email}}, un lien est en route. Il sert une fois, pendant une heure.",
+      "noProvider": "Ce serveur n’envoie pas d’e-mails, il ne peut donc pas réinitialiser un mot de passe. Demandez à la personne qui l’administre.",
+      "failed": "La demande a échoué. Réessayez.",
+      "back": "Retour à la connexion"
     },
     "signOut": {
       "submit": "Se déconnecter",
@@ -482,7 +493,8 @@
         "permanentFailure": "Échec du message d’essai : {{summary}}",
         "alreadyRunning": "Un essai est déjà en cours pour cette destination.",
         "notSent": "Le message d’essai n’a pas pu être envoyé. Réessayez.",
-        "limited": "Cette destination a déjà reçu 3 essais cette minute. Attendez une minute et réessayez."
+        "limited": "Cette destination a déjà reçu 3 essais cette minute. Attendez une minute et réessayez.",
+        "limitUnavailable": "Rondyr n’a pas pu vérifier la limite d’essais de cette destination et n’a rien envoyé. Réessayez dans une minute."
       }
     },
     "webhooks": {
@@ -570,7 +582,14 @@
       "removing": "Retrait…",
       "confirmTitle": "Retirer ce membre ?",
       "confirmDescription": "{{name}} ({{email}}) perd aussitôt l’accès à cette organisation. Le compte reste, et un administrateur peut l’inviter à nouveau.",
+      "confirmTokens_one": "Cela révoque aussi le jeton d’API que ce membre a créé. Une intégration qui l’utilise, un site web par exemple, ne lit plus la boîte de réception.",
+      "confirmTokens_many": "Cela révoque aussi les {{count}} jetons d’API que ce membre a créés. Une intégration qui en utilise un, un site web par exemple, ne lit plus la boîte de réception.",
+      "confirmTokens_other": "Cela révoque aussi les {{count}} jetons d’API que ce membre a créés. Une intégration qui en utilise un, un site web par exemple, ne lit plus la boîte de réception.",
       "confirm": "Retirer le membre",
+      "stepDownTitle": "Ne plus être administrateur ?",
+      "stepDownDescription": "Vous continuerez à lire et à trier les messages, mais vous ne gérerez plus les formulaires, les destinations, les membres ni les réglages. Seul un autre administrateur pourra vous rendre ce rôle.",
+      "stepDown": "Devenir relecteur",
+      "steppingDown": "Changement de votre rôle…",
       "inviteTitle": "Inviter une personne",
       "inviteDescription": "Le lien d’invitation sert une fois, pendant 7 jours. Rondyr l’envoie par e-mail quand ce serveur envoie des e-mails, et vous pouvez toujours le copier.",
       "email": "Adresse e-mail",
@@ -650,6 +669,25 @@
       "signInRequired": "Un compte utilise déjà cette adresse. Connectez-vous avec ce compte pour accepter.",
       "rejected": "Vérifiez votre nom et choisissez un mot de passe de 12 à 128 caractères.",
       "failed": "L’invitation n’a pas pu être acceptée. Réessayez."
+    }
+  },
+  "passwordReset": {
+    "title": "Choisir un nouveau mot de passe",
+    "description": "Le nouveau mot de passe remplace l’ancien et déconnecte votre compte partout.",
+    "password": "Nouveau mot de passe",
+    "passwordHint": "De {{minimum}} à {{maximum}} caractères.",
+    "submit": "Enregistrer le mot de passe",
+    "saving": "Enregistrement…",
+    "rejected": "Choisissez un mot de passe de {{minimum}} à {{maximum}} caractères.",
+    "failed": "Le mot de passe n’a pas pu être changé. Réessayez.",
+    "signIn": "Se connecter",
+    "changed": {
+      "title": "Mot de passe changé",
+      "body": "Votre compte a été déconnecté partout. Connectez-vous avec le nouveau mot de passe."
+    },
+    "invalid": {
+      "title": "Lien indisponible",
+      "body": "Ce lien a expiré ou a déjà servi. Demandez-en un nouveau depuis la page de connexion."
     }
   },
   "recipientConfirmation": {

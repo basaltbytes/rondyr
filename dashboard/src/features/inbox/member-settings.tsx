@@ -89,6 +89,8 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
   const [emailInput, setEmailInput] = useState("");
   const [problem, setProblem] = useState<MemberProblem | null>(null);
   const [removing, setRemoving] = useState<OrganizationMember | null>(null);
+  // The account's own change from admin to reviewer, which only another admin can undo.
+  const [steppingDown, setSteppingDown] = useState<OrganizationMember | null>(null);
   const emailField = useRef<HTMLInputElement>(null);
   const removeButton = useRef<HTMLButtonElement>(null);
 
@@ -140,6 +142,12 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
     }
   }
 
+  const [, stepDown, steppingDownPending] = useActionState(async () => {
+    if (steppingDown === null) return;
+    await changeRole(steppingDown, "reviewer");
+    setSteppingDown(null);
+  }, undefined);
+
   const [, remove, removingPending] = useActionState(async () => {
     if (removing === null) return;
     setProblem(null);
@@ -185,12 +193,19 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
                     aria-label={t("inbox.members.roleOf", { name: member.name })}
                     className="w-auto"
                     value={member.role}
-                    onChange={(event) =>
-                      void changeRole(
-                        member,
-                        event.currentTarget.value === "admin" ? "admin" : "reviewer",
-                      )
-                    }
+                    onChange={(event) => {
+                      const role = event.currentTarget.value === "admin" ? "admin" : "reviewer";
+                      if (
+                        member.userId === self &&
+                        member.role === "admin" &&
+                        role === "reviewer"
+                      ) {
+                        setProblem(null);
+                        setSteppingDown(member);
+                        return;
+                      }
+                      void changeRole(member, role);
+                    }}
                   >
                     {roles.map((role) => (
                       <option key={role} value={role}>
@@ -330,11 +345,18 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
             <AlertDialog.Title className="text-base font-semibold">
               {t("inbox.members.confirmTitle")}
             </AlertDialog.Title>
-            <AlertDialog.Description className="text-sm wrap-anywhere text-muted-foreground">
-              {t("inbox.members.confirmDescription", {
-                name: removing?.name ?? "",
-                email: removing?.email ?? "",
-              })}
+            <AlertDialog.Description className="grid gap-2 text-sm wrap-anywhere text-muted-foreground">
+              <span>
+                {t("inbox.members.confirmDescription", {
+                  name: removing?.name ?? "",
+                  email: removing?.email ?? "",
+                })}
+              </span>
+              {(removing?.activeApiTokens ?? 0) > 0 && (
+                <span className="font-medium text-foreground">
+                  {t("inbox.members.confirmTokens", { count: removing?.activeApiTokens ?? 0 })}
+                </span>
+              )}
             </AlertDialog.Description>
             <form action={remove} className="flex flex-wrap justify-end gap-2">
               <AlertDialog.Close disabled={removingPending} render={<Button variant="ghost" />}>
@@ -342,6 +364,36 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
               </AlertDialog.Close>
               <Button type="submit" variant="default" disabled={removingPending}>
                 {removingPending ? t("inbox.members.removing") : t("inbox.members.confirm")}
+              </Button>
+            </form>
+          </AlertDialog.Popup>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+
+      <AlertDialog.Root
+        open={steppingDown !== null}
+        onOpenChange={(open) => {
+          if (!open && !steppingDownPending) setSteppingDown(null);
+        }}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-scrim" />
+          {/* Focus goes back to the role of the account, which had it before. */}
+          <AlertDialog.Popup className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-sm -translate-1/2 gap-3 rounded-lg border bg-card p-5 text-foreground shadow-popover outline-hidden">
+            <AlertDialog.Title className="text-base font-semibold">
+              {t("inbox.members.stepDownTitle")}
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-pretty text-muted-foreground">
+              {t("inbox.members.stepDownDescription")}
+            </AlertDialog.Description>
+            <form action={stepDown} className="flex flex-wrap justify-end gap-2">
+              <AlertDialog.Close disabled={steppingDownPending} render={<Button variant="ghost" />}>
+                {t("common.cancel")}
+              </AlertDialog.Close>
+              <Button type="submit" variant="default" disabled={steppingDownPending}>
+                {steppingDownPending
+                  ? t("inbox.members.steppingDown")
+                  : t("inbox.members.stepDown")}
               </Button>
             </form>
           </AlertDialog.Popup>
