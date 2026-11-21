@@ -17,7 +17,7 @@ A submission is **accepted** when its spam score is under 0.30, its outreach sco
 
 Rondyr never deletes a message on a model's opinion. Probable spam, ambiguous scores, sales pitches, off-topic messages, and classifier failures all go to human review, each with its reason. A classifier outage also sends the message to quarantine instead of losing it; once the model answers again, **Reclassify** sends a message that the classifier failed on back to it.
 
-Jev and OpenAI Decisions both run through Workers AI and the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per deployment, and an organization can ask a second model about ambiguous messages; see [Classifier](./deployment.md#classifier). An admin can change the thresholds and the handling of off-topic messages for the organization in **Settings → Classification**. [docs/evaluation.md](./evaluation.md) has the measurements behind the default thresholds.
+Jev and OpenAI Decisions both run through Workers AI and the Cloudflare AI Gateway named `default`, with gateway logging off on each call. You choose one classifier per instance, and an organization can ask a second model about ambiguous messages; see [Classifier](./deployment.md#classifier). An admin can change the thresholds and the handling of off-topic messages for the organization in **Settings → Classification**. [docs/evaluation.md](./evaluation.md) has the measurements behind the default thresholds.
 
 ## Organization domains
 

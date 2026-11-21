@@ -34,4 +34,4 @@ Out of scope:
 
 ## Supported versions
 
-Rondyr is pre-alpha and has no releases yet. Fixes land on `main`, and an instance gets them when its operator updates it ([docs/deployment.md](docs/deployment.md)).
+Rondyr is pre-alpha and has no releases yet. Fixes land on `main`, and an instance gets them when its operator updates it ([Updates](docs/deployment.md#updates)).
