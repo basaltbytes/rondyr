@@ -31,7 +31,7 @@ Only forms that post to `/api/form` go through Rondyr. The forms plugin's own **
 
 1. In the Rondyr dashboard, create an organization for the site, or open the existing one.
 2. Add a form for each EmDash form that should go through Rondyr, and note its public ID. Rondyr's honeypot field, Turnstile and allowed origins don't matter here: a server intake skips Turnstile and the origin check, and the forms plugin keeps its own spam protection.
-3. In **Settings → API tokens**, create a token named after the site, and copy it: Rondyr shows it once. This is `RONDYR_API_TOKEN`.
+3. In **Settings → API tokens**, create a token named after the site, and copy it: Rondyr shows it once. This is `RONDYR_API_TOKEN`. Only an admin of the organization can create one. The token belongs to the admin who created it: removing that admin from the organization revokes it, and the site's sending stops until you set a new token: each submission gets `401` and is marked as failed in the queue, and **Retry failed submissions** sends them once the new token is set. The removal dialog says how many tokens go with the member.
 4. In **Destinations**, add a webhook to each of these forms with the URL `https://<your site>/_emdash/api/plugins/rondyr/webhook`, and copy its signing secret, which Rondyr also shows once. Every form uses the same URL, and each webhook has its own secret: `RONDYR_WEBHOOK_SECRET` lists them all (see [Webhook secrets](#webhook-secrets)).
 
 ### Package
