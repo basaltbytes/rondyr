@@ -21,9 +21,9 @@ Create one environment file per stage, for example `.env.staging`.
 | `RONDYR_SETUP_TOKEN` | Only for the first account | A second value from `openssl rand -hex 32` |
 | `RONDYR_SECRETS_KEY` | Only for webhooks | 32 bytes in base64, from `openssl rand -base64 32`. See [Webhook secrets](#webhook-secrets) |
 | `RONDYR_CLASSIFIER` | No | `jev` (default) or `openai` |
-| `RESEND_API_KEY` | Only for email | A Resend API key with sending access. See [Email](#email) |
-| `RONDYR_EMAIL_FROM` | Only for email | A bare sender address on a domain verified in Resend, such as `forms@notifications.example.com` |
-| `RONDYR_EMAIL_PROVIDER` | No | `resend` (default and only value) |
+| `RESEND_API_KEY` | Only for Resend | A Resend API key with sending access. See [Email](#email) |
+| `RONDYR_EMAIL_FROM` | Only for email | A bare sender address on a domain configured with the selected provider, such as `forms@notifications.example.com` |
+| `RONDYR_EMAIL_PROVIDER` | No | `resend` (default) or `cloudflare` |
 
 For the Worker `rondyr-staging`, the origin is `https://rondyr-staging.<subdomain>.workers.dev`. For `prod`, Alchemy attaches the hostname of `BETTER_AUTH_URL` to the Worker `rondyr-prod` as a custom domain, and Cloudflare manages its DNS record and TLS certificate.
 
@@ -87,11 +87,13 @@ Keep the key once webhooks exist. If you remove or change it, every delivery to 
 
 ## Email
 
-Email destinations need two values on the stage: `RESEND_API_KEY`, a secret, and `RONDYR_EMAIL_FROM`, the sender address, on a domain that you have verified in Resend. Both are optional. Without either of them the stage deploys and works as before, except that creating an email destination answers `503` with `{"error":"email-provider-missing"}`, and a delivery to an existing email destination fails without a retry.
+Email destinations require `RONDYR_EMAIL_FROM` and the selected provider's key or binding. If a setting is missing, the stage still deploys, creating an email destination answers `503` with `{"error":"email-provider-missing"}`, and a delivery to an existing email destination fails without a retry. When supplied, the sender must be a bare address such as `forms@example.com`.
 
-Add them to the stage environment file, or set the `RESEND_API_KEY_STAGING` or `RESEND_API_KEY_PROD` GitHub secret and the `RONDYR_EMAIL_FROM_STAGING` or `RONDYR_EMAIL_FROM_PROD` variable, then redeploy. The deployment fails if `RONDYR_EMAIL_FROM` is set to anything other than a bare address, such as `Rondyr <forms@example.com>`, and if `RONDYR_EMAIL_PROVIDER` is set to anything other than `resend`.
+For Resend, set `RESEND_API_KEY` and `RONDYR_EMAIL_FROM` in the stage environment, then redeploy. Use a separate API key per stage. The GitHub workflow reads `RESEND_API_KEY_STAGING` or `RESEND_API_KEY_PROD` from secrets and `RONDYR_EMAIL_FROM_STAGING` or `RONDYR_EMAIL_FROM_PROD` from variables.
 
-Use a separate API key per stage, so you can revoke one without stopping the other. [docs/email.md](./email.md) covers the Resend domain setup, the limits and cost, the message format, and the retries.
+For Cloudflare, onboard the sender domain, set `RONDYR_EMAIL_PROVIDER=cloudflare` and `RONDYR_EMAIL_FROM` on the stage, then redeploy. Alchemy adds `CLOUDFLARE_EMAIL` only to the Worker for that stage. In GitHub, set the corresponding `RONDYR_EMAIL_PROVIDER_STAGING` or `RONDYR_EMAIL_PROVIDER_PROD` variable alongside the sender variable. Cloudflare Email Sending uses a native binding and requires no extra secret. [Email setup, limits and retries](./email.md#setup-with-cloudflare-email-sending)
+
+For local development with the Cloudflare simulator, set `RONDYR_EMAIL_FROM` in `.env` and run `CLOUDFLARE_ENV=cloudflare-email pnpm dev`. The named Wrangler environment enables the binding locally. Cloudflare's local simulator captures emails without delivering them. [Local Email Sending](https://developers.cloudflare.com/email-service/observability/local-development/sending/)
 
 ## GitHub Actions
 

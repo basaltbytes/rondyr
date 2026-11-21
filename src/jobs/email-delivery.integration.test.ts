@@ -51,6 +51,17 @@ const DeliveryRow = Schema.Struct({
 });
 const readReceived = Schema.decodeUnknownEffect(Schema.Array(Received));
 const readEmail = Schema.decodeUnknownEffect(Schema.fromJsonString(ResendEmail));
+const readCloudflareEmails = Schema.decodeUnknownEffect(
+  Schema.Array(
+    Schema.Struct({
+      from: Schema.String,
+      to: Schema.Array(Schema.String),
+      subject: Schema.String,
+      text: Schema.String,
+      replyTo: Schema.optionalKey(Schema.String),
+    }),
+  ),
+);
 const readJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json));
 const readDeliveries = Schema.decodeUnknownEffect(Schema.Array(DeliveryRow));
 const encodeFields = Schema.encodeEffect(Schema.fromJsonString(SubmissionFields));
@@ -181,6 +192,26 @@ const sentTo = Effect.fnUntraced(function* (recipient: string) {
   const json = yield* Effect.promise(() => response.json());
   return yield* readReceived(json);
 });
+
+const cloudflareSentTo = Effect.fnUntraced(function* (recipient: string) {
+  const response = yield* Effect.promise(() =>
+    env.CLOUDFLARE_EMAIL_FIXTURE.fetch(
+      `https://email.test/__received?recipient=${encodeURIComponent(recipient)}`,
+    ),
+  );
+  const json = yield* Effect.promise(() => response.json());
+  return yield* readCloudflareEmails(json);
+});
+
+function cloudflareServices() {
+  const binding = env.CLOUDFLARE_EMAIL;
+  if (binding === undefined) return assert.fail("Expected the Cloudflare Email Sending fixture");
+  return services({
+    RONDYR_EMAIL_PROVIDER: "cloudflare",
+    RONDYR_EMAIL_FROM: sender,
+    CLOUDFLARE_EMAIL: binding,
+  });
+}
 
 const webhookUrl = (url: string) =>
   Result.getOrElse(parseWebhookUrl(url, Option.none()), () => assert.fail(`${url} is refused`));
@@ -406,6 +437,11 @@ it.effect("refuses an email target and fails its deliveries when no provider is 
     {},
     { RESEND_API_KEY: Redacted.make(apiKey) },
     { RONDYR_EMAIL_FROM: sender },
+    {
+      RONDYR_EMAIL_PROVIDER: "cloudflare",
+      RONDYR_EMAIL_FROM: sender,
+      RESEND_API_KEY: Redacted.make(apiKey),
+    },
   ];
   const refusals = Effect.forEach(settings, (email) =>
     withServices(
@@ -453,7 +489,7 @@ it.effect("refuses an email target and fails its deliveries when no provider is 
       [
         "failed",
         1,
-        "Email is not configured on this stage. Set RESEND_API_KEY and RONDYR_EMAIL_FROM, then redeploy.",
+        "Email is not configured on this stage. Check the email provider and RONDYR_EMAIL_FROM.",
       ],
     );
     const requests = yield* sentTo("unconfigured@example.com");
@@ -466,8 +502,90 @@ it.effect("refuses an email target and fails its deliveries when no provider is 
       "EmailProviderMissing",
       "EmailProviderMissing",
       "EmailProviderMissing",
+      "EmailProviderMissing",
     ]);
   });
+});
+
+it.effect("retries a Cloudflare rate limit with the same email and delivery ID", () => {
+  const submissionId = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b33");
+  const recipient = "rate-limit-once@example.test";
+  return withServices(
+    cloudflareServices(),
+    Effect.gen(function* () {
+      const form = yield* seedForm("cloudflare-retry", submissionId, contact);
+      yield* addEmailTarget(form, [recipient, "studio@example.test"]);
+      yield* deliverAccepted(form, submissionId);
+
+      const [first] = yield* consume(submissionId);
+      assert.deepEqual(
+        [first?.status, first?.attempt_count, first?.last_error],
+        ["retrying", 1, "Cloudflare Email Sending failed (E_RATE_LIMIT_EXCEEDED)."],
+      );
+      yield* TestClock.adjust("1 minute");
+      const [retry] = yield* consume(submissionId);
+      assert.deepEqual(
+        [retry?.status, retry?.attempt_count, retry?.id],
+        ["delivered", 2, first?.id],
+      );
+
+      const messages = yield* cloudflareSentTo(recipient);
+      assert.lengthOf(messages, 2);
+      const [message, repeated] = messages;
+      if (message === undefined) return assert.fail("Expected an email");
+      assert.deepEqual(message, repeated);
+      assert.deepEqual(
+        [message.from, message.to, message.subject, message.replyTo],
+        [
+          sender,
+          [recipient, "studio@example.test"],
+          "New message: Form cloudflare-retry",
+          contact.email,
+        ],
+      );
+      assert.include(message.text, contact.message);
+      assert.include(message.text, `Delivery ID: ${first?.id}`);
+    }),
+  );
+});
+
+it.effect("ends a Cloudflare delivery without retry when the recipient is suppressed", () => {
+  const submissionId = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b34");
+  const recipient = "suppressed@example.test";
+  return withServices(
+    cloudflareServices(),
+    Effect.gen(function* () {
+      const form = yield* seedForm("cloudflare-suppressed", submissionId, contact);
+      yield* addEmailTarget(form, [recipient]);
+      yield* deliverAccepted(form, submissionId);
+
+      const [row] = yield* consume(submissionId);
+      assert.deepEqual(
+        [row?.status, row?.attempt_count, row?.last_error],
+        ["failed", 1, "Cloudflare Email Sending failed (E_RECIPIENT_SUPPRESSED)."],
+      );
+      const messages = yield* cloudflareSentTo(recipient);
+      assert.lengthOf(messages, 1);
+    }),
+  );
+});
+
+it.effect("retries an unknown Cloudflare error without storing any returned text", () => {
+  const submissionId = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b35");
+  return withServices(
+    cloudflareServices(),
+    Effect.gen(function* () {
+      const form = yield* seedForm("cloudflare-unknown", submissionId, contact);
+      yield* addEmailTarget(form, ["unknown-error@example.test"]);
+      yield* deliverAccepted(form, submissionId);
+
+      const [row] = yield* consume(submissionId);
+      assert.deepEqual(
+        [row?.status, row?.last_error],
+        ["retrying", "Cloudflare Email Sending failed without a known code."],
+      );
+    }),
+  );
 });
 
 it.effect("delivers to a webhook and an email target of the same form independently", () => {

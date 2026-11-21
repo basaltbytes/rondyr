@@ -16,6 +16,8 @@ export const InboxRow = Schema.Struct({
   submissionId: SubmissionId,
   organizationId: OrganizationId,
   formId: FormId,
+  /** The ID of the form in its submission address and in the admin API. */
+  formPublicId: Schema.String,
   formName: Schema.String,
   receivedAt: Schema.Int,
   status: SubmissionStatus,
@@ -63,13 +65,33 @@ export const InboxPage = Schema.Struct({
   cursor: Schema.NullOr(Schema.String),
 });
 
-/** How many submissions of an organization have each status. */
+/** How many submissions have each status. */
 export const InboxCounts = Schema.Struct({
   received: Schema.Int,
   classifying: Schema.Int,
   accepted: Schema.Int,
   quarantined: Schema.Int,
   archived: Schema.Int,
+});
+
+/** The counts of one form, named by its public ID. */
+export const FormCounts = Schema.Struct({ publicId: Schema.String, counts: InboxCounts });
+
+/**
+ * The counts of an organization, and those of each of its forms that has a
+ * submission. A form without one is left out.
+ */
+export const OrganizationCounts = InboxCounts.mapFields((fields) => ({
+  ...fields,
+  forms: Schema.Array(FormCounts),
+}));
+
+/** Narrows a list of submissions. Without a key, the list has every submission. */
+export const InboxFilter = Schema.Struct({
+  status: Schema.optionalKey(SubmissionStatus),
+  formPublicId: Schema.optionalKey(
+    Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
+  ),
 });
 
 export const InboxOrganization = Schema.Struct({ id: OrganizationId, name: Schema.String });

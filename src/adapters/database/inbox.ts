@@ -26,14 +26,17 @@ const StoredDetail = SubmissionDetail.mapFields((fields) => ({
 const decodeRows = Schema.decodeUnknownEffect(Schema.Array(StoredDetail));
 const decodeDetail = Schema.decodeUnknownEffect(StoredDetail);
 const decodeCounts = Schema.decodeUnknownEffect(
-  Schema.Array(Schema.Struct({ status: SubmissionStatus, total: Schema.Int })),
+  Schema.Array(
+    Schema.Struct({ publicId: Schema.String, status: SubmissionStatus, total: Schema.Int }),
+  ),
 );
+const noSubmission = { received: 0, classifying: 0, accepted: 0, quarantined: 0, archived: 0 };
 
 const inboxUnavailable = () => InboxUnavailable.make();
 
 const columns = `
   s.id AS submissionId, s.organization_id AS organizationId, s.form_id AS formId,
-  f.name AS formName, s.received_at AS receivedAt,
+  f.public_id AS formPublicId, f.name AS formName, s.received_at AS receivedAt,
   COALESCE(i.status, 'received') AS status, i.reason AS reason, i.label AS label
 `;
 const tables = `
@@ -57,7 +60,7 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
     );
   }, Effect.mapError(inboxUnavailable)),
   list: Effect.fn("Inbox.list")(
-    function* (organizationId, status, take, after) {
+    function* (organizationId, { status, formPublicId }, take, after) {
       const db = yield* database;
       const cursor =
         after === undefined
@@ -69,6 +72,7 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
       SELECT ${columns}, s.fields ${tables}
       WHERE s.organization_id = ?
         AND (? IS NULL OR COALESCE(i.status, 'received') = ?)
+        AND (? IS NULL OR f.public_id = ?)
         AND (? IS NULL OR (s.received_at, s.id) < (?, ?))
       ORDER BY s.received_at DESC, s.id DESC LIMIT ?
     `)
@@ -76,6 +80,8 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
             organizationId,
             status ?? null,
             status ?? null,
+            formPublicId ?? null,
+            formPublicId ?? null,
             cursor?.[0] ?? null,
             cursor?.[0] ?? null,
             cursor?.[1] ?? null,
@@ -106,16 +112,26 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
     const rows = yield* d1(() =>
       db
         .prepare(`
-      SELECT COALESCE(i.status, 'received') AS status, COUNT(*) AS total
-      FROM submissions s LEFT JOIN submission_inbox i ON i.submission_id = s.id
-      WHERE s.organization_id = ? GROUP BY 1
+      SELECT f.public_id AS publicId, COALESCE(i.status, 'received') AS status, COUNT(*) AS total
+      FROM submissions s JOIN forms f ON f.id = s.form_id
+      LEFT JOIN submission_inbox i ON i.submission_id = s.id
+      WHERE s.organization_id = ? GROUP BY 1, 2 ORDER BY 1
     `)
         .bind(organizationId)
         .all(),
     );
-    const counts = { received: 0, classifying: 0, accepted: 0, quarantined: 0, archived: 0 };
-    for (const { status, total } of yield* decodeCounts(rows.results)) counts[status] = total;
-    return counts;
+    const organization = { ...noSubmission };
+    const forms = new Map<string, typeof noSubmission>();
+    for (const { publicId, status, total } of yield* decodeCounts(rows.results)) {
+      const form = forms.get(publicId) ?? { ...noSubmission };
+      form[status] = total;
+      forms.set(publicId, form);
+      organization[status] += total;
+    }
+    return {
+      ...organization,
+      forms: Array.from(forms, ([publicId, counts]) => ({ publicId, counts })),
+    };
   }, Effect.mapError(inboxUnavailable)),
   detail: Effect.fn("Inbox.detail")(function* (organizationId, submissionId) {
     const db = yield* database;

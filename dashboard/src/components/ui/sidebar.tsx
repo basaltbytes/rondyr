@@ -240,6 +240,12 @@ export function SidebarMenuItem({ className, ...props }: ComponentProps<"li">) {
 interface SidebarMenuButtonProps extends ComponentProps<"button"> {
   /** The page this item opens is the current one. */
   readonly active?: boolean;
+  /** A row of the item's sub-menu is the current page. */
+  readonly activeWithin?: boolean;
+  /** Leaves room at the end of the row for a `SidebarMenuAction`. */
+  readonly hasAction?: boolean;
+  /** A row of a `SidebarMenuSub`, in a lighter weight than the item above it. */
+  readonly nested?: boolean;
   /** `lg` holds two lines of text next to a square mark. */
   readonly size?: "default" | "lg";
   /** Shown next to the icon while the sidebar is collapsed. */
@@ -252,6 +258,9 @@ interface SidebarMenuButtonProps extends ComponentProps<"button"> {
  */
 export function SidebarMenuButton({
   active,
+  activeWithin,
+  hasAction,
+  nested,
   size,
   tooltip,
   className,
@@ -265,12 +274,15 @@ export function SidebarMenuButton({
       data-slot="sidebar-menu-button"
       aria-current={active === true ? "page" : undefined}
       className={cn(
-        "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm font-medium transition-colors duration-150 ease-out select-none disabled:pointer-events-none disabled:opacity-50",
+        "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none disabled:pointer-events-none disabled:opacity-50",
+        nested === true ? "font-normal" : "font-medium",
         size === "lg" ? "h-12" : "h-10 pointer-coarse:h-11",
         collapsed ? "justify-center px-0" : "px-2.5",
+        hasAction === true && !collapsed && "pr-8 pointer-coarse:pr-11",
         active === true
           ? "bg-card text-foreground shadow-raised"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground data-popup-open:bg-accent data-popup-open:text-foreground",
+          : "hover:bg-accent hover:text-foreground data-popup-open:bg-accent data-popup-open:text-foreground",
+        active !== true && (activeWithin === true ? "text-foreground" : "text-muted-foreground"),
         className,
       )}
       {...props}
@@ -282,6 +294,38 @@ export function SidebarMenuButton({
       <TooltipTrigger render={button} />
       <TooltipContent side="right">{tooltip}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * A control at the end of a menu item, over its row, which leaves it room with
+ * `hasAction`. Its icon sits at the end of a target of 40px, 44px under a finger.
+ * The collapsed sidebar has no room for it.
+ */
+export function SidebarMenuAction({ className, type, ...props }: ComponentProps<"button">) {
+  const { collapsed } = useSidebar();
+  if (collapsed) return null;
+  return (
+    <button
+      type={type ?? "button"}
+      data-slot="sidebar-menu-action"
+      className={cn(
+        "absolute top-0 right-0 flex size-10 items-center justify-end rounded-md pr-2 text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground pointer-coarse:size-11 pointer-coarse:justify-center pointer-coarse:pr-0",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+/** The rows under a menu item, set in from it along a rule. */
+export function SidebarMenuSub({ className, ...props }: ComponentProps<"ul">) {
+  return (
+    <ul
+      data-slot="sidebar-menu-sub"
+      className={cn("mt-0.5 ml-4.5 flex min-w-0 flex-col gap-0.5 hairline-l pl-2", className)}
+      {...props}
+    />
   );
 }
 
