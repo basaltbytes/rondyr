@@ -1,38 +1,40 @@
 # Rondyr
 
-Rondyr est un backend de formulaires auto-hébergé sur Cloudflare. Lire [architecture.md](architecture.md) avant de modifier les contrats publics, le modèle de données ou le traitement des soumissions. La section 12 décrit l’ordre des travaux. Le README décrit ce que le dépôt permet déjà d’exécuter, et [docs/deployment.md](docs/deployment.md) décrit le déploiement.
+Rondyr is a self-hosted form backend on Cloudflare. Read [architecture.md](architecture.md) before changing public contracts, the data model or the processing of submissions. The README describes what the repository can already run, and [docs/deployment.md](docs/deployment.md) describes deployment.
 
 ## Code
 
-- Garder un seul Worker applicatif. Le domaine reste indépendant de Cloudflare, Drizzle et Alchemy. Les ports déclarent les services Effect. Les adaptateurs fournissent les layers.
-- Utiliser Effect 4 et Effect Schema pour le métier, les erreurs et les frontières de données. Composer les layers à l’entrée du Worker. Garder les fichiers en kebab-case, sauf conventions des outils et fichiers générés.
-- Réserver les migrations à l’outillage de développement et au déploiement. Versionner les migrations et snapshots Drizzle dans `database/migrations`.
-- Pour l’ingestion, une réponse `202` implique la persistance atomique de la soumission et de son événement outbox. Les futurs consumers doivent tolérer les événements dupliqués.
-- Utiliser des noms et commentaires de code en anglais. Écrire le README et `docs/` en anglais. Écrire en anglais d’abord tout ce que lit un utilisateur du produit : textes du dashboard, page de confirmation, e-mails, invites des scripts. Le dashboard, la page de confirmation et les e-mails existent aussi en français : un texte du dashboard est une clé i18next présente dans `dashboard/src/locales/en` et `dashboard/src/locales/fr`, jamais une chaîne dans un composant. Écrire `architecture.md` et les issues en français.
+- Keep a single application Worker. The domain stays independent of Cloudflare, Drizzle and Alchemy. Ports declare the Effect services. Adapters provide the layers.
+- Use Effect 4 and Effect Schema for business logic, errors and data boundaries. Compose the layers at the Worker's entry point. Keep files in kebab-case, except where a tool's convention or a generated file says otherwise.
+- Migrations belong to development tooling and to deployment. Version Drizzle migrations and snapshots in `database/migrations`.
+- For intake, a `202` response means the submission and its outbox event were persisted atomically. Consumers must tolerate duplicated events.
+- Write everything in English: code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions. `architecture.md` and older issues are still in French; do not add French text to them.
+- Write in English first everything a user of the product reads: dashboard text, the confirmation page, emails, script prompts. The dashboard, the confirmation page and the emails also exist in French: a dashboard text is an i18next key present in `dashboard/src/locales/en` and `dashboard/src/locales/fr`, never a string in a component.
 
-## Travail sur une issue
+## Working on an issue
 
-Les issues GitHub sont la feuille de route. Une issue est prête quand aucune issue ouverte ne la bloque (relation « blocked by » de GitHub, reprise dans sa section « Ordre »). La section 12 de l’architecture donne l’ordre d’ensemble.
+The GitHub issues are the roadmap. There are few of them and each one is large: an issue is delivered whole, in one pull request.
 
-- Une issue par branche et par PR. Titre et description de la PR en français. Écrire `Closes #n` seulement si chaque critère d’acceptation est rempli ; sinon `Refs #n` et la liste de ce qui manque.
-- Ne pas pousser sur `main` et ne pas déployer : un push sur `main` déploie la production et applique les migrations D1.
-- Une seule issue portant le label `migration` à la fois. Deux migrations Drizzle générées en parallèle entrent en conflit sur leurs snapshots. Générer avec `pnpm db:generate --name …`, relire le SQL, et ne jamais reconstruire `forms` ni `submissions` : sur D1, la suppression de la table supprimerait en cascade les lignes des tables liées.
-- Un message réel n’est jamais perdu volontairement. Dans le doute, le message est enregistré et mis en quarantaine avec un motif ; un refus n’est admis que là où l’issue le décide.
-- Le contenu d’un message reste dans `submissions.fields`. Il ne va ni dans les journaux, ni dans les événements du domaine, ni dans un résumé d’erreur.
-- Les routes et les jobs n’importent que des ports. Les requêtes d’exécution sont du SQL préparé, décodé par Effect Schema.
-- Un réglage ou un secret nouveau est facultatif au déploiement : sans lui, le déploiement réussit et la fonction concernée répond par une erreur claire.
-- Les deux classificateurs restent disponibles par `RONDYR_CLASSIFIER`. Tout changement de règle ou d’entrée du classificateur se mesure avec `pnpm evaluate` avant et après, et incrémente `rulesVersion`.
-- Les tests d’intégration tournent dans workerd contre le Worker construit, sans mock de module. Les services externes sont simulés dans `vitest.config.ts` (Workers AI, destinataire de webhook, Resend). Ne jamais affaiblir une assertion existante ni désactiver une règle de lint.
-- Le rapport de fin de travail dit ce qui est fait pour chaque critère, les résultats exacts de `pnpm check` et de `pnpm deploy:dry`, les décisions que l’issue ne tranchait pas, et ce qui n’a pas été vérifié.
+- One issue per branch and per PR. Write `Closes #n` only if every acceptance criterion is met; otherwise `Refs #n` and the list of what is missing.
+- What turns out to be missing or weak along the way is fixed in the same PR. Do not open a follow-up issue and do not leave a "known limitation" note for something within reach.
+- Do not push to `main` and do not deploy: a push to `main` deploys production and applies the D1 migrations.
+- One Drizzle migration per issue, generated at the end with `pnpm db:generate --name …`. Read the SQL. Never rebuild `forms` or `submissions`: on D1, dropping the table would delete the rows of the linked tables in cascade. Another branch may carry a migration at the same time; yours is regenerated on top of `main` when the PR merges.
+- A real message is never lost on purpose. When in doubt, the message is stored and quarantined with a reason; a refusal is allowed only where the issue decides it.
+- The content of a message stays in `submissions.fields`. It goes neither into logs, nor into domain events, nor into an error summary.
+- Routes and jobs import ports only. Runtime queries are prepared SQL, decoded by Effect Schema.
+- A new setting or secret is optional at deployment: without it, the deployment succeeds and the feature concerned answers with a clear error.
+- Both classifiers stay available through `RONDYR_CLASSIFIER`. Any change to a rule or to the classifier's input is measured with `pnpm evaluate` before and after, and increments `rulesVersion`.
+- Integration tests run in workerd against the built Worker, without module mocks. External services are simulated in `vitest.config.ts` (Workers AI, webhook recipient, Resend, Siteverify). Never weaken an existing assertion and never disable a lint rule.
+- The final report says what is done for each criterion, the exact results of `pnpm check` and `pnpm deploy:dry`, the decisions the issue did not settle, and what was not verified.
 
-## Skills locaux
+## Local skills
 
-- [effect-ts](.agents/skills/effect-ts/SKILL.md) pour le code Effect et ses tests.
-- [coding-guidelines](.agents/skills/coding-guidelines/SKILL.md) pour les règles de domaine et la revue de code.
-- [rondyr-cloudflare](.agents/skills/rondyr-cloudflare/SKILL.md) pour Alchemy, les bindings Workers, D1 et workerd.
-- [react-app-structure](.agents/skills/react-app-structure/SKILL.md) pour le code dans `dashboard/src`.
-- [anti-slop-writing](.agents/skills/anti-slop-writing/SKILL.md) pour la documentation et les textes de l’interface.
+- [effect-ts](.agents/skills/effect-ts/SKILL.md) for Effect code and its tests.
+- [coding-guidelines](.agents/skills/coding-guidelines/SKILL.md) for domain rules and code review.
+- [rondyr-cloudflare](.agents/skills/rondyr-cloudflare/SKILL.md) for Alchemy, Worker bindings, D1 and workerd.
+- [react-app-structure](.agents/skills/react-app-structure/SKILL.md) for the code in `dashboard/src`.
+- [anti-slop-writing](.agents/skills/anti-slop-writing/SKILL.md) for documentation and interface text.
 
-## Vérification
+## Verification
 
-Exécuter `pnpm check` avant une PR. Exécuter aussi `pnpm deploy:dry` si la modification concerne le Worker, les assets ou la configuration de la plateforme. La CI vérifie les deux commandes. Un déploiement se fait avec Alchemy sur le stage explicite et le profil autorisé.
+Run `pnpm check` before a PR. Also run `pnpm deploy:dry` if the change touches the Worker, the assets or the platform configuration. CI checks both commands. A deployment is done with Alchemy on the explicit stage and the authorized profile.
