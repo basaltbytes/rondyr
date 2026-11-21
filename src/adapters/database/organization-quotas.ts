@@ -89,8 +89,22 @@ const reserveClassification = Effect.fn("OrganizationQuotas.reserveClassificatio
   return reserved.length === 1 ? ("reserved" as const) : ("limit-reached" as const);
 });
 
+// A reservation of an earlier day is not given back: that day's counter is gone.
+const releaseStatement = `
+  UPDATE organization_daily_usage SET classifications = classifications - 1
+  WHERE organization_id = ?1 AND day = date('now') AND classifications > 0
+`;
+
+const releaseClassification = Effect.fn("OrganizationQuotas.releaseClassification")(function* (
+  organizationId: OrganizationId,
+) {
+  const db = yield* database;
+  yield* d1(() => db.prepare(releaseStatement).bind(organizationId).run());
+});
+
 export const organizationQuotasLive = Layer.succeed(OrganizationQuotas, {
   usage,
   save,
   reserveClassification,
+  releaseClassification,
 });

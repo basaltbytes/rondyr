@@ -162,35 +162,57 @@ const detail = Effect.gen(function* () {
   return yield* HttpServerResponse.schemaJson(SubmissionDetail)(submission, jsonOptions);
 });
 
+/** The refusals of the domain model, after which a reclassification gives its slot back. */
+const refusals = new Set([
+  "SubmissionNotFound",
+  "SubmissionNotReviewable",
+  "SubmissionNotReclassifiable",
+]);
+
+/**
+ * Send the message back to classification. A new run calls the model again, so
+ * every request takes a slot of the organization's daily classification quota,
+ * as intake does, before the aggregate decides from its own state; a request
+ * that the aggregate refuses gives its slot back. A request over the quota is
+ * refused and the message stays where it is.
+ */
+const reclassify = Effect.fnUntraced(function* (
+  client: Effect.Success<typeof reviewClient>,
+  input: typeof SubmissionPath.Type,
+  inboxReason: typeof SubmissionDetail.Type.reason,
+) {
+  const quotas = yield* OrganizationQuotas;
+  const reservation = yield* quotas.reserveClassification(input.organizationId);
+  if (reservation === "limit-reached") return null;
+  return yield* client
+    .ReclassifySubmission(input.submissionId, inboxReason === null ? {} : { inboxReason })
+    .pipe(
+      Effect.tapError((error) =>
+        refusals.has(error._tag)
+          ? quotas.releaseClassification(input.organizationId).pipe(Effect.ignore)
+          : Effect.void,
+      ),
+    );
+});
+
 const review = Effect.gen(function* () {
   const client = yield* reviewClient;
   const { decision, ...input } = yield* HttpRouter.schemaPathParams(ReviewPath);
-  const { status, reason } = yield* client.GetSubmission(input);
-  // A new run calls the model again, so it takes a slot of the organization's daily
-  // classification quota, as intake does. The aggregate still decides whether the
-  // message can go back to classification.
-  if (decision === "reclassify" && status === "quarantined" && reason === "classification-error") {
-    const quotas = yield* OrganizationQuotas;
-    const reservation = yield* quotas.reserveClassification(input.organizationId);
-    if (reservation === "limit-reached") {
-      return yield* quotaReached(
-        { error: "classification-quota-reached" },
-        {
-          status: 429,
-          ...jsonOptions,
-        },
-      );
-    }
-  }
+  // Reading the message first answers 404 outside the account's organizations,
+  // before any quota is touched.
+  const { reason } = yield* client.GetSubmission(input);
   const receipt =
     decision === "approve"
       ? yield* client.ApproveSubmission(input.submissionId)
       : decision === "dismiss"
         ? yield* client.DismissSubmission(input.submissionId)
-        : yield* client.ReclassifySubmission(
-            input.submissionId,
-            reason === null ? {} : { inboxReason: reason },
-          );
+        : yield* reclassify(client, input, reason);
+  if (receipt === null) {
+    return yield* quotaReached(
+      { error: "classification-quota-reached" },
+      { status: 429, ...jsonOptions },
+    );
+  }
   const submission = yield* client.GetSubmission(input, { atLeast: receipt });
   return yield* HttpServerResponse.schemaJson(SubmissionDetail)(submission, jsonOptions);
 });
