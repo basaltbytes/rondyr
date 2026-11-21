@@ -3,6 +3,7 @@ import { HttpRouter, HttpServerResponse } from "effect/http";
 
 import { DeliveryId, TargetId } from "../domain/deliveries/delivery.ts";
 import { DeliveryRecord, TargetTestResult } from "../domain/deliveries/history.ts";
+import { TargetRequestError } from "../domain/deliveries/targets.ts";
 import type { Permission } from "../domain/organizations/member-role.ts";
 import { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import { retryDelivery, sendTestNotification } from "../jobs/delivery-outbox.ts";
@@ -33,6 +34,7 @@ class TestRunning extends Schema.TaggedError<TestRunning, { readonly brand: uniq
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const historyJson = HttpServerResponse.schemaJson(Schema.Array(DeliveryRecord));
 const testJson = HttpServerResponse.schemaJson(TargetTestResult);
+const errorJson = HttpServerResponse.schemaJson(TargetRequestError);
 
 function empty(status: number) {
   return Effect.succeed(HttpServerResponse.empty({ status, ...jsonOptions }));
@@ -59,6 +61,9 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
               headers: { ...jsonOptions.headers, "retry-after": "60" },
             }),
           ),
+        // Without the count of the binding, nothing tells whether the test is under its limit.
+        TestSendLimitUnavailable: () =>
+          errorJson({ error: "test-limit-unavailable" }, { status: 503, ...jsonOptions }),
         SchemaError: () => empty(400),
       }).pipe(Effect.catch(() => empty(503)));
     }),
