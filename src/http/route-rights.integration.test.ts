@@ -83,6 +83,12 @@ const rights: ReadonlyArray<RouteRights> = [
     ...admin,
     query: "format=csv",
   },
+  // The stuck submissions belong to the status page, which is an admin's.
+  { route: "GET /api/organizations/:organizationId/stuck-submissions", ...admin },
+  {
+    route: "POST /api/organizations/:organizationId/stuck-submissions/:submissionId/retry",
+    ...admin,
+  },
   { route: "GET /api/organizations/:organizationId/retention", ...admin },
   { route: "PUT /api/organizations/:organizationId/retention", ...admin },
   { route: "GET /api/organizations/:organizationId/members", ...admin },
@@ -266,6 +272,19 @@ it.live(
         ),
         [],
       );
+
+      // A reclassification is a decision of the review route: a reviewer may ask for
+      // it, like an acceptance (the sample message does not exist, so 404); an
+      // account of another organization gets 404, and a token 403, since its list
+      // allows only approve and dismiss.
+      const reclassify = urlOf(
+        "/api/organizations/:organizationId/submissions/:submissionId/reclassify",
+        undefined,
+      );
+      const reclassified = yield* Effect.forEach([reviewer, outsider, bearer], (headers) =>
+        call("POST", reclassify, undefined, headers).pipe(Effect.map(({ status }) => status)),
+      );
+      assert.deepEqual(reclassified, [404, 404, 403]);
     }),
   60_000,
 );
