@@ -21,7 +21,7 @@ const usageQuery = `
     json_object('submissions', o.daily_submission_limit,
       'classifications', o.daily_classification_limit) AS limits,
     json_object('submissions', COALESCE(u.submissions, 0),
-      'classifications', COALESCE(u.classifications, 0)) AS used
+      'classifications', COALESCE(u.classifications, 0), 'junk', COALESCE(u.junk, 0)) AS used
   FROM organizations o
   LEFT JOIN organization_daily_usage u ON u.organization_id = o.id AND u.day = date('now')
   WHERE o.id = ?2 AND EXISTS (${member})
@@ -70,6 +70,7 @@ const reserveStatement = `
   ON CONFLICT (organization_id) DO UPDATE SET
     submissions = CASE WHEN day = excluded.day THEN submissions ELSE 0 END,
     classifications = 1 + CASE WHEN day = excluded.day THEN classifications ELSE 0 END,
+    junk = CASE WHEN day = excluded.day THEN junk ELSE 0 END,
     day = excluded.day
   RETURNING classifications
 `;

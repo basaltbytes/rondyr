@@ -1,4 +1,4 @@
-import { Schema } from "effect";
+import { Option, Schema } from "effect";
 
 import {
   CreateForm,
@@ -7,6 +7,7 @@ import {
   SetHoneypotField,
   UpdateForm,
 } from "@rondyr/forms/form";
+import { TurnstileKeyCheck } from "@rondyr/forms/turnstile";
 
 import type { Inbox } from "./inbox-client.ts";
 
@@ -24,6 +25,7 @@ export class FormRequestFailed extends Schema.TaggedError<
 
 const decodeForm = Schema.decodeUnknownPromise(ManagedForm);
 const decodeProblem = Schema.decodeUnknownOption(FormRequestError);
+const decodeKeyCheck = Schema.decodeUnknownPromise(TurnstileKeyCheck);
 const parseCreate = Schema.decodeUnknownSync(CreateForm);
 const parseUpdate = Schema.decodeUnknownSync(UpdateForm);
 const parseHoneypot = Schema.decodeUnknownSync(SetHoneypotField);
@@ -88,6 +90,20 @@ export async function setHoneypotField(id: Inbox["id"], publicId: Form["publicId
 
 export async function clearHoneypotField(id: Inbox["id"], publicId: Form["publicId"]) {
   return send(`${form(id, publicId)}/honeypot`, { method: "DELETE" });
+}
+
+/** Have the Worker check the form's stored Turnstile secret key with Cloudflare now. */
+export async function checkTurnstileKey(
+  id: Inbox["id"],
+  publicId: Form["publicId"],
+  signal: AbortSignal,
+) {
+  const response = await fetch(`${form(id, publicId)}/turnstile`, { signal });
+  if (!response.ok) {
+    throw FormRequestFailed.make({ status: response.status, problem: Option.none() });
+  }
+  const { state } = await decodeKeyCheck(await response.json());
+  return state;
 }
 
 export async function setTurnstile(

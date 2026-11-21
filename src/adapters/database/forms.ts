@@ -14,8 +14,7 @@ import type { SetTurnstile } from "../../domain/forms/turnstile.ts";
 import { Forms, OrganizationFormNotFound, SuccessOriginNotListed } from "../../ports/forms.ts";
 import type { OrganizationScope } from "../../ports/forms.ts";
 import type { FormScope } from "../../ports/notification-targets.ts";
-import { SecretCipher } from "../../ports/secret-cipher.ts";
-import type { SealedSecret } from "../../ports/secret-cipher.ts";
+import { SealedSecret, SecretCipher } from "../../ports/secret-cipher.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { TurnstileVerifier, turnstileSecretOwner } from "../../ports/turnstile-verifier.ts";
 import { d1, database } from "./d1.ts";
@@ -219,6 +218,27 @@ const clearTurnstile = Effect.fn("Forms.clearTurnstile")(function* (form: FormSc
   return yield* writeTurnstile(form, null);
 });
 
+const decodeSecrets = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ turnstile_secret: SealedSecret })),
+);
+
+/** The form's sealed Turnstile secret, or `OrganizationFormNotFound` when it has none. */
+const storedTurnstileSecret = Effect.fnUntraced(function* (form: FormScope) {
+  const db = yield* database;
+  const found = yield* d1(() =>
+    db
+      .prepare(`
+    SELECT turnstile_secret FROM forms
+    WHERE id IN (${scopedForm}) AND turnstile_secret IS NOT NULL
+  `)
+      .bind(form.userId, form.organizationId, form.formPublicId)
+      .all(),
+  );
+  const [row] = yield* decodeSecrets(found.results).pipe(Effect.mapError(unreadable));
+  if (row === undefined) return yield* OrganizationFormNotFound.make();
+  return row.turnstile_secret;
+});
+
 export const formsLive = Layer.effect(
   Forms,
   Effect.gen(function* () {
@@ -237,6 +257,18 @@ export const formsLive = Layer.effect(
       yield* verifier.checkSecret(settings.secretKey);
       return yield* writeTurnstile(form, { siteKey: settings.siteKey, secret });
     });
+    const checkTurnstile = Effect.fn("Forms.checkTurnstile")(function* (form: FormScope) {
+      const sealed = yield* storedTurnstileSecret(form);
+      return yield* cipher.open(sealed, turnstileSecretOwner(form.formPublicId)).pipe(
+        Effect.flatMap(verifier.checkSecret),
+        Effect.as("working" as const),
+        Effect.catchTags({
+          SecretUnreadable: () => Effect.succeed("unreadable" as const),
+          TurnstileSecretRefused: () => Effect.succeed("refused" as const),
+          TurnstileUnavailable: () => Effect.succeed("unchecked" as const),
+        }),
+      );
+    });
     return {
       create,
       update,
@@ -247,6 +279,7 @@ export const formsLive = Layer.effect(
       clearHoneypotField,
       setTurnstile,
       clearTurnstile,
+      checkTurnstile,
     };
   }),
 );

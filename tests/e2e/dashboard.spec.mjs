@@ -338,6 +338,28 @@ test("save Turnstile keys and copy the widget HTML from Forms", async ({
   expect(html).not.toContain(secretKey);
 });
 
+test("warn in Forms when Cloudflare no longer accepts the stored Turnstile key", async ({
+  dashboard: page,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const settings = settingsFor(page, formName);
+  await settings
+    .getByLabel(t("inbox.forms.turnstile.siteKey"), { exact: true })
+    .fill("sample-widget-site-key");
+  // The Siteverify fixture knows a secret key that starts with revoked- only on its first check.
+  await settings
+    .getByLabel(t("inbox.forms.turnstile.secretKey"), { exact: true })
+    .fill("revoked-widget-secret");
+
+  await settings.getByRole("button", { name: t("inbox.forms.turnstile.save") }).click();
+
+  const warning = settings
+    .getByRole("alert")
+    .filter({ hasText: t("inbox.forms.turnstile.key.off") });
+  await expect(warning).toContainText(t("inbox.forms.turnstile.key.refused"));
+});
+
 test("show today's usage and retain changed daily quotas", async ({ dashboard: page, request }) => {
   await createOrganization(page);
   await openSection(page, t("inbox.sections.forms"));
@@ -363,6 +385,10 @@ test("show today's usage and retain changed daily quotas", async ({ dashboard: p
     t("inbox.quotas.used", { used: "1", limit: "10" }),
   );
   await expect(classifications).toHaveValue("5");
+  // Junk has its own count, under the same limit as the other submissions.
+  await expect(page.getByRole("region", { name: t("inbox.quotas.junk") })).toContainText(
+    t("inbox.quotas.used", { used: "0", limit: "10" }),
+  );
 });
 
 test("confirm and redirect HTML submissions, then refuse JSON from a removed origin", async ({
