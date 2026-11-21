@@ -21,6 +21,7 @@ import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
 import { managedFormColumns } from "./forms.ts";
 
+const decodeOrganization = Schema.decodeUnknownEffect(InboxOrganization);
 const decodeOrganizations = Schema.decodeUnknownEffect(Schema.Array(InboxOrganization));
 const decodeForms = Schema.decodeUnknownEffect(Schema.Array(ManagedForm));
 const unavailable = () => InboxUnavailable.make();
@@ -64,6 +65,28 @@ const formsOf = Effect.fn("OrganizationDirectory.formsOf")(function* (
       .all(),
   );
   return yield* decodeForms(results.results);
+}, Effect.mapError(unavailable));
+
+const inboxFor = Effect.fn("OrganizationDirectory.inboxFor")(function* (
+  organizationId: OrganizationId,
+) {
+  const db = yield* database;
+  const [organization, forms] = yield* d1(() =>
+    db.batch([
+      db.prepare("SELECT id, name FROM organizations WHERE id = ?").bind(organizationId),
+      db
+        .prepare(`
+      SELECT ${managedFormColumns} FROM forms f WHERE f.organization_id = ?
+      ORDER BY f.name, f.id
+    `)
+        .bind(organizationId),
+    ]),
+  );
+  const row = organization?.results[0];
+  if (row === undefined) return null;
+  const inbox = yield* decodeOrganization(row);
+  const managedForms = yield* decodeForms(forms?.results);
+  return { ...inbox, forms: managedForms };
 }, Effect.mapError(unavailable));
 
 const create = Effect.fn("OrganizationDirectory.create")(function* (
@@ -163,6 +186,7 @@ const removeDomain = Effect.fn("OrganizationDirectory.removeDomain")(function* (
 export const organizationDirectoryLive = Layer.succeed(OrganizationDirectory, {
   organizationsFor,
   formsOf,
+  inboxFor,
   create,
   listDomains,
   addDomain,

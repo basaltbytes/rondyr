@@ -96,6 +96,12 @@ export default defineConfig({
           queueProducers: Object.fromEntries(
             wrangler.queues.producers.map(({ binding, queue }) => [binding, queue]),
           ),
+          durableObjects: {
+            "Submissions.SubmissionAggregate": {
+              className: "SubmissionAggregate",
+              scriptName: "rondyr-test-app",
+            },
+          },
           serviceBindings: {
             TEST_WORKER: "rondyr-test-app",
             CLOUDFLARE_EMAIL_WORKER: "rondyr-test-cloudflare-email",

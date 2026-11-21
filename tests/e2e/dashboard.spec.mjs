@@ -690,3 +690,44 @@ test.describe("in a browser that prefers French", () => {
     ).toBeVisible();
   });
 });
+
+test("create, copy, and revoke a token that is only displayed once", async ({
+  dashboard: page,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.apiTokens"));
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const name = "Site inbox";
+  await page.getByRole("textbox", { name: t("inbox.apiTokens.name") }).fill(name);
+  await page.getByRole("button", { name: t("inbox.apiTokens.create"), exact: true }).click();
+
+  const secret = page.getByText(/^rdr_[A-Za-z0-9_-]{43}$/u);
+  await expect(secret).toBeVisible();
+  await page.getByRole("button", { name: t("inbox.apiTokens.copy"), exact: true }).click();
+  await expect(page.getByText(t("inbox.apiTokens.copied"))).toBeVisible();
+  const suffix = (await secret.innerText()).slice(-4);
+  expect(
+    await page.evaluate(async () => {
+      const clipboard = await navigator.clipboard.readText();
+      return { format: /^rdr_[A-Za-z0-9_-]{43}$/u.test(clipboard), suffix: clipboard.slice(-4) };
+    }),
+  ).toEqual({ format: true, suffix });
+
+  await page.reload();
+  await openSection(page, t("inbox.sections.apiTokens"));
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
+  await expect(page.getByText(`••••${suffix}`, { exact: true })).toBeVisible();
+  await expect(secret).toHaveCount(0);
+  const revoke = page.getByRole("button", { name: t("inbox.apiTokens.revokeLabel", { name }) });
+  await revoke.click();
+  const confirmation = page.getByRole("alertdialog", { name: t("inbox.apiTokens.confirmTitle") });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(revoke).toBeFocused();
+
+  await revoke.click();
+  await confirmation
+    .getByRole("button", { name: t("inbox.apiTokens.confirm"), exact: true })
+    .click();
+  await expect(page.getByText(t("inbox.apiTokens.empty"))).toBeVisible();
+});

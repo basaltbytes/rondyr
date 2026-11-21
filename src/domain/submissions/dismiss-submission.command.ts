@@ -1,12 +1,14 @@
 import * as Domain from "@alchemy.run/domain";
+import { Schema } from "effect";
 
 import { ReviewSession } from "./review-session.middleware.ts";
 import { SubmissionNotFound, SubmissionNotReviewable } from "./submission.rejection.ts";
-import { OrganizationId, SubmissionId, UserId } from "./submission.id.ts";
+import { ApiTokenId, OrganizationId, SubmissionId, UserId } from "./submission.id.ts";
 
 export class SubmissionDismissed extends Domain.Event("SubmissionDismissed", {
   organizationId: OrganizationId,
-  reviewerId: UserId,
+  reviewerId: Schema.optionalKey(UserId),
+  apiTokenId: Schema.optionalKey(ApiTokenId),
 }) {}
 
 export class DismissSubmission extends Domain.Command(

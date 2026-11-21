@@ -10,6 +10,9 @@ export const OrganizationId = StoredId.pipe(Schema.brand("OrganizationId"));
 
 export const FormId = StoredId.pipe(Schema.brand("FormId"));
 
+export const ApiTokenId = StoredId.pipe(Schema.brand("ApiTokenId"));
+export type ApiTokenId = typeof ApiTokenId.Type;
+
 export const UserId = StoredId.pipe(Schema.brand("UserId"));
 export type SubmissionId = typeof SubmissionId.Type;
 export type OrganizationId = typeof OrganizationId.Type;

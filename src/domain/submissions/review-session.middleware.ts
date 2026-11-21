@@ -2,12 +2,17 @@ import * as Domain from "@alchemy.run/domain";
 import { Schema } from "effect";
 import { RpcMiddleware } from "effect/rpc";
 
-import { OrganizationId, UserId } from "./submission.id.ts";
+import { ApiTokenId, OrganizationId, UserId } from "./submission.id.ts";
 
-export const Reviewer = Schema.Struct({
-  userId: UserId,
-  organizations: Schema.Array(OrganizationId),
-});
+const organizations = Schema.Array(OrganizationId);
+export const Reviewer = Schema.Union([
+  Schema.Struct({ userId: UserId, apiTokenId: Schema.optionalKey(Schema.Never), organizations }),
+  Schema.Struct({
+    apiTokenId: ApiTokenId,
+    userId: Schema.optionalKey(Schema.Never),
+    organizations,
+  }),
+]);
 export class CurrentReviewer extends Domain.RequestContext<CurrentReviewer>()(
   "Rondyr/CurrentReviewer",
   Reviewer,
