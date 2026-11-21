@@ -1,14 +1,17 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
-import { Effect, Schema } from "effect";
+import { Context, Effect, Layer, Redacted, Schema } from "effect";
 
 import { testOrigin } from "../../tests/integration/auth-fixture.ts";
 import { call, createInbox, json, signIn } from "../../tests/integration/organization-fixture.ts";
+import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";
 import { ManagedForm } from "../domain/forms/form.ts";
 import { turnstileField } from "../domain/forms/turnstile.ts";
 import { SubmissionDetail } from "../domain/submissions/inbox.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
+import { SecretCipher } from "../ports/secret-cipher.ts";
+import { turnstileSecretOwner } from "../ports/turnstile-verifier.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
@@ -76,6 +79,125 @@ it.live("encrypts the Turnstile secret and returns only the site key in form set
     const disabled = yield* call("DELETE", path, undefined, headers);
     assert.strictEqual(disabled.status, 200);
     assert.isNull((yield* json(disabled).pipe(Effect.flatMap(readForm))).turnstileSiteKey);
+    // Without Turnstile, the form has no key to check.
+    const unchecked = yield* call("GET", path, undefined, headers);
+    assert.strictEqual(unchecked.status, 404);
+  }),
+);
+
+const keyStates = [
+  { state: "working", secretKey: "key-state-working" },
+  { state: "refused", secretKey: "revoked-key-state" },
+  { state: "unchecked", secretKey: "outage-key-state" },
+] as const;
+
+for (const { state, secretKey } of keyStates) {
+  it.live(`reports a stored Turnstile key as ${state} from a new Siteverify check`, () =>
+    Effect.gen(function* () {
+      const headers = yield* signIn;
+      const { path } = yield* formFor(`Turnstile key ${state}`, headers);
+      const configured = yield* call("PUT", path, { siteKey, secretKey }, headers);
+      assert.strictEqual(configured.status, 200);
+
+      const checked = yield* call("GET", path, undefined, headers);
+
+      assert.strictEqual(checked.status, 200);
+      assert.strictEqual(checked.headers.get("cache-control"), "no-store");
+      const body = yield* json(checked);
+      assert.deepEqual(body, { state });
+      const keyCheck = { secret: secretKey, token: dummyToken };
+      const checks = yield* siteverifyCalls(secretKey);
+      assert.deepEqual(checks, [keyCheck, keyCheck]);
+    }),
+  );
+}
+
+it.live("reports a stored Turnstile key as unreadable once it no longer decrypts", () =>
+  Effect.gen(function* () {
+    const headers = yield* signIn;
+    const { path, form } = yield* formFor("Turnstile key unreadable", headers);
+    const secretKey = "key-state-unreadable";
+    const configured = yield* call("PUT", path, { siteKey, secretKey }, headers);
+    assert.strictEqual(configured.status, 200);
+    // The same secret key, as a previous RONDYR_SECRETS_KEY encrypted it.
+    const previousKey = Redacted.make("cHJldmlvdXMtd29ya2VyZC1zZWNyZXRzLWtleS0zMjE=");
+    const previousCipher = yield* Effect.map(
+      Layer.build(secretCipherLayer(Effect.succeedSome(previousKey))),
+      Context.get(SecretCipher),
+    );
+    const sealed = yield* previousCipher.seal(
+      Redacted.make(secretKey),
+      turnstileSecretOwner(form.publicId),
+    );
+    yield* Effect.promise(() =>
+      env.DB.prepare("UPDATE forms SET turnstile_secret = ? WHERE public_id = ?")
+        .bind(sealed, form.publicId)
+        .run(),
+    );
+
+    const checked = yield* call("GET", path, undefined, headers);
+
+    assert.strictEqual(checked.status, 200);
+    const body = yield* json(checked);
+    assert.deepEqual(body, { state: "unreadable" });
+    // Only the check made when the keys were saved: nothing went to Siteverify.
+    const checks = yield* siteverifyCalls(secretKey);
+    assert.deepEqual(checks, [{ secret: secretKey, token: dummyToken }]);
+  }),
+);
+
+it.live("reports a stored Turnstile key as unreadable on a Worker without an encryption key", () =>
+  Effect.gen(function* () {
+    const headers = yield* signIn;
+    const { path } = yield* formFor("Turnstile key without encryption", headers);
+    const secretKey = "key-state-keyless";
+    const configured = yield* call("PUT", path, { siteKey, secretKey }, headers);
+    assert.strictEqual(configured.status, 200);
+
+    const checked = yield* Effect.promise(() =>
+      env.KEYLESS_WORKER.fetch(new URL(path, testOrigin), {
+        headers: { ...headers, origin: testOrigin },
+      }),
+    );
+
+    assert.strictEqual(checked.status, 200);
+    const body = yield* json(checked);
+    assert.deepEqual(body, { state: "unreadable" });
+  }),
+);
+
+it.live("answers 404 for the Turnstile key of another organization's form", () =>
+  Effect.gen(function* () {
+    const headers = yield* signIn;
+    const { path, form } = yield* formFor("Turnstile key elsewhere", headers);
+    const secretKey = "key-state-foreign";
+    const configured = yield* call("PUT", path, { siteKey, secretKey }, headers);
+    assert.strictEqual(configured.status, 200);
+    // The form and its key, which still decrypts, now belong to an organization
+    // that the account is not a member of.
+    yield* Effect.promise(() =>
+      env.DB.batch([
+        env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('key-state-other', 'Other')"),
+        env.DB.prepare(
+          "UPDATE forms SET organization_id = 'key-state-other' WHERE public_id = ?",
+        ).bind(form.publicId),
+      ]),
+    );
+    const foreignPath = `/api/organizations/key-state-other/forms/${form.publicId}/turnstile`;
+
+    const responses = yield* Effect.all([
+      call("GET", path, undefined, headers),
+      call("GET", foreignPath, undefined, headers),
+      call("GET", foreignPath),
+    ]);
+
+    assert.deepEqual(
+      responses.map(({ status }) => status),
+      [404, 404, 401],
+    );
+    // Only the check made when the keys were saved: nothing went to Siteverify.
+    const checks = yield* siteverifyCalls(secretKey);
+    assert.deepEqual(checks, [{ secret: secretKey, token: dummyToken }]);
   }),
 );
 

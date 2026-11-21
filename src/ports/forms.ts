@@ -8,7 +8,7 @@ import type {
   SuccessUrl,
   UpdateForm,
 } from "../domain/forms/form.ts";
-import type { SetTurnstile } from "../domain/forms/turnstile.ts";
+import type { SetTurnstile, TurnstileKeyState } from "../domain/forms/turnstile.ts";
 import type { OrganizationId, UserId } from "../domain/submissions/submission.id.ts";
 import type { FormScope } from "./notification-targets.ts";
 import type { SecretsKeyMissing } from "./secret-cipher.ts";
@@ -78,5 +78,10 @@ export class Forms extends Context.Service<
       Failure | SecretsKeyMissing | TurnstileSecretRefused | TurnstileUnavailable
     >;
     readonly clearTurnstile: (form: FormScope) => Effect.Effect<Managed, Failure>;
+    /**
+     * Decrypt the stored Turnstile secret key and ask Siteverify whether it still
+     * knows it. A form without Turnstile fails like another account's form.
+     */
+    readonly checkTurnstile: (form: FormScope) => Effect.Effect<TurnstileKeyState, Failure>;
   }
 >()("rondyr/ports/forms") {}

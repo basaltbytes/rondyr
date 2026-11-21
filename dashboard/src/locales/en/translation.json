@@ -292,6 +292,15 @@
       "turnstile": {
         "title": "Turnstile",
         "description": "Use the site key and secret key from your Cloudflare Turnstile widget.",
+        "key": {
+          "checking": "Checking the stored secret key with Cloudflare…",
+          "working": "Cloudflare accepts the stored secret key.",
+          "off": "Turnstile isn’t protecting this form",
+          "refused": "Cloudflare no longer recognizes the stored secret key. Rondyr can’t verify Turnstile tokens, so it sends messages that carry one to classification without the check. Copy the secret key from the widget’s settings in the Cloudflare dashboard, then save both keys again.",
+          "unreadable": "Rondyr can’t decrypt the stored secret key, which happens when RONDYR_SECRETS_KEY changes. It can’t verify Turnstile tokens, so it sends messages that carry one to classification without the check. Save both keys again.",
+          "unchecked": "Couldn’t check the stored secret key because Cloudflare didn’t answer. Reload the page to try again.",
+          "requestFailed": "Couldn’t check the stored secret key. Reload the page to try again."
+        },
         "siteKey": "Site key",
         "secretKey": "Secret key",
         "save": "Save Turnstile keys",
