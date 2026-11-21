@@ -7,7 +7,9 @@
 // - the names and IDs of the Cloudflare resources in wrangler.json, which the button may
 //   have changed or filled in: the update keeps them, so the next deployment uses the same
 //   Worker, database, queues and workflow. It keeps the copy's email binding too.
-// It then commits on a new branch and pushes it. Merging that branch deploys the update.
+// It then commits on a new branch and pushes it. In a GitHub Actions run, it prints and
+// writes to the run's summary the link that opens a pull request from that branch into the
+// default branch. Merging the pull request deploys the update.
 //
 // It stands alone, without the other files of the repository: the workflow runs the
 // version of the script that comes with the upstream version it updates to.
@@ -99,6 +101,44 @@ export function keepResourceNames(upstream, copy) {
   return result;
 }
 
+/**
+ * The branch that the update goes into: the repository's default branch, from the event of
+ * the GitHub Actions run, or else the branch that was checked out when the script started.
+ */
+export function baseBranch(defaultBranch, checkedOut) {
+  return defaultBranch || checkedOut || undefined;
+}
+
+/**
+ * What the run prints and writes to its summary: the pushed branch and, when the run knows
+ * the repository's address, the link that opens a pull request from it.
+ */
+export function updateSummary({ branch, label, base, serverUrl, repository }) {
+  const lines = [`Branch \`${branch}\` has Rondyr ${label}.`, ""];
+  if (serverUrl && repository && base) {
+    const compare = `${serverUrl}/${repository}/compare/${base}...${branch}?expand=1`;
+    lines.push(
+      `Open the pull request, check it and merge it: ${compare}`,
+      "",
+      "Workers Builds then applies the database migrations and deploys the new version.",
+    );
+  } else {
+    lines.push(
+      `Open a pull request from it, check it and merge it: Workers Builds then applies the`,
+      `database migrations and deploys the new version.`,
+    );
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
+/** The repository's default branch, from the event file of a GitHub Actions run. */
+function readDefaultBranch(eventPath) {
+  if (!eventPath) return undefined;
+  const branch = JSON.parse(readFileSync(eventPath, "utf8")).repository?.default_branch;
+  return branch ? String(branch) : undefined;
+}
+
 function git(...args) {
   return execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 }
@@ -108,6 +148,10 @@ const files = (ref) => git("ls-tree", "-r", "-z", "--name-only", ref).split("\0"
 function main() {
   const [commit, label = commit] = process.argv.slice(2);
   if (commit === undefined) throw new Error("Usage: update-from-upstream.mjs <commit> <label>");
+  const base = baseBranch(
+    readDefaultBranch(process.env.GITHUB_EVENT_PATH),
+    git("branch", "--show-current").trim(),
+  );
   const copyConfig = JSON.parse(readFileSync("wrangler.json", "utf8"));
   const { take, remove } = treeChanges(files(commit), files("HEAD"));
   if (remove.length > 0) git("rm", "-q", "--", ...remove);
@@ -131,13 +175,13 @@ function main() {
   git("switch", "-c", branch);
   git("commit", "-q", "-m", `Update Rondyr to ${label}`);
   git("push", "--force", "origin", branch);
-  const summary = [
-    `Branch \`${branch}\` has Rondyr ${label}.`,
-    "",
-    `Open a pull request from it, check it and merge it: Workers Builds then applies the`,
-    `database migrations and deploys the new version.`,
-    "",
-  ].join("\n");
+  const summary = updateSummary({
+    branch,
+    label,
+    base,
+    serverUrl: process.env.GITHUB_SERVER_URL,
+    repository: process.env.GITHUB_REPOSITORY,
+  });
   process.stdout.write(summary);
   if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);

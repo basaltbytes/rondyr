@@ -115,8 +115,8 @@ On GitHub, open your fork and select **Sync fork → Update branch**. The push t
 ### Update a copy made by the button
 
 1. In your repository on GitHub, open **Actions → Update Rondyr → Run workflow**. Keep `main` for the latest version, or enter a tag.
-2. The workflow puts that version on a branch named `update-rondyr/<version>`, then shows a link to it. It replaces every file with the upstream one except `.github/`, and keeps the names and IDs of your Cloudflare resources in `wrangler.json`, and your `send_email` binding if you added one.
-3. Open a pull request from that branch and merge it. The push to `main` deploys the new version.
+2. The workflow puts that version on a branch named `update-rondyr/<version>`, and the run's summary gives a link that opens a pull request from that branch into your default branch. The workflow replaces every file with the upstream one except `.github/`, and keeps the names and IDs of your Cloudflare resources in `wrangler.json`, and your `send_email` binding if you added one.
+3. Open the pull request from that link and merge it. The push to `main` deploys the new version.
 
 Migrations are forward only and run before the new code. During a deployment, the previous version still runs for a moment against the migrated database, which each migration allows for.
 

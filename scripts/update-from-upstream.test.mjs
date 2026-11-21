@@ -6,7 +6,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { keepResourceNames, treeChanges } from "./update-from-upstream.mjs";
+import {
+  baseBranch,
+  keepResourceNames,
+  treeChanges,
+  updateSummary,
+} from "./update-from-upstream.mjs";
 
 const upstream = {
   name: "rondyr",
@@ -101,6 +106,39 @@ test("keeps the names of each Wrangler environment too", () => {
   assert.equal(result.env.email.d1_databases[0].database_id, undefined);
 });
 
+test("links to the pull request of the pushed branch in a GitHub Actions run", () => {
+  const summary = updateSummary({
+    branch: "update-rondyr/v1.2.0",
+    label: "v1.2.0",
+    base: "trunk",
+    serverUrl: "https://github.com",
+    repository: "someone/forms",
+  });
+  assert.match(
+    summary,
+    /^Open the pull request, check it and merge it: https:\/\/github\.com\/someone\/forms\/compare\/trunk\.\.\.update-rondyr\/v1\.2\.0\?expand=1$/mu,
+  );
+});
+
+test("names the branch without a link when the run doesn't know the repository", () => {
+  const summary = updateSummary({
+    branch: "update-rondyr/v1.2.0",
+    label: "v1.2.0",
+    base: "main",
+    serverUrl: undefined,
+    repository: undefined,
+  });
+  assert.match(summary, /^Branch `update-rondyr\/v1\.2\.0` has Rondyr v1\.2\.0\.$/mu);
+  assert.match(summary, /^Open a pull request from it, check it and merge it/mu);
+  assert.doesNotMatch(summary, /compare|https:/u);
+});
+
+test("takes the default branch from the run's event, then from the checked-out branch", () => {
+  assert.equal(baseBranch("trunk", "main"), "trunk");
+  assert.equal(baseBranch(undefined, "main"), "main");
+  assert.equal(baseBranch(undefined, ""), undefined);
+});
+
 function run(directory, command, ...args) {
   return execFileSync(command, args, { cwd: directory, encoding: "utf8" });
 }
@@ -142,8 +180,23 @@ test("updates a copy on a new branch, without touching .github or the copy's nam
     run(copy, "git", "switch", "-q", "-f", "main");
 
     const script = fileURLToPath(new URL("update-from-upstream.mjs", import.meta.url));
-    const output = run(copy, process.execPath, script, commit, "v1.2.0");
-    assert.match(output, /update-rondyr\/v1\.2\.0/u);
+    const event = join(root, "event.json");
+    writeFileSync(event, JSON.stringify({ repository: { default_branch: "main" } }));
+    const summaryFile = join(root, "summary.md");
+    const output = execFileSync(process.execPath, [script, commit, "v1.2.0"], {
+      cwd: copy,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_SERVER_URL: "https://github.com",
+        GITHUB_REPOSITORY: "someone/forms",
+        GITHUB_EVENT_PATH: event,
+        GITHUB_STEP_SUMMARY: summaryFile,
+      },
+    });
+    const link = "https://github.com/someone/forms/compare/main...update-rondyr/v1.2.0?expand=1";
+    assert.ok(output.includes(link), output);
+    assert.ok(readFileSync(summaryFile, "utf8").includes(link));
 
     assert.equal(run(copy, "git", "branch", "--show-current").trim(), "update-rondyr/v1.2.0");
     assert.equal(readFileSync(join(copy, "new.txt"), "utf8"), "added upstream\n");
