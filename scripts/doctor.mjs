@@ -4,8 +4,17 @@ import { isDeepStrictEqual } from "node:util";
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const wrangler = JSON.parse(readFileSync(new URL("../wrangler.json", import.meta.url), "utf8"));
 const alchemyWorker = readFileSync(new URL("../src/alchemy-worker.ts", import.meta.url), "utf8");
+const alchemyRun = readFileSync(new URL("../alchemy-run.ts", import.meta.url), "utf8");
 const dependencies = { ...pkg.dependencies, ...pkg.devDependencies };
 const expectedBindings = ["CLASSIFICATION_QUEUE", "DELIVERY_QUEUE"];
+// Each queue's dead-letter queue, as alchemy-run.ts names its resource and its consumer.
+const deadLetters = {
+  CLASSIFICATION_QUEUE: {
+    queue: "classificationDeadLetterQueue",
+    consumer: "ClassificationDeadLetterConsumer",
+  },
+  DELIVERY_QUEUE: { queue: "deliveryDeadLetterQueue", consumer: "DeliveryDeadLetterConsumer" },
+};
 const errors = [];
 
 for (const name of ["@effect/platform-node", "@effect/vitest"]) {
@@ -40,6 +49,36 @@ for (const binding of expectedBindings) {
   const consumer = queues.consumers?.find((candidate) => candidate.queue === producer.queue);
   if (consumer === undefined || !consumer.dead_letter_queue) {
     errors.push(`Wrangler must consume ${producer.queue} with a dead-letter queue.`);
+    continue;
+  }
+
+  // A dead-letter queue has a consumer that logs and acknowledges each message, and the
+  // queue handler recognizes its batches by name.
+  const deadLetterQueue = consumer.dead_letter_queue;
+  const deadLetterName = binding.replace(/_QUEUE$/u, "_DEAD_LETTER_QUEUE_NAME");
+  const deadLetterConsumer = queues.consumers.find(
+    (candidate) => candidate.queue === deadLetterQueue,
+  );
+  if (deadLetterConsumer === undefined || deadLetterConsumer.dead_letter_queue) {
+    errors.push(
+      `Wrangler must consume ${deadLetterQueue}, without a dead-letter queue of its own.`,
+    );
+  }
+  if (vars[deadLetterName] !== deadLetterQueue) {
+    errors.push(`Wrangler must set ${deadLetterName} to the queue "${deadLetterQueue}".`);
+  }
+  if (!alchemyWorker.includes(`${deadLetterName}:`)) {
+    errors.push(`src/alchemy-worker.ts must pass ${deadLetterName} to the Worker.`);
+  }
+  const { queue: resource, consumer: consumerName } = deadLetters[binding];
+  const consumerDeclaration = new RegExp(
+    `Consumer\\("${consumerName}",\\s*\\{\\s*queueId: \\w+\\.queueId`,
+    "u",
+  );
+  if (!alchemyRun.includes(`yield* ${resource};`) || !consumerDeclaration.test(alchemyRun)) {
+    errors.push(
+      `alchemy-run.ts must declare the ${consumerName} consumer of the ${resource} resource.`,
+    );
   }
 }
 

@@ -13,7 +13,11 @@ import { turnstileVerifierLive } from "../adapters/workers/siteverify.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { ClassificationQueue, QueueUnavailable } from "../ports/classification-queue.ts";
 import { SubmissionIntake } from "../ports/intake.ts";
-import { publishPendingSubmissions, publishSubmission } from "./submission-outbox.ts";
+import {
+  maxPublications,
+  publishPendingSubmissions,
+  publishSubmission,
+} from "./submission-outbox.ts";
 
 const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
 const verifier = turnstileVerifierLive.pipe(
@@ -28,6 +32,8 @@ const OutboxRow = Schema.Struct({
   lease_until: Schema.Int,
   published_at: Schema.NullOr(Schema.Int),
   handed_off_at: Schema.NullOr(Schema.Int),
+  publication_count: Schema.Int,
+  stuck_at: Schema.NullOr(Schema.Int),
 });
 const readRow = Schema.decodeUnknownEffect(OutboxRow);
 const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));
@@ -50,7 +56,7 @@ const seedForm = (name: string) =>
 const outboxRow = Effect.fnUntraced(function* (submissionId: SubmissionId) {
   const row = yield* Effect.promise(() =>
     env.DB.prepare(
-      "SELECT lease_until, published_at, handed_off_at FROM outbox_events WHERE submission_id = ?",
+      "SELECT lease_until, published_at, handed_off_at, publication_count, stuck_at FROM outbox_events WHERE submission_id = ?",
     )
       .bind(submissionId)
       .first(),
@@ -218,6 +224,79 @@ it.live(
       const published = yield* outboxRow(submissionId);
       assert.isNumber(published.published_at);
       yield* waitForOneClassification(submissionId);
+    }),
+  30_000,
+);
+
+it.live(
+  "stops republishing an event after twelve publications without a hand-off",
+  () =>
+    Effect.gen(function* () {
+      const services = yield* Layer.build(adapters);
+      const queue = Context.get(services, ClassificationQueue);
+      yield* seedForm("outbox-stuck");
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
+        "outbox-stuck",
+        contact,
+        Option.none(),
+      );
+
+      // The queue loses this submission's messages, as if no consumer could hand it
+      // off, and delivers the others.
+      const sent: Array<SubmissionId> = [];
+      const losing = ClassificationQueue.of({
+        send: (submissionIds) => {
+          const delivered = submissionIds.filter((id) => id !== submissionId);
+          return Effect.andThen(
+            delivered.length === 0 ? Effect.void : queue.send(delivered),
+            Effect.sync(() => {
+              sent.push(...submissionIds);
+            }),
+          );
+        },
+      });
+      const cron = publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, losing),
+        Effect.provideContext(services),
+      );
+      // Five minutes after a publication, the event is due again.
+      const republishLater = Effect.promise(() =>
+        env.DB.prepare("UPDATE outbox_events SET published_at = 1 WHERE submission_id = ?")
+          .bind(submissionId)
+          .run(),
+      );
+
+      assert.strictEqual(maxPublications, 12);
+      for (let publication = 1; publication <= maxPublications; publication += 1) {
+        if (publication > 1) yield* republishLater;
+        yield* cron;
+        const row = yield* outboxRow(submissionId);
+        assert.strictEqual(row.publication_count, publication);
+        assert.isNull(row.stuck_at);
+      }
+      assert.strictEqual(sent.filter((id) => id === submissionId).length, maxPublications);
+
+      yield* republishLater;
+      const before = yield* Clock.currentTimeMillis;
+      yield* cron;
+      const stuck = yield* outboxRow(submissionId);
+      assert.isAtLeast(stuck.stuck_at ?? 0, before);
+      assert.strictEqual(stuck.publication_count, maxPublications);
+      assert.isNull(stuck.handed_off_at);
+
+      // Neither the Cron nor the direct path publishes a stuck event again.
+      yield* cron;
+      yield* publishSubmission(submissionId).pipe(
+        Effect.provideService(ClassificationQueue, losing),
+        Effect.provideContext(services),
+      );
+      assert.strictEqual(sent.filter((id) => id === submissionId).length, maxPublications);
+      const kept = yield* Effect.promise(() =>
+        env.DB.prepare("SELECT COUNT(*) AS count FROM submissions WHERE id = ?")
+          .bind(submissionId)
+          .first("count"),
+      );
+      assert.strictEqual(kept, 1);
     }),
   30_000,
 );
