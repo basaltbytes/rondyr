@@ -99,9 +99,10 @@ const createInbox = Effect.fnUntraced(function* (
 
 const storedForm = (publicId: string) =>
   Effect.promise(() =>
-    env.DB.prepare(
-      "SELECT name, status, business_context, success_url FROM forms WHERE public_id = ?",
-    )
+    env.DB.prepare(`
+      SELECT name, status, business_context, success_url, turnstile_site_key, turnstile_secret
+      FROM forms WHERE public_id = ?
+    `)
       .bind(publicId)
       .first(),
   );
@@ -117,6 +118,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       businessContext: null,
       successUrl: null,
       honeypotField: null,
+      turnstileSiteKey: null,
     });
     const forms = `/api/organizations/${inbox.id}/forms`;
     const formPath = (publicId: string) => `${forms}/${encodeURIComponent(publicId)}`;
@@ -164,6 +166,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       businessContext: "Pottery workshops",
       successUrl: null,
       honeypotField: null,
+      turnstileSiteKey: null,
     });
     assert.notStrictEqual(classes.publicId, first.publicId);
     const shop = yield* call("POST", forms, { name: "Shop", businessContext: "" }, headers).pipe(
@@ -309,8 +312,14 @@ it.live("manages the forms of the account's organizations and refuses other orga
       env.DB.batch([
         env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('other-org', 'Other')"),
         env.DB.prepare(`
-          INSERT INTO forms (id, organization_id, public_id, name, business_context, success_url)
-          VALUES ('other-form', 'other-org', 'other', 'Other', 'Other context', 'https://other.example.com/thanks')
+          INSERT INTO forms (
+            id, organization_id, public_id, name, business_context, success_url,
+            turnstile_site_key, turnstile_secret
+          )
+          VALUES (
+            'other-form', 'other-org', 'other', 'Other', 'Other context',
+            'https://other.example.com/thanks', 'other_site_key', 'v1.other.secret'
+          )
         `),
         env.DB.prepare(
           "INSERT INTO form_origins (form_id, origin, created_at) VALUES ('other-form', 'https://other.example.com', 0)",
@@ -318,6 +327,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       ]),
     );
     const before = yield* storedForm("other");
+    const foreignSecret = "foreign-form-secret";
     const foreignPaths = ["/api/organizations/other-org/forms/other", `${forms}/other`];
     const foreign = yield* Effect.forEach(foreignPaths, (path) =>
       Effect.all([
@@ -326,15 +336,22 @@ it.live("manages the forms of the account's organizations and refuses other orga
         call("POST", `${path}/reactivate`, undefined, headers),
         call("PUT", `${path}/success-url`, { url: "https://other.example.com/x" }, headers),
         call("DELETE", `${path}/success-url`, undefined, headers),
+        call("PUT", `${path}/turnstile`, { siteKey: "taken", secretKey: foreignSecret }, headers),
+        call("DELETE", `${path}/turnstile`, undefined, headers),
       ]),
     );
     assert.deepEqual(
       foreign.map((responses) => responses.map(statusOf)),
       [
-        [404, 404, 404, 404, 404],
-        [404, 404, 404, 404, 404],
+        [404, 404, 404, 404, 404, 404, 404],
+        [404, 404, 404, 404, 404, 404, 404],
       ],
     );
+    const checked = yield* Effect.promise(() =>
+      env.SITEVERIFY_FIXTURE.fetch(`https://siteverify.test/__calls?secret=${foreignSecret}`),
+    );
+    const checks = yield* json(checked);
+    assert.deepEqual(checks, []);
     const foreignCreate = yield* call(
       "POST",
       "/api/organizations/other-org/forms",

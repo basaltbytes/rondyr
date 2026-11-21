@@ -7,6 +7,7 @@ import {
   MultipartParser,
 } from "effect/http";
 
+import { TurnstileToken, turnstileField } from "../domain/forms/turnstile.ts";
 import {
   confirmationLanguage,
   confirmationPages,
@@ -24,6 +25,7 @@ import {
   type FormSuspended,
   type OriginMatch,
   type OriginRefused,
+  type OrganizationRateLimited,
 } from "../ports/intake.ts";
 import type { StorageUnavailable } from "../ports/storage.ts";
 
@@ -35,8 +37,16 @@ const Accepted = Schema.Struct({
   status: Schema.Literal("received"),
 });
 const accepted = HttpServerResponse.schemaJson(Accepted);
-const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(SubmittedFields));
+const decodeJson = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
+);
 const decodeFields = Schema.decodeUnknownEffect(SubmittedFields);
+const decodeToken = Schema.decodeUnknownOption(TurnstileToken);
+
+const splitFields = Effect.fnUntraced(function* (fields: Readonly<Record<string, string>>) {
+  const { [turnstileField]: value, ...message } = fields;
+  return { fields: yield* decodeFields(message), token: decodeToken(value) };
+});
 
 // Browsers cache a preflight for at most this long; Chromium caps it at 2 hours.
 const preflightMaxAgeSeconds = "7200";
@@ -117,17 +127,18 @@ const readFields = Effect.fnUntraced(
     const media = contentType.split(";", 1)[0]?.trim().toLowerCase();
     if (media === "application/json") {
       const body = yield* request.text;
-      return { json: true, fields: yield* decodeJson(body) };
+      const incoming = yield* decodeJson(body);
+      return { json: true, ...(yield* splitFields(incoming)) };
     }
     if (media === "application/x-www-form-urlencoded") {
       const body = yield* request.text;
       const fields = joinRepeatedFields(new URLSearchParams(body));
-      return { json: false, fields: yield* decodeFields(fields) };
+      return { json: false, ...(yield* splitFields(fields)) };
     }
     if (media === "multipart/form-data") {
       const body = yield* request.arrayBuffer;
       const entries = yield* readMultipart(body, contentType);
-      return { json: false, fields: yield* decodeFields(joinRepeatedFields(entries)) };
+      return { json: false, ...(yield* splitFields(joinRepeatedFields(entries))) };
     }
     return yield* InvalidBody.make({ status: 415 });
   },
@@ -158,10 +169,9 @@ const refuseBody = Effect.fnUntraced(function* (
   return empty(status, corsHeaders(origins, origin));
 });
 
-/** A 429, from the form's cap or from the client's limit. */
-function rateLimited(cors: CorsHeaders) {
+function rateLimited(cors: CorsHeaders, retryAfter = 60) {
   return empty(429, {
-    "retry-after": "60",
+    "retry-after": String(retryAfter),
     "access-control-expose-headers": "retry-after",
     ...cors,
   });
@@ -171,6 +181,7 @@ function refusal(
   error:
     | FormNotFound
     | FormRateLimited
+    | OrganizationRateLimited
     | FormSuspended
     | OriginRefused
     | EmptySubmission
@@ -186,6 +197,8 @@ function refusal(
     // The honeypot field was the only field: there is no message.
     EmptySubmission: ({ origins }) => empty(400, corsHeaders(origins, origin)),
     FormRateLimited: ({ origins }) => rateLimited(corsHeaders(origins, origin)),
+    OrganizationRateLimited: ({ origins, retryAfter }) =>
+      rateLimited(corsHeaders(origins, origin), retryAfter),
     StorageUnavailable: () => empty(503, corsHeaders("unrestricted", origin)),
   });
 }
@@ -232,11 +245,11 @@ const receive = Effect.gen(function* () {
   const { formId } = path.value;
   const read = yield* Effect.result(readFields(request));
   if (Result.isFailure(read)) return yield* refuseBody(formId, origin, read.failure.status);
-  const { json, fields } = read.success;
+  const { json, fields, token } = read.success;
   const limited = yield* limitClient(request, formId, origin);
   if (Option.isSome(limited)) return limited.value;
   const intake = yield* SubmissionIntake;
-  const received = yield* Effect.result(intake.receive(formId, fields, origin));
+  const received = yield* Effect.result(intake.receive(formId, fields, origin, token));
   if (Result.isFailure(received)) return refusal(received.failure, origin);
   const { submissionId, origins, successUrl } = received.success;
   // The cron publishes the event later if this attempt fails or never runs.

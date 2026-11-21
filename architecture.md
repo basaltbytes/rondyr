@@ -22,7 +22,7 @@ Ce qui distingue Rondyr d’un SaaS de formulaires : le filtrage tient compte du
 | Premier compte, sessions, inscriptions fermées | Fait | |
 | Organisations et formulaires | Fait : ajout, nom, contexte métier, suspension, redirection de succès et origines autorisées par formulaire | #11 pour les rôles |
 | Réception JSON, `application/x-www-form-urlencoded` et `multipart/form-data` sans fichier | Fait, y compris JSON depuis un navigateur sur une autre origine | |
-| Limites à l’entrée | Taille, schéma, 5 par minute et par client sur un formulaire, 30 par minute et par formulaire, champ piège | #7 pour Turnstile et les quotas |
+| Limites à l’entrée | Fait : taille, schéma, limites à la minute par client et par formulaire, champ piège, Turnstile et plafonds quotidiens par organisation | |
 | Enregistrement durable et outbox | Fait | |
 | Classification et quarantaine | Seuils par classificateur, politique par organisation | #15 |
 | Inbox et revue humaine | Fait | #9 |
@@ -67,7 +67,7 @@ Les fichiers et dossiers du projet sont en kebab-case, sauf les noms imposés pa
 3. **Ports et adaptateurs.** Les ports de `src/ports` déclarent les services Effect, les adaptateurs fournissent les layers, et `src/worker-implementation.ts` les compose. Les routes et les jobs n’utilisent que des ports : une règle Oxlint leur interdit d’importer `src/adapters`, sauf dans les tests. Le domaine déclare lui-même `InboxStore` et le système externe `Classifier`, puisqu’il ne peut pas importer `src/ports`.
 4. **IA non destructive.** Un doute, une erreur technique ou un message hors sujet mène à la quarantaine, jamais à une suppression.
 5. **Au moins une fois, avec idempotence.** Queues peut remettre deux fois le même message ; chaque consumer le tolère.
-6. **Coût borné.** Les protections s’appliquent avant l’appel au modèle : la limite par client et le plafond par formulaire avant tout enregistrement, le champ piège avant la classification. Les plafonds par organisation restent à faire (#7).
+6. **Coût borné.** Les limites par client et par formulaire et le plafond quotidien de soumissions s’appliquent avant l’enregistrement. Le champ piège, Turnstile, la répétition et le plafond quotidien de classification s’appliquent avant l’analyse.
 
 ## 3. Parcours d'une soumission
 
@@ -77,7 +77,9 @@ flowchart TD
   B -->|refus| C["400, 403, 404, 413, 415, 429"]
   B --> Y["Limite par client : binding Rate Limiting"]
   Y -->|dépassée| C
-  Y --> D["Lot D1 : origine, statut, plafond, champ piège ; submissions + outbox_events"]
+  Y --> V["Turnstile avec jeton : lecture de la clé et appel à Siteverify"]
+  Y -->|sans jeton| D["Lot D1 · accès, plafonds, soumission, outbox et compteurs"]
+  V --> D
   D -->|refus| C
   D --> E["202 et submission-id"]
   D --> T["Publication en arrière-plan de la requête"]
@@ -116,7 +118,7 @@ D1 et Queues ne partagent pas de transaction, et Queues remet les messages au mo
 
 ### Ingestion
 
-L’adaptateur D1 du port `SubmissionIntake` exécute un seul `db.batch`. Il lit les conditions d’accès du formulaire, insère la soumission si elles le permettent et si le plafond de 30 messages par minute est respecté, puis insère l’événement dans `outbox_events`. L’insertion retire un champ piège vide, en gardant l’ordre des autres champs, et calcule les compteurs de répétition et le motif d’entrée (section 5). D1 exécute le lot dans une transaction. Un test force l’échec de l’insertion dans l’outbox avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
+Lorsque la requête contient un jeton Turnstile utilisable, l’adaptateur de `SubmissionIntake` lit la clé chiffrée du formulaire dans D1 et appelle Siteverify si Turnstile est actif. Un seul `db.batch` lit ensuite les conditions d’accès, décide de l’admission et du motif d’entrée, écrit la soumission et son événement dans `outbox_events`, puis incrémente les compteurs quotidiens. D1 exécute le lot dans une transaction. Un test force l’échec de l’insertion dans l’outbox avec un trigger et vérifie que la soumission n’existe pas et que la route répond `503`.
 
 ### Publication
 
@@ -214,16 +216,15 @@ L’ingestion enregistre un motif d’entrée dans `submissions.intake_reason` q
 | Condition | Résultat |
 | --- | --- |
 | Champ piège du formulaire rempli | Quarantaine, motif `honeypot`, sans appel au classificateur |
+| Turnstile actif et jeton absent ou refusé | Quarantaine, motif `turnstile-failed`, sans appel au classificateur |
 | Au moins 2 soumissions antérieures au même contenu ou 3 du même expéditeur | Quarantaine, motif `repetition`, sans appel au classificateur |
+| Plafond quotidien de classification atteint | Quarantaine, motif `quota`, sans appel au classificateur |
 
-Le comptage porte sur les soumissions déjà enregistrées dans la même organisation, tous formulaires et statuts confondus, avec une fenêtre de 30 jours dont la borne basse est incluse. Un double envoi isolé reste sous les deux seuils. Le champ piège rempli est prioritaire lorsque les deux règles s’appliquent.
+Les conditions s’appliquent dans l’ordre du tableau. Le comptage de répétition porte sur les soumissions déjà enregistrées dans la même organisation, tous formulaires et statuts confondus, avec une fenêtre de 30 jours dont la borne basse est incluse. Un double envoi isolé reste sous les deux seuils.
 
 Le champ `email` sert à comparer les expéditeurs. Le contenu regroupe les paires nom–valeur des autres champs, hors `name`, triées par nom. La normalisation des valeurs retire les espaces aux extrémités, réduit les suites d’espaces, passe en minuscules et applique Unicode NFC. Une valeur vide ne produit pas d’empreinte d’expéditeur et ne contribue pas au contenu. Le Worker calcule le condensat SHA-256 de la valeur normalisée, et les index le préfixent par l’identifiant de l’organisation fourni par le formulaire. Le condensat lui-même ne contient pas cet identifiant : D1 ne connaît l’organisation que dans le lot d’écriture, et son SQL ne propose pas SHA-256. Deux organisations qui reçoivent la même valeur ont donc la même empreinte. Ce choix est accepté : un accès direct à la base donne déjà `submissions.fields` en clair, et les empreintes n’apprennent rien de plus. Les lignes antérieures à la migration restent lisibles avec des compteurs à zéro et ne contribuent pas à l’historique de répétition.
 
-`QuarantineReason` type l’événement, la projection et l’API. #7 prévoit deux autres motifs d’entrée.
-
-- `turnstile-failed` : la route vérifie le jeton Turnstile avant le lot D1, puis l’insertion écrit ce motif dans `intake_reason`. Il suffit d’ajouter la valeur à `IntakeReason` et un libellé au dashboard.
-- `quota` : si le plafond d’appels au modèle se compte à l’ingestion, il s’écrit dans `intake_reason` comme le champ piège. S’il se compte à la remise au modèle, le consumer envoie `QuarantineAtIntake` avec `quota` ; une seconde remise trouve l’agrégat hors de `Unrecorded` et ne change rien, donc la première décision reste la seule.
+`QuarantineReason` type l’événement, la projection et l’API. Une seconde remise du message de file réutilise le motif écrit dans `intake_reason` et le même identifiant de commande.
 
 ### Classificateurs
 
@@ -240,7 +241,7 @@ La pile Alchemy ne crée aucun gateway. AI Gateway crée `default` à la premiè
 
 ### Sécurité du pipeline IA
 
-Les deux adaptateurs indiquent au modèle que l’entrée est à lire comme des données. Les champs du visiteur figurent dans un objet distinct des instructions. Le corps est limité à 16 Kio. Le contexte métier est limité à 2 000 unités UTF-16 sans couper de caractère. Les plafonds d’appels par organisation restent à faire (#7).
+Les deux adaptateurs indiquent au modèle que l’entrée est à lire comme des données. Les champs du visiteur figurent dans un objet distinct des instructions. Le corps est limité à 16 Kio. Le contexte métier est limité à 2 000 unités UTF-16 sans couper de caractère. Le plafond quotidien par organisation compte les soumissions admises à la classification à l’ingestion. Les reprises de la saga utilisent la place déjà réservée.
 
 ## 6. Modèle de données
 
@@ -250,11 +251,12 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 
 | Table | Contenu |
 | --- | --- |
-| `organizations` | `id`, `name` |
+| `organizations` | `id`, `name`, `daily_submission_limit` (2 000 par défaut), `daily_classification_limit` (1 000 par défaut) |
 | `organization_members` | `(organization_id, user_id)`, sans rôle |
 | `organization_domains` | `(organization_id, domain)`, jusqu’à dix par organisation |
 | `organization_classification_policies` | Réglages de classification personnalisés, au plus une ligne par organisation |
-| `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context`, `status` (`active` par défaut, ou `suspended`), `success_url` (facultative, normalisée par `parseSuccessUrl`), `honeypot_field` (facultatif, nom du champ piège) |
+| `organization_daily_usage` | Une ligne par organisation avec le dernier jour UTC `day`, et les compteurs `submissions` et `classifications` |
+| `forms` | `id`, `organization_id`, `public_id` unique, `name`, `business_context`, `status` (`active` par défaut, ou `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (publique) et `turnstile_secret` (chiffrée). Les quatre derniers champs sont facultatifs |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` est normalisée : schéma, hôte et port éventuel, sans chemin ni barre oblique finale |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (facultatif), `sender_fingerprint` et `content_fingerprint` (facultatifs), `prior_same_sender` et `prior_same_content` |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
@@ -272,6 +274,8 @@ Deux index servent les lectures fréquentes : `(organization_id, received_at, id
 
 La migration `submission-repetition` ajoute quatre colonnes avec `ALTER TABLE` et deux index partiels pour le comptage. Chaque index commence par `organization_id`, suivi de l’empreinte de l’expéditeur ou du contenu, puis de `received_at`. Supprimer une soumission supprime ses empreintes et ses compteurs.
 
+La migration `turnstile-and-organization-quotas` ajoute les réglages par `ALTER TABLE` et crée `organization_daily_usage`. Les compteurs commencent à zéro, y compris pour les organisations existantes. Le lot d’ingestion prend l’heure de D1 et utilise la même date UTC pour vérifier les plafonds et compter la soumission. Si la ligne de compteur appartient à une autre date, l’API affiche zéro pour le jour courant et la première soumission enregistrée initialise les compteurs de ce jour.
+
 Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. Une relance manuelle ouvre une nouvelle série sur la même livraison sans effacer ses tentatives ; l’historique et la relance n’ont demandé aucune migration. L’API d’administration crée les destinations webhook et e-mail ; la table `notification_targets` existante suffit, sans migration. L’adaptateur relit la liste des destinataires avec le même schéma qu’à la création : une ligne modifiée à la main qui ne respecte plus la règle fait échouer la livraison sans reprise.
 
 ### Événements de l’agrégat `Submission`
@@ -285,14 +289,14 @@ Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retryi
 
 L’agrégat passe de `Unrecorded` à `Classifying`, puis à `Quarantined` ou `Accepted`. Avec un motif d’entrée, il passe directement de `Unrecorded` à `Quarantined`. Seul un message `Quarantined` peut être accepté ou archivé à la main. La projection `Inbox` écrit le dernier statut dans `submission_inbox`, protégée par le numéro de séquence de l’événement. Une soumission sans ligne de projection a le statut `received`.
 
-Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. Le champ `reason` de l’Inbox contient le motif de quarantaine, par exemple `classification-error`, `honeypot` ou `repetition`.
+Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. Le champ `reason` de l’Inbox contient le motif de quarantaine, dont `turnstile-failed` ou `quota` pour ces contrôles d’entrée.
 
 Le contenu des messages n’existe que dans `submissions.fields`, et n’en sort que dans le corps des requêtes webhook et dans le texte des e-mails. Les événements ne contiennent que des identifiants, des scores et l’identifiant du relecteur, et les livraisons que des identifiants, des états et des résumés d’erreur, ce qui limite une purge aux lignes D1 (#9). Supprimer une soumission supprime ses livraisons et leurs tentatives.
 
 ### Tables à venir
 
 - Rôle dans `organization_members` et invitations (#11).
-- Quotas (#7) et durées de conservation (#9).
+- Durées de conservation (#9).
 
 Les tables `classification-attempts` et `audit-events` du document initial ne sont pas prévues : le flux d’événements de l’agrégat enregistre les décisions et leurs auteurs.
 
@@ -300,7 +304,7 @@ Les tables `classification-attempts` et `audit-events` du document initial ne so
 
 ### API publique
 
-`POST /f/:public-id` accepte `application/json`, `application/x-www-form-urlencoded` et `multipart/form-data`. Le corps pèse au plus 16 Kio et contient de 1 à 32 champs texte ; un nom de champ a de 1 à 100 caractères, sans caractère de contrôle ni saut de ligne (y compris U+0085, U+2028 et U+2029), et une valeur au plus 4 000. Les noms `__proto__`, `constructor` et `prototype` restent refusés, et un nom qui commence par `_` n’a pas de sens particulier.
+`POST /f/:public-id` accepte `application/json`, `application/x-www-form-urlencoded` et `multipart/form-data`. Le corps pèse au plus 16 Kio et contient de 1 à 32 champs texte en plus du champ facultatif `cf-turnstile-response`. Un nom de champ a de 1 à 100 caractères, sans caractère de contrôle ni saut de ligne (y compris U+0085, U+2028 et U+2029), et une valeur de message au plus 4 000. Les noms `__proto__`, `constructor` et `prototype` restent refusés, et un nom qui commence par `_` n’a pas de sens particulier.
 
 Un objet JSON imbriqué ou une valeur non textuelle sont refusés. Dans un corps de formulaire, un nom répété (cases à cocher, liste à choix multiples) est accepté : ses valeurs sont jointes par `, ` dans l’ordre reçu, et la valeur jointe doit tenir en 4 000 caractères. Un corps `multipart/form-data` ne contient que des champs texte : une partie avec un paramètre `filename`, même vide comme celle d’un champ fichier laissé vide, fait refuser le corps en `400`, sans rien enregistrer. L’analyseur multipart d’Effect (`MultipartParser`) lit le corps déjà borné à 16 Kio. Les messages reçus avant la règle des caractères de contrôle restent lisibles : seule l’ingestion l’applique.
 
@@ -311,12 +315,12 @@ Les champs sont stockés dans un objet JSON. Les noms qui sont des indices de ta
 | `202` | Soumission enregistrée ; le JSON contient `submission-id` et `status: "received"`, ou la page de confirmation pour un envoi HTML |
 | `204` | Prérequête CORS (`OPTIONS`) acceptée |
 | `303` | Soumission enregistrée, envoi HTML d’un formulaire qui a une URL de succès ; `Location` vaut cette URL |
-| `400` | Corps ou champs invalides, fichier dans un corps multipart, ou corps dont le seul champ est le champ piège vide |
+| `400` | Corps ou champs invalides, fichier dans un corps multipart, ou aucun champ de message après retrait du jeton et du champ piège vide |
 | `403` | En-tête `Origin` absent de la liste des origines autorisées du formulaire, ou formulaire suspendu ; rien n’est enregistré |
 | `404` | Formulaire inconnu, pour `POST` comme pour `OPTIONS` |
 | `413` | Corps de plus de 16 Kio |
 | `415` | Autre type de contenu |
-| `429` | Plus de 5 soumissions en une minute du même client sur ce formulaire, ou plus de 30 sur le formulaire, avec `Retry-After: 60` ; rien n’est enregistré |
+| `429` | Limite à la minute du client ou du formulaire (`Retry-After: 60`), ou plafond quotidien de soumissions de l’organisation (`Retry-After` en secondes jusqu’à minuit UTC). Rien n’est enregistré |
 | `503` | D1 indisponible |
 
 Les réponses ne révèlent rien de la décision anti-spam : une soumission au champ piège rempli reçoit le même `202`, la même page ou la même redirection qu’une autre. `GET /health` renvoie `{"status":"ok"}`.
@@ -349,7 +353,7 @@ La prérequête autorise `POST` et l’en-tête `Content-Type`, avec `Access-Con
 
 Une requête sans en-tête `Origin` (curl, serveur) est traitée comme avant, quelle que soit la liste. Il en va de même pour `Origin: null`, qu’un navigateur envoie quand la page masque son origine (politique `no-referrer`, iframe isolée) : la refuser ferait perdre les messages d’un site pourtant autorisé. Une requête dont l’`Origin` est absente d’une liste non vide reçoit `403` avant tout enregistrement, qu’elle vienne de `fetch` ou d’un formulaire HTML posté depuis un autre site : un site absent de la liste ne peut pas remplir l’Inbox par le navigateur de ses visiteurs. La comparaison porte sur la valeur exacte de l’en-tête, que les navigateurs envoient déjà normalisée. Une requête invalide (`400`, `413`, `415`) garde son statut ; la liste ne décide alors que des en-têtes.
 
-L’instruction d’insertion vérifie l’origine et le statut du formulaire, comme le plafond, applique le champ piège, et le même lot D1 lit l’état de la liste, le statut, l’URL de succès et le nom du champ piège. Une soumission acceptée coûte donc toujours un aller-retour D1, redirection et champ piège compris, plus un appel au binding Rate Limiting quand elle a une adresse de client, et un refus (`400` du champ piège, `403`, `404`, `429` du plafond) n’en demande plus de second. Une prérequête, ou une requête invalide qui porte un en-tête `Origin`, lit la liste en un aller-retour.
+Le lot D1 vérifie l’origine et le statut du formulaire, applique les plafonds et lit l’URL de succès. Une soumission sans jeton Turnstile utilisable demande un aller-retour D1. Avec un jeton utilisable, la lecture préalable de la clé ajoute un aller-retour D1, et Siteverify est appelé si Turnstile est actif. Une prérequête, ou une requête invalide qui porte un en-tête `Origin`, lit la liste en un aller-retour.
 
 ### API d’administration
 
@@ -367,6 +371,8 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `GET /api/organizations/:organizationId/classification-policy` | Renvoie le classificateur, sa politique par défaut et les réglages de l’organisation, ou `null` si elle utilise les réglages par défaut |
 | `PUT /api/organizations/:organizationId/classification-policy` | Remplace les réglages de l’organisation. Accepte `thresholds` et `offTopic`, ensemble ou seuls. Répond `204`, ou `400` pour un réglage invalide |
 | `DELETE /api/organizations/:organizationId/classification-policy` | Rétablit les réglages du classificateur et répond `204` |
+| `GET /api/organizations/:organizationId/quotas` | Renvoie `{ "day", "limits", "used" }`. La date est en UTC et chacun des deux objets contient `submissions` et `classifications` |
+| `PUT /api/organizations/:organizationId/quotas` | Remplace les plafonds `{ "submissions", "classifications" }` et renvoie la consommation et les plafonds mis à jour. Accepte des entiers de 1 à 100 000 pour les soumissions et de 0 à 100 000 pour les classifications. Un corps invalide répond `400` |
 | `POST /api/organizations/:organizationId/forms` | Ajoute un formulaire actif (`{"name":…,"businessContext":…}`, contexte facultatif) : `201` et le formulaire |
 | `PATCH /api/organizations/:organizationId/forms/:publicId` | Renomme le formulaire, modifie son contexte métier, ou les deux (`{"name":…}`, `{"businessContext":…}`) ; un contexte vide l’efface |
 | `POST /api/organizations/:organizationId/forms/:publicId/suspend` ou `/reactivate` | Suspend ou réactive le formulaire |
@@ -374,6 +380,8 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `DELETE /api/organizations/:organizationId/forms/:publicId/success-url` | Retire l’URL de succès |
 | `PUT /api/organizations/:organizationId/forms/:publicId/honeypot` | Nomme le champ piège (`{"field":…}`) |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/honeypot` | Retire le champ piège |
+| `PUT /api/organizations/:organizationId/forms/:publicId/turnstile` | Active Turnstile ou remplace les deux clés (`{ "siteKey", "secretKey" }`) si Siteverify reconnaît la clé secrète. Une clé refusée répond `400` avec `{"error":"turnstile-secret-refused"}`, et Siteverify injoignable `503` avec `{"error":"siteverify-unavailable"}` ; les clés enregistrées ne changent pas. Sans clé de chiffrement, répond `503` avec `{"error":"secrets-key-missing"}` |
+| `DELETE /api/organizations/:organizationId/forms/:publicId/turnstile` | Désactive Turnstile et efface les deux clés |
 | `GET /api/organizations/:organizationId/submissions` | Liste paginée (`status`, `form`, `after`), 25 messages par page, chacun avec un aperçu de ses champs (`preview`) : chaque valeur est coupée à 240 caractères, pour qu’une page de longs messages reste légère. `form` est l’identifiant public d’un formulaire et réduit la liste à ses messages |
 | `GET /api/organizations/:organizationId/submission-counts` | Nombre de messages de l’organisation par statut, et dans `forms` le même décompte pour chaque formulaire qui a au moins un message (`[{"publicId", "counts"}]`) |
 | `GET /api/organizations/:organizationId/submissions/:submissionId` | Détail d’un message |
@@ -390,7 +398,7 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `POST /api/organizations/:organizationId/forms/:publicId/origins` | Ajoute une origine (`{"origin":…}`) : `201`, ou `200` si elle est déjà dans la liste |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/origins?origin=…` | Retire une origine : `204`, `404` si elle n’est pas dans la liste, ou `409` avec `{"error":"origin-in-use"}` si c’est l’origine de l’URL de succès |
 
-`GET /api/organizations` renvoie pour chaque formulaire `name`, `publicId`, `status`, `businessContext`, `successUrl` et `honeypotField`, triés par nom. Les routes des formulaires renvoient le formulaire modifié avec les mêmes champs. Le nom a de 1 à 100 caractères et le contexte au plus 2 000, espaces de début et de fin retirés, comme à la création d’une organisation ; un corps invalide répond `400`. Le nom du champ piège suit la règle des noms de champs de l’ingestion, espaces de début et de fin retirés : de 1 à 100 caractères, sans caractère de contrôle ni saut de ligne, ni `__proto__`, `constructor` ou `prototype` (`HoneypotField`, dans `src/domain/forms/form.ts`) ; un nom refusé répond `400`.
+`GET /api/organizations` renvoie les formulaires triés par nom avec `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` et `turnstileSiteKey`. Les routes des formulaires renvoient le formulaire modifié avec les mêmes champs. Sans Turnstile, `turnstileSiteKey` vaut `null`. Le nom a de 1 à 100 caractères et le contexte au plus 2 000, espaces de début et de fin retirés, comme à la création d’une organisation ; un corps invalide répond `400`. Le nom du champ piège suit la règle des noms de champs de l’ingestion, espaces de début et de fin retirés : de 1 à 100 caractères, sans caractère de contrôle ni saut de ligne, ni `__proto__`, `constructor` ou `prototype` (`HoneypotField`, dans `src/domain/forms/form.ts`). Le nom `cf-turnstile-response` est réservé au jeton. Un nom refusé répond `400`.
 
 Les routes de soumissions passent par `ReviewApi`, l’API du modèle de domaine, appelée dans le même processus. Les routes de livraisons passent par les ports `DeliveryHistory` (lecture), `DeliveryStore` (relance) et `NotificationTargets` (destination à tester) ; le résumé d’erreur qu’elles renvoient est celui de la base, sans les champs du message. Les routes de destinations passent par le port `NotificationTargets`, celles des origines par le port `FormOrigins` et celles des formulaires par le port `Forms` ; leurs adaptateurs D1 joignent `organization_members` à chaque requête. Une ressource d’une autre organisation répond `404`, comme une ressource inexistante. Une seconde décision sur un message déjà traité répond `409`, comme deux rotations simultanées du même secret.
 
@@ -412,7 +420,17 @@ Le champ piège coûte une instruction SQL et ne demande rien au visiteur. Il ar
 
 Les origines autorisées servent l’intégration navigateur et ne protègent pas contre l’abus : un client hors navigateur n’envoie pas d’en-tête `Origin`, ou en choisit la valeur. Elles empêchent seulement un autre site de faire envoyer des messages par le navigateur de ses visiteurs. Les limites s’appliquent quelle que soit l’origine.
 
-Restent ouverts dans #7 : la vérification Turnstile côté Worker et les plafonds durables par organisation, pour l’ingestion et pour les appels au modèle. Ils réutiliseront la quarantaine sans appel au modèle de la section 5.
+#### Turnstile
+
+Chaque formulaire peut utiliser son propre widget Cloudflare Turnstile. Le dashboard affiche la clé de site dans l’extrait HTML. Le port `SecretCipher` chiffre la clé secrète dans D1 avec `RONDYR_SECRETS_KEY` et le propriétaire `turnstile/<publicId>`. Les réponses d’administration contiennent uniquement la clé de site.
+
+Avant d’enregistrer les clés, l’adaptateur de `Forms` chiffre la clé secrète, vérifie que le formulaire appartient au compte, puis demande à Siteverify s’il connaît la clé (`checkSecret` du port `TurnstileVerifier`). L’appel envoie la clé et le jeton factice de Cloudflare, `XXXX.DUMMY.TOKEN.XXXX`, que les clés de production refusent et que les [clés de test](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) acceptent. Une réponse qui juge le jeton (`success`, ou seulement `invalid-input-response` et `timeout-or-duplicate`) prouve que Siteverify connaît la clé, et les clés sont enregistrées. Siteverify répond à une clé inconnue par le statut HTTP 400 et `invalid-input-secret` : la clé est refusée, comme pour tout autre code d’erreur. Une erreur réseau, un délai de cinq secondes dépassé, un autre statut HTTP ou `internal-error` répondent `503`. Ce contrôle existe parce que l’ingestion traite une clé inconnue de Siteverify comme une indisponibilité et laisse passer le message : une clé mal copiée désactiverait Turnstile sans le signaler.
+
+Le Worker retire `cf-turnstile-response` avant le calcul des empreintes et le stockage, y compris si Turnstile est désactivé. Sur un formulaire actif et protégé, il envoie le jeton de 1 à 2 048 caractères et la clé secrète à Siteverify, avec un délai de cinq secondes et sans transmettre l’adresse IP. Le Worker décide d’après le corps JSON d’une réponse HTTP 200 ou 400, puisque Cloudflare ne documente pas le statut d’un refus : un refus du jeton, quel que soit le statut, ou l’absence d’un jeton utilisable conduit à la quarantaine. La vérification est indisponible en cas d’erreur réseau, de délai dépassé, d’un autre statut HTTP, de `internal-error` ou de `invalid-input-secret` (clé que Siteverify ne reconnaît plus) ; le Worker journalise alors le formulaire et la source de l’incident, puis applique les autres contrôles d’entrée. Si les clés changent pendant la vérification, le résultat précédent ne peut pas autoriser la classification avec la nouvelle configuration.
+
+#### Plafonds quotidiens
+
+Le plafond de stockage protège l’ensemble des formulaires d’une organisation. Après 2 000 soumissions enregistrées par défaut, la réponse est `429` jusqu’au jour UTC suivant. Le plafond de classification réserve par défaut 1 000 places à l’ingestion. Le lot incrémente le compteur de classification uniquement quand aucun motif d’entrée ne s’applique, et toute soumission enregistrée incrémente le compteur de stockage. D1 sérialise l’admission, l’écriture et les incréments, y compris lorsque plusieurs formulaires reçoivent des messages en même temps.
 
 ### Authentification et isolation
 
@@ -538,6 +556,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 - Création du premier compte sous concurrence, refus d’une origine étrangère, cycle de session.
 - Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
 - Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
+- Turnstile : clé secrète chiffrée et absente des réponses ; enregistrement refusé sans `RONDYR_SECRETS_KEY`, pour une clé que Siteverify refuse (`400`) et quand Siteverify ne répond pas ou signale `internal-error` (`503`), sans changer les clés enregistrées ; `404` pour un autre compte, sans appel à Siteverify ; jeton valide, absent, refusé avec le statut 200 ou 400, clé devenue inconnue, service indisponible et délai dépassé à l’ingestion, avec un faux Siteverify défini dans `tests/integration/external-workers.ts`. Plafonds quotidiens : frontière exacte des deux plafonds sous concurrence, message de file en double, remise à zéro au changement de jour UTC, bornes et isolation de l’API.
 - Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
 - Limite par client : un client au-delà de sa limite reçoit `429` avec `Retry-After`, `Access-Control-Expose-Headers` et les en-têtes CORS de la liste, sans enregistrement, pendant qu’un autre client et une requête sans adresse passent ; plafond du formulaire atteint par deux clients sous leur limite ; regroupement des adresses IPv6 par `/64`.
 - Champ piège : nom défini, retiré et refusé par l’API d’administration, `404` pour un autre compte ; champ rempli avec la même page HTML qu’un envoi normal, enregistré avec le motif `honeypot` et un seul événement, sans appel au faux Workers AI ; message de file en double sans seconde décision ; acceptation par un relecteur, puis création de la livraison ; champ vide retiré avant l’enregistrement, ordre des autres champs gardé, message classé normalement ; corps réduit au champ piège vide refusé en `400` ; formulaire sans champ piège inchangé.
@@ -573,7 +592,7 @@ Chaque stage a ses propres ressources. `prod` utilise un domaine personnalisé d
 
 La route authentifiée `GET /api/operations` alimente la section « État » du dashboard. Elle renvoie pour chaque organisation du compte le nombre d’événements outbox non remis et l’âge du plus ancien, les livraisons par statut et les messages reçus au cours des dernières 24 heures, dont ceux encore en quarantaine par motif. Un Durable Object par stage conserve l’heure de la dernière exécution réussie du Cron, après les deux publications. Les procédures de diagnostic, de reprise et de rotation des secrets sont dans [docs/operations.md](docs/operations.md).
 
-`RONDYR_SECRETS_KEY` est facultative, comme `RONDYR_SETUP_TOKEN` : la pile ne la transmet au Worker que si l’environnement du stage la définit. Sans elle, seuls la création et la rotation des webhooks sont refusées. `RONDYR_EMAIL_FROM` est facultative. Si elle est renseignée, elle doit être une adresse nue. `RONDYR_EMAIL_PROVIDER` vaut `resend` par défaut et la pile le transmet toujours, comme `RONDYR_CLASSIFIER`. La pile transmet `RESEND_API_KEY` si le stage utilise Resend et fournit la clé. Elle ajoute le binding `CLOUDFLARE_EMAIL` si le stage sélectionne `cloudflare` et renseigne un expéditeur. Sans expéditeur ou sans la clé ou le binding du fournisseur sélectionné, la création d’une destination e-mail est refusée et une livraison vers une destination existante échoue sans reprise.
+`RONDYR_SECRETS_KEY` est facultative, comme `RONDYR_SETUP_TOKEN` : la pile ne la transmet au Worker que si l’environnement du stage la définit. Sans elle, seuls la création et la rotation des webhooks et l’enregistrement des clés Turnstile sont refusés. `RONDYR_EMAIL_FROM` est facultative. Si elle est renseignée, elle doit être une adresse nue. `RONDYR_EMAIL_PROVIDER` vaut `resend` par défaut et la pile le transmet toujours, comme `RONDYR_CLASSIFIER`. La pile transmet `RESEND_API_KEY` si le stage utilise Resend et fournit la clé. Elle ajoute le binding `CLOUDFLARE_EMAIL` si le stage sélectionne `cloudflare` et renseigne un expéditeur. Sans expéditeur ou sans la clé ou le binding du fournisseur sélectionné, la création d’une destination e-mail est refusée et une livraison vers une destination existante échoue sans reprise.
 
 `wrangler.json` sert au développement local, aux tests et au dry-run ; `alchemy-run.ts` et `src/alchemy-worker.ts` servent au déploiement. Les bindings, les réglages du consumer et les classes de Durable Objects sont donc déclarés deux fois. `scripts/doctor.mjs` vérifie une partie de cette cohérence, et `scripts/worker-budget.mjs` limite le JavaScript du Worker à 2 Mio.
 
@@ -615,7 +634,6 @@ Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la rel
 | Décision | Suivi |
 | --- | --- |
 | Message hors sujet : revue humaine (comportement actuel) ou acceptation avec étiquette | #6 |
-| Plafonds par organisation et comportement à la limite | #7 |
 | Durées de conservation par défaut, export et purge | #9 |
 
 ### Décisions prises
@@ -631,6 +649,7 @@ Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la rel
 - Un nom de champ répété dans un corps de formulaire est accepté, valeurs jointes par `, `. `multipart/form-data` est accepté sans fichier ; une partie avec un nom de fichier est refusée en `400`. Un nom de champ avec un caractère de contrôle ou un saut de ligne est refusé, quel que soit le type de contenu (#8).
 - Les webhooks signent `<horodatage>.<corps>` en HMAC-SHA-256 et envoient l’identifiant de livraison dans `Rondyr-Delivery-Id`. Après une rotation, l’ancien secret signe aussi pendant 24 heures (#13).
 - Les secrets des destinations sont chiffrés dans D1 avec `RONDYR_SECRETS_KEY`, facultative au déploiement (#13).
+- Chaque organisation a deux plafonds par jour UTC. Au-delà du plafond de soumissions, l’ingestion répond `429` sans rien enregistrer. Au-delà du plafond de classification, le message est enregistré et mis en quarantaine avec le motif `quota`. Ce plafond compte les soumissions admises à la classification, réservées dans le lot d’ingestion, et non chaque tentative réseau de la saga. Une soumission qui porte un jeton Turnstile demande une lecture D1 de la clé chiffrée avant le lot d’ingestion ; toute autre soumission acceptée reste à un aller-retour D1 (#7).
 - Le port `EmailSender` propose deux adaptateurs sélectionnés par stage avec `RONDYR_EMAIL_PROVIDER`. Resend reste le choix par défaut et utilise l’identifiant de livraison comme clé d’idempotence (#14). Cloudflare Email Sending utilise le binding `CLOUDFLARE_EMAIL` et un domaine expéditeur activé sur Workers Paid. Cloudflare ne documente aucune clé de déduplication pour ce binding. Une reprise peut donc envoyer un doublon avec le même identifiant de livraison (#33).
 - Un formulaire sans origine autorisée accepte toutes les origines (`Access-Control-Allow-Origin: *`). Avec une liste, un navigateur d’une autre origine reçoit `403` sans en-tête CORS, et une requête sans `Origin` reste acceptée. Aucune réponse n’autorise les cookies (#19).
 - Chaque client est limité à 5 soumissions par minute sur un formulaire, avec le binding Rate Limiting de Workers et non un compteur D1, pour ne garder aucune adresse IP. Une adresse IPv6 compte pour son `/64`. Le plafond de 30 par formulaire reste le dernier rempart (#7).

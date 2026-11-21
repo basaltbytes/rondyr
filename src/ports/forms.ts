@@ -8,9 +8,12 @@ import type {
   SuccessUrl,
   UpdateForm,
 } from "../domain/forms/form.ts";
+import type { SetTurnstile } from "../domain/forms/turnstile.ts";
 import type { OrganizationId, UserId } from "../domain/submissions/submission.id.ts";
 import type { FormScope } from "./notification-targets.ts";
+import type { SecretsKeyMissing } from "./secret-cipher.ts";
 import type { StorageUnavailable } from "./storage.ts";
+import type { TurnstileSecretRefused, TurnstileUnavailable } from "./turnstile-verifier.ts";
 
 /** The organization or the form is not one of the account's. */
 export class OrganizationFormNotFound extends Schema.TaggedError<
@@ -63,5 +66,17 @@ export class Forms extends Context.Service<
       field: typeof HoneypotField.Type,
     ) => Effect.Effect<Managed, Failure>;
     readonly clearHoneypotField: (form: FormScope) => Effect.Effect<Managed, Failure>;
+    /**
+     * Encrypt and store both Turnstile keys once Siteverify recognizes the
+     * secret key. Nothing changes when it refuses the key or cannot answer.
+     */
+    readonly setTurnstile: (
+      form: FormScope,
+      settings: typeof SetTurnstile.Type,
+    ) => Effect.Effect<
+      Managed,
+      Failure | SecretsKeyMissing | TurnstileSecretRefused | TurnstileUnavailable
+    >;
+    readonly clearTurnstile: (form: FormScope) => Effect.Effect<Managed, Failure>;
   }
 >()("rondyr/ports/forms") {}

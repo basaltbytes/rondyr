@@ -104,6 +104,8 @@ describe("Rondyr Worker", () => {
           status: "active",
           successUrl: null,
           honeypotField: null,
+          turnstileSiteKey: null,
+          turnstileSecret: null,
         },
       ]);
 

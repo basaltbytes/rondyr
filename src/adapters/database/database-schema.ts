@@ -9,6 +9,10 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import {
+  defaultDailyClassifications,
+  defaultDailySubmissions,
+} from "../../domain/organizations/organization-quotas.ts";
 import { user } from "./auth-schema.ts";
 
 export const organizations = sqliteTable(
@@ -16,6 +20,12 @@ export const organizations = sqliteTable(
   {
     id: text().primaryKey(),
     name: text().notNull(),
+    dailySubmissionLimit: integer("daily_submission_limit")
+      .notNull()
+      .default(defaultDailySubmissions),
+    dailyClassificationLimit: integer("daily_classification_limit")
+      .notNull()
+      .default(defaultDailyClassifications),
   },
   // SQLite permits NULL in a non-integer primary key unless explicitly constrained.
   (table) => [check("organizations_id_not_null", sql`${table.id} is not null`)],
@@ -37,12 +47,24 @@ export const forms = sqliteTable(
     successUrl: text("success_url"),
     // The name of a field that people leave empty and bots fill in, or NULL.
     honeypotField: text("honeypot_field"),
+    turnstileSiteKey: text("turnstile_site_key"),
+    turnstileSecret: text("turnstile_secret"),
   },
   (table) => [
     check("forms_id_not_null", sql`${table.id} is not null`),
     index("forms_organization_id_idx").on(table.organizationId),
   ],
 );
+
+export const organizationDailyUsage = sqliteTable("organization_daily_usage", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  day: text().notNull(),
+  submissions: integer().notNull(),
+  classifications: integer().notNull(),
+});
 
 // The browser origins that may submit to a form. A form without a row accepts every origin.
 export const formOrigins = sqliteTable(
