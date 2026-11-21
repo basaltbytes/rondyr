@@ -1,6 +1,6 @@
 # Contributing
 
-The roadmap is the list of [GitHub issues](https://github.com/basaltbytes/rondyr/issues); section 12 of [architecture.md](./architecture.md) gives the order they are worked in. Coding and writing rules are in [AGENTS.md](./AGENTS.md).
+The roadmap is the list of [GitHub issues](https://github.com/basaltbytes/rondyr/issues); section 12 of [architecture.md](./architecture.md) lists the open ones. Coding and writing rules are in [AGENTS.md](./AGENTS.md).
 
 ## Development
 
