@@ -42,8 +42,10 @@ import { organizationQuotaRoutes } from "./http/organization-quota-routes.ts";
 import { originRoutes } from "./http/origin-routes.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
+import { stuckSubmissionRoutes } from "./http/stuck-submission-routes.ts";
 import { submissionRoutes } from "./http/submission-routes.ts";
 import { targetRoutes } from "./http/target-routes.ts";
+import { consumeDeadLetters } from "./jobs/dead-letters.ts";
 import { consumeDeliveries, deliverySchedulerLive } from "./jobs/delivery-outbox.ts";
 import { publishOutboxes } from "./jobs/publish-outboxes.ts";
 import { consumeSubmissions } from "./jobs/submission-outbox.ts";
@@ -102,11 +104,18 @@ const routes = Layer.mergeAll(
   formRoutes,
   deliveryRoutes,
   operationsRoute,
+  stuckSubmissionRoutes,
 ).pipe(Layer.provide(apiTokenAuthentication));
 
 const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
   if (batch.queue === env.DELIVERY_QUEUE_NAME) return yield* consumeDeliveries(batch);
+  if (batch.queue === env.CLASSIFICATION_DEAD_LETTER_QUEUE_NAME) {
+    return yield* consumeDeadLetters("classification", batch);
+  }
+  if (batch.queue === env.DELIVERY_DEAD_LETTER_QUEUE_NAME) {
+    return yield* consumeDeadLetters("delivery", batch);
+  }
   // Classification is the default, as it was when the Worker had one consumer: a wrong
   // queue name in the environment is logged and cannot stop classification. A message
   // of another queue does not decode there and is retried, then dead-lettered.

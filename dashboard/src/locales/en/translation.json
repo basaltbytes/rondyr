@@ -73,9 +73,22 @@
     "organization": "Status of {{name}}",
     "queue": {
       "title": "Classification queue",
-      "undelivered": "Undelivered events",
+      "pending": "Pending events",
       "oldestAge": "Age of the oldest",
-      "empty": "None"
+      "empty": "None",
+      "stuck": "Stuck"
+    },
+    "stuck": {
+      "title": "Stuck submissions",
+      "description": "The Cron stopped publishing these submissions after 12 attempts. Their messages are stored. Once the cause is fixed, retry them one by one.",
+      "loading": "Loading the stuck submissions…",
+      "loadFailed": "The stuck submissions are unavailable. Refresh the page.",
+      "received": "Received {{date}}",
+      "retry": "Retry",
+      "retryFailed": "The retry could not be saved. Try again.",
+      "more_one": "{{count}} more is not listed.",
+      "more_many": "{{count}} more are not listed.",
+      "more_other": "{{count}} more are not listed."
     },
     "deliveries": {
       "title": "Deliveries"
@@ -186,6 +199,7 @@
       "archive": "Archive",
       "accept": "Accept",
       "acceptAndSend": "Accept and send",
+      "reclassify": "Reclassify",
       "analyzing": "The filter is analyzing this message. Refresh the list to see the result.",
       "nothingToReview": "Nothing to review",
       "noOpenMessage": "No message open",
@@ -203,7 +217,8 @@
       "problems": {
         "notSaved": "The decision could not be saved. Try again.",
         "alreadyHandled": "This message was already handled.",
-        "alreadyHandledRefresh": "This message was already handled. Refresh the list to see its status."
+        "alreadyHandledRefresh": "This message was already handled. Refresh the list to see its status.",
+        "classificationQuotaReached": "The daily classification quota of this organization is used up, so the message stays here. Try again after midnight UTC, or raise the limit in Settings → Daily quotas."
       }
     },
     "deliveries": {
