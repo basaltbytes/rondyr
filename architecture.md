@@ -205,7 +205,7 @@ L’organisation peut remplacer les quatre seuils ensemble et choisir indépenda
 
 Le workflow lit la politique et le classificateur du stage au début de l’analyse. Il utilise cette politique pendant les tentatives de classement et la transmet à la commande `RecordClassification`. Les décisions automatiques enregistrent la politique résolue, la version des règles et les scores quand le modèle répond. Si la politique reste indisponible après les tentatives, ou si elle est illisible, la soumission attend en quarantaine avec le motif `classification-error`. Les événements enregistrés avant la version 6 restent lisibles.
 
-Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représentées par `duplicates`. Le corpus synthétique du 21 novembre donne 0 message légitime en quarantaine avec les deux classificateurs. Les indésirables acceptés passent de 4 à 3 pour Jev et de 4 à 2 pour OpenAI Decisions. Le mainteneur vérifie les seuils sur le corpus réel avant la fusion de #6. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
+Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représentées par `duplicates`. La mesure du 21 novembre porte sur trois passages du corpus synthétique et du corpus réel du mainteneur ; avec ces seuils, aucun message légitime n’est mis en quarantaine. Avec Jev, les lignes de spam acceptées passent de 5 à 3 sur le corpus synthétique et de 7 à 5 sur le corpus réel. Avec OpenAI Decisions, elles passent de 4 à 2 sur le corpus synthétique et restent à 3 sur le corpus réel. #15 prévoit l’escalade facultative des cas `ambiguous` vers un second modèle.
 
 ### Quarantaine sans appel au modèle
 
