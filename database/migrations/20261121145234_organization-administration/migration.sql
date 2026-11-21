@@ -26,16 +26,27 @@ CREATE TABLE `organization_invitations` (
 	CONSTRAINT "organization_invitations_id_not_null" CHECK("id" is not null)
 );
 --> statement-breakpoint
+CREATE TABLE `password_resets` (
+	`token_hash` text PRIMARY KEY,
+	`user_id` text NOT NULL,
+	`created_at` integer NOT NULL,
+	`expires_at` integer NOT NULL,
+	`used_at` integer,
+	CONSTRAINT `fk_password_resets_user_id_auth_users_id_fk` FOREIGN KEY (`user_id`) REFERENCES `auth_users`(`id`) ON DELETE CASCADE,
+	CONSTRAINT "password_resets_token_hash_not_null" CHECK("token_hash" is not null)
+);
+--> statement-breakpoint
 CREATE TABLE `submission_deletions` (
 	`submission_id` text PRIMARY KEY,
 	`organization_id` text NOT NULL,
 	`deleted_at` integer NOT NULL,
 	`deleted_by` text,
 	`cause` text NOT NULL,
-	CONSTRAINT `fk_submission_deletions_organization_id_organizations_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON DELETE CASCADE
+	CONSTRAINT `fk_submission_deletions_organization_id_organizations_id_fk` FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON DELETE CASCADE,
+	CONSTRAINT "submission_deletions_submission_id_not_null" CHECK("submission_id" is not null)
 );
 --> statement-breakpoint
-ALTER TABLE `organization_members` ADD `role` text DEFAULT 'reviewer' NOT NULL;--> statement-breakpoint
+ALTER TABLE `organization_members` ADD `role` text DEFAULT 'admin' NOT NULL;--> statement-breakpoint
 ALTER TABLE `organizations` ADD `accepted_retention_days` integer;--> statement-breakpoint
 ALTER TABLE `organizations` ADD `quarantine_retention_days` integer;--> statement-breakpoint
 CREATE UNIQUE INDEX `email_recipient_confirmations_token_unique` ON `email_recipient_confirmations` (`token_hash`);--> statement-breakpoint
@@ -43,14 +54,15 @@ CREATE INDEX `email_recipient_confirmations_address_idx` ON `email_recipient_con
 CREATE UNIQUE INDEX `organization_invitations_token_unique` ON `organization_invitations` (`token_hash`);--> statement-breakpoint
 CREATE UNIQUE INDEX `organization_invitations_pending_unique` ON `organization_invitations` (`organization_id`,`email`) WHERE "organization_invitations"."accepted_at" is null and "organization_invitations"."cancelled_at" is null;--> statement-breakpoint
 CREATE INDEX `organization_invitations_email_idx` ON `organization_invitations` (`email`,`created_at`);--> statement-breakpoint
+CREATE INDEX `password_resets_user_idx` ON `password_resets` (`user_id`,`created_at`);--> statement-breakpoint
 CREATE INDEX `submission_deletions_organization_idx` ON `submission_deletions` (`organization_id`,`deleted_at`);--> statement-breakpoint
 -- Every member before roles had every right: each keeps them as an admin.
-UPDATE organization_members SET role = 'admin';--> statement-breakpoint
+UPDATE organization_members SET role = 'admin' WHERE role <> 'admin';--> statement-breakpoint
 -- The recipients of the email destinations that exist before confirmations keep their
--- messages: each one is confirmed for the organization of its destination.
+-- messages: each one is confirmed for the organization of its destination, from the
+-- epoch, so that the deliveries created before this migration still reach them.
 INSERT INTO email_recipient_confirmations (organization_id, address, confirmed_at, emails_sent, created_at)
-SELECT DISTINCT t.organization_id, lower(r.value), CAST(strftime('%s', 'now') AS INTEGER) * 1000, 0,
-  CAST(strftime('%s', 'now') AS INTEGER) * 1000
+SELECT DISTINCT t.organization_id, lower(r.value), 0, 0, CAST(strftime('%s', 'now') AS INTEGER) * 1000
 FROM notification_targets t,
   json_each(CASE WHEN json_valid(t.configuration) THEN t.configuration ELSE '{}' END, '$.recipients') r
 WHERE t.type = 'email' AND r.type = 'text'

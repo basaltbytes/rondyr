@@ -41,9 +41,30 @@ it.effect(
       );
 
       yield* Effect.promise(() => applyD1Migrations(db, migrations));
+      // During a deployment, the Worker before roles still runs after the migration:
+      // the organization that it creates gets its creator as an admin.
+      yield* Effect.promise(() =>
+        db.batch([
+          db.prepare("INSERT INTO organizations (id, name) VALUES ('created-meanwhile', 'Late')"),
+          db.prepare(
+            "INSERT INTO organization_members (organization_id, user_id) VALUES ('created-meanwhile', 'owner')",
+          ),
+        ]),
+      );
 
       const role = yield* Effect.promise(() =>
-        db.prepare("SELECT role FROM organization_members WHERE user_id = 'owner'").first("role"),
+        db
+          .prepare(
+            "SELECT role FROM organization_members WHERE user_id = 'owner' AND organization_id = 'studio'",
+          )
+          .first("role"),
+      );
+      const meanwhile = yield* Effect.promise(() =>
+        db
+          .prepare(
+            "SELECT role FROM organization_members WHERE organization_id = 'created-meanwhile'",
+          )
+          .first("role"),
       );
       const confirmed = yield* Effect.promise(() =>
         db
@@ -61,6 +82,7 @@ it.effect(
       );
 
       assert.strictEqual(role, "admin");
+      assert.strictEqual(meanwhile, "admin");
       assert.deepEqual(confirmed.results, [
         { organization_id: "other", address: "team@example.test", confirmed: 1 },
         { organization_id: "studio", address: "owner@example.test", confirmed: 1 },
