@@ -1,0 +1,1 @@
+ALTER TABLE `organization_daily_usage` ADD `junk` integer DEFAULT 0 NOT NULL;
