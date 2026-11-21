@@ -68,8 +68,8 @@ jobs:
           if [[ -z "$RONDYR_EMAIL_PROVIDER" ]]; then unset RONDYR_EMAIL_PROVIDER; fi
           if [[ -z "$RONDYR_EMAIL_FROM" ]]; then unset RONDYR_EMAIL_FROM; fi
           if [[ -z "$RESEND_API_KEY" ]]; then unset RESEND_API_KEY; fi
-          # Alchemy deploys prod until its cut-over to the Wrangler deployment that
-          # `pnpm run deploy` runs (docs/deployment.md, "Maintainers").
+          # The Alchemy path of docs/deployment.md, "Deploy with Alchemy and GitHub
+          # Actions". The button's path deploys with Wrangler through Workers Builds instead.
           pnpm run deploy:alchemy --stage prod --yes --no-input
       - if: steps.credentials.outputs.ready == 'true'
         name: Check production health

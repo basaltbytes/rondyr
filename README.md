@@ -39,7 +39,9 @@ You need a Cloudflare account on the Workers Paid plan ([Running costs](#running
 
 Nobody has run these steps on a new Cloudflare account yet: the [fresh account checklist](./docs/deployment.md#fresh-account-checklist) lists what to check, and an issue with what differed helps the next person.
 
-To use your own domain, add it later in **Workers & Pages → rondyr → Settings → Domains & Routes** ([Address](./docs/deployment.md#address)). Each push to the `main` branch of your repository deploys it again. To bring a copy on GitHub up to date with this repository, run the **Update Rondyr** workflow in its **Actions** tab: it pushes the new version to a branch named `update-rondyr/<version>`, and the run's summary gives a link that opens the pull request. Open it and merge it ([Updates](./docs/deployment.md#updates)). If you prefer a fork that follows this repository, fork it and import the fork in **Workers & Pages → Create → Import a repository**, then update it with GitHub's **Sync fork**. [docs/deployment.md](./docs/deployment.md) covers both paths and the optional settings: email, the classifier, a single address.
+To use your own domain, add it later in **Workers & Pages → rondyr → Settings → Domains & Routes** ([Address](./docs/deployment.md#address)). Each push to the `main` branch of your repository deploys it again. To bring a copy on GitHub up to date with this repository, run the **Update Rondyr** workflow in its **Actions** tab: it pushes the new version to a branch named `update-rondyr/<version>`, and the run's summary gives a link that opens the pull request. Open it and merge it ([Updates](./docs/deployment.md#updates)). If you prefer a fork that follows this repository, fork it and import the fork in **Workers & Pages → Create → Import a repository**, then update it with GitHub's **Sync fork**.
+
+The other supported way to deploy is [Alchemy and GitHub Actions](./docs/deployment.md#deploy-with-alchemy-and-github-actions), which the project uses for its own instance: your fork's CI deploys Rondyr on your domain after its checks, with every setting in the fork's secrets and variables. [Choose a path](./docs/deployment.md#choose-a-path) compares the two, and [docs/deployment.md](./docs/deployment.md) covers the optional settings: email, the classifier, a single address.
 
 ## Receive your first submission
 
@@ -100,7 +102,7 @@ Rondyr bills nothing itself; Cloudflare bills your account for what the Worker u
 
 | Task | Page |
 | --- | --- |
-| Deploy, add a domain, update, configure email and the classifier, invite members | [docs/deployment.md](./docs/deployment.md) |
+| Deploy with the button or with Alchemy, add a domain, update, configure email and the classifier, invite members | [docs/deployment.md](./docs/deployment.md) |
 | Connect a form: responses, HTML forms, honeypot, Turnstile, allowed origins, limits | [docs/forms.md](./docs/forms.md) |
 | Review messages: folders, search, export, deletion, retention | [docs/inbox.md](./docs/inbox.md) |
 | Understand the scores, the reasons, and the processing | [docs/concepts.md](./docs/concepts.md) |
