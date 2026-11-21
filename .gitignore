@@ -8,6 +8,9 @@ dist/
 .agent-sources/
 .scratchpad/
 .claude/worktrees/
+# Third-party agent skills that the owner keeps locally, out of the repository.
+.claude/skills/emil-*
+.codex/
 coverage/
 test-results/
 playwright-report/

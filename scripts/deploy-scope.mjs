@@ -40,7 +40,6 @@ const documentationFiles = [
   /^docs\//u,
   /^\.agents\//u,
   /^\.claude\//u,
-  /^\.codex\//u,
   /^skills-lock\.json$/u,
 ];
 
