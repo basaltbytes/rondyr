@@ -170,6 +170,7 @@ const confirm = Effect.fn("RecipientConfirmations.confirm")(function* (
 const confirmedAmong = Effect.fn("RecipientConfirmations.confirmedAmong")(function* (
   organizationId: OrganizationId,
   addresses: ReadonlyArray<Address>,
+  asOf: number,
 ) {
   const db = yield* database;
   const list = yield* encodeAddresses(
@@ -179,10 +180,10 @@ const confirmedAmong = Effect.fn("RecipientConfirmations.confirmedAmong")(functi
     db
       .prepare(`
       SELECT address FROM email_recipient_confirmations
-      WHERE organization_id = ?1 AND confirmed_at IS NOT NULL
+      WHERE organization_id = ?1 AND confirmed_at <= ?3
         AND address IN (SELECT value FROM json_each(?2))
     `)
-      .bind(organizationId, list)
+      .bind(organizationId, list, asOf)
       .all(),
   );
   const confirmed = yield* decodeAddresses(rows.results).pipe(Effect.mapError(unreadable));

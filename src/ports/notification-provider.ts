@@ -20,6 +20,11 @@ export class NotificationFailed extends Schema.TaggedError<
 export interface Notification {
   /** The same on every attempt of a delivery, so the recipient can drop duplicates. */
   readonly deliveryId: DeliveryId;
+  /**
+   * When the delivery was created. An email goes to the recipients confirmed by
+   * then, so every attempt of a delivery has the same recipients.
+   */
+  readonly createdAt: number;
   readonly target: typeof NotificationTarget.Type;
   readonly submission: typeof DeliveredSubmission.Type;
   readonly fields: typeof SubmissionFields.Type;

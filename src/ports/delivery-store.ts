@@ -63,6 +63,8 @@ export interface StartedAttempt {
    * when the delivery fails.
    */
   readonly seriesAttempt: number;
+  /** When the delivery was created, the same for each of its attempts. */
+  readonly createdAt: number;
   readonly target: typeof NotificationTarget.Type;
   readonly submission: typeof DeliveredSubmission.Type;
   readonly fields: typeof SubmissionFields.Type;

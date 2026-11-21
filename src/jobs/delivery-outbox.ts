@@ -177,6 +177,7 @@ const attemptDelivery = Effect.fnUntraced(function* (message: Message) {
   const outcome = yield* provider
     .send({
       deliveryId,
+      createdAt: attempt.createdAt,
       target: attempt.target,
       submission: attempt.submission,
       fields: attempt.fields,
