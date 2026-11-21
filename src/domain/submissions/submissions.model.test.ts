@@ -1,6 +1,6 @@
 import * as Domain from "@alchemy.run/domain";
 import { Story } from "@alchemy.run/domain/Story";
-import { assert, it } from "@effect/vitest";
+import { assert, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
 
 import { ApproveSubmission } from "./approve-submission.command.ts";
@@ -680,6 +680,16 @@ it.effect("records the token that archives a quarantined submission", () => {
     Story.then(submission, SubmissionDismissed.make({ organizationId, apiTokenId })),
     Story.state(submission, { _tag: "Archived" }),
   );
+});
+
+it("builds a dismissal only with exactly one author", () => {
+  type Dismissal = Parameters<typeof SubmissionDismissed.make>[0];
+  const apiTokenId = ApiTokenId.make("site-inbox-token");
+
+  expectTypeOf({ organizationId }).not.toExtend<Dismissal>();
+  expectTypeOf({ organizationId, reviewerId: userId, apiTokenId }).not.toExtend<Dismissal>();
+  expectTypeOf({ organizationId, reviewerId: userId }).toExtend<Dismissal>();
+  expectTypeOf({ organizationId, apiTokenId }).toExtend<Dismissal>();
 });
 
 it.effect("ignores a quarantine at intake once classification has started", () => {
