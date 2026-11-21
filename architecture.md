@@ -277,7 +277,7 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `deliveries` | `id` (UUID v4 stable), `submission_id`, `target_id`, `status`, `attempt_count` (tentatives de la série en cours), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at` ; unique sur `(submission_id, target_id)` |
 | `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numérote les tentatives sur tout l’historique, relances manuelles comprises |
 | `auth_*` | Comptes, sessions, vérifications et limites de débit de Better Auth |
-| `api_tokens` | `id`, `organization_id`, `name`, `token_hash` (SHA-256 unique), `token_suffix` (quatre caractères), `created_at`, `created_by`, `revoked_at` (facultatif) |
+| `api_tokens` | `id`, `organization_id`, `name`, `token_hash` (SHA-256 of the token, unique), `token_suffix` (its last four characters), `created_at`, `created_by` (the account that created it), `revoked_at` (empty while the token is active) |
 
 La migration `form-administration` ajoute `status` et `success_url` par `ALTER TABLE` : les formulaires existants passent à `active` par la valeur par défaut. `status` n’a pas de contrainte `CHECK`, car l’ajouter reconstruirait la table, et la suppression de `forms` sur D1 se propagerait à `form_origins` ; les adaptateurs ne l’écrivent qu’avec les deux valeurs, et Effect Schema refuse une autre valeur à la lecture.
 
@@ -291,6 +291,8 @@ La migration `turnstile-and-organization-quotas` ajoute les réglages par `ALTER
 
 The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
+The `api-tokens` migration creates `api_tokens` with a unique index on `token_hash` and a partial index on `(organization_id, created_at, id)` limited to active tokens, which serves both the token list and the count of active tokens at creation. It changes no existing table.
+
 Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retrying` ou `failed`. `next_attempt_at` indique quand une tentative peut démarrer : la création, la fin du délai de reprise ou la fin du bail de la tentative en cours. Une tentative a le résultat `delivered`, `retryable-failure`, `permanent-failure` ou `interrupted`, ou aucun tant qu’elle s’exécute. Une relance manuelle ouvre une nouvelle série sur la même livraison sans effacer ses tentatives ; l’historique et la relance n’ont demandé aucune migration. L’API d’administration crée les destinations webhook et e-mail ; la table `notification_targets` existante suffit, sans migration. L’adaptateur relit la liste des destinataires avec le même schéma qu’à la création : une ligne modifiée à la main qui ne respecte plus la règle fait échouer la livraison sans reprise.
 
 ### Événements de l’agrégat `Submission`
@@ -299,14 +301,14 @@ Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retryi
 | --- | --- |
 | `ClassificationRequested` | Organisation |
 | `SubmissionQuarantined` | Organisation, motif, scores éventuels (absents pour un motif d’entrée ou un échec du classificateur), version des règles |
-| `SubmissionAccepted` | Organisation, puis scores et version des règles (automatique) ou identifiant de l’utilisateur ou du jeton (manuelle) |
-| `SubmissionDismissed` | Organisation, identifiant de l’utilisateur ou du jeton |
+| `SubmissionAccepted` | Organization, then scores and rules version (automatic), or `reviewerId` for an account or `apiTokenId` for an API token (manual) |
+| `SubmissionDismissed` | Organization, and `reviewerId` for an account or `apiTokenId` for an API token. Dismissals stored before API tokens have `reviewerId` |
 
 L’agrégat passe de `Unrecorded` à `Classifying`, puis à `Quarantined` ou `Accepted`. Avec un motif d’entrée, il passe directement de `Unrecorded` à `Quarantined`. Seul un message `Quarantined` peut être accepté ou archivé à la main. La projection `Inbox` écrit le dernier statut dans `submission_inbox`, protégée par le numéro de séquence de l’événement. Une soumission sans ligne de projection a le statut `received`.
 
 Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. Le champ `reason` de l’Inbox contient le motif de quarantaine, dont `turnstile-failed` ou `quota` pour ces contrôles d’entrée.
 
-Le contenu des messages n’existe que dans `submissions.fields`, et n’en sort que dans le corps des requêtes webhook et dans le texte des e-mails. Les événements ne contiennent que des identifiants, des scores et l’identifiant de l’auteur de la décision, et les livraisons que des identifiants, des états et des résumés d’erreur, ce qui limite une purge aux lignes D1 (#9). Supprimer une soumission supprime ses livraisons et leurs tentatives.
+Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the ID of the account or API token that decided, and deliveries only IDs, states and error summaries, so a purge only has to delete D1 rows (#9). Deleting a submission deletes its deliveries and their attempts.
 
 ### Tables à venir
 
@@ -374,16 +376,16 @@ Le lot D1 vérifie l’origine et le statut du formulaire, applique les plafonds
 
 ### API d’administration
 
-Le dashboard utilise la session Better Auth. Un client tiers peut utiliser un jeton d’organisation pour les routes de revue décrites dans [docs/api.md](docs/api.md).
+The dashboard uses the Better Auth session. Another program can call the review routes with an organization API token, as described in [docs/api.md](docs/api.md); a token gets `403` on every other route of this table.
 
 | Route | Rôle |
 | --- | --- |
 | `POST /api/setup` | Crée le premier compte, avec le jeton d’installation |
 | `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Session Better Auth |
-| `GET /api/organizations` | Organisations du compte et leurs formulaires, ou uniquement l’organisation du jeton et ses formulaires |
-| `GET /api/organizations/:organizationId/api-tokens` | Liste les jetons actifs avec leur nom, leurs quatre derniers caractères et leur date de création |
-| `POST /api/organizations/:organizationId/api-tokens` | Crée un jeton (`{"name":…}`) et renvoie sa valeur une fois avec `201` et `Cache-Control: no-store`. Le onzième jeton actif reçoit `409` |
-| `DELETE /api/organizations/:organizationId/api-tokens?id=…` | Révoque le jeton définitivement et répond `204` |
+| `GET /api/organizations` | The account's organizations and their forms. With an API token, only the token's organization and its forms |
+| `GET /api/organizations/:organizationId/api-tokens` | Lists the active tokens, newest first, with their name, last four characters and creation date |
+| `POST /api/organizations/:organizationId/api-tokens` | Creates a token (`{"name":…}`) and returns its value, the only time it is shown, with `201` and `Cache-Control: no-store`. An eleventh active token gets `409` |
+| `DELETE /api/organizations/:organizationId/api-tokens?id=…` | Revokes the token for good and answers `204`, or `404` for a token that is unknown or already revoked |
 | `POST /api/organizations` | Crée une organisation et son premier formulaire |
 | `GET /api/organizations/:organizationId/domains` | Liste les domaines déclarés par ordre alphabétique |
 | `POST /api/organizations/:organizationId/domains` | Ajoute un domaine (`{"domain":…}`). Répond `201` pour une création, `200` pour un doublon, `400` pour un nom invalide ou `409` si la liste est pleine |
@@ -462,13 +464,13 @@ The classification quota counts 1,000 places per day by default. The intake batc
 ### Authentification et isolation
 
 - Les inscriptions publiques sont fermées. `/api/setup` exige `RONDYR_SETUP_TOKEN`, comparé en temps constant, et D1 refuse la création d’un second compte par ce chemin. Le jeton se retire après l’installation.
-- Les requêtes authentifiées par session sont soumises au contrôle d’origine de `BETTER_AUTH_URL`. Le cookie de session est `Secure`, `HttpOnly` et `SameSite=Lax`.
-- `Authorization: Bearer rdr_…` a priorité sur le cookie et fonctionne sans en-tête `Origin`. Le Worker calcule le SHA-256 du jeton et recherche son empreinte parmi les jetons actifs, sans écrire dans D1. Un jeton inconnu ou révoqué reçoit `401`. Un jeton valide reçoit `403` sur les routes absentes de la liste d’autorisation et `404` pour une ressource hors de son organisation.
-- La vérification du jeton passe par le port `ApiTokens`. D1 conserve l’empreinte et les quatre derniers caractères. La valeur complète est renvoyée à la création, puis seuls l’identifiant et les métadonnées sont disponibles. Les événements de décision conservent un identifiant, et le jeton complet est absent des journaux et des résumés d’erreur.
+- The authentication routes, and every administration request that relies on the session, refuse a request whose origin differs from `BETTER_AUTH_URL`. The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`.
+- A request with `Authorization: Bearer rdr_…` never uses the session, even with a valid cookie, and needs no `Origin` header. A router middleware (`src/http/api-token-authentication.ts`) hashes the token with SHA-256 and looks the hash up among active tokens, without writing to D1. An unknown or revoked token gets `401`. A valid token gets `403` on every `/api` route outside its allow list, which the middleware checks against the matched route, so a route added later is refused by default. A resource outside the token's organization answers `404`, as for an account that is not a member.
+- Tokens go through the `ApiTokens` port. D1 keeps the hash and the last four characters; the full value appears only in the creation response. At most ten tokens are active per organization: the insert counts them in the same statement, so concurrent creations cannot exceed the limit. Decision events keep the token ID. The Worker wraps the token in `Redacted` as soon as it reads the header, and the token appears in no log or error summary.
 - Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
-- Chaque requête d’administration est bornée par les organisations du compte ou par l’organisation du jeton, et l’agrégat revérifie cet accès avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages, les destinations, les origines autorisées, les formulaires, l’historique des livraisons, la relance et l’envoi d’essai.
+- Every administration request is scoped to the account's organizations or to the token's organization, and the aggregate checks that access again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, delivery history, retry and test sends, and every review route with a token of another organization.
 
-Tout membre a aujourd’hui tous les droits sur son organisation, y compris la gestion des jetons et de ses formulaires, et tout compte connecté peut en créer une (#11). Pour les livraisons, `deliveryOperator`, dans `src/http/delivery-routes.ts`, décide qui lit l’historique, relance et envoie un essai : c’est là que #11 vérifiera le rôle.
+Today every member has every right on their organization, including adding, editing and suspending its forms and managing its API tokens, and any signed-in account can create an organization (#11). For deliveries, `deliveryOperator`, in `src/http/delivery-routes.ts`, decides who reads the history, retries and sends a test: that is where #11 will check the role. #11 will also reserve API token management, in `src/http/api-token-routes.ts`, to administrators.
 
 L’URL de succès ne permet pas de redirection ouverte : elle vient de D1, son origine est une origine autorisée du formulaire, et seul un membre de l’organisation la modifie.
 
@@ -587,6 +589,7 @@ Un Worker destinataire, déclaré au même endroit, enregistre chaque requête e
 - Atomicité de l’ingestion, reprise par l’outbox, double remise d’un message de file, isolation entre organisations, décisions de revue concurrentes.
 - Publication dès l’ingestion sans republication par le Cron, échec d’envoi repris par le Cron après l’expiration du bail, Cron écarté pendant une publication directe.
 - Turnstile : clé secrète chiffrée et absente des réponses ; enregistrement refusé sans `RONDYR_SECRETS_KEY`, pour une clé que Siteverify refuse (`400`) et quand Siteverify ne répond pas ou signale `internal-error` (`503`), sans changer les clés enregistrées ; `404` pour un autre compte, sans appel à Siteverify ; jeton valide, absent, refusé avec le statut 200 ou 400, clé devenue inconnue, service indisponible et délai dépassé à l’ingestion, avec un faux Siteverify défini dans `tests/integration/external-workers.ts`. Plafonds quotidiens : frontière exacte des deux plafonds sous concurrence, message de file en double, remise à zéro au changement de jour UTC, bornes et isolation de l’API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
+- API tokens, through the built Worker: creation that stores only the SHA-256 hash and the last four characters; `401` for an unknown and for a revoked token, even with a valid cookie; each allowed route with a token and no `Origin`; `403` on every other `/api` route; `404` on every review route of another organization and on its messages, which stay quarantined; a token that wins over another account's cookie; ten active tokens under concurrent creation, then a free slot after a revocation; management refused to a non-member; acceptance and archiving recorded with the token ID; manual decisions stored before API tokens still decode. Stories for acceptance and archiving by a token, and a type test that a dismissal cannot be built without exactly one author. Playwright creates a token, copies it, sees it only once, and revokes it after a confirmation.
 - Réponses `400`, `413`, `415` et `429` de l’ingestion, dont un corps d’exactement 16 Kio accepté, et `X-Content-Type-Options` sur les réponses du Worker.
 - Limite par client : un client au-delà de sa limite reçoit `429` avec `Retry-After`, `Access-Control-Expose-Headers` et les en-têtes CORS de la liste, sans enregistrement, pendant qu’un autre client et une requête sans adresse passent ; plafond du formulaire atteint par deux clients sous leur limite ; regroupement des adresses IPv6 par `/64`.
 - Champ piège : nom défini, retiré et refusé par l’API d’administration, `404` pour un autre compte ; champ rempli avec la même page HTML qu’un envoi normal, enregistré avec le motif `honeypot` et un seul événement, sans appel au faux Workers AI ; message de file en double sans seconde décision ; acceptation par un relecteur, puis création de la livraison ; champ vide retiré avant l’enregistrement, ordre des autres champs gardé, message classé normalement ; corps réduit au champ piège vide refusé en `400` ; formulaire sans champ piège inchangé.
@@ -648,7 +651,7 @@ Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la rel
 2. Domaines de l’organisation (#39).
 3. Seuils par classificateur et politique par organisation (#6).
 4. Turnstile et plafonds par organisation (#7).
-5. Jetons par organisation (#57).
+5. EmDash integration: API tokens, server intake and plugin (#59).
 6. Confirmation des destinataires e-mail (#36).
 7. Rôles et invitations (#11).
 8. Recherche, export et purge (#9).
