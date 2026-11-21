@@ -129,9 +129,11 @@ pnpm evaluate --escalation evals/corpus/synthetic.jsonl
 pnpm evaluate --escalation --classifier jev --policy policy.json evals/corpus/synthetic.jsonl
 ```
 
-Use an output directory from a previous run with both classifiers. By default the report compares both directions. Select `--classifier jev` or `--classifier openai` to choose the primary model. The mode simulates an organization that has enabled escalation and uses the second model's default thresholds with the primary policy's off-topic choice.
+Use an output directory from a previous run with both classifiers. By default the report compares both directions. Select `--classifier jev` or `--classifier openai` to choose the primary model. The mode simulates an organization that has enabled escalation, and it applies `escalatedDecision` from `src/domain/submissions/classification.ts`, the function the Worker uses.
 
-The replay reads cached scores without credentials or new calls, and rejects `--refresh`. With `--dry`, it reads previously cached fake scores. The `.escalation.json` and `.escalation.md` reports count which ambiguous submissions become accepted, including those accepted with the off-topic label, and which stay ambiguous. A missing second score leaves the submission in quarantine and has its own column. A missing primary score leaves the original decision unknown.
+The second model only settles the spam doubt. It uses its default thresholds with the primary policy's off-topic choice, and any reason it finds keeps the submission ambiguous. When it finds nothing, the primary model's solicitation and low relevance rules still apply to the primary scores, so a submission can end up in quarantine as `solicitation` or `low-relevance`. An accepted submission gets the off-topic label when either model finds it off-topic.
+
+The replay reads cached scores without credentials or new calls, and rejects `--refresh`. With `--dry`, it reads previously cached fake scores. For each expected label, the `.escalation.json` and `.escalation.md` reports count the final decision of every submission that the primary model left ambiguous: accepted, accepted with the off-topic label, still ambiguous, quarantined for solicitation, or quarantined for low relevance. A missing second score leaves the submission ambiguous and has its own column. A missing primary score leaves the original decision unknown.
 
 ### Calls
 

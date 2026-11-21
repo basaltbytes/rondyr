@@ -2,14 +2,16 @@ import { fileURLToPath } from "node:url";
 
 // Workers AI for the tests. Jev answers by the `fixture-verdict` field of the
 // submission: `accept` gets low spam and solicitation scores, `solicitation` a
-// low spam score and a solicitation score above the threshold,
-// `ambiguous-solicitation` the same with an ambiguous spam score, and
+// low spam score and a solicitation score above the threshold, `ambiguous` an
+// ambiguous spam score and a low solicitation score, `ambiguous-solicitation`
+// an ambiguous spam score and a solicitation score above the threshold, and
 // `missing-solicitation` a low spam score without the solicitation answer. The
 // relevance score is high, or low when the business context contains
 // `fixture-relevance: low`. Any other request gets an answer that does not
 // decode, so the classifier quarantines it with `classification-error`, as it
-// does without an AI binding. For ambiguous-solicitation, OpenAI Decisions
-// answers with low scores. Tests can read the fields, inputs or models from
+// does without an AI binding. For `ambiguous` and `ambiguous-solicitation`,
+// OpenAI Decisions answers with low spam and solicitation scores and a high
+// relevance score. Tests can read the fields, inputs or models from
 // GET /__calls, GET /__states or GET /__models?message=....
 const workersAiFixture = `
 const calls = [];
@@ -17,6 +19,7 @@ const models = [];
 const verdicts = new Map([
   ["accept", { spam: 0.02, solicitation: 0.03 }],
   ["solicitation", { spam: 0.02, solicitation: 0.93 }],
+  ["ambiguous", { spam: 0.3, solicitation: 0.03 }],
   ["ambiguous-solicitation", { spam: 0.3, solicitation: 0.93 }],
   ["missing-solicitation", { spam: 0.02 }],
 ]);
@@ -37,7 +40,7 @@ export default {
     calls.push(state ?? null);
     models.push({ model, message: state?.submission_fields?.message });
     const kind = state?.submission_fields?.["fixture-verdict"];
-    if (model === "openai/decisions" && kind === "ambiguous-solicitation") {
+    if (model === "openai/decisions" && (kind === "ambiguous" || kind === "ambiguous-solicitation")) {
       const scores = { spam: 0.2, solicitation: 0.03, relevance: 0.98 };
       const answers = input.questions.map(({ type, name }) => ({ type, name, probability: scores[name] }));
       return Response.json({ model: "openai-workerd-fixture", answers });
