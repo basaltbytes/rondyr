@@ -20,4 +20,6 @@ export const TargetRequestError = Schema.Union([
   }),
   Schema.Struct({ error: Schema.Literal("secrets-key-missing") }),
   Schema.Struct({ error: Schema.Literal("email-provider-missing") }),
+  // The Rate Limiting binding of the tests did not answer: no test was sent.
+  Schema.Struct({ error: Schema.Literal("test-limit-unavailable") }),
 ]);

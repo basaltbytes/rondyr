@@ -6,9 +6,11 @@ import { FetchHttpClient } from "effect/http";
 import { TestClock } from "effect/testing";
 
 import { testSecretsKey } from "../../tests/integration/auth-fixture.ts";
+import { confirmRecipients } from "../../tests/integration/recipient-fixture.ts";
 import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";
 import { deliveryStoreLive } from "../adapters/database/delivery-store.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
+import { recipientConfirmationsLive } from "../adapters/database/recipient-confirmations.ts";
 import { emailSenderLayer, type EmailEnvironment } from "../adapters/email/email-sender.ts";
 import { notificationProvidersLive } from "../adapters/notifications/notification-providers.ts";
 import { DeliveryId, DeliveryStatus } from "../domain/deliveries/delivery.ts";
@@ -84,7 +86,7 @@ function services(email: EmailEnvironment) {
     stored,
     deliverySchedulerLive.pipe(Layer.provide(stored)),
     Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
-      Layer.provide(Layer.mergeAll(cipher, emailSender)),
+      Layer.provide(Layer.mergeAll(cipher, emailSender, recipientConfirmationsLive)),
     ),
     Layer.succeed(FetchHttpClient.Fetch, outboundFetch),
   );
@@ -110,7 +112,7 @@ const seedForm = Effect.fnUntraced(function* (
         name,
       ),
       env.DB.prepare(
-        "INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)",
+        "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
       ).bind(`${name}-org`, `${name}-user`),
       env.DB.prepare(
         "INSERT INTO forms (id, organization_id, public_id, name) VALUES (?, ?, ?, ?)",
@@ -134,12 +136,15 @@ const recipientsOf = (addresses: ReadonlyArray<string>) =>
     onFailure: (reason) => assert.fail(`${addresses.join(", ")} is refused: ${reason}`),
   });
 
+/** An email target whose recipients have all confirmed their address. */
 const addEmailTarget = Effect.fnUntraced(function* (
   form: FormScope,
   addresses: ReadonlyArray<string>,
 ) {
   const targets = yield* NotificationTargets;
-  return yield* targets.createEmail(form, recipientsOf(addresses), "en");
+  const created = yield* targets.createEmail(form, recipientsOf(addresses), "en");
+  yield* confirmRecipients(form.organizationId, addresses);
+  return created;
 });
 
 const deliverAccepted = Effect.fnUntraced(function* (form: FormScope, submissionId: SubmissionId) {
@@ -280,6 +285,7 @@ it.effect("writes in French the email of a target stored before the language set
         .bind('{"recipients":["legacy-team@example.com"]}')
         .run(),
     );
+    yield* confirmRecipients(form.organizationId, ["legacy-team@example.com"]);
     yield* deliverAccepted(form, submissionId);
     yield* consume(submissionId);
 
@@ -338,6 +344,69 @@ it.effect("retries a 500 and a 429 with the same idempotency key and the same me
   });
   return withServices(services(configured), scenario);
 });
+
+it.effect(
+  "keeps the recipients of a delivery for its retries when an address is confirmed meanwhile",
+  () => {
+    const first = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b31");
+    const later = SubmissionId.make("6b1d2e3f-4051-4263-9b7c-8d9e0f1a2b32");
+    const scenario = Effect.gen(function* () {
+      const form = yield* seedForm("confirmed-meanwhile", first, contact);
+      const stored = yield* encodeFields(contact);
+      yield* Effect.promise(() =>
+        env.DB.prepare(
+          "INSERT INTO submissions (id, organization_id, form_id, fields, received_at) VALUES (?, ?, 'confirmed-meanwhile-form', ?, 0)",
+        )
+          .bind(later, form.organizationId, stored)
+          .run(),
+      );
+      const targets = yield* NotificationTargets;
+      yield* targets.createEmail(
+        form,
+        recipientsOf(["once-500@meanwhile.example.com", "late-confirmed@example.com"]),
+        "en",
+      );
+      yield* confirmRecipients(form.organizationId, ["once-500@meanwhile.example.com"]);
+      yield* deliverAccepted(form, first);
+      const [failed] = yield* consume(first);
+      assert.strictEqual(failed?.status, "retrying");
+
+      // The second address is confirmed between the two attempts of the delivery.
+      yield* TestClock.adjust("30 seconds");
+      const now = yield* Clock.currentTimeMillis;
+      yield* Effect.promise(() =>
+        env.DB.prepare(`
+        INSERT INTO email_recipient_confirmations (organization_id, address, confirmed_at, created_at)
+        VALUES (?, 'late-confirmed@example.com', ?, ?)
+      `)
+          .bind(form.organizationId, now, now)
+          .run(),
+      );
+      yield* TestClock.adjust("1 minute");
+      const [delivered] = yield* consume(first);
+      yield* deliverAccepted(form, later);
+      yield* consume(later);
+
+      const requests = yield* sentTo("once-500@meanwhile.example.com");
+      const [attempt, retry, next] = yield* Effect.forEach(requests, ({ body }) => readEmail(body));
+      assert.strictEqual(delivered?.status, "delivered");
+      assert.deepEqual(requests.map(({ headers }) => headers["idempotency-key"]).slice(0, 2), [
+        failed?.id,
+        failed?.id,
+      ]);
+      assert.deepEqual(
+        [attempt?.to, retry?.to, next?.to],
+        [
+          ["once-500@meanwhile.example.com"],
+          ["once-500@meanwhile.example.com"],
+          ["once-500@meanwhile.example.com", "late-confirmed@example.com"],
+        ],
+      );
+      assert.strictEqual(requests[1]?.body, requests[0]?.body);
+    });
+    return withServices(services(configured), scenario);
+  },
+);
 
 it.effect("ends the delivery without a retry when Resend refuses the request", () => {
   const ids = [

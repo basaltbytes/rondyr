@@ -32,5 +32,13 @@ export class OrganizationQuotas extends Context.Service<
     readonly reserveClassification: (
       organizationId: OrganizationId,
     ) => Effect.Effect<ClassificationReservation, StorageUnavailable>;
+    /**
+     * Give back a classification reserved for a request that was then refused,
+     * in one D1 write. It touches only the counter of the current UTC day and
+     * never takes it below zero.
+     */
+    readonly releaseClassification: (
+      organizationId: OrganizationId,
+    ) => Effect.Effect<void, StorageUnavailable>;
   }
 >()("rondyr/ports/organization-quotas/OrganizationQuotas") {}

@@ -1,3 +1,4 @@
+import { Schema } from "effect";
 import { useActionState, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,13 +15,88 @@ import {
   isEmailDestination,
   listTargets,
   replaceRecipients,
+  resendConfirmation,
   setTargetActive,
+  TargetRequestFailed,
 } from "~/lib/targets-client";
 import type { EmailDestination } from "~/lib/targets-client";
 
 import { attempt, TargetFailureNote } from "./target-problems.tsx";
 import type { TargetFailure } from "./target-problems.tsx";
 import { TargetTest } from "./target-test.tsx";
+
+const isFailed = Schema.is(TargetRequestFailed);
+
+/** What became of a new confirmation email. Each one names a message of `inbox.emails.resend`. */
+type ResendOutcome = "sent" | "confirmed" | "limit" | "noProvider" | "failed";
+
+function resendOutcomeOf(error: TargetRequestFailed | null): ResendOutcome {
+  if (error?.status === 409) return "confirmed";
+  if (error?.status === 429) return "limit";
+  if (error?.status === 503) return "noProvider";
+  return "failed";
+}
+
+interface RecipientsProps {
+  readonly inboxId: Inbox["id"];
+  readonly target: EmailDestination;
+}
+
+/**
+ * The recipients of a destination, each `pending` until its owner confirms it
+ * with the link that Rondyr emailed. Messages and tests go to confirmed ones only.
+ */
+function Recipients({ inboxId, target }: RecipientsProps) {
+  const { t } = useTranslation();
+  const [resent, resend, resending] = useActionState(
+    async (_: { address: string; outcome: ResendOutcome } | null, data: FormData) => {
+      const address = data.get("address")?.toString() ?? "";
+      try {
+        await resendConfirmation(inboxId, target.id, address);
+        return { address, outcome: "sent" as const };
+      } catch (error) {
+        return { address, outcome: resendOutcomeOf(isFailed(error) ? error : null) };
+      }
+    },
+    null,
+  );
+
+  return (
+    <div className="grid gap-1.5">
+      {target.recipientStatuses.map(({ address, status }) => (
+        <form
+          key={address}
+          action={resend}
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+        >
+          <span className="min-w-0 wrap-anywhere">{address}</span>
+          <Badge variant={status === "confirmed" ? "success" : "neutral"}>
+            {t(`inbox.emails.statuses.${status}`)}
+          </Badge>
+          {status === "pending" && (
+            <>
+              <input type="hidden" name="address" value={address} />
+              <Button
+                type="submit"
+                size="sm"
+                variant="ghost"
+                disabled={resending}
+                aria-label={t("inbox.emails.resendLabel", { address })}
+              >
+                {t("inbox.emails.resend.action")}
+              </Button>
+            </>
+          )}
+        </form>
+      ))}
+      {resent !== null && (
+        <output className="text-xs text-pretty text-muted-foreground">
+          {t(`inbox.emails.resend.${resent.outcome}`, { address: resent.address })}
+        </output>
+      )}
+    </div>
+  );
+}
 
 /** One address per line, or separated by commas or semicolons. */
 function addressesIn(data: FormData) {
@@ -117,6 +193,7 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
       <CardHeader>
         <CardTitle>{t("inbox.emails.title")}</CardTitle>
         <CardDescription>{t("inbox.emails.description")}</CardDescription>
+        <CardDescription>{t("inbox.emails.confirmationNote")}</CardDescription>
       </CardHeader>
       <CardContent>
         {failed && <FormProblem>{t("inbox.emails.loadFailed")}</FormProblem>}
@@ -130,10 +207,14 @@ export function EmailTargets({ inboxId, form }: EmailTargetsProps) {
           <ul className="grid gap-px overflow-hidden rounded-md bg-border shadow-raised">
             {targets.map((target) => (
               <li key={target.id} className="grid gap-2 bg-card px-3 py-3">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <p className="min-w-0 flex-1 basis-56 text-sm wrap-anywhere">
-                    {target.recipients.join(", ")}
-                  </p>
+                <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+                  <div className="min-w-0 flex-1 basis-56">
+                    <Recipients
+                      key={target.recipients.join(",")}
+                      inboxId={inboxId}
+                      target={target}
+                    />
+                  </div>
                   <Badge variant={target.active ? "success" : "neutral"}>
                     {target.active ? t("inbox.emails.active") : t("inbox.emails.inactive")}
                   </Badge>

@@ -12,6 +12,7 @@ import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";
 import { deliveryStoreLive } from "../adapters/database/delivery-store.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
 import { emailSenderLayer } from "../adapters/email/email-sender.ts";
+import { recipientConfirmationsLive } from "../adapters/database/recipient-confirmations.ts";
 import { notificationProvidersLive } from "../adapters/notifications/notification-providers.ts";
 import { DeliveryId, DeliveryStatus } from "../domain/deliveries/delivery.ts";
 import { parseWebhookUrl, type WebhookUrl } from "../domain/deliveries/webhook-destination.ts";
@@ -74,7 +75,7 @@ function services() {
     stored,
     deliverySchedulerLive.pipe(Layer.provide(stored)),
     Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
-      Layer.provide(Layer.mergeAll(cipher, noEmail)),
+      Layer.provide(Layer.mergeAll(cipher, noEmail, recipientConfirmationsLive)),
     ),
     Layer.succeed(FetchHttpClient.Fetch, receiverFetch),
   );
@@ -97,7 +98,7 @@ const seedForm = Effect.fnUntraced(function* (name: string, submissionIds: Reado
         name,
       ),
       env.DB.prepare(
-        "INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)",
+        "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
       ).bind(`${name}-org`, `${name}-user`),
       env.DB.prepare(
         "INSERT INTO forms (id, organization_id, public_id, name) VALUES (?, ?, ?, ?)",

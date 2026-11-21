@@ -42,9 +42,16 @@ interface DeliveryHistoryProps {
   readonly inboxId: Inbox["id"];
   readonly submissionId: Submission["submissionId"];
   readonly revision: number;
+  /** A reviewer reads the deliveries; an admin may also retry a failed one. */
+  readonly canRetry: boolean;
 }
 
-export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHistoryProps) {
+export function DeliveryHistory({
+  inboxId,
+  submissionId,
+  revision,
+  canRetry,
+}: DeliveryHistoryProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const [deliveries, setDeliveries] = useState<readonly Delivery[] | null>(null);
@@ -156,7 +163,7 @@ export function DeliveryHistory({ inboxId, submissionId, revision }: DeliveryHis
                   </ol>
                 </details>
               )}
-              {delivery.status === "failed" && (
+              {canRetry && delivery.status === "failed" && (
                 <form action={retry}>
                   <input type="hidden" name="delivery" value={delivery.id} />
                   <Button type="submit" disabled={retrying}>

@@ -17,10 +17,12 @@ import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 
 import { verifyRondyrWebhook } from "../../docs/examples/verify-webhook.ts";
 import { testSecretsKey } from "../../tests/integration/auth-fixture.ts";
+import { confirmRecipients } from "../../tests/integration/recipient-fixture.ts";
 import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";
 import { deliveryHistoryLive } from "../adapters/database/delivery-history.ts";
 import { deliveryStoreLive } from "../adapters/database/delivery-store.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
+import { recipientConfirmationsLive } from "../adapters/database/recipient-confirmations.ts";
 import { organizationDirectoryLive } from "../adapters/database/organization-directory.ts";
 import { emailSenderLayer } from "../adapters/email/email-sender.ts";
 import { notificationProvidersLive } from "../adapters/notifications/notification-providers.ts";
@@ -37,6 +39,7 @@ import { Authentication } from "../ports/authentication.ts";
 import { DeliveryQueue } from "../ports/delivery-queue.ts";
 import { NotificationProvider } from "../ports/notification-provider.ts";
 import { NotificationTargets, type FormScope } from "../ports/notification-targets.ts";
+import { TestSendLimit } from "../ports/test-send-limit.ts";
 import {
   consumeDeliveries,
   deliverySchedulerLive,
@@ -109,8 +112,12 @@ function services(provider = notificationProvidersLive) {
     stored,
     deliverySchedulerLive.pipe(Layer.provide(stored)),
     Layer.mergeAll(provider, notificationTargetsLive).pipe(
-      Layer.provide(Layer.mergeAll(cipher, emailSender)),
+      Layer.provide(Layer.mergeAll(cipher, emailSender, recipientConfirmationsLive)),
     ),
+    emailSender,
+    recipientConfirmationsLive,
+    // The limit of the Rate Limiting binding has its own test, through the built Worker.
+    Layer.succeed(TestSendLimit, { admit: () => Effect.succeed(true) }),
     Layer.succeed(FetchHttpClient.Fetch, outboundFetch),
   );
   return { sent, layer };
@@ -157,7 +164,7 @@ const seedForm = Effect.fnUntraced(function* (
         name,
       ),
       env.DB.prepare(
-        "INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)",
+        "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
       ).bind(`${name}-org`, `${name}-user`),
       env.DB.prepare(
         "INSERT INTO forms (id, organization_id, public_id, name) VALUES (?, ?, ?, ?)",
@@ -187,6 +194,7 @@ const addWebhook = Effect.fnUntraced(function* (form: FormScope, url: string) {
 
 const addEmail = Effect.fnUntraced(function* (form: FormScope, address: string) {
   const targets = yield* NotificationTargets;
+  yield* confirmRecipients(form.organizationId, [address]);
   const recipients = Result.getOrElse(parseEmailRecipients([address]), () =>
     assert.fail(`${address} is refused`),
   );

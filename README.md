@@ -39,7 +39,7 @@ Vite prints the local URL, usually `http://localhost:5173`. Public sign-up is cl
 ./scripts/setup-owner.sh http://localhost:5173
 ```
 
-The script asks for the setup token, a name, an email address, and a password of 12 to 128 characters. After it prints `HTTP 201`, sign in at `/`, then remove `RONDYR_SETUP_TOKEN` from `.env` and restart `pnpm dev`. The setup endpoint refuses to create a second account even if the token stays.
+The script asks for the setup token, a name, an email address, and a password of 12 to 128 characters. After it prints `HTTP 201`, sign in at `/`, then remove `RONDYR_SETUP_TOKEN` from `.env` and restart `pnpm dev`. The setup endpoint refuses to create a second account even if the token stays. Other people join an organization through an invitation link from **Settings → Members**; see [Members and invitations](./docs/deployment.md#members-and-invitations).
 
 ## Send a submission
 
@@ -147,7 +147,7 @@ Rondyr limits each client to 5 submissions per minute on each form, before it st
 
 Both minute limits answer `429` with `Retry-After: 60` and store nothing. A page on an allowed origin can read the response and the `Retry-After` header.
 
-**Daily quotas** shows usage across the organization's forms for the current UTC day. The defaults are 2,000 stored submissions and 1,000 classifications. An organization member can change the limits there or with `PUT /api/organizations/:organizationId/quotas`, using integer fields `submissions` (1 to 100,000) and `classifications` (0 to 100,000). A `GET` on the same URL returns the UTC day, limits and usage.
+**Daily quotas** shows usage across the organization's forms for the current UTC day. The defaults are 2,000 stored submissions and 1,000 classifications. An admin of the organization can change the limits there or with `PUT /api/organizations/:organizationId/quotas`, using integer fields `submissions` (1 to 100,000) and `classifications` (0 to 100,000). A `GET` on the same URL returns the UTC day, limits and usage.
 
 Junk has its own storage quota, equal to the submission limit. Junk is a message that intake quarantines because it filled the honeypot field, failed Turnstile, or repeats earlier messages; **Daily quotas** counts it under **Junk caught at intake**, and the API under `used.junk`. A bot that sends junk all day uses up the junk quota, not the one of your visitors. An organization therefore stores at most twice its submission limit per day: 4,000 messages with the default.
 
@@ -160,33 +160,29 @@ After a storage quota is reached, Rondyr returns `429` with the number of second
 - Quarantines instead of deleting. Probable spam, ambiguous scores, sales pitches, off-topic messages, and classifier failures all go to human review, each with its reason. Once the model answers again, **Reclassify** sends a message that the classifier failed on back to it.
 - Limits each client per form with Cloudflare's Rate Limiting binding before anything is stored, without keeping IP addresses. A form can have a honeypot field: a filled one sends the message to quarantine without a classifier call, and the visitor gets the usual answer.
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
-- Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
+- Shows an inbox per organization with status filters, a search in the field values, and cursor pagination. An admin exports the filtered list as CSV or JSON Lines (the 10,000 newest messages at most), deletes a message for good after a confirmation, and sets how many days the organization keeps its accepted messages and its quarantined or archived ones; an hourly purge deletes the older ones, and a log keeps who deleted which message and when, without its content. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
 - Answers CORS preflights on the form URL, so a page on another origin can post JSON with `fetch`. Each form can restrict the origins that browsers may submit from.
 - Manages the forms of an organization in the dashboard: add a form, rename it, edit its business context, suspend and reactivate it, and redirect HTML form posts to a page of your site. A form keeps its public URL through every change.
 - Lets an organization declare up to ten domains in the dashboard. When the submitted email address uses one of these domains or a subdomain, both classifiers are told so and get the email field blank; for any other sender, the classifier input is unchanged.
 - Isolates organizations. A session is scoped to its account's organizations, and an API token is scoped to its own organization. Another organization's submission returns `404`.
-- Lets members create and revoke organization API tokens in **Settings → API tokens**. A token can read the inbox, accept messages, and archive them. See [API tokens and review routes](./docs/api.md).
+- Gives each member of an organization a role. A reviewer reads the inbox and the deliveries, accepts and archives; an admin also manages forms, destinations, members, and settings. Admins invite people by email address with a single-use link valid for 7 days, change roles, and remove members, and an organization always keeps one admin. Removing a member revokes the API tokens it created; the dialog says how many. On a stage that sends email, a person who forgot their password gets a reset link from the sign-in screen.
+- Lets admins create and revoke organization API tokens in **Settings → API tokens**. A token has the rights of a reviewer: it can read the inbox, accept messages, and archive them. See [API tokens and review routes](./docs/api.md).
 - Accepts submissions from a site's server with an API token. A server intake skips the browser checks (allowed origins, the per-client limit, Turnstile) and keeps the form cap, the daily quotas, and the honeypot field. An `Idempotency-Key` header makes a retry return the first submission instead of storing a second one. See [Server intake](./docs/api.md#server-intake).
 - Connects EmDash sites through `@basaltbytes/emdash-plugin-rondyr`, in `packages/emdash-plugin/` (MIT). The site's forms plugin keeps validating and storing each submission; the plugin queues it, sends it to Rondyr with an idempotency key, shows the three folders in the EmDash admin, and emails accepted messages through the site's mailer. See [EmDash plugin](./docs/emdash.md).
 - Creates one delivery per active destination of the form when a message is accepted, automatically or in review, and queues it through the same D1 outbox and cron. Each delivery has a stable ID that the recipient gets on every attempt. A retryable failure is attempted again after 1 minute, 5 minutes, 30 minutes, 2 hours, and 6 hours, then the delivery is marked as failed; a crash between the send and its record leads to a second send with the same ID.
 - Sends accepted messages to the form's webhooks as a versioned JSON `POST`, signed with HMAC-SHA-256 over the timestamp and the body. Signing secrets are generated by Rondyr, shown once, encrypted in D1 with `RONDYR_SECRETS_KEY`, and can be rotated with a 24-hour overlap. Rondyr refuses non-HTTPS URLs, private and reserved IP literals, local hostnames, its own origin, and redirects. [docs/webhooks.md](./docs/webhooks.md) has the payload, the headers, and a verification example.
-- Sends accepted messages by email through Resend or Cloudflare Email Sending, as plain text with every field, to up to 10 recipients per destination. Resend deduplicates retries for 24 hours. The subject comes from the form name, and a valid address in the `email` field becomes `Reply-To`. [Email setup, limits and message format](./docs/email.md)
+- Sends accepted messages by email through Resend or Cloudflare Email Sending, as plain text with every field, to up to 10 recipients per destination. A recipient gets messages only after confirming its address with the link that Rondyr emails it, once per organization. Resend deduplicates retries for 24 hours. The subject comes from the form name, and a valid address in the `email` field becomes `Reply-To`. [Email setup, limits and message format](./docs/email.md)
 - Shows the deliveries of each accepted message in the dashboard: the destination, the status, and every attempt with its start and end times and its error summary. A failed delivery can be retried by hand; the retry keeps the delivery ID, starts a new series of up to 6 attempts, and two retries at the same time start one attempt. Each webhook and email destination can also receive a test message, marked as a test, without creating a submission or a delivery.
 - Keeps message content in D1, and sends it only in webhook bodies and emails. The event history of a submission contains IDs, scores, and the account or API token that decided, never the fields.
 - Deploys to your own Cloudflare account through [Alchemy](https://alchemy.run), by hand or from GitHub Actions on each push to `main`, then checks that the deployment answers.
 
 ## Not built yet
 
-The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap. The largest gaps:
-
-| Gap | Issue |
-| --- | --- |
-| Roles and invitations | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
-| Search, export, retention, and purge | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
+The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 
 ## Concepts
 
-- An **organization** owns forms and an inbox. An account sees only the organizations it is a member of.
+- An **organization** owns forms and an inbox. An account sees only the organizations it is a member of, and its **role** in each one decides what it can do there: a `reviewer` reads and decides on messages, an `admin` can do everything.
 - A **form** has a public URL, `/f/<public-id>`, and an optional **business context** that describes what the organization does. A form is **active** or **suspended**; a suspended form refuses new submissions and keeps the ones it has.
 - A **submission** is one message: a set of text fields sent to a form.
 - The **classifier** returns a spam score, a sales outreach score and, when the form has a business context, a relevance score. Each one is between 0 and 1. The outreach score measures whether the sender is trying to sell or pitch something of their own to the organization. A customer asking for a quote, a shop that wants to stock the organization's products, a journalist, or a peer proposing a partnership doesn't count as outreach.

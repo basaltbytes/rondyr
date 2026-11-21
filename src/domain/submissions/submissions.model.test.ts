@@ -481,7 +481,7 @@ it.effect("quarantines a sales pitch with its scores and lets a reviewer accept 
       }),
     ),
     Story.state(submission, { _tag: "Quarantined" }),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -574,12 +574,12 @@ it.effect("quarantines exhausted failures and accepts only one authorized review
         policy,
       }),
     ),
-    Story.provide(CurrentReviewer, { userId, organizations: [] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [] }),
     Story.query(ListSubmissions, { organizationId }),
     Story.rejected(SubmissionNotFound.make()),
     Story.when(submission, DismissSubmission.make()),
     Story.rejected(SubmissionNotFound.make()),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -618,7 +618,7 @@ it.effect("quarantines a submission at intake without the classifier, once", () 
     Story.when(submission, RequestClassification.make({ organizationId })),
     Story.then(submission),
     Story.state(submission, { _tag: "Quarantined" }),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -644,12 +644,72 @@ it.effect("lets a reviewer dismiss a submission quarantined at intake", () =>
       submission,
       SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
     ),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, DismissSubmission.make()),
     Story.then(submission, SubmissionDismissed.make({ organizationId, reviewerId: userId })),
     Story.state(submission, { _tag: "Archived" }),
   ),
 );
+
+it.effect("lets an account with the reviewer role accept one message and archive another", () => {
+  const archived = SubmissionId.make("73123ee4-40bf-4c5f-b8ff-1d56cdaa7641");
+  const other = Submission.ref(archived);
+  const reviewer = { userId, memberships: [{ organizationId, role: "reviewer" as const }] };
+  return story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    Story.when(other, QuarantineAtIntake.make({ organizationId, reason: "repetition" })),
+    Story.then(
+      other,
+      SubmissionQuarantined.make({ organizationId, reason: "repetition", rulesVersion }),
+    ),
+    Story.provide(CurrentReviewer, reviewer),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({
+        organizationId,
+        acceptance: { _tag: "Manual", reviewerId: userId },
+      }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.when(other, DismissSubmission.make()),
+    Story.then(other, SubmissionDismissed.make({ organizationId, reviewerId: userId })),
+    Story.state(submission, { _tag: "Accepted" }),
+    Story.state(other, { _tag: "Archived" }),
+  );
+});
+
+it.effect("answers SubmissionNotFound to an account without a role in the organization", () => {
+  const elsewhere = OrganizationId.make("another-studio");
+  return story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    // An admin of another organization has no role in this one.
+    Story.provide(CurrentReviewer, {
+      userId,
+      memberships: [{ organizationId: elsewhere, role: "admin" }],
+    }),
+    Story.query(ListSubmissions, { organizationId }),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.when(submission, DismissSubmission.make()),
+    Story.rejected(SubmissionNotFound.make()),
+    Story.state(submission, { _tag: "Quarantined" }),
+  );
+});
 
 it.effect("records the token that accepts a quarantined submission", () => {
   const apiTokenId = ApiTokenId.make("site-inbox-token");
@@ -659,7 +719,10 @@ it.effect("records the token that accepts a quarantined submission", () => {
       submission,
       SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
     ),
-    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, {
+      apiTokenId,
+      memberships: [{ organizationId, role: "reviewer" }],
+    }),
     Story.when(submission, ApproveSubmission.make()),
     Story.then(
       submission,
@@ -683,7 +746,10 @@ it.effect("records the token that archives a quarantined submission", () => {
       submission,
       SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
     ),
-    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, {
+      apiTokenId,
+      memberships: [{ organizationId, role: "reviewer" }],
+    }),
     Story.when(submission, DismissSubmission.make()),
     Story.then(submission, SubmissionDismissed.make({ organizationId, apiTokenId })),
     Story.state(submission, { _tag: "Archived" }),
@@ -750,7 +816,7 @@ it.effect("reclassifies a submission quarantined after a classifier error, with 
   const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.15 };
   return story(
     ...quarantineAfterClassifierError,
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ReclassifySubmission.make({})),
     Story.then(submission, ReclassificationRequested.make({ organizationId, reviewerId: userId })),
     Story.state(submission, { _tag: "Classifying" }),
@@ -779,7 +845,7 @@ it.effect("reclassifies a submission quarantined after a classifier error, with 
 it.effect("reclassifies again after a second classifier error", () =>
   story(
     ...quarantineAfterClassifierError,
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ReclassifySubmission.make({})),
     Story.then(submission, ReclassificationRequested.make({ organizationId, reviewerId: userId })),
     ...lookupPolicy(),
@@ -816,7 +882,10 @@ it.effect("records the token that sends a submission back to classification", ()
   const apiTokenId = ApiTokenId.make("site-inbox-token");
   return story(
     ...quarantineAfterClassifierError,
-    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, {
+      apiTokenId,
+      memberships: [{ organizationId, role: "reviewer" }],
+    }),
     Story.when(submission, ReclassifySubmission.make({})),
     Story.then(submission, ReclassificationRequested.make({ organizationId, apiTokenId })),
     ...lookupPolicy(),
@@ -837,7 +906,7 @@ it.effect("records the token that sends a submission back to classification", ()
 it.effect("reclassifies once for a repeated command, then refuses while classifying", () =>
   story(
     ...quarantineAfterClassifierError,
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ReclassifySubmission.make({}), { commandId: "reclassify-1" }),
     Story.then(submission, ReclassificationRequested.make({ organizationId, reviewerId: userId })),
     Story.state(submission, { _tag: "Classifying" }),
@@ -865,7 +934,7 @@ it.effect("reclassifies once for a repeated command, then refuses while classify
 it.effect("refuses to reclassify for another reason, another state or another organization", () => {
   const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0.93, relevance: 0.8 };
   return story(
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ReclassifySubmission.make({})),
     Story.rejected(SubmissionNotFound.make()),
     Story.when(submission, RequestClassification.make({ organizationId })),
@@ -888,10 +957,10 @@ it.effect("refuses to reclassify for another reason, another state or another or
     // The state keeps the reason: the inbox's reason cannot override it.
     Story.when(submission, ReclassifySubmission.make({ inboxReason: "classification-error" })),
     Story.rejected(SubmissionNotReclassifiable.make()),
-    Story.provide(CurrentReviewer, { userId, organizations: [] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [] }),
     Story.when(submission, ReclassifySubmission.make({})),
     Story.rejected(SubmissionNotFound.make()),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, DismissSubmission.make()),
     Story.then(submission, SubmissionDismissed.make({ organizationId, reviewerId: userId })),
     Story.when(submission, ReclassifySubmission.make({})),
@@ -907,7 +976,7 @@ it.effect("refuses to reclassify a submission quarantined at intake", () =>
       submission,
       SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
     ),
-    Story.provide(CurrentReviewer, { userId, organizations: [organizationId] }),
+    Story.provide(CurrentReviewer, { userId, memberships: [{ organizationId, role: "reviewer" }] }),
     Story.when(submission, ReclassifySubmission.make({})),
     Story.rejected(SubmissionNotReclassifiable.make()),
     Story.state(submission, { _tag: "Quarantined", reason: "honeypot" }),
@@ -932,7 +1001,10 @@ it.effect("reads the inbox reason only for a quarantine stored before the state 
         context,
       );
       return (Effect.isEffect(decision) ? decision : Effect.succeed(decision)).pipe(
-        Effect.provideService(CurrentReviewer, { userId, organizations: [organizationId] }),
+        Effect.provideService(CurrentReviewer, {
+          userId,
+          memberships: [{ organizationId, role: "reviewer" }],
+        }),
         Effect.result,
       );
     };

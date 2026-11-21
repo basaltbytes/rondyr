@@ -114,6 +114,28 @@ export async function setTargetActive(
   return decodeTarget(await response.json());
 }
 
+/**
+ * Email a pending recipient of an email destination a new confirmation link.
+ * The API answers 409 for a confirmed address and 429 once the address got its
+ * confirmation emails of the day.
+ */
+export async function resendConfirmation(id: Inbox["id"], targetId: Target["id"], address: string) {
+  await send(`${target(id, targetId)}/confirmations`, {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({ address }),
+  });
+}
+
+/** Confirm a recipient with the secret of its link. The secret goes in the body, never in a URL. */
+export async function confirmRecipient(token: string) {
+  await send("/api/recipient-confirmations", {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify({ token }),
+  });
+}
+
 /** Send a test message to a target and wait for the answer of its recipient. */
 export async function testTarget(id: Inbox["id"], targetId: Target["id"]) {
   const response = await send(`${target(id, targetId)}/test`, { method: "POST" });

@@ -82,20 +82,29 @@ for (const binding of expectedBindings) {
   }
 }
 
-// The intake limits each client through a Rate Limiting binding. Its namespace is
-// account-wide, and a period other than 10 or 60 seconds is refused at deploy.
-const rateLimit = (wrangler.ratelimits ?? []).find(({ name }) => name === "CLIENT_RATE_LIMIT");
-if (
-  rateLimit === undefined ||
-  !/^[1-9][0-9]*$/u.test(rateLimit.namespace_id) ||
-  ![10, 60].includes(rateLimit.simple?.period)
-) {
-  errors.push(
-    "Wrangler must declare the CLIENT_RATE_LIMIT rate limit with a namespace and a period of 10 or 60.",
-  );
+// The intake limits each client, and the dashboard the test messages of each
+// destination, through Rate Limiting bindings. A namespace is account-wide, so
+// each limit has its own, and a period other than 10 or 60 seconds is refused at deploy.
+const rateLimits = wrangler.ratelimits ?? [];
+for (const name of ["CLIENT_RATE_LIMIT", "TARGET_TEST_RATE_LIMIT"]) {
+  const rateLimit = rateLimits.find((candidate) => candidate.name === name);
+  if (
+    rateLimit === undefined ||
+    !/^[1-9][0-9]*$/u.test(rateLimit.namespace_id) ||
+    ![10, 60].includes(rateLimit.simple?.period)
+  ) {
+    errors.push(
+      `Wrangler must declare the ${name} rate limit with a namespace and a period of 10 or 60.`,
+    );
+  }
+  if (!alchemyWorker.includes(`${name}:`)) {
+    errors.push(`src/alchemy-worker.ts must pass ${name} to the Worker.`);
+  }
 }
-if (!alchemyWorker.includes("CLIENT_RATE_LIMIT:")) {
-  errors.push("src/alchemy-worker.ts must pass CLIENT_RATE_LIMIT to the Worker.");
+if (
+  new Set(rateLimits.map(({ namespace_id: namespace }) => namespace)).size !== rateLimits.length
+) {
+  errors.push("Wrangler must give each rate limit its own namespace.");
 }
 
 // A Durable Object class needs a migration tag that creates it.

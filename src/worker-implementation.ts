@@ -14,6 +14,11 @@ import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
 import { formOriginsLive } from "./adapters/database/form-origins.ts";
 import { formsLive } from "./adapters/database/forms.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
+import { membersLive } from "./adapters/database/members.ts";
+import { passwordResetsLive } from "./adapters/database/password-resets.ts";
+import { recipientConfirmationsLive } from "./adapters/database/recipient-confirmations.ts";
+import { submissionExportsLive } from "./adapters/database/submission-exports.ts";
+import { submissionRetentionLive } from "./adapters/database/submission-retention.ts";
 import { submissionIntakeLive } from "./adapters/database/intake.ts";
 import { notificationTargetsLive } from "./adapters/database/notification-targets.ts";
 import { operationsStoreLive } from "./adapters/database/operations-status.ts";
@@ -27,27 +32,16 @@ import { classificationQueueLive } from "./adapters/queues/classification-queue.
 import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
 import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
 import { clientRateLimitLive } from "./adapters/workers/client-rate-limit.ts";
+import { testSendLimitLive } from "./adapters/workers/test-send-limit.ts";
 import { cronHeartbeatLive } from "./adapters/workers/cron-heartbeat.ts";
 import { turnstileVerifierLive } from "./adapters/workers/siteverify.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { apiTokenAuthentication } from "./http/api-token-authentication.ts";
-import { apiTokenRoutes } from "./http/api-token-routes.ts";
-import { authenticationRoutes } from "./http/authentication.ts";
-import { classificationPolicyRoutes } from "./http/classification-policy-routes.ts";
-import { deliveryRoutes } from "./http/delivery-routes.ts";
-import { formRoutes } from "./http/form-routes.ts";
-import { operationsRoute } from "./http/operations-route.ts";
-import { organizationDomainRoutes } from "./http/organization-domain-routes.ts";
-import { organizationQuotaRoutes } from "./http/organization-quota-routes.ts";
-import { originRoutes } from "./http/origin-routes.ts";
-import { publicRoutes } from "./http/public-routes.ts";
-import { reviewRoutes } from "./http/review-routes.ts";
-import { stuckSubmissionRoutes } from "./http/stuck-submission-routes.ts";
-import { submissionRoutes } from "./http/submission-routes.ts";
-import { targetRoutes } from "./http/target-routes.ts";
+import { routes as applicationRoutes } from "./http/routes.ts";
 import { consumeDeadLetters } from "./jobs/dead-letters.ts";
 import { consumeDeliveries, deliverySchedulerLive } from "./jobs/delivery-outbox.ts";
 import { publishOutboxes } from "./jobs/publish-outboxes.ts";
+import { purgeOnTheHour } from "./jobs/retention-purge.ts";
 import { consumeSubmissions } from "./jobs/submission-outbox.ts";
 import { BackgroundTasks } from "./ports/background-tasks.ts";
 
@@ -61,9 +55,15 @@ const services = Layer.mergeAll(
   HttpServer.layerServices,
   submissionIntakeLive.pipe(Layer.provide(turnstile)),
   clientRateLimitLive,
+  testSendLimitLive,
+  recipientConfirmationsLive,
+  submissionExportsLive,
+  submissionRetentionLive,
   formOriginsLive,
   formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,
+  membersLive,
+  passwordResetsLive,
   organizationQuotasLive,
   classificationPoliciesLive,
   outboxLive,
@@ -72,8 +72,9 @@ const services = Layer.mergeAll(
   deliveryHistoryLive,
   operationsStoreLive,
   cronHeartbeatLive,
+  emailSenderLive,
   Layer.mergeAll(notificationProvidersLive, notificationTargetsLive).pipe(
-    Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
+    Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive, recipientConfirmationsLive)),
   ),
   Submissions.layer(submissionHandlers, { legacyData: false }).pipe(
     Layer.provide(
@@ -90,22 +91,7 @@ const services = Layer.mergeAll(
     ),
   ),
 );
-const routes = Layer.mergeAll(
-  publicRoutes,
-  authenticationRoutes,
-  apiTokenRoutes,
-  submissionRoutes,
-  reviewRoutes,
-  targetRoutes,
-  originRoutes,
-  organizationDomainRoutes,
-  organizationQuotaRoutes,
-  classificationPolicyRoutes,
-  formRoutes,
-  deliveryRoutes,
-  operationsRoute,
-  stuckSubmissionRoutes,
-).pipe(Layer.provide(apiTokenAuthentication));
+const routes = applicationRoutes.pipe(Layer.provide(apiTokenAuthentication));
 
 const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
@@ -147,7 +133,12 @@ export const workerImplementation = Effect.gen(function* () {
   yield* worker.listen((event) => {
     if (!isWorkerEvent(event)) return;
     if (event.type === "scheduled") {
-      return publishOutboxes().pipe(Effect.provideContext(context));
+      // The purge never fails the Cron, and runs whatever the publication did. It
+      // goes by the scheduled time, which a slow publication does not move.
+      return publishOutboxes().pipe(
+        Effect.ensuring(purgeOnTheHour(event.input.scheduledTime)),
+        Effect.provideContext(context),
+      );
     }
     if (event.type === "queue") {
       return consumeBatch(event.input).pipe(Effect.provideContext(context));

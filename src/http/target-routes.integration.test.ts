@@ -11,8 +11,10 @@ import {
   testResendKey,
   testSetupToken,
 } from "../../tests/integration/auth-fixture.ts";
+import { confirmByEmail } from "../../tests/integration/recipient-fixture.ts";
 import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
+import { recipientConfirmationsLive } from "../adapters/database/recipient-confirmations.ts";
 import { organizationDirectoryLive } from "../adapters/database/organization-directory.ts";
 import { emailSenderLive } from "../adapters/email/email-sender.ts";
 import { EmailTarget, type RecipientsRefusalReason } from "../domain/deliveries/email.ts";
@@ -280,6 +282,13 @@ it.live(
         Effect.flatMap(readEmailTarget),
       );
       assert.deepEqual([...replaced.recipients], recipients);
+      assert.deepEqual(
+        replaced.recipientStatuses.map(({ status }) => status),
+        ["pending", "pending"],
+      );
+      // Each owner confirms with the link of the email that the creation and the edit sent.
+      yield* confirmByEmail("routes-team@example.test");
+      yield* confirmByEmail("routes-owner@example.test");
       const replaceRefused = yield* Effect.all([
         put(`${emailTarget}/recipients`, { recipients: ["Owner <owner@example.test>"] }, headers),
         put(`${emailTarget}/recipients`, { recipients: [] }, headers),
@@ -300,7 +309,14 @@ it.live(
         Effect.flatMap(json),
         Effect.flatMap(readDestination),
       );
-      assert.deepEqual(emailOn, { ...replaced, active: true });
+      assert.deepEqual(emailOn, {
+        ...replaced,
+        active: true,
+        recipientStatuses: replaced.recipientStatuses.map(({ address }) => ({
+          address,
+          status: "confirmed" as const,
+        })),
+      });
 
       // The deployed composition sends the next accepted message through Resend.
       const mailed = yield* post(`/f/${form.publicId}`, {
@@ -316,8 +332,12 @@ it.live(
             )
               .then((response) => response.json())
               .then((body) => {
-                assert.isTrue(Array.isArray(body) && body.length === 1);
-                return body;
+                // The confirmation emails came first; one delivery email follows them.
+                const messages = Array.isArray(body)
+                  ? body.filter((entry) => entry.body.includes('"subject":"New message'))
+                  : [];
+                assert.lengthOf(messages, 1);
+                return messages;
               }),
           { timeout: 20_000, interval: 100 },
         ),
@@ -426,7 +446,7 @@ it.live("refuses to create an email target when the stage has no email provider"
         ),
         env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('mailless-org', 'Mailless')"),
         env.DB.prepare(
-          "INSERT INTO organization_members (organization_id, user_id) VALUES ('mailless-org', 'mailless-user')",
+          "INSERT INTO organization_members (organization_id, user_id, role) VALUES ('mailless-org', 'mailless-user', 'admin')",
         ),
         env.DB.prepare(
           "INSERT INTO forms (id, organization_id, public_id, name) VALUES ('mailless-form', 'mailless-org', 'mailless', 'Mailless')",
@@ -448,6 +468,8 @@ it.live("refuses to create an email target when the stage has no email provider"
         notificationTargetsLive.pipe(
           Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
         ),
+        emailSenderLive,
+        recipientConfirmationsLive,
       ),
     );
     const { handler, dispose } = HttpRouter.toWebHandler(
@@ -540,6 +562,21 @@ it.live("sends a test email through the built Worker configured for Cloudflare",
     );
     assert.strictEqual(target.status, 201);
     const email = yield* json(target).pipe(Effect.flatMap(readEmailTarget));
+    // The owner of the address confirms it with the link of the email that Cloudflare sent.
+    const confirmation = yield* Effect.promise(() =>
+      env.CLOUDFLARE_EMAIL_FIXTURE.fetch(
+        "https://email.test/__received?recipient=proof@example.test",
+      ),
+    ).pipe(
+      Effect.flatMap(json),
+      Effect.flatMap(
+        Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ text: Schema.String }))),
+      ),
+    );
+    const token = /\/confirm-recipient#([A-Za-z0-9_-]{43})/u.exec(confirmation[0]?.text ?? "")?.[1];
+    if (token === undefined) return assert.fail("Expected a confirmation link");
+    const confirmed = yield* post("/api/recipient-confirmations", { token }, undefined, worker);
+    assert.strictEqual(confirmed.status, 204);
     const response = yield* post(
       `/api/organizations/${inbox.id}/targets/${email.id}/test`,
       {},
@@ -575,8 +612,9 @@ it.live("sends a test email through the built Worker configured for Cloudflare",
         ),
       ),
     );
-    assert.lengthOf(received, 1);
-    const [message] = received;
+    // The confirmation email, then the test.
+    assert.lengthOf(received, 2);
+    const [, message] = received;
     if (message === undefined) return assert.fail("Expected a test email");
     assert.deepEqual(
       [message.from, message.to, message.subject, message.replyTo],
@@ -598,7 +636,7 @@ it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY
         ),
         env.DB.prepare("INSERT INTO organizations (id, name) VALUES ('keyless-org', 'Keyless')"),
         env.DB.prepare(
-          "INSERT INTO organization_members (organization_id, user_id) VALUES ('keyless-org', 'keyless-user')",
+          "INSERT INTO organization_members (organization_id, user_id, role) VALUES ('keyless-org', 'keyless-user', 'admin')",
         ),
         env.DB.prepare(
           "INSERT INTO forms (id, organization_id, public_id, name) VALUES ('keyless-form', 'keyless-org', 'keyless', 'Keyless')",
@@ -620,6 +658,8 @@ it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY
         notificationTargetsLive.pipe(
           Layer.provide(Layer.mergeAll(secretCipherLive, emailSenderLive)),
         ),
+        emailSenderLive,
+        recipientConfirmationsLive,
       ),
     );
     const { handler, dispose } = HttpRouter.toWebHandler(

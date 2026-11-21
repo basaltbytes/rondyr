@@ -472,10 +472,11 @@ test("quarantine a message with a filled honeypot field and review it", async ({
   await expect(accepted.getByRole("button", { name: accept })).toHaveCount(0);
 });
 
-test("add destinations, send a test and retry a failed webhook", async ({
+test("add destinations, confirm a recipient, send a test and retry a failed webhook", async ({
   dashboard: page,
   context,
   externalOrigin,
+  sentEmails,
 }) => {
   await createOrganization(page);
   await openSection(page, t("inbox.sections.forms"));
@@ -510,6 +511,21 @@ test("add destinations, send a test and retry a failed webhook", async ({
   await emails.getByRole("button", { name: t("inbox.emails.add") }).click();
   const destination = emails.getByRole("listitem").filter({ hasText: email });
   await expect(destination).toBeVisible();
+  await expect(destination.getByText(t("inbox.emails.statuses.pending"))).toBeVisible();
+  // The owner of the address confirms it from the link of the email that Rondyr sent.
+  const [confirmation] = await sentEmails(email);
+  const link = confirmation.text.match(/https?:\/\/\S+\/confirm-recipient#[\w-]{43}/u)?.[0];
+  expect(link).toBeDefined();
+  const mailbox = await context.newPage();
+  await mailbox.goto(link);
+  await mailbox.getByRole("button", { name: t("recipientConfirmation.confirm") }).click();
+  await expect(
+    mailbox.getByRole("heading", { name: t("recipientConfirmation.confirmed.title") }),
+  ).toBeVisible();
+  await mailbox.close();
+  await openSection(page, t("inbox.sections.forms"));
+  await openSection(page, t("inbox.sections.destinations"));
+  await expect(destination.getByText(t("inbox.emails.statuses.confirmed"))).toBeVisible();
   await destination.getByRole("button", { name: sendTest }).click();
   await expect(destination.getByRole("status")).toContainText(testDelivered);
 
@@ -910,4 +926,192 @@ test("create, copy, and revoke a token that is only displayed once", async ({
     .getByRole("button", { name: t("inbox.apiTokens.confirm"), exact: true })
     .click();
   await expect(page.getByText(t("inbox.apiTokens.empty"))).toBeVisible();
+});
+
+test("invite a reviewer, who creates an account from the link and sees no settings", async ({
+  dashboard: page,
+  browser,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.members"));
+  const reviewer = { name: "Second reviewer", email: "reviewer@example.test" };
+  await page.getByRole("textbox", { name: t("inbox.members.email") }).fill(reviewer.email);
+  await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
+  await expect(
+    page.getByText(t("inbox.members.emails.sent", { email: reviewer.email })),
+  ).toBeVisible();
+  const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
+  await expect(
+    page.getByRole("list", { name: t("inbox.members.pending") }).getByText(reviewer.email),
+  ).toBeVisible();
+
+  const context = await browser.newContext();
+  const invited = await context.newPage();
+  await invited.goto(link);
+  await expect(
+    invited.getByRole("heading", {
+      name: t("invitation.title", { organization: organizationName }),
+    }),
+  ).toBeVisible();
+  await invited.getByRole("textbox", { name: t("invitation.name") }).fill(reviewer.name);
+  await invited.getByLabel(t("invitation.password")).fill("playwright-reviewer-password");
+  await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
+  await expect(
+    invited.getByRole("button", {
+      name: t("inbox.organizations.switcher", { name: organizationName }),
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    invited.getByRole("navigation", { name: t("inbox.navigation.settings"), exact: true }),
+  ).toHaveCount(0);
+  await invited.goto(link);
+  await expect(invited.getByRole("heading", { name: t("invitation.invalidTitle") })).toBeVisible();
+  await context.close();
+
+  await page.reload();
+  await openSection(page, t("inbox.sections.members"));
+  await expect(
+    page.getByRole("combobox", { name: t("inbox.members.roleOf", { name: reviewer.name }) }),
+  ).toHaveValue("reviewer");
+  await expect(page.getByText(t("inbox.members.noInvitations"))).toBeVisible();
+});
+
+test("count the API tokens of a member before removing it, and confirm before stepping down", async ({
+  dashboard: page,
+  browser,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.members"));
+  const second = { name: "Second admin", email: "second-admin@example.test" };
+  await page.getByRole("textbox", { name: t("inbox.members.email") }).fill(second.email);
+  await page
+    .getByRole("combobox", { name: t("inbox.members.role"), exact: true })
+    .selectOption("admin");
+  await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
+  const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
+
+  // The second admin joins and creates a token for a website.
+  const context = await browser.newContext();
+  const invited = await context.newPage();
+  await invited.goto(link);
+  await invited.getByRole("textbox", { name: t("invitation.name") }).fill(second.name);
+  await invited.getByLabel(t("invitation.password")).fill("playwright-second-admin-password");
+  await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
+  await openSection(invited, t("inbox.sections.apiTokens"));
+  await invited.getByRole("textbox", { name: t("inbox.apiTokens.name") }).fill("Website");
+  await invited.getByRole("button", { name: t("inbox.apiTokens.create"), exact: true }).click();
+  await expect(invited.getByText(/^rdr_[A-Za-z0-9_-]{43}$/u)).toBeVisible();
+  await context.close();
+
+  await page.reload();
+  await openSection(page, t("inbox.sections.members"));
+  const remove = page.getByRole("button", {
+    name: t("inbox.members.removeLabel", { name: second.name }),
+  });
+  await remove.click();
+  const removal = page.getByRole("alertdialog", { name: t("inbox.members.confirmTitle") });
+  await expect(removal.getByText(t("inbox.members.confirmTokens", { count: 1 }))).toBeVisible();
+  await removal.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(remove).toBeFocused();
+
+  const ownRole = page.getByRole("combobox", {
+    name: t("inbox.members.roleOf", { name: owner.name }),
+  });
+  await ownRole.selectOption("reviewer");
+  const stepDown = page.getByRole("alertdialog", { name: t("inbox.members.stepDownTitle") });
+  await stepDown.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(ownRole).toHaveValue("admin");
+  await ownRole.selectOption("reviewer");
+  await stepDown.getByRole("button", { name: t("inbox.members.stepDown"), exact: true }).click();
+  await expect(
+    page.getByRole("navigation", { name: t("inbox.navigation.settings"), exact: true }),
+  ).toHaveCount(0);
+});
+
+test("reset a forgotten password from the sign-in screen", async ({
+  page,
+  dashboardOrigin,
+  sentEmails,
+}) => {
+  await page.goto(dashboardOrigin);
+  await page.getByRole("button", { name: t("authentication.signIn.forgotPassword") }).click();
+  await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
+  await page.getByRole("button", { name: t("authentication.passwordReset.submit") }).click();
+  await expect(
+    page.getByText(t("authentication.passwordReset.sent", { email: owner.email })),
+  ).toBeVisible();
+  const linkPattern = /https?:\/\/\S+\/reset-password#[\w-]{43}/u;
+  await expect
+    .poll(async () => (await sentEmails(owner.email)).some(({ text }) => linkPattern.test(text)))
+    .toBe(true);
+  const emails = await sentEmails(owner.email);
+  const link = emails.at(-1).text.match(linkPattern)[0];
+
+  const password = "playwright-new-password-43";
+  await page.goto(link);
+  await page.getByLabel(t("passwordReset.password")).fill(password);
+  await page.getByRole("button", { name: t("passwordReset.submit") }).click();
+  await expect(
+    page.getByRole("heading", { name: t("passwordReset.changed.title"), exact: true }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: t("passwordReset.signIn") }).click();
+  await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
+  await page.getByLabel(t("authentication.signIn.password")).fill(password);
+  await page.getByRole("button", { name: t("authentication.signIn.submit"), exact: true }).click();
+  await expect(page.getByRole("heading", { name: t("inbox.sections.organization") })).toBeVisible();
+});
+
+test("search the messages, export the list, delete a message and keep messages 30 days", async ({
+  dashboard: page,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  for (const message of ["The needle is here", "Only hay in this one"]) {
+    const posted = await page.request.post(endpoint.href, {
+      data: { message, "fixture-verdict": "accept" },
+    });
+    expect(posted.status()).toBe(202);
+  }
+  await openSubmission(page, t("inbox.folders.accepted"), "Only hay in this one");
+
+  const list = page.getByRole("region", { name: t("inbox.list.label") });
+  await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).fill("NEEDLE");
+  await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).press("Enter");
+  await expect(list.getByRole("button").filter({ hasText: "The needle is here" })).toBeVisible();
+  await expect(list.getByRole("button").filter({ hasText: "Only hay in this one" })).toHaveCount(0);
+  const csv = list.getByRole("link", { name: t("inbox.list.export.csv"), exact: true });
+  const exported = await page.request.get(new URL(await csv.getAttribute("href"), endpoint).href);
+  expect(exported.headers()["cache-control"]).toBe("no-store");
+  const text = await exported.text();
+  expect(text).toContain("The needle is here");
+  expect(text).not.toContain("Only hay in this one");
+
+  const reader = await openMessage(page, "The needle is here");
+  const remove = reader.getByRole("button", { name: t("inbox.reader.delete.action") });
+  await remove.click();
+  const confirmation = page.getByRole("alertdialog", { name: t("inbox.reader.delete.title") });
+  await confirmation.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(remove).toBeFocused();
+  await remove.click();
+  await confirmation
+    .getByRole("button", { name: t("inbox.reader.delete.confirm"), exact: true })
+    .click();
+  await expect(list.getByRole("button").filter({ hasText: "The needle is here" })).toHaveCount(0);
+  await expect(
+    list.getByRole("heading", { name: t("inbox.list.search.empty", { search: "NEEDLE" }) }),
+  ).toBeVisible();
+
+  await openSection(page, t("inbox.sections.retention"));
+  const accepted = page.getByRole("spinbutton", { name: t("inbox.retention.accepted") });
+  await accepted.fill("30");
+  await page.getByRole("button", { name: t("common.save"), exact: true }).click();
+  await expect(page.getByText(t("inbox.retention.outcomes.saved"))).toBeVisible();
+  await page.reload();
+  await openSection(page, t("inbox.sections.retention"));
+  await expect(accepted).toHaveValue("30");
+  await expect(page.getByRole("spinbutton", { name: t("inbox.retention.quarantine") })).toHaveValue(
+    "",
+  );
 });
