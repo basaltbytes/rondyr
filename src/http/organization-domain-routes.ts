@@ -12,11 +12,8 @@ import {
   OrganizationDomainList,
 } from "../domain/organizations/organization-domain.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
-import {
-  OrganizationDirectory,
-  OrganizationDomainNotFound,
-} from "../ports/organization-directory.ts";
-import { reviewer } from "./review-routes.ts";
+import { OrganizationDirectory } from "../ports/organization-directory.ts";
+import { authorize } from "./organization-access.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const RemoveParams = OrganizationPath.mapFields((fields) => ({
@@ -41,6 +38,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
+        PermissionDenied: () => empty(403),
+        OrganizationNotFound: () => empty(404),
         OrganizationDomainNotFound: () => empty(404),
         OrganizationDomainLimit: () =>
           errorJson({ error: "domain-limit" }, { status: 409, ...jsonOptions }),
@@ -51,11 +50,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
   );
 
 const scope = Effect.gen(function* () {
-  const { userId, organizations } = yield* reviewer();
   const { organizationId } = yield* HttpRouter.schemaPathParams(OrganizationPath);
-  if (!organizations.some(({ id }) => id === organizationId)) {
-    return yield* OrganizationDomainNotFound.make();
-  }
+  const { userId } = yield* authorize(organizationId, "manage-settings");
   return { userId, organizationId };
 });
 

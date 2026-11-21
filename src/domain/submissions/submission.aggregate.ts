@@ -14,7 +14,7 @@ import {
   RequestClassification,
   ClassificationRequested,
 } from "./request-classification.command.ts";
-import { CurrentReviewer } from "./review-session.middleware.ts";
+import { CurrentReviewer, reviewerMay } from "./review-session.middleware.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
 import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import {
@@ -39,7 +39,10 @@ const State = Schema.Union([
 
 const review = Effect.fnUntraced(function* (state: typeof State.Type) {
   const reviewer = yield* CurrentReviewer;
-  if (state._tag === "Unrecorded" || !reviewer.organizations.includes(state.organizationId)) {
+  if (
+    state._tag === "Unrecorded" ||
+    !reviewerMay(reviewer, state.organizationId, "review-submissions")
+  ) {
     return yield* SubmissionNotFound.make();
   }
   if (state._tag !== "Quarantined") return yield* SubmissionNotReviewable.make();

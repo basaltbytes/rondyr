@@ -1,8 +1,10 @@
 import { cn } from "cn";
-import { RefreshCw, X } from "lucide-react";
+import { Download, RefreshCw, Search, X } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
 import { SidebarTrigger } from "~/components/ui/sidebar";
 import { useFormats } from "~/lib/i18n";
 import type { SubmissionEntry } from "~/lib/inbox-client";
@@ -94,6 +96,76 @@ interface MessageListProps {
   readonly onRefresh: () => void;
   /** Show the messages of every form again. */
   readonly onAllForms: () => void;
+  /** The text that the list is narrowed to, if any. */
+  readonly search: string | null;
+  /** Narrow the list to the messages that contain a text, or show them all again with null. */
+  readonly onSearch: (search: string | null) => void;
+  /** The addresses of the exports of the list, for an admin. */
+  readonly exports: { readonly csv: string; readonly jsonl: string } | null;
+}
+
+/** The shortest text that the API searches for. */
+const minSearchLength = 3;
+
+interface SearchBarProps {
+  readonly search: string | null;
+  readonly onSearch: (search: string | null) => void;
+}
+
+function SearchBar({ search, onSearch }: SearchBarProps) {
+  const { t } = useTranslation();
+  const [text, setText] = useState(search ?? "");
+  const [tooShort, setTooShort] = useState(false);
+  return (
+    <search className="hairline-b px-3 py-2">
+      <form
+        className="grid gap-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const trimmed = text.trim();
+          if (trimmed === "") {
+            setTooShort(false);
+            onSearch(null);
+            return;
+          }
+          setTooShort(trimmed.length < minSearchLength);
+          if (trimmed.length >= minSearchLength) onSearch(trimmed);
+        }}
+      >
+        <div className="flex items-center gap-1">
+          <Search aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+          <Input
+            type="search"
+            aria-label={t("inbox.list.search.label")}
+            placeholder={t("inbox.list.search.placeholder")}
+            value={text}
+            maxLength={100}
+            onChange={(event) => setText(event.currentTarget.value)}
+            aria-invalid={tooShort || undefined}
+          />
+          {search !== null && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={t("inbox.list.search.clear")}
+              onClick={() => {
+                setText("");
+                setTooShort(false);
+                onSearch(null);
+              }}
+            >
+              <X aria-hidden="true" className="size-4" />
+            </Button>
+          )}
+        </div>
+        {tooShort && (
+          <p role="alert" className="text-xs text-destructive">
+            {t("inbox.list.search.tooShort", { count: minSearchLength })}
+          </p>
+        )}
+      </form>
+    </search>
+  );
 }
 
 export function MessageList({
@@ -112,6 +184,9 @@ export function MessageList({
   onMore,
   onRefresh,
   onAllForms,
+  search,
+  onSearch,
+  exports,
 }: MessageListProps) {
   const { t } = useTranslation();
   return (
@@ -154,6 +229,28 @@ export function MessageList({
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
       </header>
+      <SearchBar search={search} onSearch={onSearch} />
+      {exports !== null && (
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 hairline-b px-4 py-2 text-xs text-muted-foreground">
+          <Download aria-hidden="true" className="size-3.5 shrink-0" />
+          <span>{t("inbox.list.export.label")}</span>
+          <a
+            className="font-medium text-foreground underline underline-offset-4"
+            href={exports.csv}
+            download
+          >
+            {t("inbox.list.export.csv")}
+          </a>
+          <a
+            className="font-medium text-foreground underline underline-offset-4"
+            href={exports.jsonl}
+            download
+          >
+            {t("inbox.list.export.jsonl")}
+          </a>
+          <span>{t("inbox.list.export.limit")}</span>
+        </p>
+      )}
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         {failed && (
           <p role="alert" className="px-4 py-3 text-sm text-destructive">
@@ -165,7 +262,17 @@ export function MessageList({
             {t("inbox.list.loading")}
           </output>
         )}
-        {entries?.length === 0 && formName !== null && (
+        {entries?.length === 0 && search !== null && (
+          <div className="grid justify-items-start gap-2 px-4 py-10">
+            <h2 className="text-base font-semibold text-balance wrap-anywhere">
+              {t("inbox.list.search.empty", { search })}
+            </h2>
+            <Button className="mt-2" onClick={() => onSearch(null)}>
+              {t("inbox.list.search.showAll")}
+            </Button>
+          </div>
+        )}
+        {entries?.length === 0 && search === null && formName !== null && (
           <div className="grid justify-items-start gap-2 px-4 py-10">
             <h2 className="text-base font-semibold text-balance wrap-anywhere">
               {t("inbox.list.form.empty.title", { name: formName })}
@@ -180,7 +287,7 @@ export function MessageList({
             </Button>
           </div>
         )}
-        {entries?.length === 0 && formName === null && (
+        {entries?.length === 0 && search === null && formName === null && (
           <div className="grid gap-2 px-4 py-10">
             <h2 className="text-base font-semibold text-balance">
               {t(`inbox.list.empty.${folder}.title`)}

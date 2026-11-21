@@ -129,7 +129,7 @@ export const test = base.extend({
         data: owner,
       });
       expect(setup.status(), "POST /api/setup").toBe(201);
-      await use({ origin, database: db });
+      await use({ origin, runtime, database: db });
     } finally {
       await runtime.dispose();
     }
@@ -137,6 +137,18 @@ export const test = base.extend({
 
   dashboardOrigin: async ({ dashboardRuntime }, use) => {
     await use(dashboardRuntime.origin);
+  },
+
+  /** The emails that the fake Resend received for an address, oldest first. */
+  sentEmails: async ({ dashboardRuntime }, use) => {
+    await use(async (recipient) => {
+      const resend = await dashboardRuntime.runtime.getWorker("resend-fixture");
+      const response = await resend.fetch(
+        `https://api.resend.com/__received?recipient=${encodeURIComponent(recipient)}`,
+      );
+      const received = await response.json();
+      return received.map((entry) => JSON.parse(entry.body));
+    });
   },
 
   /** The D1 database of the dashboard's Worker, for a state that only hours of processing reach. */

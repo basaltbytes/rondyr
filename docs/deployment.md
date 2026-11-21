@@ -69,6 +69,8 @@ The stack deploys the Worker with the Vite assets and the Durable Objects of the
 
 The Worker also gets the Rate Limiting binding `CLIENT_RATE_LIMIT`, which limits each client to 5 submissions per minute on a form. Nothing has to be created on the account for it, and the API token needs no permission beyond `Workers Scripts Write`; the limit and the namespace come from `ratelimits` in `wrangler.json`, which the stack reads. A namespace is shared by every Worker of the account: the stages of one account all use namespace `7001`, and they don't share counts because each key starts with the public ID of a form. Another Worker of the account that uses the same namespace would share a count only for an identical key. Cloudflare doesn't show rate limits in the dashboard; see [Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 
+A second Rate Limiting binding, `TARGET_TEST_RATE_LIMIT` in namespace `7002`, limits the test messages of each destination to 3 per minute. Its keys start with `target-test:` and the ID of the destination, so stages don't share counts either. Like the first one, it needs no setting: the stack declares it from `wrangler.json`, and `pnpm doctor` checks that both files declare it. If the binding doesn't answer, a test is refused with `503` and `{"error":"test-limit-unavailable"}`, sends nothing, and the dashboard says so.
+
 A new custom domain can take a few minutes to get its DNS record and certificate. Wait for Rondyr to answer, up to 15 minutes, with the [smoke test](./operations.md#smoke-test):
 
 ```sh
@@ -95,7 +97,32 @@ Public sign-up is closed. With `RONDYR_SETUP_TOKEN` set, run the setup script ag
 
 The script reads `RONDYR_SETUP_TOKEN` from the environment or asks for it, then asks for a name, an email address, and a password of 12 to 128 characters. After the `201` response, sign in at `/`. Remove the setup token from the configuration and redeploy. D1 refuses a second account through this endpoint even while the token is still set.
 
-If an organization already exists in SQL, give an account access by adding a row to `organization_members` with the `organization_id` and the Better Auth `user_id`.
+The first account creates an organization in the dashboard and is its admin. Any signed-in account can create an organization and becomes its admin.
+
+## Members and invitations
+
+Every other person joins through an invitation. An admin opens **Settings → Members**, enters an email address and a role, and gets a link of the form `https://<origin>/invitation#<secret>`. The link works once, for 7 days; D1 keeps only the SHA-256 hash of the secret, which sits in the URL fragment so that no request or log carries it. When the stage sends email (see [Email](#email)), Rondyr also emails the link to the address, with fixed text that names neither the organization nor the person who invited. Rondyr emails an address at most 3 invitations in 24 hours across all organizations; past that, and on a stage without email, the admin copies the link from the dashboard and sends it another way.
+
+The invited person opens the link. Without an account, they choose a name and a password of 12 to 128 characters, and the account gets the invited address. With an account at that address, they sign in, then join. A link opened while signed in with another address is refused.
+
+| Role | Rights |
+| --- | --- |
+| `reviewer` | Reads the inbox and the delivery history, accepts and archives messages |
+| `admin` | Everything else as well: forms, allowed origins, honeypot field, Turnstile, destinations, delivery retries and test sends, members, settings, API tokens, export, deletion and retention |
+
+An admin can change a member's role or remove them in the same section. The last admin of an organization can be neither removed nor demoted; the SQL statement that changes the member checks it, so two admins who leave at the same time keep one of them. The same statement checks that the account that asks is still an admin, so a request that started before its author lost the role changes nothing. An admin who changes their own role to reviewer confirms it first, since only another admin can give it back.
+
+Removing a member also revokes the API tokens that this member created in the organization, and cancels the invitations it issued. Before you confirm, the removal dialog says how many active tokens go with the member: a website or a script that uses one of them gets `401` from then on, so give it a token that another admin created first. A demoted admin keeps its tokens, which have the rights of a reviewer anyway, and loses its pending invitations. An invitation only works while the admin who issued it is still an admin of the organization.
+
+The migration that added roles made every member that existed before it an admin. During the deployment, the previous Worker version still runs for a moment after the migration: a member that it adds, the creator of a new organization, gets the column's default, `admin`, the rights it had before roles. An API token acts as a reviewer of its organization.
+
+## Forgotten passwords
+
+On a stage that sends email, the sign-in screen has **Forgot your password?**. Rondyr emails the account a link of the form `https://<origin>/reset-password#<secret>`, valid once for one hour; D1 keeps only the SHA-256 hash of the secret. The screen answers the same whether an account has the address or not, the email leaves after the answer, and an account gets at most 3 links in 24 hours. Choosing a new password signs the account out of every session and marks its address as verified.
+
+This is also how the owner of an address takes back an account that someone else created at it. An admin who opens a copied invitation link instead of sending it can create the account at the invited address without reading that mailbox; the account then belongs to the admin's organization only, and joining another organization takes that organization's own link, which goes to the mailbox. A reset from the mailbox replaces the admin's password and signs the admin out.
+
+On a stage without email, nobody can prove that they read a mailbox: the sign-in screen says that the server can't reset a password, and the person who chose the password keeps the account.
 
 ## Classifier
 
@@ -207,7 +234,7 @@ Before you start, write down the date, the commit of Rondyr, and the Cloudflare 
   - [ ] the classification queue and the delivery queue, each with its dead-letter queue, and four consumers on the Worker: one per queue and one per dead-letter queue;
   - [ ] the Cron trigger `* * * * *` on the Worker, and a **Last successful Cron run** on **Status** after the first sign-in;
   - [ ] the Durable Object classes of `wrangler.json`, listed under the Worker's bindings;
-  - [ ] the Rate Limiting binding `CLIENT_RATE_LIMIT` under the Worker's bindings. Cloudflare does not show rate limits elsewhere.
+  - [ ] the Rate Limiting bindings `CLIENT_RATE_LIMIT` and `TARGET_TEST_RATE_LIMIT` under the Worker's bindings. Cloudflare does not show rate limits elsewhere.
 - [ ] Check the security headers of the dashboard with the `curl` command of [First deployment](#first-deployment).
 
 ### 3. First account and first message

@@ -5,8 +5,7 @@ import { StuckSubmissions } from "../domain/submissions/operations-status.ts";
 import { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import { retryStuckSubmission } from "../jobs/submission-outbox.ts";
 import { OperationsStore } from "../ports/operations-status.ts";
-import { StuckSubmissionNotFound } from "../ports/outbox.ts";
-import { reviewer } from "./review-routes.ts";
+import { authorize } from "./organization-access.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const SubmissionPath = OrganizationPath.mapFields((fields) => ({
@@ -29,6 +28,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
+        PermissionDenied: () => empty(403),
+        OrganizationNotFound: () => empty(404),
         StuckSubmissionNotFound: () => empty(404),
         SubmissionNotStuck: () => empty(409),
         SchemaError: () => empty(400),
@@ -36,24 +37,10 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
     }),
   );
 
-/**
- * The account that reads and retries the stuck submissions of an organization.
- * Every member may do both; the roles of #11 restrict them here. The adapters
- * also check the organization in each query.
- */
-const stuckOperator = Effect.fn("StuckSubmissionRoute.operator")(function* (
-  organizationId: OrganizationId,
-) {
-  const { userId, organizations } = yield* reviewer();
-  if (!organizations.some(({ id }) => id === organizationId)) {
-    return yield* StuckSubmissionNotFound.make();
-  }
-  return userId;
-});
-
 const list = Effect.gen(function* () {
   const { organizationId } = yield* HttpRouter.schemaPathParams(OrganizationPath);
-  const userId = yield* stuckOperator(organizationId);
+  // The stuck submissions belong to the status page, which is an admin's.
+  const { userId } = yield* authorize(organizationId, "read-operations");
   const store = yield* OperationsStore;
   const stuck = yield* store.stuck(userId, organizationId);
   return yield* stuckJson(stuck, jsonOptions);
@@ -61,7 +48,7 @@ const list = Effect.gen(function* () {
 
 const retry = Effect.gen(function* () {
   const scope = yield* HttpRouter.schemaPathParams(SubmissionPath);
-  const userId = yield* stuckOperator(scope.organizationId);
+  const { userId } = yield* authorize(scope.organizationId, "retry-stuck-submissions");
   yield* retryStuckSubmission(scope);
   const store = yield* OperationsStore;
   const stuck = yield* store.stuck(userId, scope.organizationId);

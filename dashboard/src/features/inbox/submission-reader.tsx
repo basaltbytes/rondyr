@@ -1,12 +1,27 @@
+import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { cn } from "cn";
 import { Schema } from "effect";
-import { Archive, Check, ChevronDown, ChevronLeft, ChevronUp, RotateCw } from "lucide-react";
-import { useActionState, useEffect, useState } from "react";
+import {
+  Archive,
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronUp,
+  RotateCw,
+  Trash2,
+} from "lucide-react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
 import { useFormats } from "~/lib/i18n";
-import { getSubmission, InboxRequestError, reviewSubmission } from "~/lib/inbox-client";
+import { FormProblem } from "~/components/text-field";
+import {
+  deleteSubmission,
+  getSubmission,
+  InboxRequestError,
+  reviewSubmission,
+} from "~/lib/inbox-client";
 import type { Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
 
 import { DeliveryHistory } from "./delivery-history.tsx";
@@ -46,6 +61,85 @@ interface SubmissionReaderProps {
   /** The message as the API returns it once it is accepted, archived or sent back to the filter. */
   readonly onReviewed: (submission: Submission) => void;
   readonly onClose: () => void;
+  /** Whether the role of the account allows deleting the message. */
+  readonly mayDelete: boolean;
+  /** Whether the role of the account allows retrying a failed delivery. */
+  readonly mayRetry: boolean;
+  /** The message was deleted for good. */
+  readonly onDeleted: () => void;
+}
+
+interface DeletionProps {
+  readonly inboxId: Inbox["id"];
+  readonly submissionId: Submission["submissionId"];
+  readonly onDeleted: () => void;
+}
+
+/**
+ * Deletes the message for good, after a confirmation in the page: a browser
+ * dialog would let a page of another origin answer for the person.
+ */
+function Deletion({ inboxId, submissionId, onDeleted }: DeletionProps) {
+  const { t } = useTranslation();
+  const [confirming, setConfirming] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [failed, remove, removing] = useActionState(async () => {
+    try {
+      await deleteSubmission(inboxId, submissionId);
+    } catch (error) {
+      // Another admin deleted it first: it is gone either way.
+      if (!isRequestError(error) || error.status !== 404) return true;
+    }
+    setConfirming(false);
+    onDeleted();
+    return false;
+  }, false);
+
+  return (
+    <>
+      <Button
+        ref={trigger}
+        variant="ghost"
+        size="icon"
+        aria-label={t("inbox.reader.delete.action")}
+        onClick={() => setConfirming(true)}
+      >
+        <Trash2 aria-hidden="true" className="size-4" />
+      </Button>
+      <AlertDialog.Root
+        open={confirming}
+        onOpenChange={(open) => {
+          if (!open && !removing) setConfirming(false);
+        }}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-scrim" />
+          <AlertDialog.Popup
+            finalFocus={trigger}
+            className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-sm -translate-1/2 gap-3 rounded-lg border bg-card p-5 text-foreground shadow-popover outline-hidden"
+          >
+            <AlertDialog.Title className="text-base font-semibold">
+              {t("inbox.reader.delete.title")}
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm text-pretty text-muted-foreground">
+              {t("inbox.reader.delete.description")}
+            </AlertDialog.Description>
+            <form action={remove} className="grid gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                <AlertDialog.Close disabled={removing} render={<Button variant="ghost" />}>
+                  {t("common.cancel")}
+                </AlertDialog.Close>
+                <Button type="submit" variant="default" disabled={removing}>
+                  {removing ? t("inbox.reader.delete.deleting") : t("inbox.reader.delete.confirm")}
+                </Button>
+              </div>
+              <FormProblem>{failed ? t("inbox.reader.delete.failed") : null}</FormProblem>
+            </form>
+          </AlertDialog.Popup>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+    </>
+  );
 }
 
 /**
@@ -64,6 +158,9 @@ export function SubmissionReader({
   onNext,
   onReviewed,
   onClose,
+  mayDelete,
+  mayRetry,
+  onDeleted,
 }: SubmissionReaderProps) {
   const { t } = useTranslation();
   const format = useFormats();
@@ -149,8 +246,12 @@ export function SubmissionReader({
             </p>
           </div>
         )}
+        <span className="flex-1" />
+        {mayDelete && (
+          <Deletion inboxId={inboxId} submissionId={submissionId} onDeleted={onDeleted} />
+        )}
         {entry.status === "quarantined" && (
-          <form action={decide} className="ml-auto flex gap-2">
+          <form action={decide} className="flex gap-2">
             {entry.reason === "classification-error" && (
               // Only a message the filter could not analyze can go back to it.
               <Button type="submit" name="decision" value="reclassify" disabled={pending}>
@@ -251,7 +352,12 @@ export function SubmissionReader({
             </dl>
           )}
           {entry.status === "accepted" && (
-            <DeliveryHistory inboxId={inboxId} submissionId={submissionId} revision={revision} />
+            <DeliveryHistory
+              inboxId={inboxId}
+              submissionId={submissionId}
+              revision={revision}
+              canRetry={mayRetry}
+            />
           )}
         </article>
       </div>

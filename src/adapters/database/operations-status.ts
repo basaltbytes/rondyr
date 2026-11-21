@@ -12,13 +12,17 @@ import { OperationsStore } from "../../ports/operations-status.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
 
-const members = `SELECT organization_id FROM organization_members WHERE user_id = ?`;
+// The organizations to read, as a JSON array.
+const members = `SELECT value FROM json_each(?)`;
+const encodeIds = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(OrganizationId)));
 // Each outbox event with its submission. The queries below read the events through the
 // partial indexes `outbox_due_idx` and `outbox_stuck_idx`: CROSS JOIN keeps SQLite from
 // reading every submission of the organization first.
 const events = `outbox_events e CROSS JOIN submissions s ON s.id = e.submission_id`;
 const due = `e.handed_off_at IS NULL AND e.stuck_at IS NULL`;
 const stuckEvents = `e.handed_off_at IS NULL AND e.stuck_at IS NOT NULL`;
+// The organizations of the account, for the list of one organization's stuck submissions.
+const membership = `SELECT organization_id FROM organization_members WHERE user_id = ?`;
 const last24hMs = 24 * 60 * 60 * 1000;
 /** The stuck submissions a page lists; the count covers them all. */
 const stuckListLimit = 50;
@@ -47,8 +51,9 @@ const decodeStuckCount = Schema.decodeUnknownEffect(
 const decodeStuck = Schema.decodeUnknownEffect(Schema.Array(StuckSubmission));
 
 const read = Effect.fn("OperationsStore.read")(
-  function* (userId: typeof UserId.Type) {
+  function* (organizationIds: ReadonlyArray<OrganizationId>) {
     const db = yield* database;
+    const ids = yield* encodeIds(organizationIds);
     const now = yield* Clock.currentTimeMillis;
     const since = now - last24hMs;
     const [organizations, outbox, deliveries, quarantines] = yield* d1(() =>
@@ -61,7 +66,7 @@ const read = Effect.fn("OperationsStore.read")(
         ) AS receivedLast24h
         FROM organizations o WHERE o.id IN (${members}) ORDER BY o.name, o.id
       `)
-          .bind(since, userId),
+          .bind(since, ids),
         db
           .prepare(`
         SELECT id, SUM(pending) AS count, MAX(0, ? - MIN(receivedAt)) AS oldestAgeMs,
@@ -75,14 +80,14 @@ const read = Effect.fn("OperationsStore.read")(
         )
         GROUP BY id
       `)
-          .bind(now, userId, userId),
+          .bind(now, ids, ids),
         db
           .prepare(`
         SELECT s.organization_id AS id, d.status, COUNT(*) AS count
         FROM submissions s JOIN deliveries d ON d.submission_id = s.id
         WHERE s.organization_id IN (${members}) GROUP BY s.organization_id, d.status
       `)
-          .bind(userId),
+          .bind(ids),
         db
           .prepare(`
         SELECT s.organization_id AS id, i.reason, COUNT(*) AS count
@@ -90,7 +95,7 @@ const read = Effect.fn("OperationsStore.read")(
         WHERE s.organization_id IN (${members}) AND s.received_at >= ? AND i.status = 'quarantined'
         GROUP BY s.organization_id, i.reason
       `)
-          .bind(userId, since),
+          .bind(ids, since),
       ]),
     );
     const rows = yield* decodeOrganizations(organizations?.results);
@@ -120,7 +125,7 @@ const stuck = Effect.fn("OperationsStore.stuck")(
   function* (userId: typeof UserId.Type, organizationId: OrganizationId) {
     const db = yield* database;
     const stuckIn = `${stuckEvents}
-      AND s.organization_id = ? AND s.organization_id IN (${members})`;
+      AND s.organization_id = ? AND s.organization_id IN (${membership})`;
     const [count, rows] = yield* d1(() =>
       db.batch([
         db

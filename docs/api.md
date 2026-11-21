@@ -1,6 +1,6 @@
 # API tokens
 
-An organization member can create or revoke tokens in **Settings → API tokens**. Enter a name that identifies the client, then copy the token: Rondyr shows it once, right after creation, and never again. The list shows each token's name, creation date and last four characters. Each organization can have up to ten active tokens. Revoking a token frees a slot, and the next request with that token gets `401`; a revoked token can't be reactivated.
+An admin of the organization can create or revoke tokens in **Settings → API tokens**; a reviewer gets `403`. A token has the rights of a reviewer of its organization, never more, and only on the routes below. Enter a name that identifies the client, then copy the token: Rondyr shows it once, right after creation, and never again. The list shows each token's name, creation date and last four characters. Each organization can have up to ten active tokens. Revoking a token frees a slot, and the next request with that token gets `401`; a revoked token can't be reactivated. Removing a member from the organization revokes the tokens that this member created, in the same transaction; the removal dialog says how many before the admin confirms.
 
 ## Authentication
 
@@ -12,7 +12,7 @@ curl --fail-with-body \
   https://rondyr.example.com/api/organizations
 ```
 
-The response is an array with one entry, the token's organization: `id`, `name`, and `forms`, each form with `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` and `turnstileSiteKey`. Use the organization's `id` in the review routes below.
+The response is an array with one entry, the token's organization: `id`, `name`, `role` (always `reviewer` for a token), and `forms`, each form with `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` and `turnstileSiteKey`. Use the organization's `id` in the review routes below.
 
 ## Routes
 
@@ -21,7 +21,7 @@ Paths beginning with `/{organizationId}` in this table are relative to `/api/org
 | Method | Path | Result |
 | --- | --- | --- |
 | `GET` | `/api/organizations` | An array with the token's organization and its forms |
-| `GET` | `/{organizationId}/submissions` | Up to 25 submissions, newest first, and a cursor for the next page. Optional filters are `status`, `form` (the form's public ID), and `after` (the cursor) |
+| `GET` | `/{organizationId}/submissions` | Up to 25 submissions, newest first, and a cursor for the next page. Optional filters are `status`, `form` (the form's public ID), `q` (text to find in the field values, 3 to 100 characters, ignoring the case of ASCII letters; `%` and `_` are ordinary characters), and `after` (the cursor) |
 | `GET` | `/{organizationId}/submission-counts` | Submission counts by status for the organization and each form with submissions |
 | `GET` | `/{organizationId}/submissions/{submissionId}` | Submission detail |
 | `POST` | `/{organizationId}/submissions/{submissionId}/approve` | Accepts a quarantined submission and returns its updated detail |
@@ -58,7 +58,7 @@ A request with an `Authorization` header on this route is a server intake, whate
 
 ### Idempotency key
 
-Send an `Idempotency-Key` header to make retries safe. The key has 1 to 128 printable ASCII characters; another value gets `400`. Its scope is the form, and it never expires: it lives as long as the submission it names.
+Send an `Idempotency-Key` header to make retries safe. The key has 1 to 128 printable ASCII characters; another value gets `400`. Its scope is the form, and it never expires: it lives as long as the submission it names. Deleting that submission, by hand or through the organization's retention period, frees the key: a later request with the same key stores a new submission. An export never contains the key.
 
 The first request with a key stores the message and answers `202`. A later request with the same key on the same form answers `202` with the ID of the first submission: Rondyr stores nothing, publishes nothing, and doesn't compare the bodies. Two requests with the same key at the same moment store a single submission, and both get its ID. The same key on another form is a different key.
 
@@ -118,4 +118,4 @@ These routes take the dashboard's Better Auth session from the same origin, and 
 | `POST` | Base path with JSON `{"name":"Site inbox"}` | `201` with the metadata and a `token` field. This is the only response that contains the token, and it has `Cache-Control: no-store` |
 | `DELETE` | Base path with `?id={tokenId}` | `204` after revocation |
 
-Creation returns `400` for an invalid name and `409` when the organization already has ten active tokens. Names have 1 to 100 characters after trimming. An account that isn't a member of the organization gets `404`, and so does a revocation of a token that doesn't exist or is already revoked.
+Creation returns `400` for an invalid name and `409` when the organization already has ten active tokens. Names have 1 to 100 characters after trimming. A reviewer of the organization gets `403`. An account that isn't a member of the organization gets `404`, and so does a revocation of a token that doesn't exist or is already revoked.

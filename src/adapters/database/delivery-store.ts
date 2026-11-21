@@ -13,7 +13,7 @@ import {
   type DeliveryTransition,
 } from "../../domain/deliveries/delivery.ts";
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
-import { SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
 import {
   DeliveryNotFound,
   DeliveryNotRetryable,
@@ -33,7 +33,9 @@ const Started = Schema.Struct({ attempt_count: Schema.Int });
 const Recorded = Schema.Struct({ attempt: Schema.Int });
 const Status = Schema.Struct({ status: DeliveryStatus });
 const Context = Schema.Struct({
+  delivery_created_at: Schema.Int,
   target_id: TargetId,
+  organization_id: OrganizationId,
   type: TargetType,
   configuration: Schema.fromJsonString(NotificationTarget.fields.configuration),
   submission_id: SubmissionId,
@@ -87,13 +89,16 @@ const create = Effect.fn("DeliveryStore.create")(function* (
   );
   const targets = yield* decodeTargets(rows.results).pipe(Effect.mapError(unreadable));
   if (targets.length === 0) return 0;
+  // A message deleted since the read above gets no delivery: without the
+  // condition, its foreign key would fail the insert, and the policy would retry
+  // a schedule that can never succeed.
   yield* d1(() =>
     db.batch(
       targets.map(({ id }) =>
         db
           .prepare(`
       INSERT INTO deliveries (id, submission_id, target_id, next_attempt_at, created_at, updated_at)
-      VALUES (?1, ?2, ?3, ?4, ?4, ?4)
+      SELECT ?1, ?2, ?3, ?4, ?4, ?4 WHERE EXISTS (SELECT 1 FROM submissions WHERE id = ?2)
       ON CONFLICT (submission_id, target_id) DO NOTHING
     `)
           .bind(SecureRandom.uuidV4Unsafe(), accepted.submissionId, id, now),
@@ -193,7 +198,9 @@ const start = Effect.fn("DeliveryStore.start")(function* (
         .bind(deliveryId, lease.now, lease.until),
       db
         .prepare(`
-      SELECT t.id AS target_id, t.type, t.configuration, s.id AS submission_id, s.received_at,
+      SELECT d.created_at AS delivery_created_at, t.id AS target_id, t.organization_id, t.type,
+        t.configuration, s.id AS submission_id,
+        s.received_at,
         f.public_id AS form_public_id, f.name AS form_name, s.fields
       FROM deliveries d
         JOIN notification_targets t ON t.id = d.target_id
@@ -215,7 +222,13 @@ const start = Effect.fn("DeliveryStore.start")(function* (
     deliveryId,
     attempt: attempt.attempt,
     seriesAttempt: series.attempt_count,
-    target: { id: row.target_id, type: row.type, configuration: row.configuration },
+    createdAt: row.delivery_created_at,
+    target: {
+      id: row.target_id,
+      organizationId: row.organization_id,
+      type: row.type,
+      configuration: row.configuration,
+    },
     submission: {
       id: row.submission_id,
       receivedAt: row.received_at,

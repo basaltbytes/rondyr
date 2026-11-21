@@ -6,6 +6,7 @@ import {
   HttpServerResponse,
 } from "effect/http";
 
+import { apiTokenRole } from "../domain/organizations/member-role.ts";
 import { InboxOrganizationWithForms, SetupInbox } from "../domain/submissions/inbox-setup.ts";
 import {
   InboxFilter,
@@ -14,13 +15,8 @@ import {
   SubmissionDetail,
 } from "../domain/submissions/inbox.ts";
 import { ReviewApi } from "../domain/submissions/review.api.ts";
-import {
-  CurrentReviewer,
-  ReviewSession,
-  ReviewUnauthorized,
-} from "../domain/submissions/review-session.middleware.ts";
-import { OrganizationId, SubmissionId, UserId } from "../domain/submissions/submission.id.ts";
-import { Authentication } from "../ports/authentication.ts";
+import { CurrentReviewer, ReviewSession } from "../domain/submissions/review-session.middleware.ts";
+import { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import { OrganizationDirectory } from "../ports/organization-directory.ts";
 import { OrganizationQuotas } from "../ports/organization-quotas.ts";
 import {
@@ -31,6 +27,7 @@ import {
   organizationPath,
   submissionsPath,
 } from "./api-token-authentication.ts";
+import { signedInAccount } from "./organization-access.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const SubmissionPath = Schema.Struct({
@@ -45,6 +42,7 @@ const ListParams = OrganizationPath.mapFields((fields) => ({
   ...fields,
   status: InboxFilter.fields.status,
   form: InboxFilter.fields.formPublicId,
+  q: InboxFilter.fields.search,
   after: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(160))),
 }));
 
@@ -53,23 +51,19 @@ const quotaReached = HttpServerResponse.schemaJson(
   Schema.Struct({ error: Schema.Literal("classification-quota-reached") }),
 );
 
-/** The signed-in account and its organizations, or `ReviewUnauthorized`. */
-export const reviewer = Effect.fn("ReviewRoute.reviewer")(function* () {
-  const auth = yield* Authentication;
-  const incoming = yield* HttpServerRequest.HttpServerRequest;
-  const request = yield* HttpServerRequest.toWeb(incoming);
-  const user = yield* auth.userId(request);
-  if (user === null) return yield* ReviewUnauthorized.make();
-  const userId = yield* Schema.decodeEffect(UserId)(user);
+/** The signed-in account and its organizations, each with the account's role in it. */
+const memberships = Effect.gen(function* () {
+  const userId = yield* signedInAccount();
   const directory = yield* OrganizationDirectory;
   const organizations = yield* directory.organizationsFor(userId);
   return { userId, organizations };
 });
 
-const sessionReviewer = reviewer().pipe(
+/** The domain decides each review right from these roles, with `allows`. */
+const sessionReviewer = memberships.pipe(
   Effect.map(({ userId, organizations }) => ({
     userId,
-    organizations: organizations.map(({ id }) => id),
+    memberships: organizations.map(({ id, role }) => ({ organizationId: id, role })),
   })),
 );
 
@@ -78,7 +72,10 @@ const reviewClient = Effect.gen(function* () {
   const actor =
     token === null
       ? yield* sessionReviewer
-      : { apiTokenId: token.apiTokenId, organizations: [token.organizationId] };
+      : {
+          apiTokenId: token.apiTokenId,
+          memberships: [{ organizationId: token.organizationId, role: apiTokenRole }],
+        };
   const session = ReviewSession.of((effect) =>
     Effect.provideService(effect, CurrentReviewer, actor),
   );
@@ -98,6 +95,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => errorResponse(401),
         AuthOriginRefused: () => errorResponse(403),
+        PermissionDenied: () => errorResponse(403),
         SubmissionNotFound: () => errorResponse(404),
         SubmissionNotReviewable: () => errorResponse(409),
         SubmissionNotReclassifiable: () => errorResponse(409),
@@ -113,11 +111,11 @@ const organizationList = Effect.gen(function* () {
   if (token !== null) {
     const inbox = yield* directory.inboxFor(token.organizationId);
     return yield* HttpServerResponse.schemaJson(Schema.Array(InboxOrganizationWithForms))(
-      inbox === null ? [] : [inbox],
+      inbox === null ? [] : [{ ...inbox, role: apiTokenRole }],
       jsonOptions,
     );
   }
-  const { organizations, userId } = yield* reviewer();
+  const { organizations, userId } = yield* memberships;
   const inboxes = yield* Effect.forEach(organizations, (organization) =>
     Effect.map(directory.formsOf(userId, organization.id), (forms) => ({ ...organization, forms })),
   );
@@ -127,8 +125,9 @@ const organizationList = Effect.gen(function* () {
   );
 });
 
+/** Any signed-in account can create an organization, and becomes its admin. */
 const create = Effect.gen(function* () {
-  const { userId } = yield* reviewer();
+  const userId = yield* signedInAccount();
   const input = yield* HttpServerRequest.schemaBodyJson(SetupInbox);
   const directory = yield* OrganizationDirectory;
   yield* directory.create(userId, input);
@@ -137,9 +136,13 @@ const create = Effect.gen(function* () {
 
 const list = Effect.gen(function* () {
   const client = yield* reviewClient;
-  const { after, form, ...input } = yield* HttpRouter.schemaParams(ListParams);
+  const { after, form, q, ...input } = yield* HttpRouter.schemaParams(ListParams);
   const page = yield* client.ListSubmissions(
-    form === undefined ? input : { ...input, formPublicId: form },
+    {
+      ...input,
+      ...(form !== undefined && { formPublicId: form }),
+      ...(q !== undefined && { search: q }),
+    },
     after === undefined ? {} : { after },
   );
   return yield* HttpServerResponse.schemaJson(InboxPage)(page, jsonOptions);
@@ -159,35 +162,57 @@ const detail = Effect.gen(function* () {
   return yield* HttpServerResponse.schemaJson(SubmissionDetail)(submission, jsonOptions);
 });
 
+/** The refusals of the domain model, after which a reclassification gives its slot back. */
+const refusals = new Set([
+  "SubmissionNotFound",
+  "SubmissionNotReviewable",
+  "SubmissionNotReclassifiable",
+]);
+
+/**
+ * Send the message back to classification. A new run calls the model again, so
+ * every request takes a slot of the organization's daily classification quota,
+ * as intake does, before the aggregate decides from its own state; a request
+ * that the aggregate refuses gives its slot back. A request over the quota is
+ * refused and the message stays where it is.
+ */
+const reclassify = Effect.fnUntraced(function* (
+  client: Effect.Success<typeof reviewClient>,
+  input: typeof SubmissionPath.Type,
+  inboxReason: typeof SubmissionDetail.Type.reason,
+) {
+  const quotas = yield* OrganizationQuotas;
+  const reservation = yield* quotas.reserveClassification(input.organizationId);
+  if (reservation === "limit-reached") return null;
+  return yield* client
+    .ReclassifySubmission(input.submissionId, inboxReason === null ? {} : { inboxReason })
+    .pipe(
+      Effect.tapError((error) =>
+        refusals.has(error._tag)
+          ? quotas.releaseClassification(input.organizationId).pipe(Effect.ignore)
+          : Effect.void,
+      ),
+    );
+});
+
 const review = Effect.gen(function* () {
   const client = yield* reviewClient;
   const { decision, ...input } = yield* HttpRouter.schemaPathParams(ReviewPath);
-  const { status, reason } = yield* client.GetSubmission(input);
-  // A new run calls the model again, so it takes a slot of the organization's daily
-  // classification quota, as intake does. The aggregate still decides whether the
-  // message can go back to classification.
-  if (decision === "reclassify" && status === "quarantined" && reason === "classification-error") {
-    const quotas = yield* OrganizationQuotas;
-    const reservation = yield* quotas.reserveClassification(input.organizationId);
-    if (reservation === "limit-reached") {
-      return yield* quotaReached(
-        { error: "classification-quota-reached" },
-        {
-          status: 429,
-          ...jsonOptions,
-        },
-      );
-    }
-  }
+  // Reading the message first answers 404 outside the account's organizations,
+  // before any quota is touched.
+  const { reason } = yield* client.GetSubmission(input);
   const receipt =
     decision === "approve"
       ? yield* client.ApproveSubmission(input.submissionId)
       : decision === "dismiss"
         ? yield* client.DismissSubmission(input.submissionId)
-        : yield* client.ReclassifySubmission(
-            input.submissionId,
-            reason === null ? {} : { inboxReason: reason },
-          );
+        : yield* reclassify(client, input, reason);
+  if (receipt === null) {
+    return yield* quotaReached(
+      { error: "classification-quota-reached" },
+      { status: 429, ...jsonOptions },
+    );
+  }
   const submission = yield* client.GetSubmission(input, { atLeast: receipt });
   return yield* HttpServerResponse.schemaJson(SubmissionDetail)(submission, jsonOptions);
 });

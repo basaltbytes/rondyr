@@ -10,8 +10,9 @@ import type { StorageUnavailable } from "./storage.ts";
 export class OperationsStore extends Context.Service<
   OperationsStore,
   {
+    /** The processing status of these organizations. */
     readonly read: (
-      userId: typeof UserId.Type,
+      organizations: ReadonlyArray<OrganizationId>,
     ) => Effect.Effect<ReadonlyArray<typeof OrganizationStatus.Type>, StorageUnavailable>;
     /** The stuck submissions of an organization the account is a member of, oldest first. */
     readonly stuck: (

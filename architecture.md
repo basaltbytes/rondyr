@@ -1,7 +1,7 @@
 # Rondyr: technical architecture
 
 > **Tagline:** *The gatekeeper for your forms.*
-> **Status:** v0.1 in progress, document updated on 20 November 2026.
+> **Status:** v0.1 in progress, document updated on 21 November 2026.
 > **Production:** `https://rondyr.basaltbytes.com` (stage `prod`).
 
 This document describes what is built and what remains to be done for v0.1. Each gap between the two refers to a GitHub issue. Section 12 gives the order of work.
@@ -20,21 +20,21 @@ What distinguishes Rondyr from a SaaS form service: the filtering takes the orga
 | --- | --- | --- |
 | Alchemy deployment and CI | Done: a push to `main` deploys `prod` after the checks, then checks its `/health`; another stage can be deployed by hand as a trial copy | Install checklist for a fresh account in [docs/deployment.md](docs/deployment.md#fresh-account-checklist), to run by a person |
 | First account, sessions, closed sign-up | Done | |
-| Organizations and forms | Done: adding, name, business context, suspension, success redirect and allowed origins per form | #11 for roles |
+| Organizations and forms | Done: adding, name, business context, suspension, success redirect and allowed origins per form; members with the `reviewer` or `admin` role, invitations | |
 | JSON, `application/x-www-form-urlencoded` and `multipart/form-data` intake without files | Done, including JSON from a browser on another origin | |
 | Intake limits | Done: size, schema, per-minute limits per client and per form, honeypot field, Turnstile and daily quotas per organization | |
 | Durable storage and outbox | Done | |
 | Classification and quarantine | Done: thresholds per classifier, policy per organization and optional escalation to a second model | |
-| Inbox and human review | Done | #11 for search, export and purge |
+| Inbox and human review | Done: search in the field values, export, deletion, retention per organization and hourly purge | |
 | API tokens per organization | Done (#59): a token reads its organization's inbox, accepts and archives messages, and sends submissions from a server with an idempotency key | |
 | EmDash plugin | Done (#59): `packages/emdash-plugin/`, the site's queue to Rondyr, the three folders in the EmDash admin, emails through the site's mailer | |
 | Deliveries: tables, queue, attempts and retries | Done | |
-| Delivery history, manual retry, test send | Done, in the dashboard | #11 for roles |
+| Delivery history, manual retry, test send | Done, in the dashboard | |
 | Signed webhook delivery | Done | |
-| Email delivery | Resend by default, Cloudflare Email Sending on the stages that choose it | Recipient confirmation (#11) |
+| Email delivery | Resend by default, Cloudflare Email Sending on the stages that choose it, to confirmed recipients only | |
 | Processing status and recovery procedures | Counters per organization, last successful Cron, stuck submissions and their retry, reclassification after a classifier error, dead-letter consumers, runbook | D1 restore and Worker rollback rehearsed by a person |
 
-A form can have webhook destinations and email destinations, configured from the dashboard or the admin API. An email destination has 1 to 10 recipients; the message goes out as plain text through the stage's email provider (Resend or Cloudflare Email Sending). A form without a destination keeps its accepted messages in the Inbox only. Under the fields of an accepted message, the dashboard shows its deliveries and their attempts, and lets you retry a failed delivery; each destination can receive a test message.
+A form can have webhook destinations and email destinations, configured from the dashboard or the admin API. An email destination has 1 to 10 recipients, and each one gets messages once its owner has confirmed it for the organization; the message goes out as plain text through the stage's email provider (Resend or Cloudflare Email Sending). A form without a destination keeps its accepted messages in the Inbox only. Under the fields of an accepted message, the dashboard shows its deliveries and their attempts, and lets you retry a failed delivery; each destination can receive a test message.
 
 A form can also have a list of allowed origins. A page served from another origin can then call it with `fetch`, and a browser on a site missing from the list gets `403`. An empty list allows every origin.
 
@@ -137,7 +137,7 @@ A server intake with an `Idempotency-Key` uses the same batch. Its first stateme
 
 `outbox_events` counts the publications of each event in `publication_count`, incremented with `published_at`. Before claiming, the Cron marks as stuck, in the same D1 batch, every due event that already has 12 publications: an hour of republication every 5 minutes without a hand-off. It sets `stuck_at` and logs `Outbox event stuck` with the submission ID, at error level. A stuck event is no longer due, for the Cron or for the direct path, and stays in D1 with its submission: nothing is lost. A send failure does not count, so a queue outage does not make events stuck.
 
-A member retries a stuck event by hand, from the **Status** page or with `POST /api/organizations/:organizationId/stuck-submissions/:submissionId/retry`. A single statement clears `stuck_at`, sets `publication_count` back to zero and makes the event due at once, then the route publishes it with the usual claim; the Cron picks it up if this publication fails. Two simultaneous retries count as one, since the second no longer finds a stuck event, and an event that is not stuck answers `409`.
+An admin of the organization retries a stuck event by hand, from the **Status** page or with `POST /api/organizations/:organizationId/stuck-submissions/:submissionId/retry`; the stuck submissions belong to the status page, so both stuck routes ask `authorize` for an admin's permission (`read-operations` to list, `retry-stuck-submissions` to retry), and `GET /api/operations` counts stuck events only for the organizations that the account administers. A single statement clears `stuck_at`, sets `publication_count` back to zero and makes the event due at once, then the route publishes it with the usual claim; the Cron picks it up if this publication fails. Two simultaneous retries count as one, since the second no longer finds a stuck event, and an event that is not stuck answers `409`.
 
 ### Handoff to the domain model
 
@@ -153,7 +153,7 @@ The `Classification` policy starts the `ClassifySubmission` saga on each `Classi
 
 #### Reclassification
 
-A message quarantined with the reason `classification-error` can be sent back to classification by a member, once the model is available again: `ReclassifySubmission` records `ReclassificationRequested` with the author, the aggregate goes back to `Classifying`, and the `Classification` policy starts a new run of `ClassifySubmission`. A saga started again with the same key returns its first run, so each run has its own key: the submission ID for the first one, `<submission ID>/<sequence number of the event>` for each reclassification; the input carries the submission ID. The command is refused with `409` for any other reason or state, and a repeated command ID records nothing. Each reclassification calls the model again, so it takes a slot of the organization's daily classification quota, as intake does for the first run: the route reserves it with `OrganizationQuotas.reserveClassification` once the Inbox shows the message in quarantine with `classification-error`, then sends the command. When the day's quota is used up, the route answers `429` with `{"error":"classification-quota-reached"}` and the message stays in quarantine. Two clicks at the same time can both take a slot before the aggregate refuses the second one with `409`; the number of model calls stays bounded by the quota.
+A message quarantined with the reason `classification-error` can be sent back to classification by a member, a reviewer included, as for an acceptance, once the model is available again: `ReclassifySubmission` records `ReclassificationRequested` with the author, the aggregate goes back to `Classifying`, and the `Classification` policy starts a new run of `ClassifySubmission`. A saga started again with the same key returns its first run, so each run has its own key: the submission ID for the first one, `<submission ID>/<sequence number of the event>` for each reclassification; the input carries the submission ID. The command is refused with `409` for any other reason or state, and a repeated command ID records nothing. Each reclassification calls the model again, so it takes a slot of the organization's daily classification quota, as intake does for the first run. The route reads the message first, so an account without a role gets `404` and touches no quota; it then reserves a slot with `OrganizationQuotas.reserveClassification` for every request, and sends the command, which the aggregate decides from its own state. A refusal of the aggregate (`409` or `404`) gives the slot back with `releaseClassification`, one statement that decrements the counter of the current UTC day only and never below zero, so refused requests cannot drain the quota. When the day's quota is used up, the route answers `429` with `{"error":"classification-quota-reached"}` and the message stays in quarantine. Two clicks at the same time both take a slot, and the refused one gives it back: one run, one slot.
 
 The aggregate state of a quarantined message keeps its reason. A message quarantined before this version has a state without a reason; the route then passes the reason that the Inbox shows, which the projection wrote from the same event, and the aggregate reads it only in that case.
 
@@ -182,7 +182,7 @@ If the Worker stops between the send and recording the result, the attempt stays
 
 The recipient can therefore receive the same delivery twice. Rondyr promises reliable retries and a deduplication ID, not exactly-once delivery end to end. The error summary, capped at 300 characters, comes from the provider, which must not put the message fields in it; the consumer logs contain only the IDs, the destination type and the result.
 
-The Worker composition declares two providers, for the `webhook` and `email` types; section 8 describes their rules. A type without a provider always fails without a retry.
+The Worker composition declares two providers, for the `webhook` and `email` types; section 8 describes their rules, including the confirmation of email recipients. A type without a provider always fails without a retry.
 
 #### Manual retry
 
@@ -192,7 +192,7 @@ A `failed` delivery can be retried from the dashboard. The retry keeps the deliv
 
 #### Test send
 
-A test send goes through the `sendTest` method of the `NotificationProvider` port, with the provider for the destination's type and the same checks as a delivery: configuration, URL, secrets, email provider. Each test gets a new ID and creates no submission, delivery or attempt; the route waits at most 30 seconds for the answer, without a retry. The webhook receives version 1 of the payload with the type `test`, and the email has "Test message" ("Message d’essai" in French) in its subject and its text. One test at a time per destination: the route keeps the destinations under test in memory, which only applies within one Worker instance.
+A test send goes through the `sendTest` method of the `NotificationProvider` port, with the provider for the destination's type and the same checks as a delivery: configuration, URL, secrets, email provider. Each test gets a new ID and creates no submission, delivery or attempt; the route waits at most 30 seconds for the answer, without a retry. The webhook receives version 1 of the payload with the type `test`, and the email has "Test message" ("Message d’essai" in French) in its subject and its text. An email test goes to the confirmed recipients only, like a delivery. A destination gets at most 3 tests per minute, counted by the Rate Limiting binding `TARGET_TEST_RATE_LIMIT` with the key `target-test:<targetId>` before the send: a fourth test answers `429` with `Retry-After: 60`, and a binding that does not answer refuses the test with `503`, since each email test uses the provider's quota and the reputation of the sending domain. The count is per Cloudflare location and approximate, as for the intake. Within one Worker instance, the route also keeps the destinations under test in memory and answers `409` to a second simultaneous test.
 
 The `email` provider builds the message and calls the `EmailSender` port, which does not depend on any email provider: it receives the sender, the recipients, the optional `Reply-To`, the subject, the text and the idempotency key, and tells apart a success, a permanent rejection (`EmailRejected`) and a failure to retry (`EmailUnavailable`). `RONDYR_EMAIL_PROVIDER` chooses the stage's adapter in `src/adapters/email/email-sender.ts`. It is `resend` by default and also accepts `cloudflare`. Resend uses the delivery ID as the idempotency key for 24 hours, which covers the six automatic attempts. With Cloudflare, an attempt interrupted after acceptance can send a duplicate on retry. The delivery ID stays in the message.
 
@@ -201,7 +201,6 @@ The `email` provider builds the message and calls the `EmailSender` port, which 
 - A stuck event shows in the logs (`Outbox event stuck`), on the **Status** page and in `GET /api/operations`; Rondyr sends no alert. [docs/operations.md](docs/operations.md#stuck-processing) says where to look.
 - The saga records only the final result; failed attempts leave no trace in the events.
 - The dead-letter consumers log and acknowledge; nothing replays a dead-lettered message, and nothing in D1 records that it was dead-lettered. The Cron republishes the event until it is stuck, and a delivery stays in its D1 state.
-- Test sends are limited only to one at a time per destination and per Worker instance. A member can send as many as they want, and each email counts against the quota of the stage's provider (#11).
 
 ## 5. Intelligent classification
 
@@ -282,16 +281,20 @@ State is split between two stores. D1 contains the configuration, the message co
 
 | Table | Content |
 | --- | --- |
-| `organizations` | `id`, `name`, `daily_submission_limit` (2,000 by default), `daily_classification_limit` (1,000 by default) |
-| `organization_members` | `(organization_id, user_id)`, without a role |
+| `organizations` | `id`, `name`, `daily_submission_limit` (2,000 by default), `daily_classification_limit` (1,000 by default), `accepted_retention_days` and `quarantine_retention_days` (empty to keep messages without limit, the default) |
+| `organization_members` | `(organization_id, user_id)`, `role` (`admin` or `reviewer`; every statement of the Worker names it, and the default `admin` covers the members that the Worker version before roles adds during a deployment) |
+| `organization_invitations` | `id`, `organization_id`, `email` (in lowercase), `role`, `token_hash` (SHA-256 of the link's secret, unique), `created_by`, `created_at`, `expires_at`, `accepted_at` and `cancelled_at` (empty while the invitation is pending) |
 | `organization_domains` | `(organization_id, domain)`, up to ten per organization |
 | `organization_classification_policies` | Custom classification settings, at most one row per organization |
 | `organization_daily_usage` | One row per organization with the last UTC day `day` and its counters: `submissions` (stored submissions other than junk), `classifications` and `junk` (stored junk, section 8) |
 | `forms` | `id`, `organization_id`, unique `public_id`, `name`, `business_context`, `status` (`active` by default, or `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (public) and `turnstile_secret` (encrypted). The last four fields are optional |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` is normalized: scheme, host and optional port, without a path or a trailing slash |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (optional), `sender_fingerprint` and `content_fingerprint` (optional), `prior_same_sender` and `prior_same_content`, `idempotency_key` (optional, unique per form) |
+| `submission_deletions` | `submission_id` (primary key), `organization_id`, `deleted_at`, `deleted_by` (the account, or empty for the retention period), `cause` (`request` or `retention`). No content |
+| `password_resets` | `token_hash` (SHA-256 of the link's secret, primary key), `user_id`, `created_at`, `expires_at`, `used_at` |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at`, `publication_count` (publications since intake or the last manual retry), `stuck_at` (when the Cron stopped publishing it) |
 | `submission_inbox` | `submission_id`, `version`, `status`, `reason`, `label` (optional) |
+| `email_recipient_confirmations` | `(organization_id, address)` with the address in lowercase, `token_hash` (SHA-256 of the pending link's secret, unique) and `token_expires_at`, `confirmed_at` (empty while pending), `emails_day` and `emails_sent` (the confirmation emails of the address on that UTC day), `created_at` |
 | `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON read by the provider of the type), `active`, `created_at`. For a webhook, `configuration` contains `url`, `secret` (encrypted) and `previousSecret` (`null`, or the previous encrypted secret and the end of its validity). For an email, it contains `recipients`, the list of recipients |
 | `deliveries` | `id` (stable UUID v4), `submission_id`, `target_id`, `status`, `attempt_count` (attempts of the current series), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at`; unique on `(submission_id, target_id)` |
 | `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numbers the attempts across the whole history, manual retries included |
@@ -311,6 +314,8 @@ The `turnstile-and-organization-quotas` migration adds the settings with `ALTER 
 The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
 The `stuck-outbox-events` migration adds `outbox_events.publication_count` (`NOT NULL`, default 0) and `outbox_events.stuck_at` with `ALTER TABLE`, without rebuilding the table. It replaces the partial index `outbox_pending_idx` with `outbox_due_idx`, on the same columns, which also leaves stuck events out, so the Cron's search for due events does not read them; drizzle-kit does not compare the condition of a partial index, hence the new name. It adds `outbox_stuck_idx` on `stuck_at` for the events that are stuck and not handed off. The status queries read the outbox through these two indexes, from the events to their submissions, so a status read costs the number of pending and stuck events rather than the number of submissions. Events stored before it start at zero publications, so an event that was already republished for hours becomes stuck an hour after the deployment.
+
+The `organization-administration` migration adds `organization_members.role` with `ALTER TABLE`, `NOT NULL` and the default `admin`, then gives every existing member the `admin` role: before roles, every member had every right. The default is not a right that the Worker grants: every statement that adds a member names the role. It covers the deployment, during which the previous Worker version still runs for a moment after the migration and adds the creator of a new organization without a role; with the default `reviewer`, that organization would have no admin. It creates `organization_invitations` with a unique index on `token_hash`, a partial unique index on `(organization_id, email)` limited to pending invitations, and an index on `(email, created_at)` for the daily count of invitation emails per address. `role` has no `CHECK` constraint, for the same reason as `forms.status`; `MemberRole` decodes it on every read. The same migration creates `email_recipient_confirmations`, with a unique index on `token_hash` and an index on `(address, emails_day)` for the daily count, and marks every recipient of the email destinations that exist at that moment as confirmed for its organization, so that they keep their deliveries. It adds `organizations.accepted_retention_days` and `organizations.quarantine_retention_days` with `ALTER TABLE`, without a default value: every organization keeps its messages, as before. It creates `submission_deletions` with an index on `(organization_id, deleted_at)`, and `password_resets` with an index on `(user_id, created_at)` for the daily count of links per account. The recipients that it confirms get `confirmed_at = 0`, before any delivery, so that a delivery created before the migration and retried after it still reaches them. It changes neither `forms` nor `submissions`.
 
 The `api-tokens` migration creates `api_tokens` with a unique index on `token_hash` and a partial index on `(organization_id, created_at, id)` limited to active tokens, which serves both the token list and the count of active tokens at creation. It changes no existing table.
 
@@ -332,12 +337,10 @@ The aggregate goes from `Unrecorded` to `Classifying`, then to `Quarantined` or 
 
 The visible statuses are `received`, `classifying`, `quarantined`, `accepted` and `archived`. The Inbox `reason` field contains the quarantine reason, including `turnstile-failed` or `quota` for these intake checks.
 
-Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the ID of the account or API token that decided, and deliveries only IDs, states and error summaries, which limits a purge to D1 rows (#11). Deleting a submission deletes its deliveries and their attempts.
+Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests, in the text of emails and in an export. Events contain only IDs, scores and the ID of the account or API token that decided, and deliveries only IDs, states and error summaries, so a deletion only has D1 rows to delete. Deleting a submission deletes its outbox event, its inbox row, its deliveries and their attempts, through the `ON DELETE CASCADE` foreign keys, which D1 enforces.
 
 ### Planned tables
 
-- Role in `organization_members` and invitations (#11).
-- Retention periods (#11).
 
 The `classification-attempts` and `audit-events` tables of the initial document are not planned: the aggregate's event stream records the decisions and who made them.
 
@@ -425,8 +428,15 @@ The dashboard uses the Better Auth session. Another program can call the review 
 | Route | Purpose |
 | --- | --- |
 | `POST /api/setup` | Creates the first account, with the setup token |
+| `POST /api/invitations/read` | Returns the invitation of a link (`{"token":…}`): `organizationName`, `email`, `role` and `account` (`existing` or `new`). An unknown, expired, accepted or cancelled invitation answers `404` with `{"error":"invitation-invalid"}`. No session is needed |
+| `POST /api/invitations/accept` | Accepts an invitation (`{"token":…}`). A signed-in account at the invited address joins with `200`; another account gets `403` with `{"error":"other-account"}`. Without a session, `name` and `password` create an account at the invited address and join, with `201`; if an account already has the address, `409` with `{"error":"sign-in-required"}` |
 | `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Better Auth session |
-| `GET /api/organizations` | The account's organizations and their forms. With an API token, only the token's organization and its forms |
+| `GET /api/organizations` | The account's organizations, its `role` in each and their forms. With an API token, only the token's organization and its forms, with the role `reviewer` |
+| `GET /api/organizations/:organizationId/members` | `{ "members", "invitations" }`: each member's `userId`, `name`, `email`, `role` and `activeApiTokens` (the active tokens that the member created, which its removal revokes), and the pending invitations with their `expiresAt` |
+| `POST /api/organizations/:organizationId/invitations` | Invites an address (`{"email":…,"role":…,"language":…}`, language `en` by default) and answers `201` with the invitation, its `link`, the only time it is shown, and what became of the email (`sent`, `no-provider`, `limit-reached` or `failed`). A new invitation replaces the pending one of the same address. `409` with `{"error":"already-member"}` or `{"error":"invitation-limit"}` (20 unexpired invitations) |
+| `DELETE /api/organizations/:organizationId/invitations?id=…` | Cancels a pending invitation: `204`, or `404` |
+| `PATCH /api/organizations/:organizationId/members/:userId` | Changes the role (`{"role":…}`) and returns the member; `409` with `{"error":"last-admin"}` for the last admin, `403` when the acting account stopped being an admin during the request |
+| `DELETE /api/organizations/:organizationId/members/:userId` | Removes the member and revokes the API tokens it created: `204`, `404` for an account that is not a member, `409` with `{"error":"last-admin"}` for the last admin, `403` when the acting account stopped being an admin during the request |
 | `GET /api/organizations/:organizationId/api-tokens` | Lists the active tokens, newest first, with their name, last four characters and creation date |
 | `POST /api/organizations/:organizationId/api-tokens` | Creates a token (`{"name":…}`) and returns its value, the only time it is shown, with `201` and `Cache-Control: no-store`. An eleventh active token gets `409` |
 | `DELETE /api/organizations/:organizationId/api-tokens?id=…` | Revokes the token for good and answers `204`, or `404` for a token that is unknown or already revoked |
@@ -449,20 +459,27 @@ The dashboard uses the Better Auth session. Another program can call the review 
 | `PUT /api/organizations/:organizationId/forms/:publicId/turnstile` | Turns Turnstile on or replaces both keys (`{ "siteKey", "secretKey" }`) if Siteverify recognizes the secret key. A refused key answers `400` with `{"error":"turnstile-secret-refused"}`, and an unreachable Siteverify `503` with `{"error":"siteverify-unavailable"}`; the stored keys do not change. Without an encryption key, answers `503` with `{"error":"secrets-key-missing"}` |
 | `GET /api/organizations/:organizationId/forms/:publicId/turnstile` | Decrypts the stored secret key, asks Siteverify about it with `checkSecret`, and returns `{"state":…}`: `working`, `refused` (Siteverify no longer knows the key), `unreadable` (the key does not decrypt with the current `RONDYR_SECRETS_KEY`, or that variable is missing) or `unchecked` (Siteverify did not answer). Writes nothing. A form without Turnstile answers `404`, like another organization's form, and neither calls Siteverify |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/turnstile` | Turns Turnstile off and erases both keys |
-| `GET /api/organizations/:organizationId/submissions` | Paginated list (`status`, `form`, `after`), 25 messages per page, each with a preview of its fields (`preview`): each value is cut at 240 characters, so that a page of long messages stays light. `form` is the public ID of a form and narrows the list to its messages |
+| `GET /api/organizations/:organizationId/submissions` | Paginated list (`status`, `form`, `q`, `after`), 25 messages per page, each with a preview of its fields (`preview`): each value is cut at 240 characters, so that a page of long messages stays light. `form` is the public ID of a form and narrows the list to its messages |
+| `GET /api/organizations/:organizationId/submission-export?format=csv` or `jsonl` | The list with the same filters (`status`, `form`, `q`), newest first, with the full fields: at most 10,000 messages, streamed page by page, with `Cache-Control: no-store`, `Content-Disposition: attachment` and `Rondyr-Export-Truncated: true` when the list has more. The CSV has a column per field name, at most 100 of them: the names that the most exported messages use, since visitors choose the names. The fields of a message without a column go to a last `other_fields` column, as a JSON object. A value that a spreadsheet would run as a formula gets an apostrophe before it; a JSON Lines line has `submissionId`, `receivedAt` (ISO 8601), `form`, `status`, `reason`, `label` and `fields` |
+| `DELETE /api/organizations/:organizationId/submissions/:submissionId` | Deletes the message and what depends on it, logs the deletion, and answers `204`, or `404` |
+| `GET /api/organizations/:organizationId/retention`, `PUT` the same | The retention periods `{ "accepted", "quarantine" }`, each a number of days from 1 to 3,650 or `null` for no limit. An invalid body answers `400` |
 | `GET /api/organizations/:organizationId/submission-counts` | Number of the organization's messages per status, and in `forms` the same count for each form that has at least one message (`[{"publicId", "counts"}]`) |
 | `GET /api/organizations/:organizationId/submissions/:submissionId` | Message detail |
 | `POST /api/organizations/:organizationId/submissions/:submissionId/approve` or `/dismiss` | Review decision |
 | `POST /api/organizations/:organizationId/submissions/:submissionId/reclassify` | Sends a message quarantined with `classification-error` back to classification and returns its detail; `409` for another reason or status, `429` with `{"error":"classification-quota-reached"}` when the organization's daily classification quota is used up. Not open to API tokens |
-| `GET /api/operations` | Processing status of every organization of the account (section 11) |
-| `GET /api/organizations/:organizationId/stuck-submissions` | `{"count", "submissions"}`: the number of stuck submissions and the 50 oldest, each with `submissionId`, `formPublicId`, `formName`, `receivedAt` and `stuckAt`, without the fields |
-| `POST /api/organizations/:organizationId/stuck-submissions/:submissionId/retry` | Publishes a stuck submission again with its count back to zero, and returns the stuck submissions left; `409` if it is not stuck, `404` if it does not exist in the organization |
+| `GET /api/operations` | Processing status of every organization that the account administers (section 11) |
+| `GET /api/organizations/:organizationId/stuck-submissions` | Admins only. `{"count", "submissions"}`: the number of stuck submissions and the 50 oldest, each with `submissionId`, `formPublicId`, `formName`, `receivedAt` and `stuckAt`, without the fields |
+| `POST /api/organizations/:organizationId/stuck-submissions/:submissionId/retry` | Admins only. Publishes a stuck submission again with its count back to zero, and returns the stuck submissions left; `409` if it is not stuck, `404` if it does not exist in the organization |
 | `GET /api/organizations/:organizationId/forms/:publicId/targets` | The form's webhook and email destinations, each with its `type`, without the secrets |
 | `POST /api/organizations/:organizationId/forms/:publicId/targets` | Creates a webhook (`{"type":"webhook","url":…}`) and returns its secret, only once, or an email destination (`{"type":"email","recipients":[…],"language":"en"}`, language `en` or `fr`, `en` by default) |
 | `POST /api/organizations/:organizationId/targets/:targetId/rotate-secret` | Returns a new webhook secret |
 | `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Replaces the recipients of an email destination (`{"recipients":[…]}`), and its language if the body also contains `"language"` |
 | `POST /api/organizations/:organizationId/targets/:targetId/activate` or `/deactivate` | Activates or deactivates the destination |
-| `POST /api/organizations/:organizationId/targets/:targetId/test` | Sends a test message and returns `{"testId","outcome","summary"}`; `409` if a test of this destination is running |
+| `POST /api/organizations/:organizationId/targets/:targetId/test` | Sends a test message and returns `{"testId","outcome","summary"}`; `409` if a test of this destination is running, `429` after 3 tests in a minute, `503` with `{"error":"test-limit-unavailable"}` when the Rate Limiting binding does not answer |
+| `POST /api/organizations/:organizationId/targets/:targetId/confirmations` | Sends the confirmation email of a pending recipient again (`{"address":…}`) with a new link: `202`; `409` with `{"error":"recipient-confirmed"}`, `429` with `{"error":"confirmation-limit"}` and `Retry-After` until midnight UTC, `404` for another address |
+| `POST /api/recipient-confirmations` | Confirms the address of a link (`{"token":…}`) for its organization: `204`, or `404` with `{"error":"confirmation-invalid"}` for an unknown, expired or used link. No session is needed, and the answer names neither the organization nor the form |
+| `POST /api/password-resets` | Asks for a reset link (`{"email":…,"language":…}`): `202` whether an account has the address or not, or `503` with `{"error":"email-provider-missing"}` on a stage without email. No session is needed |
+| `POST /api/password-resets/complete` | Sets a new password with the secret of a link (`{"token":…,"password":…}`): `204`, `400` for a password outside 12 to 128 characters, or `404` with `{"error":"reset-invalid"}` for an unknown, expired or used link |
 | `GET /api/organizations/:organizationId/submissions/:submissionId/deliveries` | The message's deliveries, each with its destination (webhook URL or recipients), its status, its number of attempts, its next attempt if it is waiting for a retry, and its timestamped attempts |
 | `POST /api/organizations/:organizationId/submissions/:submissionId/deliveries/:deliveryId/retry` | Retries a `failed` delivery and returns the list; `409` for another status |
 | `GET /api/organizations/:organizationId/forms/:publicId/origins` | The form's allowed origins, `[{"origin", "createdAt"}]` |
@@ -475,7 +492,9 @@ The submission routes go through `ReviewApi`, the domain model's API, called in 
 
 A refused success URL answers `400` with `{"error":"success-url-refused","reason":…}`. A refused webhook URL answers `400` with `{"error":"destination-refused","reason":…}`. A refused origin answers `400` with `{"error":"origin-refused","reason":…}`; `parseAllowedOrigin`, in `src/domain/forms/allowed-origin.ts`, accepts HTTPS, and HTTP only for `localhost`, `127.0.0.0/8` and `[::1]`, then normalizes the origin. It refuses a path, query parameters, a fragment, credentials and wildcards (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Without `RONDYR_SECRETS_KEY`, creation and rotation answer `503` with `{"error":"secrets-key-missing"}`; listing and activation work. A refused recipient list answers `400` with `{"error":"recipients-refused","reason":…}` (`no-recipients`, `too-many-recipients`, `invalid-address`, `duplicate-address`). Without `RONDYR_EMAIL_FROM`, or without the key or binding of the chosen email provider, creating an email destination answers `503` with `{"error":"email-provider-missing"}`; listing, editing recipients and activation work. Responses that contain a secret have `Cache-Control: no-store`, like every admin API response. [docs/webhooks.md](docs/webhooks.md) documents the contract for recipients, and [docs/email.md](docs/email.md) the provider setup and the message format.
 
-Still to add: members and roles, search and export (#11).
+Every route of this table under `/api/organizations/:organizationId` asks `authorize`, in `src/http/organization-access.ts`, for a permission, except the review routes, which go through the domain model. A `reviewer` may list and read messages, count them, accept, archive and read the delivery history; every other route needs the `admin` role and answers `403` to a reviewer. An account without a role in the organization gets `404`, as for an organization that does not exist. `GET /api/operations` returns only the organizations that the account administers. `src/http/routes.ts` gathers every route of the Worker; a workerd test records each route that the router registers and compares the list with a table of who may call each one, so a new route fails the test until it declares its rights. The test then calls each route as a reviewer (`403` on admin routes, anything but `401` and `403` on review routes), as an account of another organization (`404`), without a session (`401`) and with an API token (`403` outside its list).
+
+The search (`q`) finds 3 to 100 characters anywhere in the values of the fields, not in their names, with `LIKE … ESCAPE '\\'` on `json_each(fields)`: `%`, `_` and `\\` are escaped and match themselves. SQLite's `LIKE` ignores the case of ASCII letters only, so `é` does not find `É`. There is no full-text index: a search reads the messages of the organization in the order of the index `(organization_id, received_at, id)`, from the cursor of the page, and stops once it fills the page, so a page costs the messages between the cursor and its last match. It combines with the status and the form, and an API token may use it. The export, the deletion and the retention need the `admin` role; the counts of the folders ignore the search.
 
 ## 8. Defenses and privacy
 
@@ -520,7 +539,29 @@ The classification quota counts 1,000 slots per day by default. The intake batch
 - Better Auth rate-limits sign-in attempts, with a counter in D1.
 - Every admin query is scoped to the account's organizations or to the token's organization, and the aggregate checks this access again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, the delivery history, retries and test sends, and every review route with a token of another organization.
 
-Today every member has all rights over their organization, including adding, editing and suspending its forms and managing its API tokens, and any signed-in account can create one (#11). For deliveries, `deliveryOperator`, in `src/http/delivery-routes.ts`, decides who reads the history, retries and sends a test: that is where #11 will check the role. #11 will also reserve API token management, in `src/http/api-token-routes.ts`, to administrators.
+#### Roles
+
+A member of an organization is a `reviewer` or an `admin`. `allows(role, permission)`, in `src/domain/organizations/member-role.ts`, decides every right from the role, and nothing else does. The administration routes call `authorize(organizationId, permission)`, which reads the account's role with one D1 query and answers `404` without a role and `403` with a role that lacks the permission. The review session gives the domain model the account's organizations with its role in each, and the queries and the aggregate check `reviewerMay(reviewer, organizationId, permission)`, which calls `allows`: an account without a role in the organization gets `SubmissionNotFound`. An API token has the role `reviewer` of its organization (`apiTokenRole`), and its middleware keeps its narrower list of routes. The D1 adapters still join `organization_members` on every query, so a route that forgot the check would still be limited to the account's organizations.
+
+A reviewer reads the Inbox and the delivery history, accepts and archives. An admin also manages forms, allowed origins, honeypot field, Turnstile, destinations, retries, test sends, members, organization settings, API tokens, export, deletion and retention. Any signed-in account can create an organization and becomes its admin.
+
+The last admin of an organization can be neither removed nor demoted. The `UPDATE` or `DELETE` statement that changes the member counts the admins itself, so two admins who leave or demote each other at the same time leave one admin. The statements of `Members` also require the `admin` role of the acting account, not only its membership: a request that passed `authorize` before its author was demoted changes nothing and answers `403`. A removed member keeps a session, which no longer opens anything of the organization.
+
+Removing a member revokes the API tokens that it created in the organization and cancels its pending invitations, in the transaction that removes it; demoting an admin cancels its pending invitations. The member list returns `activeApiTokens` for each member, and the removal dialog shows that number before the admin confirms, because an integration that uses one of these tokens stops. An admin who demotes itself confirms it in a dialog first.
+
+#### Invitations
+
+An admin invites an address with a role. The link is `/invitation#<secret>`: 32 random bytes in base64url, in the fragment, which neither a request nor a log carries. D1 keeps the SHA-256 hash; the secret is in the creation response only. An invitation works once, for 7 days, and an admin can cancel it; inviting the same address again replaces it. It works only while the member who issued it is an admin of the organization: the statements that read and accept a link check it, whatever became of the invitations of that member. An organization has at most 20 unexpired pending invitations. The dashboard page sends the secret in the body of `POST /api/invitations/read` and `/accept`, which refuse a request from another origin like every session route.
+
+When the stage has an email provider, the route also emails the link through the `EmailSender` port, with fixed text in English or French that names neither the organization nor the person who invited: a compromised account cannot use it to send its own words. An address gets at most 3 invitation emails in 24 hours, across organizations; beyond that, and without a provider, the admin copies the link.
+
+Accepting with a new account creates the Better Auth user and credential account, the membership and the acceptance in one D1 batch, with Better Auth's password hash and the rules of the first account (name of 1 to 100 characters, password of 12 to 128). The account gets the invited address, so nobody can choose another one. If an account already has the address, its owner signs in first; a signed-in account with another address is refused.
+
+An admin who copies a link and opens it can create the account at the invited address without reading that mailbox. That account belongs to the admin's organization only: joining another organization takes that organization's own link, which goes to the mailbox or to whom its admin sends it, so it grants nothing that the admin did not already have. The owner of the address takes the account back with a password reset (below).
+
+#### Password resets
+
+On a stage with an email provider, the sign-in screen asks `POST /api/password-resets` for a link. One `INSERT … SELECT` statement issues it only when an account has the address and got fewer than 3 links in 24 hours, so the answer, `202`, and its time are the same in every case, and the email leaves after the answer, through `BackgroundTasks`. The link is `/reset-password#<secret>`: 32 random bytes in the fragment, whose SHA-256 hash D1 keeps, valid once for one hour, with fixed text in English or French. `POST /api/password-resets/complete` checks the link before it hashes the new password, then one D1 batch replaces the password of the credential account, marks the address verified, deletes every session of the account and uses every link of the account. Both routes refuse a request from another origin. A stage without email answers `503` with `{"error":"email-provider-missing"}`, which the screen explains.
 
 The success URL does not allow an open redirect: it comes from D1, its origin is an allowed origin of the form, and only a member of the organization can change it.
 
@@ -555,9 +596,29 @@ The Resend adapter sends `POST https://api.resend.com/emails` with `Idempotency-
 
 The Cloudflare adapter calls `CLOUDFLARE_EMAIL.send()` with the same plain-text email. It retries while the domain is being activated, after a rate or quota overrun, or on an internal or unknown error. Other documented codes and invalid arguments end the delivery. Only a known code goes into the summary, without error text or message content.
 
+#### Confirmed recipients
+
+An address gets email from an organization only once its owner has confirmed it, and the confirmation serves every destination of every form of that organization. `email_recipient_confirmations` keeps one row per organization and address. When a destination is created or its recipients replaced, the route asks the `RecipientConfirmations` port for a link for each address that the organization has not confirmed, then sends each link through `EmailSender` with a new idempotency key. A single `INSERT … ON CONFLICT` statement per address issues the link and counts the email: it refuses once the address has 3 confirmation emails on the current UTC day, summed across organizations, so a person whose address many organizations add still gets at most 3 a day. Without an email provider, nothing is issued or counted. A failed email leaves the recipient pending, and an admin sends it again from the dashboard, with a new link that replaces the previous one.
+
+The email has fixed text, in the destination's language, and the link `/confirm-recipient#<secret>`: 32 random bytes in the fragment, whose SHA-256 hash D1 keeps, valid for 7 days and for one use. The dashboard page names neither the organization nor the form and confirms only when the person presses its button, through `POST /api/recipient-confirmations`, so a mail scanner that opens the link confirms nothing.
+
+The `email` provider reads the confirmed addresses among the recipients before each delivery and each test, with the destination's organization, which `NotificationTarget` now carries. A delivery takes the addresses confirmed at its creation (`confirmed_at <= deliveries.created_at`), a test those confirmed at the time of the test. It sends to those addresses only. Every attempt of a delivery, manual retries included, thus sends the same message under the same idempotency key, and a confirmation between two attempts cannot make Resend refuse the key. Without any confirmed address, the delivery fails without a retry and with a summary that says so; the message stays accepted in the Inbox.
+
 ### Personal data
 
-Message content is in D1, and the technical logs contain none of it: the consumer writes only the error type. Retention is unlimited until #11 adds retention periods, scheduled purge, export and deletion on request. Self-hosting does not exempt the operator from its GDPR obligations; the documentation must list the subprocessors, including the model provider and the stage's email provider, Resend or Cloudflare Email Sending. Resend keeps sent emails for the period of its plan; `docs/email.md` points this out.
+Message content is in D1, and the technical logs contain none of it: the consumer writes only the error type.
+
+#### Deletion and retention
+
+An admin deletes a message from the dashboard, after a confirmation in the page rather than a browser dialog, or with `DELETE …/submissions/:submissionId`. One D1 batch writes a line to `submission_deletions` (organization, message ID, date, account) and deletes the row of `submissions`; the foreign keys delete its outbox event, its inbox row, its deliveries and their attempts. The deleted message leaves the Inbox and the delivery history, and a review command on its ID answers `404`, because the route reads the message first. The aggregate keeps its state in its Durable Object: if a classification was running, its result reaches the projection, which writes an inbox row only for a submission that still exists, and the delivery policy finds no submission to deliver.
+
+Each organization can set two retention periods, in days from the reception of the message: one for accepted messages, one for messages in quarantine and archived ones. Both are empty by default, which keeps messages without limit, as before. A message still received or being classified has no status yet and is never purged. The Cron run scheduled for the first minute of each hour runs the purge after the publications, by its scheduled time, which a slow publication does not move. Each period of each organization is a lane: its accepted messages, or its quarantined and archived ones. A batch purges up to 500 messages of one lane, the oldest first: one D1 batch logs them with the author `retention` (an empty `deleted_by` and the cause `retention`), checking the period again, and deletes the messages it logged. Its read goes through the index `(organization_id, received_at, id)` and stops at the end of the period, so it reads the organization's messages older than that and nothing newer. The lanes take turns, one batch each, and a run does at most 20 batches; each run starts at another lane, so every lane gets a turn when there are more lanes than batches, and an organization with a large backlog delays the others by one batch at most. A batch is one transaction, so a run that stops leaves whole batches behind it, and the next run selects what is still expired. A message is expired once its age reaches the period: `received_at <= now - days × 86,400,000`. A lane reads the kept messages older than its period, those of the other statuses, so the purge runs hourly and not every minute; a failure is logged and does not fail the Cron. A manual deletion and the purge of the same message serialize in D1: the second one finds no row, logs nothing and deletes nothing.
+
+What remains after a deletion:
+
+- The event stream of the submission in its Durable Object: IDs, the organization, scores, the classifier, the quarantine reason and the account or API token that decided, without any field value. Nothing deletes it.
+- D1 Time Travel keeps a restorable history of the database for 30 days on Workers Paid and 7 days on the free plan: a restore to an earlier point brings the deleted rows back.
+- The copies sent out before the deletion: webhook requests received by the recipients, emails in the mailboxes and in the provider's logs (Resend keeps sent emails for the period of its plan), and the exports that someone downloaded. Self-hosting does not exempt the operator from its GDPR obligations; the documentation must list the subprocessors, including the model provider and the stage's email provider, Resend or Cloudflare Email Sending. Resend keeps sent emails for the period of its plan; `docs/email.md` points this out.
 
 ## 9. Directory tree
 
@@ -578,13 +639,17 @@ Message content is in D1, and the technical logs contain none of it: the consume
 │   │                               # and destination API contracts
 │   ├── domain/forms/               # allowed origin rule, status, success URL rule
 │   │                               # and form API contracts
+│   ├── domain/organizations/       # roles and permissions, members and invitations,
+│   │                               # retention, API tokens, quotas, domains, policy
 │   ├── ports/                      # authentication, intake, outbox, classification-queue,
 │   │                               # background-tasks, organization-directory,
 │   │                               # stored-messages, storage, delivery-store,
 │   │                               # delivery-queue, notification-provider,
 │   │                               # notification-targets, secret-cipher, form-origins,
 │   │                               # forms, email-sender, delivery-history,
-│   │                               # client-rate-limit
+│   │                               # client-rate-limit, members, recipient-confirmations,
+│   │                               # test-send-limit, submission-exports, submission-retention,
+│   │                               # password-resets
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
@@ -593,20 +658,25 @@ Message content is in D1, and the technical logs contain none of it: the consume
 │   │   ├── database/               # Drizzle schemas, d1, intake, outbox, inbox,
 │   │   │                           # organization-directory, stored-messages, delivery-store,
 │   │   │                           # notification-targets, form-origins, forms,
-│   │   │                           # delivery-history
+│   │   │                           # delivery-history, members, recipient-confirmations,
+│   │   │                           # submission-exports, submission-retention, password-resets
 │   │   ├── notifications/          # providers per type, webhook, email, test adapter
 │   │   ├── queues/                 # classification-queue, delivery-queue
 │   │   └── workers/                # background-tasks (Alchemy's waitUntil), client-rate-limit
-│   │                               # (Rate Limiting binding)
+│   │                               # and test-send-limit (Rate Limiting bindings)
 │   ├── http/                       # public, submission, authentication, review, target, origin,
-│   │                               # form, delivery
+│   │                               # form, delivery, member, invitation, organization-access,
+│   │                               # recipient-confirmation, submission-administration,
+│   │                               # password-reset, and routes.ts, which gathers them
 │   └── jobs/
 │       ├── submission-outbox.ts    # publication (intake and Cron), queue consumer
-│       └── delivery-outbox.ts      # DeliveryScheduler, publication (policy and Cron),
-│                                   # delivery consumer, retry, test send
+│       ├── delivery-outbox.ts      # DeliveryScheduler, publication (policy and Cron),
+│       │                           # delivery consumer, retry, test send
+│       ├── recipient-confirmations.ts # confirmation emails of new recipients
+│       └── retention-purge.ts      # hourly purge of expired messages (Cron)
 ├── dashboard/src/
-│   ├── routes/
-│   ├── features/                   # authentication, inbox, operations
+│   ├── routes/                     # dashboard, invitation, recipient-confirmation, reset-password
+│   ├── features/                   # authentication, inbox, operations, recipients
 │   ├── components/                 # text-field, and ui/: shadcn/ui (Base UI) components adapted to the theme
 │   ├── hooks/                      # use-mobile
 │   ├── lib/                        # HTTP clients
@@ -644,6 +714,9 @@ A recipient Worker, declared in the same place, records each request and answers
 - Publication at intake without republication by the Cron, send failure picked up by the Cron after the lease expires, Cron kept out during a direct publication.
 - Stuck processing: twelve publications counted one by one, then an event marked stuck and published by neither the Cron nor the direct path, with its submission kept; stuck count in `GET /api/operations`, stuck list without the fields, manual retry that resets the count and leads to acceptance, `409` once handed off and `404` for an unknown submission, two simultaneous retries that publish once; a queue outage over more than twelve Cron passes that counts no publication and makes nothing stuck; list, retry and reclassification refused with `404` for another organization and `403` to an API token. Dead-letter queues: each message logged with its IDs and acknowledged, a duplicate message logged twice, a message that does not decode logged without its content, no change in D1. Reclassification: end to end with the fake Workers AI, from `classification-error` to acceptance with the event history; `409` for a solicitation and for an accepted message; `429` without a new run once the daily classification quota is used up, then one run and one `409` for two simultaneous clicks, each taking a slot. Model stories: reclassification accepted from `Quarantined` with `classification-error` and run with a new saga key, a second reclassification after another failure, the token recorded as author, a repeated command ID that records nothing, refusal while classifying, after an archive, for another reason even when the inbox reason says otherwise, at intake, and for another organization; the inbox reason read only for a state without a reason.
 - Turnstile: secret key encrypted and absent from responses; storage refused without `RONDYR_SECRETS_KEY`, for a key that Siteverify refuses (`400`) and when Siteverify does not answer or reports `internal-error` (`503`), without changing the stored keys; `404` for another account, without a Siteverify call; valid token, missing token, token refused with status 200 or 400, key that became unknown, service unavailable and timeout at intake, with a fake Siteverify defined in `tests/integration/external-workers.ts`. Daily quotas: exact boundary of both quotas under concurrency, duplicate queue message, reset at the UTC day change, bounds and isolation of the API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
+- Search, export, deletion and retention, through the built Worker: a search with `%` and `_` that match only themselves, without regard to the case of ASCII letters, in the values and not the names of the fields, combined with the status and paged with the cursor; a CSV export with a column per field, quotes and a neutralized formula, and an empty cell for a missing field even when its name is `toString`, and a JSON Lines export of the searched list, both with `Cache-Control: no-store`; the 10,000 newest of 10,001 messages with `Rondyr-Export-Truncated: true`; a deletion that removes the submission, its outbox event, its inbox row, its delivery and its attempt, checked table by table, logs the account, and leaves the message out of the list, the detail, the delivery history and the review routes (`404`); a quarantined message deleted then accepted gets `404` and no inbox row comes back; retention periods saved and refused out of bounds; a purge that deletes accepted, quarantined and archived messages at the exact end of their period and keeps those a millisecond younger, a message still received and the messages of an organization without a period, with a log line per message; a purge stopped by a trigger in its second batch keeps the first batch done, and the next run deletes the rest, logging each message once; an organization with 10 expired messages purged in the run where another one has a backlog of 10,500, which keeps whole batches for the next runs; a purge only in the run scheduled for the first minute of an hour; a CSV export with more field names than columns, the rest in `other_fields`; `404` for each of these routes in another organization. Playwright searches, downloads the CSV of the search, deletes a message after cancelling once, and saves a retention period.
+- Confirmed recipients, through the built Worker with the fake Resend: a link that confirms once, then answers `404`, from an email that names neither the organization nor the form; an expired link; a delivery and a test that go to the confirmed recipient only, and the retry of a delivery that keeps its recipients and its idempotency key when another address is confirmed between two attempts, and a destination without a confirmed recipient whose delivery fails with its message still accepted; 3 tests a minute then `429` with `Retry-After: 60`; 3 confirmation emails a day for an address across two organizations, then `429`; another organization's admin gets `404` for listing and resending, an address confirmed in one organization stays pending in another, which sends it nothing, and `409` for a confirmed address. The Cloudflare test Worker confirms its recipient from the email that the binding received before sending its test. Playwright confirms a recipient from the link of its email before the test send.
+- Roles and invitations, through the built Worker: each administration route refused with `403` to a reviewer and with `404` to an account of another organization, without changing the organization; a reviewer lists, counts, accepts, archives and reads the delivery history, and the status page leaves out its organization; an invitation emailed through the fake Resend with a link whose secret D1 keeps only hashed, and whose email names no organization; expired, reused and cancelled invitations refused, without creating an account; acceptance with a new account that then signs in, and with an existing account after sign-in, refused without a session and with another account; invitation of a member and over the limit of 20 refused; role change and removal, the last admin refused, and under concurrency when two admins leave, step down or demote each other at the same time; the statements of an admin demoted while its request ran refused by the adapter, and an invitation that a reviewer issued opening nothing; the active tokens of each member in the member list. Every registered route against the table of rights, as a reviewer, another organization's account, no session and an API token, the stuck-submission routes of #65 included, and a reclassification allowed to a reviewer and refused to a token. A refused reclassification leaves the classification usage unchanged, an accepted one takes one slot. A server intake with the token of a removed member answers `401`; an export leaves out the idempotency key, and deleting a submission frees its key. Password resets: a link emailed only to an existing account, stored hashed, single use, expired, at most 3 a day, refused from another origin, that signs every session out and marks the address verified; the owner of an address takes back an account that an admin created from a copied invitation. Playwright counts the tokens of a member in the removal dialog, confirms a step down, and resets a password from the sign-in screen. Stories: a reviewer accepts one message and archives another; an admin of another organization gets `SubmissionNotFound` for the list, an acceptance and an archiving.
 - API tokens, through the built Worker: creation that stores only the SHA-256 hash and the last four characters; `401` for an unknown and for a revoked token, even with a valid cookie; each allowed route with a token and no `Origin`; `403` on every other `/api` route; `404` on every review route of another organization and on its messages, which stay quarantined; a token that wins over another account's cookie; ten active tokens under concurrent creation, then a free slot after a revocation; management refused to a non-member; acceptance and archiving recorded with the token ID; manual decisions stored before API tokens still decode. Stories for acceptance and archiving by a token, and a type test that a dismissal cannot be built without exactly one author. Playwright creates a token, copies it, sees it only once, and revokes it after a confirmation.
 - Intake responses `400`, `413`, `415` and `429`, including a body of exactly 16 KiB accepted, and `X-Content-Type-Options` on the Worker's responses.
 - Per-client limit: a client over its limit gets `429` with `Retry-After`, `Access-Control-Expose-Headers` and the list's CORS headers, without storage, while another client and a request without an address go through; form cap reached by two clients under their limit; grouping of IPv6 addresses by `/64`.
@@ -700,19 +773,13 @@ These steps need a person with access to Cloudflare and GitHub; no agent can run
 
 In production on 20 November 2026: reliable intake, classification with Jev or OpenAI Decisions, quarantine and review, delivery by signed webhook and by email (Resend), delivery history and retry, JSON from a browser with allowed origins, form administration, per-client limit and honeypot field. `pnpm evaluate` measures the classifiers on a labeled corpus.
 
-Two issues remain open. They are independent of each other and can be worked on in any order or in parallel; each one is delivered whole, in one pull request:
-
-- #11, organization administration: members and roles, confirmed email recipients and limited test sends, search, export and purge.
-
-Operations (#43) is delivered: processing status, stuck processing, runbook, the production health check after each deployment and the fresh account checklist. What it leaves to a person is listed in section 11, under "To do".
+Issues #11 (organization administration), #43 (operations) and #59 (EmDash integration) are delivered. What #43 leaves to a person is listed in section 11, under "To do".
 
 **Migrations.** Each issue has one Drizzle migration, generated at the end with `pnpm db:generate --name …`. Another branch may carry a migration at the same time; a migration is regenerated on top of `main` when its pull request merges.
 
 ## 13. Open decisions
 
-| Decision | Tracking |
-| --- | --- |
-| Default retention periods, export and purge | #11 |
+None at the moment.
 
 ### Decisions made
 

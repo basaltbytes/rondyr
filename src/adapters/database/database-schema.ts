@@ -26,6 +26,9 @@ export const organizations = sqliteTable(
     dailyClassificationLimit: integer("daily_classification_limit")
       .notNull()
       .default(defaultDailyClassifications),
+    // Days of retention from the reception of a message, or NULL to keep it.
+    acceptedRetentionDays: integer("accepted_retention_days"),
+    quarantineRetentionDays: integer("quarantine_retention_days"),
   },
   // SQLite permits NULL in a non-integer primary key unless explicitly constrained.
   (table) => [check("organizations_id_not_null", sql`${table.id} is not null`)],
@@ -93,10 +96,45 @@ export const organizationMembers = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    // `reviewer` or `admin`, decoded by MemberRole. Every statement of the Worker
+    // names the role. The default is for the Worker version before roles: during
+    // a deployment it still runs after the migration, and a member that it adds,
+    // the creator of an organization, had every right.
+    role: text().notNull().default("admin"),
   },
   (table) => [
     primaryKey({ columns: [table.organizationId, table.userId] }),
     index("organization_members_user_idx").on(table.userId),
+  ],
+);
+
+// An address invited to an organization with a role. D1 keeps the hash of the
+// link's secret only. An invitation is pending while it has neither
+// `accepted_at` nor `cancelled_at`, and usable while it has not expired either.
+export const organizationInvitations = sqliteTable(
+  "organization_invitations",
+  {
+    id: text().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // In lowercase, as Better Auth stores the address of an account.
+    email: text().notNull(),
+    role: text().notNull(),
+    tokenHash: text("token_hash").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    acceptedAt: integer("accepted_at"),
+    cancelledAt: integer("cancelled_at"),
+  },
+  (table) => [
+    check("organization_invitations_id_not_null", sql`${table.id} is not null`),
+    uniqueIndex("organization_invitations_token_unique").on(table.tokenHash),
+    uniqueIndex("organization_invitations_pending_unique")
+      .on(table.organizationId, table.email)
+      .where(sql`${table.acceptedAt} is null and ${table.cancelledAt} is null`),
+    index("organization_invitations_email_idx").on(table.email, table.createdAt),
   ],
 );
 
@@ -120,6 +158,32 @@ export const apiTokens = sqliteTable(
     index("api_tokens_active_by_organization")
       .on(table.organizationId, table.createdAt, table.id)
       .where(sql`${table.revokedAt} is null`),
+  ],
+);
+
+// An address that an organization may email. It gets deliveries and tests once its
+// owner has confirmed it with the link of a confirmation email; D1 keeps the hash
+// of the link only. `emails_day` and `emails_sent` count the confirmation emails
+// of the address on its last UTC day, summed across organizations.
+export const emailRecipientConfirmations = sqliteTable(
+  "email_recipient_confirmations",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // In lowercase: two recipients that differ only by case are the same.
+    address: text().notNull(),
+    tokenHash: text("token_hash"),
+    tokenExpiresAt: integer("token_expires_at"),
+    confirmedAt: integer("confirmed_at"),
+    emailsDay: text("emails_day"),
+    emailsSent: integer("emails_sent").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.organizationId, table.address] }),
+    uniqueIndex("email_recipient_confirmations_token_unique").on(table.tokenHash),
+    index("email_recipient_confirmations_address_idx").on(table.address, table.emailsDay),
   ],
 );
 
@@ -184,6 +248,46 @@ export const submissions = sqliteTable(
     uniqueIndex("submissions_form_idempotency_key_idx")
       .on(table.formId, table.idempotencyKey)
       .where(sql`${table.idempotencyKey} is not null`),
+  ],
+);
+
+// A message deleted by a member or by the retention period, without its content:
+// the organization, its ID, when, and the account that deleted it, which is NULL
+// for the retention period.
+export const submissionDeletions = sqliteTable(
+  "submission_deletions",
+  {
+    submissionId: text("submission_id").primaryKey().notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    deletedAt: integer("deleted_at").notNull(),
+    deletedBy: text("deleted_by"),
+    // `request` or `retention`.
+    cause: text().notNull(),
+  },
+  (table) => [
+    check("submission_deletions_submission_id_not_null", sql`${table.submissionId} is not null`),
+    index("submission_deletions_organization_idx").on(table.organizationId, table.deletedAt),
+  ],
+);
+
+// A password reset link of an account. D1 keeps the hash of its secret only. A
+// link works once, until `expires_at`; using one uses every link of the account.
+export const passwordResets = sqliteTable(
+  "password_resets",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    usedAt: integer("used_at"),
+  },
+  (table) => [
+    check("password_resets_token_hash_not_null", sql`${table.tokenHash} is not null`),
+    index("password_resets_user_idx").on(table.userId, table.createdAt),
   ],
 );
 

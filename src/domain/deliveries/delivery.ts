@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { SubmissionId } from "../submissions/submission.id.ts";
+import { OrganizationId, SubmissionId } from "../submissions/submission.id.ts";
 
 /** Stable identifier of one delivery, sent to the recipient on every attempt. */
 export const DeliveryId = Schema.String.check(Schema.isUUID(4)).pipe(Schema.brand("DeliveryId"));
@@ -16,6 +16,8 @@ export const TargetType = Schema.String.check(Schema.isMinLength(1), Schema.isMa
 /** A destination of a form. Its provider decodes `configuration`. */
 export const NotificationTarget = Schema.Struct({
   id: TargetId,
+  /** The organization of the form, whose confirmed addresses an email may go to. */
+  organizationId: OrganizationId,
   type: TargetType,
   configuration: Schema.Json,
 });

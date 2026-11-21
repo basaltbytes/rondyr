@@ -20,7 +20,7 @@ import {
 import { SetTurnstile, TurnstileKeyCheck } from "../domain/forms/turnstile.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
 import { Forms } from "../ports/forms.ts";
-import { reviewer } from "./review-routes.ts";
+import { authorize } from "./organization-access.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const FormPath = OrganizationPath.mapFields((fields) => ({
@@ -48,6 +48,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
+        PermissionDenied: () => empty(403),
+        OrganizationNotFound: () => empty(404),
         OrganizationFormNotFound: () => empty(404),
         SuccessOriginNotListed: () => refused("origin-not-listed"),
         SecretsKeyMissing: () =>
@@ -62,16 +64,16 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
     }),
   );
 
-/** The signed-in account and the form of the path. */
+/** An admin of the organization and the form of the path. */
 const scope = Effect.gen(function* () {
-  const { userId } = yield* reviewer();
   const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
+  const { userId } = yield* authorize(organizationId, "manage-forms");
   return { userId, organizationId, formPublicId: publicId };
 });
 
 const create = Effect.gen(function* () {
-  const { userId } = yield* reviewer();
   const { organizationId } = yield* HttpRouter.schemaPathParams(OrganizationPath);
+  const { userId } = yield* authorize(organizationId, "manage-forms");
   const input = yield* HttpServerRequest.schemaBodyJson(CreateForm);
   const forms = yield* Forms;
   const created = yield* forms.create({ userId, organizationId }, input);
