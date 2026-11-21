@@ -1,5 +1,5 @@
 import * as Domain from "@alchemy.run/domain";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 import { Activity, DurableClock } from "effect/workflow";
 
 import { ClassificationReservation } from "../organizations/organization-quotas.ts";
@@ -10,11 +10,29 @@ import { RecordClassification } from "./record-classification.command.ts";
 import { Submission } from "./submission.aggregate.ts";
 import { OrganizationId, SubmissionId } from "./submission.id.ts";
 
+/**
+ * One classification run of a submission: the submission ID for its first run,
+ * then `<submission ID>/<event sequence number>` for each reclassification.
+ */
+export const ClassificationRunId = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(160),
+).pipe(Schema.brand("ClassificationRunId"));
+
 export class ClassifySubmission extends Domain.Saga(
   "ClassifySubmission",
-  { key: SubmissionId, input: { organizationId: OrganizationId } },
+  {
+    key: ClassificationRunId,
+    input: {
+      organizationId: OrganizationId,
+      // Runs started before reclassification have only their key, the submission ID.
+      submissionId: Schema.optionalKey(SubmissionId),
+    },
+  },
   { description: "Classify a submission with a bounded retry budget and record its outcome." },
 ) {}
+
+const decodeSubmissionId = Schema.decodeEffect(SubmissionId);
 
 /**
  * Run an activity up to three times, waiting 10 seconds and then 30 seconds
@@ -78,7 +96,8 @@ export const classifySubmissionLive = ClassifySubmission.toLayer(
       return scored._tag === "Success" ? { ...evaluation, scores: scored.success } : evaluation;
     });
 
-    return Effect.fnUntraced(function* ({ key, organizationId }) {
+    return Effect.fnUntraced(function* ({ key: run, organizationId, submissionId }) {
+      const key = submissionId ?? (yield* decodeSubmissionId(run).pipe(Effect.orDie));
       const resolved = yield* withRetries("policy-retry", (attempt) =>
         Activity.make({
           name: `resolve-classification-policy-${attempt}`,

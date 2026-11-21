@@ -3,6 +3,7 @@ import { Effect } from "effect";
 
 import { SubmissionDismissed } from "./dismiss-submission.command.ts";
 import { InboxStore } from "./inbox-store.ts";
+import { ReclassificationRequested } from "./reclassify-submission.command.ts";
 import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import { ClassificationRequested } from "./request-classification.command.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
@@ -13,13 +14,20 @@ export class Inbox extends Domain.Projection(
   {
     from: [Submission],
     key: Submission,
-    on: [ClassificationRequested, SubmissionQuarantined, SubmissionAccepted, SubmissionDismissed],
+    on: [
+      ClassificationRequested,
+      ReclassificationRequested,
+      SubmissionQuarantined,
+      SubmissionAccepted,
+      SubmissionDismissed,
+    ],
   },
   { description: "Project the latest submission status into the organization inbox." },
 ) {}
 
 const statuses = {
   ClassificationRequested: "classifying",
+  ReclassificationRequested: "classifying",
   SubmissionQuarantined: "quarantined",
   SubmissionAccepted: "accepted",
   SubmissionDismissed: "archived",

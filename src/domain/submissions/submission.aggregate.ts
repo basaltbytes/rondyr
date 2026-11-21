@@ -2,9 +2,13 @@ import * as Domain from "@alchemy.run/domain";
 import { Effect, Schema } from "effect";
 
 import { ApproveSubmission } from "./approve-submission.command.ts";
-import { classificationDecision, rulesVersion } from "./classification.ts";
+import { classificationDecision, QuarantineReason, rulesVersion } from "./classification.ts";
 import { DismissSubmission, SubmissionDismissed } from "./dismiss-submission.command.ts";
 import { QuarantineAtIntake } from "./quarantine-at-intake.command.ts";
+import {
+  ReclassificationRequested,
+  ReclassifySubmission,
+} from "./reclassify-submission.command.ts";
 import { RecordClassification } from "./record-classification.command.ts";
 import {
   RequestClassification,
@@ -13,14 +17,22 @@ import {
 import { CurrentReviewer, reviewerMay } from "./review-session.middleware.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
 import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
-import { SubmissionNotFound, SubmissionNotReviewable } from "./submission.rejection.ts";
+import {
+  SubmissionNotFound,
+  SubmissionNotReclassifiable,
+  SubmissionNotReviewable,
+} from "./submission.rejection.ts";
 import { OrganizationId, SubmissionId } from "./submission.id.ts";
 
 const owner = { organizationId: OrganizationId };
 const State = Schema.Union([
   Schema.TaggedStruct("Unrecorded", {}),
   Schema.TaggedStruct("Classifying", owner),
-  Schema.TaggedStruct("Quarantined", owner),
+  Schema.TaggedStruct("Quarantined", {
+    ...owner,
+    // A submission quarantined before the state kept its reason has none.
+    reason: Schema.optionalKey(QuarantineReason),
+  }),
   Schema.TaggedStruct("Accepted", owner),
   Schema.TaggedStruct("Archived", owner),
 ]);
@@ -36,6 +48,7 @@ const review = Effect.fnUntraced(function* (state: typeof State.Type) {
   if (state._tag !== "Quarantined") return yield* SubmissionNotReviewable.make();
   return {
     organizationId: state.organizationId,
+    reason: state.reason,
     author:
       reviewer.apiTokenId === undefined
         ? { reviewerId: reviewer.userId }
@@ -55,6 +68,7 @@ export class Submission extends Domain.Aggregate(
       RecordClassification,
       ApproveSubmission,
       DismissSubmission,
+      ReclassifySubmission,
     ],
     decide: {
       // The hand-off of a received submission is either a classification request or
@@ -106,14 +120,25 @@ export class Submission extends Domain.Aggregate(
         const { organizationId, author } = yield* review(state);
         return [SubmissionDismissed.make({ organizationId, ...author })];
       }),
+      // Only a classifier error can be classified again: any other reason is the
+      // classifier's or intake's answer, which a second run would repeat.
+      ReclassifySubmission: Effect.fnUntraced(function* (state, { inboxReason }) {
+        const { organizationId, reason, author } = yield* review(state);
+        if ((reason ?? inboxReason) !== "classification-error") {
+          return yield* SubmissionNotReclassifiable.make();
+        }
+        return [ReclassificationRequested.make({ organizationId, ...author })];
+      }),
     },
     evolve: {
       ClassificationRequested: (state, { organizationId }) =>
         state._tag === "Unrecorded" ? { _tag: "Classifying" as const, organizationId } : state,
-      SubmissionQuarantined: (state, { organizationId }) =>
+      SubmissionQuarantined: (state, { organizationId, reason }) =>
         state._tag === "Unrecorded" || state._tag === "Classifying"
-          ? { _tag: "Quarantined" as const, organizationId }
+          ? { _tag: "Quarantined" as const, organizationId, reason }
           : state,
+      ReclassificationRequested: (state, { organizationId }) =>
+        state._tag === "Quarantined" ? { _tag: "Classifying" as const, organizationId } : state,
       SubmissionAccepted: (state, { organizationId }) =>
         state._tag === "Classifying" || state._tag === "Quarantined"
           ? { _tag: "Accepted" as const, organizationId }

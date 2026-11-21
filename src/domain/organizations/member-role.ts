@@ -20,6 +20,7 @@ export const Permission = Schema.Literals([
   "manage-settings",
   "manage-api-tokens",
   "read-operations",
+  "retry-stuck-submissions",
   "export-submissions",
   "delete-submissions",
   "manage-retention",

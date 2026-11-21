@@ -38,6 +38,7 @@ import { turnstileVerifierLive } from "./adapters/workers/siteverify.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { apiTokenAuthentication } from "./http/api-token-authentication.ts";
 import { routes as applicationRoutes } from "./http/routes.ts";
+import { consumeDeadLetters } from "./jobs/dead-letters.ts";
 import { consumeDeliveries, deliverySchedulerLive } from "./jobs/delivery-outbox.ts";
 import { publishOutboxes } from "./jobs/publish-outboxes.ts";
 import { purgeOnTheHour } from "./jobs/retention-purge.ts";
@@ -95,6 +96,12 @@ const routes = applicationRoutes.pipe(Layer.provide(apiTokenAuthentication));
 const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
   if (batch.queue === env.DELIVERY_QUEUE_NAME) return yield* consumeDeliveries(batch);
+  if (batch.queue === env.CLASSIFICATION_DEAD_LETTER_QUEUE_NAME) {
+    return yield* consumeDeadLetters("classification", batch);
+  }
+  if (batch.queue === env.DELIVERY_DEAD_LETTER_QUEUE_NAME) {
+    return yield* consumeDeadLetters("delivery", batch);
+  }
   // Classification is the default, as it was when the Worker had one consumer: a wrong
   // queue name in the environment is logged and cannot stop classification. A message
   // of another queue does not decode there and is retried, then dead-lettered.
