@@ -31,7 +31,13 @@ const review = Effect.fnUntraced(function* (state: typeof State.Type) {
     return yield* SubmissionNotFound.make();
   }
   if (state._tag !== "Quarantined") return yield* SubmissionNotReviewable.make();
-  return { organizationId: state.organizationId, reviewerId: reviewer.userId };
+  return {
+    organizationId: state.organizationId,
+    author:
+      reviewer.apiTokenId === undefined
+        ? { reviewerId: reviewer.userId }
+        : { apiTokenId: reviewer.apiTokenId },
+  };
 });
 
 export class Submission extends Domain.Aggregate(
@@ -88,14 +94,14 @@ export class Submission extends Domain.Aggregate(
         ];
       },
       ApproveSubmission: Effect.fnUntraced(function* (state) {
-        const { organizationId, reviewerId } = yield* review(state);
+        const { organizationId, author } = yield* review(state);
         return [
-          SubmissionAccepted.make({ organizationId, acceptance: { _tag: "Manual", reviewerId } }),
+          SubmissionAccepted.make({ organizationId, acceptance: { _tag: "Manual", ...author } }),
         ];
       }),
       DismissSubmission: Effect.fnUntraced(function* (state) {
-        const reviewer = yield* review(state);
-        return [SubmissionDismissed.make(reviewer)];
+        const { organizationId, author } = yield* review(state);
+        return [SubmissionDismissed.make({ organizationId, ...author })];
       }),
     },
     evolve: {

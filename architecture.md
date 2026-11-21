@@ -26,6 +26,7 @@ What distinguishes Rondyr from a SaaS form service: the filtering takes the orga
 | Durable storage and outbox | Done | |
 | Classification and quarantine | Done: thresholds per classifier, policy per organization and optional escalation to a second model | |
 | Inbox and human review | Done | #11 for search, export and purge |
+| API tokens per organization | Done, Part 1 of #59: a token reads its organization's inbox, accepts and archives messages | #59 Part 2 (server intake with an idempotency key) and Part 3 (EmDash plugin) |
 | Deliveries: tables, queue, attempts and retries | Done | |
 | Delivery history, manual retry, test send | Done, in the dashboard | #11 for roles |
 | Signed webhook delivery | Done | |
@@ -277,6 +278,7 @@ State is split between two stores. D1 contains the configuration, the message co
 | `deliveries` | `id` (stable UUID v4), `submission_id`, `target_id`, `status`, `attempt_count` (attempts of the current series), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at`; unique on `(submission_id, target_id)` |
 | `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numbers the attempts across the whole history, manual retries included |
 | `auth_*` | Better Auth accounts, sessions, verifications and rate limits |
+| `api_tokens` | `id`, `organization_id`, `name`, `token_hash` (SHA-256 of the token, unique), `token_suffix` (its last four characters), `created_at`, `created_by` (the account that created it), `revoked_at` (empty while the token is active) |
 
 The `form-administration` migration adds `status` and `success_url` with `ALTER TABLE`: existing forms become `active` through the default value. `status` has no `CHECK` constraint, because adding one would rebuild the table, and dropping `forms` on D1 would cascade to `form_origins`; the adapters write it only with the two values, and Effect Schema refuses any other value on read.
 
@@ -290,6 +292,8 @@ The `turnstile-and-organization-quotas` migration adds the settings with `ALTER 
 
 The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
+The `api-tokens` migration creates `api_tokens` with a unique index on `token_hash` and a partial index on `(organization_id, created_at, id)` limited to active tokens, which serves both the token list and the count of active tokens at creation. It changes no existing table.
+
 A delivery has one of the statuses `pending`, `processing`, `delivered`, `retrying` or `failed`. `next_attempt_at` says when an attempt can start: the creation, the end of the retry delay or the end of the current attempt's lease. An attempt has the outcome `delivered`, `retryable-failure`, `permanent-failure` or `interrupted`, or none while it runs. A manual retry opens a new series on the same delivery without erasing its attempts; the history and the retry needed no migration. The admin API creates webhook and email destinations; the existing `notification_targets` table is enough, without a migration. The adapter reads the recipient list back with the same schema as at creation: a row edited by hand that no longer follows the rule makes the delivery fail without a retry.
 
 ### `Submission` aggregate events
@@ -298,14 +302,14 @@ A delivery has one of the statuses `pending`, `processing`, `delivered`, `retryi
 | --- | --- |
 | `ClassificationRequested` | Organization |
 | `SubmissionQuarantined` | Organization, reason, optional scores (absent for an intake reason or a classifier failure), rules version |
-| `SubmissionAccepted` | Organization, then scores and rules version (automatic) or reviewer (manual) |
-| `SubmissionDismissed` | Organization, reviewer |
+| `SubmissionAccepted` | Organization, then scores and rules version (automatic), or `reviewerId` for an account or `apiTokenId` for an API token (manual) |
+| `SubmissionDismissed` | Organization, and `reviewerId` for an account or `apiTokenId` for an API token. Dismissals stored before API tokens have `reviewerId` |
 
 The aggregate goes from `Unrecorded` to `Classifying`, then to `Quarantined` or `Accepted`. With an intake reason, it goes directly from `Unrecorded` to `Quarantined`. Only a `Quarantined` message can be accepted or archived by hand. The `Inbox` projection writes the latest status in `submission_inbox`, guarded by the event's sequence number. A submission without a projection row has the status `received`.
 
 The visible statuses are `received`, `classifying`, `quarantined`, `accepted` and `archived`. The Inbox `reason` field contains the quarantine reason, including `turnstile-failed` or `quota` for these intake checks.
 
-Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the reviewer's ID, and deliveries only IDs, states and error summaries, which limits a purge to D1 rows (#11). Deleting a submission deletes its deliveries and their attempts.
+Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the ID of the account or API token that decided, and deliveries only IDs, states and error summaries, which limits a purge to D1 rows (#11). Deleting a submission deletes its deliveries and their attempts.
 
 ### Planned tables
 
@@ -373,13 +377,16 @@ The D1 batch checks the origin and the form's status, applies the caps and quota
 
 ### Admin API
 
-It serves the dashboard and is not published for third-party clients.
+The dashboard uses the Better Auth session. Another program can call the review routes with an organization API token, as described in [docs/api.md](docs/api.md); a token gets `403` on every other route of this table.
 
 | Route | Purpose |
 | --- | --- |
 | `POST /api/setup` | Creates the first account, with the setup token |
 | `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Better Auth session |
-| `GET /api/organizations` | The account's organizations and their forms |
+| `GET /api/organizations` | The account's organizations and their forms. With an API token, only the token's organization and its forms |
+| `GET /api/organizations/:organizationId/api-tokens` | Lists the active tokens, newest first, with their name, last four characters and creation date |
+| `POST /api/organizations/:organizationId/api-tokens` | Creates a token (`{"name":…}`) and returns its value, the only time it is shown, with `201` and `Cache-Control: no-store`. An eleventh active token gets `409` |
+| `DELETE /api/organizations/:organizationId/api-tokens?id=…` | Revokes the token for good and answers `204`, or `404` for a token that is unknown or already revoked |
 | `POST /api/organizations` | Creates an organization and its first form |
 | `GET /api/organizations/:organizationId/domains` | Lists the declared domains in alphabetical order |
 | `POST /api/organizations/:organizationId/domains` | Adds a domain (`{"domain":…}`). Answers `201` for a creation, `200` for a duplicate, `400` for an invalid name or `409` if the list is full |
@@ -458,11 +465,13 @@ The classification quota counts 1,000 slots per day by default. The intake batch
 ### Authentication and isolation
 
 - Public sign-up is closed. `/api/setup` requires `RONDYR_SETUP_TOKEN`, compared in constant time, and D1 refuses to create a second account through this path. The token is removed after setup.
-- The authentication and admin routes refuse any request whose origin differs from `BETTER_AUTH_URL`. The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`.
+- The authentication routes, and every admin request that relies on the session, refuse a request whose origin differs from `BETTER_AUTH_URL`. The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`.
+- A request with `Authorization: Bearer rdr_…` never uses the session, even with a valid cookie, and needs no `Origin` header. A router middleware (`src/http/api-token-authentication.ts`) hashes the token with SHA-256 and looks the hash up among active tokens, without writing to D1. An unknown or revoked token gets `401`. A valid token gets `403` on every `/api` route outside its allow list, which the middleware checks against the matched route, so a route added later is refused by default. A resource outside the token's organization answers `404`, as for an account that is not a member.
+- Tokens go through the `ApiTokens` port. D1 keeps the hash and the last four characters; the full value appears only in the creation response. At most ten tokens are active per organization: the insert counts them in the same statement, so concurrent creations cannot exceed the limit. Decision events keep the token ID. The Worker wraps the token in `Redacted` as soon as it reads the header, and the token appears in no log or error summary.
 - Better Auth rate-limits sign-in attempts, with a counter in D1.
-- Every admin query is scoped to the account's organizations, and the aggregate checks this membership again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, the delivery history, retries and test sends.
+- Every admin query is scoped to the account's organizations or to the token's organization, and the aggregate checks this access again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, the delivery history, retries and test sends, and every review route with a token of another organization.
 
-Today every member has all rights over their organization, including adding, editing and suspending its forms, and any signed-in account can create one (#11). For deliveries, `deliveryOperator`, in `src/http/delivery-routes.ts`, decides who reads the history, retries and sends a test: that is where #11 will check the role.
+Today every member has all rights over their organization, including adding, editing and suspending its forms and managing its API tokens, and any signed-in account can create one (#11). For deliveries, `deliveryOperator`, in `src/http/delivery-routes.ts`, decides who reads the history, retries and sends a test: that is where #11 will check the role. #11 will also reserve API token management, in `src/http/api-token-routes.ts`, to administrators.
 
 The success URL does not allow an open redirect: it comes from D1, its origin is an allowed origin of the form, and only a member of the organization can change it.
 
@@ -581,6 +590,7 @@ A recipient Worker, declared in the same place, records each request and answers
 - Intake atomicity, recovery through the outbox, double delivery of a queue message, isolation between organizations, concurrent review decisions.
 - Publication at intake without republication by the Cron, send failure picked up by the Cron after the lease expires, Cron kept out during a direct publication.
 - Turnstile: secret key encrypted and absent from responses; storage refused without `RONDYR_SECRETS_KEY`, for a key that Siteverify refuses (`400`) and when Siteverify does not answer or reports `internal-error` (`503`), without changing the stored keys; `404` for another account, without a Siteverify call; valid token, missing token, token refused with status 200 or 400, key that became unknown, service unavailable and timeout at intake, with a fake Siteverify defined in `tests/integration/external-workers.ts`. Daily quotas: exact boundary of both quotas under concurrency, duplicate queue message, reset at the UTC day change, bounds and isolation of the API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
+- API tokens, through the built Worker: creation that stores only the SHA-256 hash and the last four characters; `401` for an unknown and for a revoked token, even with a valid cookie; each allowed route with a token and no `Origin`; `403` on every other `/api` route; `404` on every review route of another organization and on its messages, which stay quarantined; a token that wins over another account's cookie; ten active tokens under concurrent creation, then a free slot after a revocation; management refused to a non-member; acceptance and archiving recorded with the token ID; manual decisions stored before API tokens still decode. Stories for acceptance and archiving by a token, and a type test that a dismissal cannot be built without exactly one author. Playwright creates a token, copies it, sees it only once, and revokes it after a confirmation.
 - Intake responses `400`, `413`, `415` and `429`, including a body of exactly 16 KiB accepted, and `X-Content-Type-Options` on the Worker's responses.
 - Per-client limit: a client over its limit gets `429` with `Retry-After`, `Access-Control-Expose-Headers` and the list's CORS headers, without storage, while another client and a request without an address go through; form cap reached by two clients under their limit; grouping of IPv6 addresses by `/64`.
 - Honeypot field: name set, removed and refused through the admin API, `404` for another account; filled field with the same HTML page as a normal post, stored with the reason `honeypot` and a single event, without a call to the fake Workers AI; duplicate queue message without a second decision; acceptance by a reviewer, then creation of the delivery; empty field removed before storage, order of the other fields kept, message classified normally; body reduced to the empty honeypot field refused with `400`; form without a honeypot field unchanged.
@@ -636,7 +646,7 @@ In production on 20 November 2026: reliable intake, classification with Jev or O
 
 Three issues remain open. They are independent of each other and can be worked on in any order or in parallel; each one is delivered whole, in one pull request:
 
-- #59, EmDash integration: API tokens per organization, authenticated intake from a server with an idempotency key, and the EmDash plugin.
+- #59, EmDash integration. Part 1, API tokens per organization, is delivered. Part 2, authenticated intake from a server with an idempotency key, and Part 3, the EmDash plugin, remain.
 - #11, organization administration: members and roles, confirmed email recipients and limited test sends, search, export and purge.
 - #43, operations: processing status, stuck processing, runbook, staging and the install guide. The run-through on a fresh Cloudflare account needs a person.
 

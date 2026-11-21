@@ -9,6 +9,7 @@ import {
   FileText,
   Globe,
   Inbox as InboxIcon,
+  KeyRound,
   Mails,
   Network,
   ScanSearch,
@@ -49,6 +50,7 @@ export type Section =
   | "domains"
   | "classification"
   | "quotas"
+  | "apiTokens"
   | "organization"
   | "operations";
 
@@ -65,6 +67,7 @@ const settings = [
   ["domains", Network],
   ["classification", ScanSearch],
   ["quotas", Gauge],
+  ["apiTokens", KeyRound],
 ] as const;
 
 interface InboxSidebarProps {

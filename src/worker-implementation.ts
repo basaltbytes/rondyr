@@ -7,6 +7,7 @@ import { FetchHttpClient, HttpRouter, HttpServer, HttpServerResponse } from "eff
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
 import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
+import { apiTokensLive } from "./adapters/database/api-tokens.ts";
 import { classificationPoliciesLive } from "./adapters/database/classification-policies.ts";
 import { deliveryHistoryLive } from "./adapters/database/delivery-history.ts";
 import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
@@ -29,6 +30,8 @@ import { clientRateLimitLive } from "./adapters/workers/client-rate-limit.ts";
 import { cronHeartbeatLive } from "./adapters/workers/cron-heartbeat.ts";
 import { turnstileVerifierLive } from "./adapters/workers/siteverify.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
+import { apiTokenAuthentication } from "./http/api-token-authentication.ts";
+import { apiTokenRoutes } from "./http/api-token-routes.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
 import { classificationPolicyRoutes } from "./http/classification-policy-routes.ts";
 import { deliveryRoutes } from "./http/delivery-routes.ts";
@@ -52,6 +55,7 @@ const turnstile = turnstileVerifierLive.pipe(
 );
 const services = Layer.mergeAll(
   authenticationLive,
+  apiTokensLive,
   HttpServer.layerServices,
   submissionIntakeLive.pipe(Layer.provide(turnstile)),
   clientRateLimitLive,
@@ -87,6 +91,7 @@ const services = Layer.mergeAll(
 const routes = Layer.mergeAll(
   publicRoutes,
   authenticationRoutes,
+  apiTokenRoutes,
   submissionRoutes,
   reviewRoutes,
   targetRoutes,
@@ -97,7 +102,7 @@ const routes = Layer.mergeAll(
   formRoutes,
   deliveryRoutes,
   operationsRoute,
-);
+).pipe(Layer.provide(apiTokenAuthentication));
 
 const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) {
   const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
@@ -113,7 +118,7 @@ const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) 
 
 export const workerImplementation = Effect.gen(function* () {
   const context = yield* Layer.build(services);
-  const router = yield* HttpRouter.toHttpEffect(routes);
+  const router = yield* HttpRouter.toHttpEffect(routes).pipe(Effect.provideContext(context));
   const fetch = router.pipe(
     Effect.provideServiceEffect(BackgroundTasks, eventBackgroundTasks),
     Effect.provideContext(context),

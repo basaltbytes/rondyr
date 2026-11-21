@@ -3,7 +3,8 @@ import { Schema } from "effect";
 
 import { ClassificationPolicy } from "./classification-policy.ts";
 import { ClassificationScores, EscalationEvaluation, SubmissionLabel } from "./classification.ts";
-import { OrganizationId, UserId } from "./submission.id.ts";
+import { ByApiToken, ByReviewer } from "./decision-author.ts";
+import { OrganizationId } from "./submission.id.ts";
 
 export const Acceptance = Schema.Union([
   Schema.TaggedStruct("Automatic", {
@@ -13,7 +14,8 @@ export const Acceptance = Schema.Union([
     escalation: Schema.optionalKey(EscalationEvaluation),
     label: Schema.optionalKey(SubmissionLabel),
   }),
-  Schema.TaggedStruct("Manual", { reviewerId: UserId }),
+  Schema.TaggedStruct("Manual", ByReviewer),
+  Schema.TaggedStruct("Manual", ByApiToken),
 ]);
 
 export class SubmissionAccepted extends Domain.Event("SubmissionAccepted", {

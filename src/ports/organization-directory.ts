@@ -5,7 +5,7 @@ import type {
   OrganizationDomain,
   OrganizationDomainList,
 } from "../domain/organizations/organization-domain.ts";
-import type { SetupInbox } from "../domain/submissions/inbox-setup.ts";
+import type { InboxOrganizationWithForms, SetupInbox } from "../domain/submissions/inbox-setup.ts";
 import type { InboxOrganization } from "../domain/submissions/inbox.ts";
 import type { InboxUnavailable } from "../domain/submissions/submission.rejection.ts";
 import type { OrganizationId, UserId } from "../domain/submissions/submission.id.ts";
@@ -40,6 +40,10 @@ export class OrganizationDirectory extends Context.Service<
       userId: typeof UserId.Type,
       organizationId: OrganizationId,
     ) => Effect.Effect<ReadonlyArray<typeof ManagedForm.Type>, InboxUnavailable>;
+    /** Read one organization and its forms after an API token has been verified. */
+    readonly inboxFor: (
+      organizationId: OrganizationId,
+    ) => Effect.Effect<typeof InboxOrganizationWithForms.Type | null, InboxUnavailable>;
     /** Create an organization, its first form, and the account's membership. */
     readonly create: (
       userId: typeof UserId.Type,

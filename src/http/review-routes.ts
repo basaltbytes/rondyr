@@ -22,6 +22,14 @@ import {
 import { OrganizationId, SubmissionId, UserId } from "../domain/submissions/submission.id.ts";
 import { Authentication } from "../ports/authentication.ts";
 import { OrganizationDirectory } from "../ports/organization-directory.ts";
+import {
+  countsPath,
+  CurrentApiToken,
+  decisionPath,
+  detailPath,
+  organizationPath,
+  submissionsPath,
+} from "./api-token-authentication.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const SubmissionPath = Schema.Struct({
@@ -54,13 +62,21 @@ export const reviewer = Effect.fn("ReviewRoute.reviewer")(function* () {
   return { userId, organizations };
 });
 
+const sessionReviewer = reviewer().pipe(
+  Effect.map(({ userId, organizations }) => ({
+    userId,
+    organizations: organizations.map(({ id }) => id),
+  })),
+);
+
 const reviewClient = Effect.gen(function* () {
-  const { userId, organizations } = yield* reviewer();
+  const token = yield* CurrentApiToken;
+  const actor =
+    token === null
+      ? yield* sessionReviewer
+      : { apiTokenId: token.apiTokenId, organizations: [token.organizationId] };
   const session = ReviewSession.of((effect) =>
-    Effect.provideService(effect, CurrentReviewer, {
-      userId,
-      organizations: organizations.map(({ id }) => id),
-    }),
+    Effect.provideService(effect, CurrentReviewer, actor),
   );
   return yield* ReviewApi.clientInProcess.pipe(Effect.provideService(ReviewSession, session));
 });
@@ -87,8 +103,16 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
   );
 
 const organizationList = Effect.gen(function* () {
-  const { organizations, userId } = yield* reviewer();
   const directory = yield* OrganizationDirectory;
+  const token = yield* CurrentApiToken;
+  if (token !== null) {
+    const inbox = yield* directory.inboxFor(token.organizationId);
+    return yield* HttpServerResponse.schemaJson(Schema.Array(InboxOrganizationWithForms))(
+      inbox === null ? [] : [inbox],
+      jsonOptions,
+    );
+  }
+  const { organizations, userId } = yield* reviewer();
   const inboxes = yield* Effect.forEach(organizations, (organization) =>
     Effect.map(directory.formsOf(userId, organization.id), (forms) => ({ ...organization, forms })),
   );
@@ -143,18 +167,10 @@ const review = Effect.gen(function* () {
 });
 
 export const reviewRoutes = Layer.mergeAll(
-  HttpRouter.add("GET", "/api/organizations", withErrors(organizationList)),
-  HttpRouter.add("POST", "/api/organizations", withErrors(create)),
-  HttpRouter.add("GET", "/api/organizations/:organizationId/submissions", withErrors(list)),
-  HttpRouter.add("GET", "/api/organizations/:organizationId/submission-counts", withErrors(counts)),
-  HttpRouter.add(
-    "GET",
-    "/api/organizations/:organizationId/submissions/:submissionId",
-    withErrors(detail),
-  ),
-  HttpRouter.add(
-    "POST",
-    "/api/organizations/:organizationId/submissions/:submissionId/:decision",
-    withErrors(review),
-  ),
+  HttpRouter.add("GET", organizationPath, withErrors(organizationList)),
+  HttpRouter.add("POST", organizationPath, withErrors(create)),
+  HttpRouter.add("GET", submissionsPath, withErrors(list)),
+  HttpRouter.add("GET", countsPath, withErrors(counts)),
+  HttpRouter.add("GET", detailPath, withErrors(detail)),
+  HttpRouter.add("POST", decisionPath, withErrors(review)),
 );

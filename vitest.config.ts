@@ -102,6 +102,12 @@ export default defineConfig({
             ["CLOUDFLARE_EMAIL_DB", cloudflareEmailDatabase],
           ]),
           queueProducers,
+          durableObjects: {
+            "Submissions.SubmissionAggregate": {
+              className: "SubmissionAggregate",
+              scriptName: "rondyr-test-app",
+            },
+          },
           serviceBindings: {
             TEST_WORKER: "rondyr-test-app",
             CLOUDFLARE_EMAIL_WORKER: "rondyr-test-cloudflare-email",
