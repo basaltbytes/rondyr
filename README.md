@@ -24,7 +24,7 @@ pnpm install --frozen-lockfile
 cp .env.example .env
 ```
 
-Generate two different values with `openssl rand -hex 32`, and set them as `BETTER_AUTH_SECRET` and `RONDYR_SETUP_TOKEN` in `.env`. To try webhooks, also set `RONDYR_SECRETS_KEY` to the output of `openssl rand -base64 32`. The default email provider, Resend, needs `RESEND_API_KEY` and `RONDYR_EMAIL_FROM` and sends real email. [Email setup](./docs/email.md)
+Generate two different values with `openssl rand -hex 32`, and set them as `BETTER_AUTH_SECRET` and `RONDYR_SETUP_TOKEN` in `.env`. To try webhooks or Turnstile, also set `RONDYR_SECRETS_KEY` to the output of `openssl rand -base64 32`. The default email provider, Resend, needs `RESEND_API_KEY` and `RONDYR_EMAIL_FROM` and sends real email. [Email setup](./docs/email.md)
 
 Apply the migrations and start the Worker and the dashboard.
 
@@ -127,6 +127,8 @@ A suspended form answers `403` to every submission and stores nothing, with the 
 
 Create a Cloudflare Turnstile widget for the hostname that serves your form. In **Forms**, pick the form, save the widget's site key and secret key, then copy the HTML into your form. For a JSON integration, send the widget's token in the `cf-turnstile-response` field. The Worker needs `RONDYR_SECRETS_KEY` to encrypt the widget secret in D1. [Cloudflare's widget setup guide](https://developers.cloudflare.com/turnstile/get-started/)
 
+When you save the keys, Rondyr asks Siteverify whether it knows the secret key. If Siteverify refuses it, for example because a character is missing, nothing is saved and the dashboard asks you to copy the key again. If Siteverify doesn't answer, nothing is saved either; try again a moment later. Cloudflare's [test secret keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/) pass this check.
+
 Rondyr removes the token before storing the message. A missing or refused token sends the message to **To review** with the reason **Turnstile verification failed**, and the visitor still gets the usual response. If Siteverify fails to answer within five seconds or the verification service is unavailable, Rondyr logs the incident and lets the other intake checks and classification proceed.
 
 ### Allowed origins
@@ -172,7 +174,6 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 
 | Gap | Issue |
 | --- | --- |
-| Single D1 round trip for submissions that include a Turnstile token | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
 | Thresholds measured on a test corpus, per-organization policy | [#6](https://github.com/basaltbytes/rondyr/issues/6) |
 | Roles and invitations | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
 | Search, export, retention, and purge | [#9](https://github.com/basaltbytes/rondyr/issues/9) |
