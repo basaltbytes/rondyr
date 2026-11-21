@@ -52,6 +52,28 @@
       "failed": "Sign-out failed. Try again."
     }
   },
+  "setup": {
+    "title": "Create the owner account",
+    "description": "This Rondyr has no account yet. Enter the setup token chosen when it was deployed, then the account that will own it.",
+    "token": "Setup token",
+    "tokenHint": "The RONDYR_SETUP_TOKEN secret of the Worker, at least {{minimum}} characters.",
+    "name": "Your name",
+    "email": "Email address",
+    "password": "Password",
+    "passwordHint": "{{minimum}} to {{maximum}} characters.",
+    "submit": "Create the account",
+    "creating": "Creating…",
+    "created": "The account is created. Sign in with it.",
+    "tokenMissing": "This Rondyr has no setup token yet, so nobody can create its owner account.",
+    "tokenTooShort": "The setup token of this Rondyr is shorter than {{minimum}} characters, so Rondyr refuses it.",
+    "addToken": "In the Cloudflare dashboard, open Workers & Pages, select this Worker, then Settings › Variables and Secrets. Add a secret named RONDYR_SETUP_TOKEN, a passphrase of at least {{minimum}} characters, then reload this page.",
+    "problems": {
+      "rejected": "Check the name, the email address and the password.",
+      "refused": "This setup token does not match, or the owner account already exists.",
+      "rateLimited": "Too many attempts. Wait a minute, then try again.",
+      "failed": "The account could not be created. Try again."
+    }
+  },
   "status": {
     "reasons": {
       "probable-spam": "Probable spam",

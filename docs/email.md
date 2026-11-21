@@ -1,6 +1,6 @@
 # Email
 
-When a message is accepted, automatically or in review, Rondyr sends it as one plain text email to the recipients of each active email destination of its form. Each stage uses Resend by default or can opt in to Cloudflare Email Sending.
+When a message is accepted, automatically or in review, Rondyr sends it as one plain text email to the recipients of each active email destination of its form. Each instance uses Resend by default or can opt in to Cloudflare Email Sending.
 
 As with webhooks, a quarantined message is sent only once someone accepts it, and a destination created or reactivated after a message was accepted doesn't receive that message.
 
@@ -11,7 +11,7 @@ You need a Resend account, a domain you control, and access to its DNS records.
 1. In Resend, add the domain you will send from. Resend recommends a subdomain such as `notifications.example.com` rather than the root domain, so that the reputation of these emails stays apart from your other mail. See [Domains](https://resend.com/docs/dashboard/domains/introduction).
 2. Add the DNS records that Resend shows for the domain: SPF and DKIM, as `TXT`, `MX` or `CNAME` records. Copy them exactly. If the zone is on Cloudflare, don't proxy them. Verification often completes within 15 minutes, and DNS changes can take up to 72 hours. See [Add a domain](https://resend.com/docs/add-a-domain).
 3. Create an API key with **Sending access**, restricted to that domain. Resend shows the value only once. See [API keys](https://resend.com/docs/dashboard/api-keys/introduction).
-4. Set both values in the stage environment, then redeploy:
+4. Set both values in the Worker's settings, **Workers & Pages → rondyr → Settings → Variables and Secrets**. Saving them deploys:
 
 | Variable | Kind | Value |
 | --- | --- | --- |
@@ -19,7 +19,7 @@ You need a Resend account, a domain you control, and access to its DNS records.
 | `RONDYR_EMAIL_FROM` | Setting | A bare address on the verified domain, such as `forms@notifications.example.com` |
 | `RONDYR_EMAIL_PROVIDER` | Setting, optional | `resend`, the default |
 
-The deployment refuses a `RONDYR_EMAIL_FROM` that isn't a bare address: `Rondyr <forms@example.com>` is refused. [deployment.md](./deployment.md#email) lists the matching GitHub secrets and variables.
+Rondyr refuses a `RONDYR_EMAIL_FROM` that isn't a bare address: `Rondyr <forms@example.com>` is refused, and email destinations stay unavailable. See [deployment.md](./deployment.md#settings) for the other settings.
 
 ### Resend limits and cost
 
@@ -36,7 +36,7 @@ A message over quota or over the rate limit gets `429`, which Rondyr retries. A 
 ## Setup with Cloudflare Email Sending
 
 1. Use Workers Paid and a sender domain on Cloudflare DNS in the same account as the Worker. In the Cloudflare dashboard, open **Compute → Email Service → Email Sending**, choose **Onboard Domain**, and complete domain setup. Check the domain's sending status after the DNS records propagate. [Domain configuration](https://developers.cloudflare.com/email-service/configuration/domains/)
-2. Set `RONDYR_EMAIL_PROVIDER=cloudflare` and `RONDYR_EMAIL_FROM` to a bare address on that domain, for example `forms@notifications.example.com`. Redeploy the selected stage with Alchemy. It adds the `CLOUDFLARE_EMAIL` binding without a recipient allowlist. The binding uses the Worker's account and needs no email API key. After onboarding, the binding can send to any recipient without adding them to Cloudflare's verified destination list. [Send bindings](https://developers.cloudflare.com/email-service/configuration/send-bindings/)
+2. Add the `CLOUDFLARE_EMAIL` binding to `wrangler.json` in your repository and push it, as [deployment.md](./deployment.md#email) shows, then set the variables `RONDYR_EMAIL_PROVIDER` to `cloudflare` and `RONDYR_EMAIL_FROM` to a bare address on that domain, for example `forms@notifications.example.com`. The binding has no recipient allowlist. The binding uses the Worker's account and needs no email API key. After onboarding, the binding can send to any recipient without adding them to Cloudflare's verified destination list. [Send bindings](https://developers.cloudflare.com/email-service/configuration/send-bindings/)
 3. Create an email destination and use **Send a test**. Keep Cloudflare's **Drop suppressed recipients** setting off if Rondyr should record a suppressed address as a failed delivery. [Workers API](https://developers.cloudflare.com/email-service/api/send-emails/workers-api/#error-codes)
 
 ### Cloudflare limits and cost
@@ -47,7 +47,7 @@ Cloudflare sets a daily sending limit per account and adjusts it based on sendin
 
 ## Missing configuration
 
-The stage can deploy with email settings omitted. With no sender address or with the selected provider's key or binding missing, creating a destination answers `503` with `{"error":"email-provider-missing"}`. Listing and editing existing destinations still work. Deliveries to them fail without a retry.
+The instance can deploy with email settings omitted. With no sender address or with the selected provider's key or binding missing, creating a destination answers `503` with `{"error":"email-provider-missing"}`. Listing and editing existing destinations still work. Deliveries to them fail without a retry.
 
 ## Destinations
 

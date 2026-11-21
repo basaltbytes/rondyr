@@ -18,6 +18,7 @@ export default defineConfig({
       "status.reasons.*",
       "status.deliveries.*",
       "authentication.signIn.problems.*",
+      "setup.problems.*",
       "inbox.sections.*",
       "inbox.statuses.*",
       "inbox.reader.problems.*",

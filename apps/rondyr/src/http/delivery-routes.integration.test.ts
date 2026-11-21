@@ -78,6 +78,7 @@ const signedIn = Layer.succeed(Authentication, {
   userId: (request) => Effect.succeed(request.headers.get("x-test-user")),
   handle: () => Effect.die("The routes under test do not proxy Better Auth"),
   setup: () => Effect.die("The routes under test do not create accounts"),
+  setupState: Effect.die("The routes under test do not read the setup state"),
 });
 
 const cipher = secretCipherLayer(Effect.succeedSome(Redacted.make(testSecretsKey)));

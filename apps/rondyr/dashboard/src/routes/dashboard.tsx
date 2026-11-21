@@ -2,7 +2,7 @@ import { lazy } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AccountMenu, SignOutButton } from "~/features/authentication/account";
-import { SignInForm } from "~/features/authentication/sign-in-form";
+import { SignedOut } from "~/features/authentication/owner-setup";
 import { InboxPanel } from "~/features/inbox/inbox-panel";
 import { authClient } from "~/lib/auth-client";
 import { productName } from "~/lib/product";
@@ -26,7 +26,7 @@ export function Dashboard() {
     return (
       <main className="mx-auto grid max-w-sm gap-5 px-5 py-16">
         <h1 className="text-lg font-semibold">{productName}</h1>
-        <SignInForm />
+        <SignedOut />
       </main>
     );
   }

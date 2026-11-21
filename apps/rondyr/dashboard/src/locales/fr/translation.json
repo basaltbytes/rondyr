@@ -52,6 +52,28 @@
       "failed": "La déconnexion a échoué. Réessayez."
     }
   },
+  "setup": {
+    "title": "Créer le compte propriétaire",
+    "description": "Ce Rondyr n’a encore aucun compte. Saisissez le jeton d’installation choisi lors du déploiement, puis le compte qui en sera propriétaire.",
+    "token": "Jeton d’installation",
+    "tokenHint": "Le secret RONDYR_SETUP_TOKEN du Worker, d’au moins {{minimum}} caractères.",
+    "name": "Votre nom",
+    "email": "Adresse e-mail",
+    "password": "Mot de passe",
+    "passwordHint": "De {{minimum}} à {{maximum}} caractères.",
+    "submit": "Créer le compte",
+    "creating": "Création…",
+    "created": "Le compte est créé. Connectez-vous avec ce compte.",
+    "tokenMissing": "Ce Rondyr n’a pas encore de jeton d’installation : personne ne peut créer son compte propriétaire.",
+    "tokenTooShort": "Le jeton d’installation de ce Rondyr fait moins de {{minimum}} caractères : Rondyr le refuse.",
+    "addToken": "Dans le tableau de bord Cloudflare, ouvrez Workers & Pages, sélectionnez ce Worker, puis Settings › Variables and Secrets. Ajoutez un secret nommé RONDYR_SETUP_TOKEN, une phrase secrète d’au moins {{minimum}} caractères, puis rechargez cette page.",
+    "problems": {
+      "rejected": "Vérifiez le nom, l’adresse e-mail et le mot de passe.",
+      "refused": "Ce jeton d’installation ne correspond pas, ou le compte propriétaire existe déjà.",
+      "rateLimited": "Trop de tentatives. Attendez une minute, puis réessayez.",
+      "failed": "Le compte n’a pas pu être créé. Réessayez."
+    }
+  },
   "status": {
     "reasons": {
       "probable-spam": "Indésirable probable",

@@ -12,7 +12,12 @@ import {
   testSetupToken,
 } from "./tests/integration/auth-fixture.ts";
 import { externalWorkers, workersAiBinding } from "./tests/integration/external-workers.ts";
-import wrangler from "./wrangler.json" with { type: "json" };
+import {
+  queueNameVars,
+  type QueueNameVars,
+  wrangler,
+  wranglerConfigPath,
+} from "./worker-config.ts";
 
 const escalationWorkers = [
   { binding: "ESCALATION_WORKER", name: "rondyr-test-escalation", classifier: "openai" },
@@ -70,8 +75,9 @@ export default defineConfig({
   plugins: [
     cloudflareTest(async () => {
       const {
-        workerOptions: { modulesRules: _rules, ...workerOptions },
-      } = unstable_getMiniflareWorkerOptions("./wrangler.json");
+        // Workers AI is the fixture of tests/integration/external-workers.ts.
+        workerOptions: { modulesRules: _rules, ai: _ai, ...workerOptions },
+      } = unstable_getMiniflareWorkerOptions(wranglerConfigPath);
       const files = await readdir("./dist/rondyr", { recursive: true });
       const chunks = files.filter((file) => file !== "index.js" && file.endsWith(".js"));
       const modules = ["index.js", ...chunks].map((path) => ({ type: "ESModule" as const, path }));
@@ -82,8 +88,14 @@ export default defineConfig({
         outboundService: "webhook-receiver-fixture",
         tails: ["worker-log-fixture"],
       };
+      const queueNames = queueNameVars(wrangler.queues);
+      const queueName = (variable: keyof QueueNameVars) => {
+        const name = queueNames[variable];
+        if (name === undefined) throw new Error(`wrangler.json names no queue for ${variable}`);
+        return name;
+      };
       const bindings = {
-        ...wrangler.vars,
+        ...queueNames,
         BETTER_AUTH_SECRET: "workerd-test-only-better-auth-secret-8ea101",
         BETTER_AUTH_URL: testOrigin,
         RONDYR_SETUP_TOKEN: testSetupToken,
@@ -94,8 +106,8 @@ export default defineConfig({
       );
       // The tests send messages to the dead-letter queues, which the Worker consumes.
       const deadLetterProducers = {
-        CLASSIFICATION_DEAD_LETTER_QUEUE: wrangler.vars.CLASSIFICATION_DEAD_LETTER_QUEUE_NAME,
-        DELIVERY_DEAD_LETTER_QUEUE: wrangler.vars.DELIVERY_DEAD_LETTER_QUEUE_NAME,
+        CLASSIFICATION_DEAD_LETTER_QUEUE: queueName("CLASSIFICATION_DEAD_LETTER_QUEUE_NAME"),
+        DELIVERY_DEAD_LETTER_QUEUE: queueName("DELIVERY_DEAD_LETTER_QUEUE_NAME"),
       };
       return {
         remoteBindings: false,
@@ -103,7 +115,8 @@ export default defineConfig({
           compatibilityDate: wrangler.compatibility_date,
           compatibilityFlags: wrangler.compatibility_flags,
           d1Databases: Object.fromEntries([
-            ...wrangler.d1_databases.map(({ binding, database_id }) => [binding, database_id]),
+            // Wrangler names a local database without an ID after its binding.
+            ...wrangler.d1_databases.map(({ binding }) => [binding, binding]),
             ["CLOUDFLARE_EMAIL_DB", cloudflareEmailDatabase],
           ]),
           queueProducers: { ...queueProducers, ...deadLetterProducers },
@@ -117,6 +130,7 @@ export default defineConfig({
             TEST_WORKER: "rondyr-test-app",
             CLOUDFLARE_EMAIL_WORKER: "rondyr-test-cloudflare-email",
             KEYLESS_WORKER: "rondyr-test-keyless",
+            DERIVED_ORIGIN_WORKER: "rondyr-test-derived-origin",
             CLOUDFLARE_EMAIL_FIXTURE: "cloudflare-email-fixture",
             WEBHOOK_RECEIVER: "webhook-receiver-fixture",
             RESEND_FIXTURE: "resend-fixture",
@@ -161,6 +175,17 @@ export default defineConfig({
               name: "rondyr-test-keyless",
               queueConsumers: {},
               bindings,
+            },
+            // A deployment from the Deploy to Cloudflare button before its owner chose a
+            // setup token: no BETTER_AUTH_URL, so the origin is the request's.
+            {
+              ...worker,
+              name: "rondyr-test-derived-origin",
+              queueConsumers: {},
+              bindings: {
+                ...queueNames,
+                BETTER_AUTH_SECRET: "workerd-test-only-derived-origin-secret-5b2e07",
+              },
             },
             ...escalationWorkers.map(({ name, classifier }) => {
               const queue = `${name}-classification`;

@@ -460,6 +460,7 @@ it.live("refuses to create an email target when the stage has no email provider"
       userId: () => Effect.succeed("mailless-user"),
       handle: () => Effect.die("The routes under test do not proxy Better Auth"),
       setup: () => Effect.die("The routes under test do not create accounts"),
+      setupState: Effect.die("The routes under test do not read the setup state"),
     });
     const services = yield* Layer.build(
       Layer.mergeAll(
@@ -650,6 +651,7 @@ it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY
       userId: () => Effect.succeed("keyless-user"),
       handle: () => Effect.die("The routes under test do not proxy Better Auth"),
       setup: () => Effect.die("The routes under test do not create accounts"),
+      setupState: Effect.die("The routes under test do not read the setup state"),
     });
     const services = yield* Layer.build(
       Layer.mergeAll(
