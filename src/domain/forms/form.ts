@@ -106,4 +106,6 @@ export function successUrlOrigin(url: SuccessUrl) {
 export const FormRequestError = Schema.Union([
   Schema.Struct({ error: Schema.Literal("success-url-refused"), reason: SuccessUrlRefusalReason }),
   Schema.Struct({ error: Schema.Literal("secrets-key-missing") }),
+  Schema.Struct({ error: Schema.Literal("turnstile-secret-refused") }),
+  Schema.Struct({ error: Schema.Literal("siteverify-unavailable") }),
 ]);

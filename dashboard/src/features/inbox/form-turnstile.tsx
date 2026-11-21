@@ -6,11 +6,13 @@ import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { FormRequestFailed, setTurnstile } from "~/lib/forms-client";
-import type { Form } from "~/lib/forms-client";
+import type { Form, FormProblem as FormRequestProblem } from "~/lib/forms-client";
 import type { Inbox } from "~/lib/inbox-client";
 
 const isFailed = Schema.is(FormRequestFailed);
-type SaveResult = "saveFailed" | "secretsKeyMissing" | null;
+
+/** Why a save failed: the problem that the API names, or no stated reason. */
+type SaveFailure = FormRequestProblem["error"] | "unexplained";
 
 function WidgetSnippet({ siteKey }: { readonly siteKey: string }) {
   const { t } = useTranslation();
@@ -58,7 +60,7 @@ interface FormTurnstileProps {
 
 export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) {
   const { t } = useTranslation();
-  const [result, save, saving] = useActionState(async (_: SaveResult, data: FormData) => {
+  const [result, save, saving] = useActionState(async (_: SaveFailure | null, data: FormData) => {
     const settings =
       data.get("action") === "clear"
         ? null
@@ -71,16 +73,28 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
       await onChanged();
       return null;
     } catch (error) {
-      if (
-        isFailed(error) &&
-        Option.exists(error.problem, (problem) => problem.error === "secrets-key-missing")
-      ) {
-        return "secretsKeyMissing";
-      }
-      return "saveFailed";
+      if (!isFailed(error)) return "unexplained";
+      return Option.match(error.problem, {
+        onNone: (): SaveFailure => "unexplained",
+        onSome: (problem): SaveFailure => problem.error,
+      });
     }
   }, null);
   const siteKey = form.turnstileSiteKey;
+
+  function explain(failure: SaveFailure) {
+    switch (failure) {
+      case "secrets-key-missing":
+        return t("inbox.forms.turnstile.secretsKeyMissing");
+      case "turnstile-secret-refused":
+        return t("inbox.forms.turnstile.secretKeyRefused");
+      case "siteverify-unavailable":
+        return t("inbox.forms.turnstile.siteverifyUnavailable");
+      case "success-url-refused":
+      case "unexplained":
+        return t("inbox.forms.turnstile.saveFailed");
+    }
+  }
 
   return (
     <Card>
@@ -112,13 +126,7 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
                 required
               />
             </div>
-            <FormProblem>
-              {result === "secretsKeyMissing"
-                ? t("inbox.forms.turnstile.secretsKeyMissing")
-                : result === "saveFailed"
-                  ? t("inbox.forms.turnstile.saveFailed")
-                  : null}
-            </FormProblem>
+            <FormProblem>{result === null ? null : explain(result)}</FormProblem>
             <div className="flex flex-wrap items-center gap-2">
               <Button type="submit" disabled={saving}>
                 {saving ? t("inbox.forms.turnstile.saving") : t("inbox.forms.turnstile.save")}

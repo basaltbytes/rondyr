@@ -302,6 +302,8 @@
         "copied": "HTML copié.",
         "copyFailed": "La copie a échoué. Sélectionnez et copiez le HTML ci-dessus.",
         "secretsKeyMissing": "Configurez RONDYR_SECRETS_KEY sur le Worker pour activer Turnstile.",
+        "secretKeyRefused": "Cloudflare ne reconnaît pas cette clé secrète. Copiez-la de nouveau depuis les réglages du widget dans le tableau de bord Cloudflare.",
+        "siteverifyUnavailable": "Cloudflare n’a pas pu vérifier la clé secrète, donc rien n’a été enregistré. Réessayez dans un instant.",
         "saveFailed": "Impossible d’enregistrer les réglages Turnstile."
       },
       "suspension": {

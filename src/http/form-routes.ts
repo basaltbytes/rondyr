@@ -51,6 +51,10 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         SuccessOriginNotListed: () => refused("origin-not-listed"),
         SecretsKeyMissing: () =>
           errorJson({ error: "secrets-key-missing" }, { status: 503, ...jsonOptions }),
+        TurnstileSecretRefused: () =>
+          errorJson({ error: "turnstile-secret-refused" }, { status: 400, ...jsonOptions }),
+        TurnstileUnavailable: () =>
+          errorJson({ error: "siteverify-unavailable" }, { status: 503, ...jsonOptions }),
         SchemaError: () => empty(400),
         HttpServerError: () => empty(400),
       }).pipe(Effect.catch(() => empty(503)));
@@ -134,7 +138,7 @@ const setTurnstile = Effect.gen(function* () {
 const clearTurnstile = Effect.gen(function* () {
   const form = yield* scope;
   const forms = yield* Forms;
-  const updated = yield* forms.setTurnstile(form, null);
+  const updated = yield* forms.clearTurnstile(form);
   return yield* formJson(updated, jsonOptions);
 });
 

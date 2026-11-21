@@ -28,6 +28,23 @@ const formFor = Effect.fnUntraced(function* (name: string, headers: HeadersInit)
 });
 
 const siteKey = "workerd_fixture_site_key";
+// Cloudflare's dummy token, which the Worker sends to Siteverify to check a secret key.
+const dummyToken = "XXXX.DUMMY.TOKEN.XXXX";
+
+const siteverifyCalls = (secret: string) => {
+  const url = new URL("https://siteverify.test/__calls");
+  url.searchParams.set("secret", secret);
+  return Effect.promise(() => env.SITEVERIFY_FIXTURE.fetch(url)).pipe(Effect.flatMap(json));
+};
+
+const storedKeys = (publicId: string) =>
+  Effect.promise(() =>
+    env.DB.prepare(
+      "SELECT turnstile_site_key AS siteKey, turnstile_secret AS secret FROM forms WHERE public_id = ?",
+    )
+      .bind(publicId)
+      .first(),
+  );
 
 it.live("encrypts the Turnstile secret and returns only the site key in form settings", () =>
   Effect.gen(function* () {
@@ -38,6 +55,8 @@ it.live("encrypts the Turnstile secret and returns only the site key in form set
     const enabled = yield* call("PUT", path, { siteKey, secretKey }, headers);
 
     assert.strictEqual(enabled.status, 200);
+    const checks = yield* siteverifyCalls(secretKey);
+    assert.deepEqual(checks, [{ secret: secretKey, token: dummyToken }]);
     const body = yield* json(enabled);
     assert.notProperty(body, "secretKey");
     assert.strictEqual((yield* readForm(body)).turnstileSiteKey, siteKey);
@@ -78,6 +97,59 @@ it.live(
       assert.deepEqual(body, { error: "secrets-key-missing" });
     }),
 );
+
+const refusals = [
+  {
+    outcome: "refuses",
+    secretKey: "refused-new-key",
+    status: 400,
+    error: "turnstile-secret-refused",
+  },
+  {
+    outcome: "cannot be reached for",
+    secretKey: "unreachable-new-key",
+    status: 503,
+    error: "siteverify-unavailable",
+  },
+  {
+    outcome: "reports an internal error for",
+    secretKey: "internal-error-new-key",
+    status: 503,
+    error: "siteverify-unavailable",
+  },
+] as const;
+
+for (const { outcome, secretKey, status, error } of refusals) {
+  it.live(`keeps the current Turnstile keys when Siteverify ${outcome} a new secret key`, () =>
+    Effect.gen(function* () {
+      const headers = yield* signIn;
+      const { path, form } = yield* formFor(`Turnstile key that Siteverify ${outcome}`, headers);
+      const configured = yield* call(
+        "PUT",
+        path,
+        { siteKey, secretKey: `known-before-${secretKey}` },
+        headers,
+      );
+      assert.strictEqual(configured.status, 200);
+      const before = yield* storedKeys(form.publicId);
+
+      const replaced = yield* call(
+        "PUT",
+        path,
+        { siteKey: "replacement_site_key", secretKey },
+        headers,
+      );
+
+      assert.strictEqual(replaced.status, status);
+      const body = yield* json(replaced);
+      assert.deepEqual(body, { error });
+      const after = yield* storedKeys(form.publicId);
+      assert.deepEqual(after, before);
+      const checks = yield* siteverifyCalls(secretKey);
+      assert.deepEqual(checks, [{ secret: secretKey, token: dummyToken }]);
+    }),
+  );
+}
 
 const cases = [
   { name: "valid", token: "valid-siteverify-valid", classified: true },
@@ -122,11 +194,12 @@ for (const { name, token, classified } of cases) {
         );
         assert.strictEqual(detail.reason, classified ? null : "turnstile-failed");
         assert.deepEqual(detail.fields, fields);
-        const verification = new URL("https://siteverify.test/__calls");
-        verification.searchParams.set("secret", secretKey);
-        const checked = yield* Effect.promise(() => env.SITEVERIFY_FIXTURE.fetch(verification));
-        const checks = yield* json(checked);
-        assert.deepEqual(checks, token === null ? [] : [{ secret: secretKey, token }]);
+        const keyCheck = { secret: secretKey, token: dummyToken };
+        const checks = yield* siteverifyCalls(secretKey);
+        assert.deepEqual(
+          checks,
+          token === null ? [keyCheck] : [keyCheck, { secret: secretKey, token }],
+        );
         const ai = yield* Effect.promise(() =>
           env.WORKERS_AI_FIXTURE.fetch("https://workers-ai.test/__calls"),
         );

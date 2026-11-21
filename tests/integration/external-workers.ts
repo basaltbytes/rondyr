@@ -86,7 +86,12 @@ export default {
 };
 `;
 
-// Siteverify accepts a token only for its corresponding fixture secret.
+// Siteverify for the tests. It records every call, which tests read back from
+// GET /__calls?secret=..., and answers by the secret key first: refused-<name>
+// is an unknown key (HTTP 400 with invalid-input-secret, as Cloudflare answers),
+// unreachable-<name> gets 503 and internal-error-<name> an internal-error reply.
+// Any other secret key is known and accepts only the token "valid-<secret>". The
+// token unavailable gets 503, and the token slow an answer after 15 seconds.
 const siteverifyFixture = `
 const calls = [];
 export default {
@@ -102,7 +107,15 @@ export default {
     const secret = body.get("secret");
     const token = body.get("response");
     calls.push({ secret, token });
-    if (token === "unavailable") return new Response(null, { status: 503 });
+    if (secret.startsWith("refused-")) {
+      return Response.json({ success: false, "error-codes": ["invalid-input-secret"] }, { status: 400 });
+    }
+    if (secret.startsWith("internal-error-")) {
+      return Response.json({ success: false, "error-codes": ["internal-error"] });
+    }
+    if (secret.startsWith("unreachable-") || token === "unavailable") {
+      return new Response(null, { status: 503 });
+    }
     if (token === "slow") await scheduler.wait(15_000);
     return token === "valid-" + secret
       ? Response.json({ success: true })
