@@ -71,6 +71,9 @@ const scoreCall = () =>
   Story.call(Classifier.score, { submissionId, organizationId, classifier: "jev" });
 const secondScoreCall = () =>
   Story.call(Classifier.score, { submissionId, organizationId, classifier: "openai" });
+const reservationCall = () => Story.call(Classifier.reserveEscalation, { organizationId });
+const reserveEscalation = () =>
+  [reservationCall(), Story.succeed(Classifier.reserveEscalation, "reserved")] as const;
 
 it("defines a valid Domain model and distinct classification thresholds", () => {
   assert.deepEqual(Domain.verify(Submissions), []);
@@ -226,6 +229,7 @@ it.effect("accepts and labels an ambiguous submission cleared by the second mode
   const scores = { model: "openai-fixture", spam: 0.2, solicitation: 0.03, relevance: 0.3 };
   return story(
     ...classifyAmbiguous(custom),
+    ...reserveEscalation(),
     secondScoreCall(),
     Story.succeed(Classifier.score, scores),
     Story.then(
@@ -256,6 +260,7 @@ it.effect("keeps the ambiguous reason when the second model also requires review
   const scores = { model: "openai-fixture", spam: 0.8, solicitation: 0.03 };
   return story(
     ...classifyAmbiguous(escalationPolicy),
+    ...reserveEscalation(),
     secondScoreCall(),
     Story.succeed(Classifier.score, scores),
     Story.then(
@@ -288,6 +293,7 @@ for (const { finding, scores, reason } of [
   it.effect(`keeps ${finding} in review when the second model clears the spam doubt`, () =>
     story(
       ...classifyAmbiguous(escalationPolicy, scores),
+      ...reserveEscalation(),
       secondScoreCall(),
       Story.succeed(Classifier.score, clearedScores),
       Story.then(
@@ -316,30 +322,84 @@ it("labels an escalated acceptance off-topic when either model finds it off-topi
   assert.deepEqual(decide(0.9), { reason: null });
 });
 
-it.effect("keeps the ambiguous reason after the second model exhausts its retries", () =>
-  story(
-    ...classifyAmbiguous(escalationPolicy),
-    secondScoreCall(),
-    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
-    Story.advance("10 seconds"),
-    secondScoreCall(),
-    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
-    Story.advance("30 seconds"),
-    secondScoreCall(),
-    Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
-    Story.then(
-      submission,
-      SubmissionQuarantined.make({
-        organizationId,
-        reason: "ambiguous",
-        scores: ambiguousScores,
-        rulesVersion,
-        policy: escalationPolicy,
-        escalation: { classifier: "openai", rulesVersion },
-      }),
+it.effect(
+  "reserves once and keeps the ambiguous reason after the second model exhausts its retries",
+  () =>
+    story(
+      ...classifyAmbiguous(escalationPolicy),
+      ...reserveEscalation(),
+      secondScoreCall(),
+      Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
+      Story.advance("10 seconds"),
+      secondScoreCall(),
+      Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
+      Story.advance("30 seconds"),
+      secondScoreCall(),
+      Story.fail(Classifier.score, ClassificationFailed.make({ retryable: true })),
+      Story.then(
+        submission,
+        SubmissionQuarantined.make({
+          organizationId,
+          reason: "ambiguous",
+          scores: ambiguousScores,
+          rulesVersion,
+          policy: escalationPolicy,
+          escalation: { classifier: "openai", rulesVersion },
+        }),
+      ),
+      Story.state(submission, { _tag: "Quarantined" }),
     ),
-    Story.state(submission, { _tag: "Quarantined" }),
-  ),
+);
+
+it.effect(
+  "keeps the ambiguous reason without a second call at the daily classification limit",
+  () =>
+    story(
+      ...classifyAmbiguous(escalationPolicy),
+      reservationCall(),
+      Story.succeed(Classifier.reserveEscalation, "limit-reached"),
+      // No second score call: a story fails on any external call it does not expect.
+      Story.then(
+        submission,
+        SubmissionQuarantined.make({
+          organizationId,
+          reason: "ambiguous",
+          scores: ambiguousScores,
+          rulesVersion,
+          policy: escalationPolicy,
+          escalation: { classifier: "openai", rulesVersion, skipped: "quota" },
+        }),
+      ),
+      Story.state(submission, { _tag: "Quarantined" }),
+    ),
+);
+
+it.effect(
+  "keeps the ambiguous reason without a second call when the reservation keeps failing",
+  () =>
+    story(
+      ...classifyAmbiguous(escalationPolicy),
+      reservationCall(),
+      Story.fail(Classifier.reserveEscalation, ClassificationFailed.make({ retryable: true })),
+      Story.advance("10 seconds"),
+      reservationCall(),
+      Story.fail(Classifier.reserveEscalation, ClassificationFailed.make({ retryable: true })),
+      Story.advance("30 seconds"),
+      reservationCall(),
+      Story.fail(Classifier.reserveEscalation, ClassificationFailed.make({ retryable: true })),
+      Story.then(
+        submission,
+        SubmissionQuarantined.make({
+          organizationId,
+          reason: "ambiguous",
+          scores: ambiguousScores,
+          rulesVersion,
+          policy: escalationPolicy,
+          escalation: { classifier: "openai", rulesVersion },
+        }),
+      ),
+      Story.state(submission, { _tag: "Quarantined" }),
+    ),
 );
 
 it.effect("looks up the policy again 10 seconds after a retryable failure, then scores", () => {

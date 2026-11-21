@@ -2,7 +2,8 @@ import * as Domain from "@alchemy.run/domain";
 import { Effect } from "effect";
 import { Activity, DurableClock } from "effect/workflow";
 
-import { ResolvedClassificationPolicy } from "./classification-policy.ts";
+import { ClassificationReservation } from "../organizations/organization-quotas.ts";
+import { type ClassifierProvider, ResolvedClassificationPolicy } from "./classification-policy.ts";
 import { ClassificationScores, reviewReason, rulesVersion } from "./classification.ts";
 import { ClassificationFailed, Classifier } from "./classifier.external.ts";
 import { RecordClassification } from "./record-classification.command.ts";
@@ -42,6 +43,41 @@ export const classifySubmissionLive = ClassifySubmission.toLayer(
     const submissions = yield* Submission;
     const classifier = yield* Classifier;
 
+    /**
+     * The second evaluation of an ambiguous submission. It first reserves one
+     * classification of the organization's day, once, whatever the number of
+     * retries of the second call. A reached limit or a reservation that keeps
+     * failing leaves the second model uncalled.
+     */
+    const secondEvaluation = Effect.fnUntraced(function* (
+      submissionId: SubmissionId,
+      organizationId: OrganizationId,
+      second: ClassifierProvider,
+    ) {
+      const evaluation = { classifier: second, rulesVersion };
+      const reservation = yield* withRetries("reservation-retry", (attempt) =>
+        Activity.make({
+          name: `reserve-escalation-${attempt}`,
+          success: ClassificationReservation,
+          error: ClassificationFailed,
+          execute: classifier.reserveEscalation({ organizationId }),
+        }),
+      );
+      if (reservation._tag === "Failure") return evaluation;
+      if (reservation.success === "limit-reached") {
+        return { ...evaluation, skipped: "quota" as const };
+      }
+      const scored = yield* withRetries("escalation-retry", (attempt) =>
+        Activity.make({
+          name: `score-escalation-${attempt}`,
+          success: ClassificationScores,
+          error: ClassificationFailed,
+          execute: classifier.score({ submissionId, organizationId, classifier: second }),
+        }),
+      );
+      return scored._tag === "Success" ? { ...evaluation, scores: scored.success } : evaluation;
+    });
+
     return Effect.fnUntraced(function* ({ key, organizationId }) {
       const resolved = yield* withRetries("policy-retry", (attempt) =>
         Activity.make({
@@ -71,23 +107,7 @@ export const classifySubmissionLive = ClassifySubmission.toLayer(
             escalationClassifier !== provider &&
             reviewReason(scores, policy) === "ambiguous"
           ) {
-            const second = yield* withRetries("escalation-retry", (attempt) =>
-              Activity.make({
-                name: `score-escalation-${attempt}`,
-                success: ClassificationScores,
-                error: ClassificationFailed,
-                execute: classifier.score({
-                  submissionId: key,
-                  organizationId,
-                  classifier: escalationClassifier,
-                }),
-              }),
-            );
-            const escalation = {
-              classifier: escalationClassifier,
-              rulesVersion,
-              ...(second._tag === "Success" && { scores: second.success }),
-            };
+            const escalation = yield* secondEvaluation(key, organizationId, escalationClassifier);
             yield* Activity.make({
               name: "record-escalated-classification",
               execute: submissions
