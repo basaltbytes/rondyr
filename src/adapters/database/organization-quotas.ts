@@ -70,6 +70,7 @@ const reserveStatement = `
   ON CONFLICT (organization_id) DO UPDATE SET
     submissions = CASE WHEN day = excluded.day THEN submissions ELSE 0 END,
     classifications = 1 + CASE WHEN day = excluded.day THEN classifications ELSE 0 END,
+    junk = CASE WHEN day = excluded.day THEN junk ELSE 0 END,
     day = excluded.day
   RETURNING classifications
 `;
