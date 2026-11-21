@@ -548,7 +548,7 @@ it.live(
   () =>
     Effect.gen(function* () {
       const admin = yield* signIn;
-      const { id } = yield* createInbox("Departures", admin);
+      const { id, forms } = yield* createInbox("Departures", admin);
       const leaving = yield* addMember(id, admin, "leaving-admin@example.test", "admin");
       const demoted = yield* addMember(id, admin, "demoted-admin@example.test", "admin");
       const token = yield* call(
@@ -588,12 +588,21 @@ it.live(
           headers: { authorization: `Bearer ${secret}` },
         }),
       );
+      // A site that sends its messages with the token stops: the removal dialog says so.
+      const intake = yield* Effect.promise(() =>
+        env.TEST_WORKER.fetch(new URL(`/f/${forms[0]?.publicId ?? ""}`, origin), {
+          method: "POST",
+          headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+          body: '{"message":"Sent by the site of a removed member"}',
+        }),
+      );
       const accepted = yield* Effect.forEach([byLeaving, byDemoted], ({ token: link }) =>
         call("POST", "/api/invitations/accept", { token: link, name: "Friend", password }),
       );
 
       assert.deepEqual([removed.status, changed.status], [204, 200]);
       assert.strictEqual(withToken.status, 401);
+      assert.strictEqual(intake.status, 401);
       assert.deepEqual(
         accepted.map(({ status }) => status),
         [404, 404],

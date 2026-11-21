@@ -228,6 +228,34 @@ it.live("answers a replayed key with the first submission and stores nothing", (
   }),
 );
 
+it.live(
+  "keeps the idempotency key out of the export, and frees it when the message is deleted",
+  () =>
+    Effect.gen(function* () {
+      const { cookie, organization, publicId, token } = yield* siteWithToken("Deleted key");
+      const key = { "idempotency-key": "emdash-deleted-key-7f3a" };
+      const first = yield* accept(serverPost(publicId, token, undefined, key));
+      const submissions = `/api/organizations/${organization.id}/submissions`;
+
+      const exported = yield* call(
+        "GET",
+        `/api/organizations/${organization.id}/submission-export?format=jsonl`,
+        undefined,
+        { cookie },
+      );
+      const lines = yield* Effect.promise(() => exported.text());
+      const deleted = yield* call("DELETE", `${submissions}/${first}`, undefined, { cookie });
+      // The same key after the deletion stores a new message.
+      const second = yield* accept(serverPost(publicId, token, undefined, key));
+
+      assert.include(lines, first);
+      assert.notInclude(lines, "emdash-deleted-key-7f3a");
+      assert.strictEqual(deleted.status, 204);
+      assert.notStrictEqual(second, first);
+      yield* expectStored(publicId, 1);
+    }),
+);
+
 const usage = (organizationId: string) =>
   Effect.promise(() =>
     env.DB.prepare(
