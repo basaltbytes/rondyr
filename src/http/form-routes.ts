@@ -17,6 +17,7 @@ import {
   type FormStatus,
   type SuccessUrlRefusalReason,
 } from "../domain/forms/form.ts";
+import { SetTurnstile } from "../domain/forms/turnstile.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
 import { Forms } from "../ports/forms.ts";
 import { reviewer } from "./review-routes.ts";
@@ -48,7 +49,10 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         AuthOriginRefused: () => empty(403),
         OrganizationFormNotFound: () => empty(404),
         SuccessOriginNotListed: () => refused("origin-not-listed"),
+        SecretsKeyMissing: () =>
+          errorJson({ error: "secrets-key-missing" }, { status: 503, ...jsonOptions }),
         SchemaError: () => empty(400),
+        HttpServerError: () => empty(400),
       }).pipe(Effect.catch(() => empty(503)));
     }),
   );
@@ -117,6 +121,23 @@ const clearHoneypotField = Effect.gen(function* () {
   return yield* formJson(updated, jsonOptions);
 });
 
+const setTurnstile = Effect.gen(function* () {
+  const form = yield* scope;
+  const settings = yield* HttpServerRequest.schemaBodyJson(SetTurnstile, {
+    onExcessProperty: "error",
+  });
+  const forms = yield* Forms;
+  const updated = yield* forms.setTurnstile(form, settings);
+  return yield* formJson(updated, jsonOptions);
+}).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
+
+const clearTurnstile = Effect.gen(function* () {
+  const form = yield* scope;
+  const forms = yield* Forms;
+  const updated = yield* forms.setTurnstile(form, null);
+  return yield* formJson(updated, jsonOptions);
+});
+
 const organizationForms = "/api/organizations/:organizationId/forms";
 const form = `${organizationForms}/:publicId`;
 
@@ -129,4 +150,6 @@ export const formRoutes = Layer.mergeAll(
   HttpRouter.add("DELETE", `${form}/success-url`, withErrors(clearSuccessUrl)),
   HttpRouter.add("PUT", `${form}/honeypot`, withErrors(setHoneypotField)),
   HttpRouter.add("DELETE", `${form}/honeypot`, withErrors(clearHoneypotField)),
+  HttpRouter.add("PUT", `${form}/turnstile`, withErrors(setTurnstile)),
+  HttpRouter.add("DELETE", `${form}/turnstile`, withErrors(clearTurnstile)),
 );

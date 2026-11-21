@@ -249,6 +249,59 @@ test("sign in, create an organization and manage its forms, then sign out", asyn
   );
 });
 
+test("save Turnstile keys and copy the widget HTML from Forms", async ({
+  dashboard: page,
+  context,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const settings = settingsFor(page, formName);
+  const siteKey = "sample-widget-site-key";
+  const secretKey = "sample-widget-secret";
+  const secret = settings.getByLabel(t("inbox.forms.turnstile.secretKey"), { exact: true });
+  await settings.getByLabel(t("inbox.forms.turnstile.siteKey"), { exact: true }).fill(siteKey);
+  await secret.fill(secretKey);
+  await settings.getByRole("button", { name: t("inbox.forms.turnstile.save") }).click();
+
+  const copy = settings.getByRole("button", { name: t("inbox.forms.turnstile.copy") });
+  await expect(copy).toBeVisible();
+  await expect(secret).toHaveValue("");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await copy.click();
+  await expect(settings.getByText(t("inbox.forms.turnstile.copied"))).toBeVisible();
+  const html = await page.evaluate(() => navigator.clipboard.readText());
+  expect(html).toContain(`data-sitekey="${siteKey}"`);
+  expect(html).toContain("https://challenges.cloudflare.com/turnstile/v0/api.js");
+  expect(html).not.toContain(secretKey);
+});
+
+test("show today's usage and retain changed daily quotas", async ({ dashboard: page, request }) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  const received = await request.post(endpoint.href, {
+    data: { message: "Daily usage example", "fixture-verdict": "accept" },
+  });
+  expect(received.status()).toBe(202);
+  await openSection(page, t("inbox.sections.quotas"));
+  const submissions = page.getByRole("spinbutton", { name: t("inbox.quotas.submissions") });
+  const classifications = page.getByRole("spinbutton", { name: t("inbox.quotas.classifications") });
+  await expect(submissions).toHaveAccessibleDescription(
+    t("inbox.quotas.used", { used: "1", limit: "2,000" }),
+  );
+  await submissions.fill("10");
+  await classifications.fill("5");
+  await page.getByRole("button", { name: t("common.save"), exact: true }).click();
+  await expect(page.getByText(t("inbox.quotas.saved"))).toBeVisible();
+
+  await page.reload();
+  await openSection(page, t("inbox.sections.quotas"));
+  await expect(submissions).toHaveAccessibleDescription(
+    t("inbox.quotas.used", { used: "1", limit: "10" }),
+  );
+  await expect(classifications).toHaveValue("5");
+});
+
 test("confirm and redirect HTML submissions, then refuse JSON from a removed origin", async ({
   dashboard: page,
   context,
