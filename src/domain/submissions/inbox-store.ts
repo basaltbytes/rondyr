@@ -1,6 +1,13 @@
 import { Context, Effect } from "effect";
 
-import { InboxCounts, InboxPage, InboxRow, SubmissionDetail, SubmissionStatus } from "./inbox.ts";
+import {
+  InboxFilter,
+  InboxPage,
+  InboxRow,
+  OrganizationCounts,
+  SubmissionDetail,
+  SubmissionStatus,
+} from "./inbox.ts";
 import {
   InboxUnavailable,
   InvalidInboxCursor,
@@ -21,13 +28,13 @@ export class InboxStore extends Context.Service<
     readonly project: (change: InboxChange) => Effect.Effect<void, InboxUnavailable>;
     readonly list: (
       organizationId: OrganizationId,
-      status: typeof SubmissionStatus.Type | undefined,
+      filter: typeof InboxFilter.Type,
       take: number,
       after: string | undefined,
     ) => Effect.Effect<typeof InboxPage.Type, InboxUnavailable | InvalidInboxCursor>;
     readonly counts: (
       organizationId: OrganizationId,
-    ) => Effect.Effect<typeof InboxCounts.Type, InboxUnavailable>;
+    ) => Effect.Effect<typeof OrganizationCounts.Type, InboxUnavailable>;
     readonly detail: (
       organizationId: OrganizationId,
       submissionId: SubmissionId,
