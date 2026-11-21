@@ -72,7 +72,7 @@ export class ResultCache extends Context.Service<
  * `cache.jsonl` in the output directory, read once and appended after each scored call. An
  * unreadable line, such as one cut short by an interrupted run, is skipped.
  */
-export const fileCache = (directory: string) =>
+export const fileCache = (directory: string, mode: "read-only" | "read-write" = "read-write") =>
   Layer.effect(
     ResultCache,
     Effect.gen(function* () {
@@ -82,7 +82,9 @@ export const fileCache = (directory: string) =>
       const entries = new Map<string, ScoredCall>();
       const text = (yield* fs.exists(file)) ? yield* fs.readFileString(file) : "";
       // End a line cut short by an interrupted run, so that the next result starts on its own line.
-      if (text !== "" && !text.endsWith("\n")) yield* fs.writeFileString(file, "\n", { flag: "a" });
+      if (mode === "read-write" && text !== "" && !text.endsWith("\n")) {
+        yield* fs.writeFileString(file, "\n", { flag: "a" });
+      }
       for (const line of text.split("\n")) {
         if (line.trim() === "") continue;
         const decoded = yield* decodeLine(line).pipe(Effect.option);
@@ -92,6 +94,7 @@ export const fileCache = (directory: string) =>
       return {
         get: (key) => Effect.sync(() => Option.fromUndefinedOr(entries.get(key))),
         put: Effect.fn("ResultCache.put")(function* (key: string, call: ScoredCall) {
+          if (mode === "read-only") return yield* Effect.die("Cannot write to a read-only cache.");
           entries.set(key, call);
           const line = yield* encodeLine({ key, call });
           yield* writes.withPermit(fs.writeFileString(file, `${line}\n`, { flag: "a" }));

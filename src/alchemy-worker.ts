@@ -64,6 +64,9 @@ const deploymentProps = Effect.gen(function* () {
   const classifier = yield* Config.schema(ClassifierProvider, "RONDYR_CLASSIFIER").pipe(
     Config.withDefault(defaultClassifier),
   );
+  const escalationClassifier = yield* Config.option(
+    Config.schema(ClassifierProvider, "RONDYR_ESCALATION_CLASSIFIER"),
+  );
   // Email targets require a sender and the selected provider's credentials or binding.
   const emailProvider = yield* Config.schema(EmailProviderName, "RONDYR_EMAIL_PROVIDER").pipe(
     Config.withDefault("resend"),
@@ -102,6 +105,9 @@ const deploymentProps = Effect.gen(function* () {
       CLASSIFICATION_QUEUE_NAME: classification.queueName,
       DELIVERY_QUEUE_NAME: delivery.queueName,
       RONDYR_CLASSIFIER: classifier,
+      ...(Option.isSome(escalationClassifier) && {
+        RONDYR_ESCALATION_CLASSIFIER: escalationClassifier.value,
+      }),
       RONDYR_EMAIL_PROVIDER: emailProvider,
       ...(!dev && { AI: Cloudflare.Workers.AI() }),
       ...(Option.isSome(authSecret) && { BETTER_AUTH_SECRET: authSecret.value }),

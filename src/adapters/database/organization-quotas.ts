@@ -1,6 +1,7 @@
 import { Effect, Layer, Schema } from "effect";
 
 import { DailyUsage, type DailyQuotas } from "../../domain/organizations/organization-quotas.ts";
+import type { OrganizationId } from "../../domain/submissions/submission.id.ts";
 import type { OrganizationScope } from "../../ports/organization-directory.ts";
 import { OrganizationQuotas, OrganizationQuotasNotFound } from "../../ports/organization-quotas.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
@@ -57,4 +58,38 @@ const save = Effect.fn("OrganizationQuotas.save")(function* (
   return yield* decodeUsage(row).pipe(Effect.mapError(() => StorageUnavailable.make()));
 });
 
-export const organizationQuotasLive = Layer.succeed(OrganizationQuotas, { usage, save });
+// The check and the increment are one statement, so concurrent reservations
+// cannot both take the last place. A counter row of another day starts over,
+// as in the intake batch.
+const reserveStatement = `
+  INSERT INTO organization_daily_usage (organization_id, day, submissions, classifications)
+  SELECT o.id, date('now'), 0, 1
+  FROM organizations o
+  LEFT JOIN organization_daily_usage u ON u.organization_id = o.id AND u.day = date('now')
+  WHERE o.id = ?1 AND COALESCE(u.classifications, 0) < o.daily_classification_limit
+  ON CONFLICT (organization_id) DO UPDATE SET
+    submissions = CASE WHEN day = excluded.day THEN submissions ELSE 0 END,
+    classifications = 1 + CASE WHEN day = excluded.day THEN classifications ELSE 0 END,
+    day = excluded.day
+  RETURNING classifications
+`;
+const decodeReserved = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ classifications: Schema.Int })),
+);
+
+const reserveClassification = Effect.fn("OrganizationQuotas.reserveClassification")(function* (
+  organizationId: OrganizationId,
+) {
+  const db = yield* database;
+  const { results } = yield* d1(() => db.prepare(reserveStatement).bind(organizationId).all());
+  const reserved = yield* decodeReserved(results).pipe(
+    Effect.mapError(() => StorageUnavailable.make()),
+  );
+  return reserved.length === 1 ? ("reserved" as const) : ("limit-reached" as const);
+});
+
+export const organizationQuotasLive = Layer.succeed(OrganizationQuotas, {
+  usage,
+  save,
+  reserveClassification,
+});

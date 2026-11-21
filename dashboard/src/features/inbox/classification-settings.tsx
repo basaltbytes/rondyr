@@ -1,5 +1,5 @@
 import { Option, Schema } from "effect";
-import { use, useActionState, useState } from "react";
+import { use, useActionState, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -18,10 +18,16 @@ const thresholdNames = ["probableSpam", "ambiguous", "solicitation", "lowRelevan
 const decodeOverride = Schema.decodeUnknownOption(OrganizationClassificationPolicy);
 type Settings = typeof OrganizationClassificationSettings.Type;
 type SaveResult = "saved" | "invalid" | "saveFailed" | null;
+type Translate = ReturnType<typeof useTranslation>["t"];
+
+function modelName(t: Translate, classifier: Settings["classifier"]) {
+  return classifier === "jev" ? t("inbox.policy.models.jev") : t("inbox.policy.models.openai");
+}
 
 interface PolicyFormInput {
   thresholds?: Record<string, number>;
   offTopic?: string;
+  escalation?: boolean;
 }
 
 function PolicyForm({
@@ -32,11 +38,14 @@ function PolicyForm({
   readonly settings: Settings;
 }) {
   const { t } = useTranslation();
-  const { defaults, override } = settings;
+  const { defaults, override, escalationClassifier } = settings;
   const [thresholdMode, setThresholdMode] = useState(
     override?.thresholds === undefined ? "defaults" : "custom",
   );
   const [offTopic, setOffTopic] = useState<string>(override?.offTopic ?? "defaults");
+  // Without a second model the switch is disabled, and a save keeps the stored choice.
+  const [escalation, setEscalation] = useState(override?.escalation ?? false);
+  const escalationHint = useId();
   const [edited, setEdited] = useState(false);
   const initial = override?.thresholds ?? defaults.thresholds;
   const [values, setValues] = useState({
@@ -57,7 +66,8 @@ function PolicyForm({
       );
     }
     if (offTopic !== "defaults") input.offTopic = offTopic;
-    const usesDefaults = !custom && offTopic === "defaults";
+    if (escalation) input.escalation = true;
+    const usesDefaults = !custom && offTopic === "defaults" && !escalation;
     const decoded = usesDefaults ? Option.none() : decodeOverride(input);
     if (!usesDefaults && Option.isNone(decoded)) return "invalid";
     try {
@@ -112,6 +122,30 @@ function PolicyForm({
         <option value="review">{t("inbox.policy.review")}</option>
         <option value="accept">{t("inbox.policy.accept")}</option>
       </SelectField>
+      <div className="grid gap-1.5">
+        <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm font-medium has-disabled:cursor-default pointer-coarse:min-h-11">
+          <input
+            type="checkbox"
+            role="switch"
+            className="peer sr-only"
+            aria-checked={escalation}
+            aria-describedby={escalationHint}
+            checked={escalation}
+            disabled={saving || escalationClassifier === null}
+            onChange={(event) => setEscalation(event.currentTarget.checked)}
+          />
+          <span
+            aria-hidden
+            className="flex h-5 w-9 items-center rounded-full border border-muted-foreground bg-muted p-0.5 after:block after:size-3.5 after:rounded-full after:bg-muted-foreground peer-checked:border-primary peer-checked:bg-primary peer-checked:after:translate-x-4 peer-checked:after:bg-primary-foreground peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-inset peer-disabled:opacity-50"
+          />
+          {t("inbox.policy.escalation")}
+        </label>
+        <p id={escalationHint} className="text-xs text-pretty text-muted-foreground">
+          {escalationClassifier === null
+            ? t("inbox.policy.escalationUnavailable")
+            : t("inbox.policy.escalationHint", { model: modelName(t, escalationClassifier) })}
+        </p>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={saving} className="pointer-coarse:min-h-11">
           {saving ? t("inbox.policy.saving") : t("inbox.policy.save")}
@@ -155,12 +189,7 @@ export function ClassificationSettings({
           {initial !== null && (
             <CardHeader>
               <CardDescription>
-                {t("inbox.policy.description", {
-                  classifier:
-                    initial.classifier === "jev"
-                      ? t("inbox.policy.models.jev")
-                      : t("inbox.policy.models.openai"),
-                })}
+                {t("inbox.policy.description", { classifier: modelName(t, initial.classifier) })}
               </CardDescription>
             </CardHeader>
           )}

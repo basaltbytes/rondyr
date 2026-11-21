@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { ClassificationFailed, Classifier } from "../../domain/submissions/classifier.external.ts";
 import { classifierInput } from "../../domain/submissions/classifier-input.ts";
 import { ClassificationPolicies } from "../../ports/classification-policies.ts";
+import { OrganizationQuotas } from "../../ports/organization-quotas.ts";
 import { StoredMessages } from "../../ports/stored-messages.ts";
 import { scoreWithJev } from "./jev.ts";
 import { scoreWithOpenAi } from "./openai-decisions.ts";
@@ -13,6 +14,7 @@ export const classifierLive = Classifier.toLayer(
   Effect.gen(function* () {
     const messages = yield* StoredMessages;
     const policies = yield* ClassificationPolicies;
+    const quotas = yield* OrganizationQuotas;
     return {
       // An unavailable database can recover; an unknown classifier or an invalid policy cannot.
       policy: ({ organizationId }) =>
@@ -23,6 +25,11 @@ export const classifierLive = Classifier.toLayer(
               Effect.fail(ClassificationFailed.make({ retryable: false })),
           }),
         ),
+      // An unavailable database can recover.
+      reserveEscalation: ({ organizationId }) =>
+        quotas
+          .reserveClassification(organizationId)
+          .pipe(Effect.mapError(() => ClassificationFailed.make({ retryable: true }))),
       score: Effect.fn("Classifier.score")(function* ({
         submissionId,
         organizationId,

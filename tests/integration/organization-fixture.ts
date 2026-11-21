@@ -9,20 +9,22 @@ const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const readInboxes = Schema.decodeUnknownEffect(Schema.Array(InboxOrganizationWithForms));
 export const json = (response: Response) => Effect.promise(() => response.json());
 
+/** Send a request from the test origin, to the test Worker unless another one is given. */
 export const call = Effect.fnUntraced(function* (
   method: string,
   path: string,
   data?: Schema.Json,
   extra?: HeadersInit,
+  worker: Fetcher = env.TEST_WORKER,
 ) {
   const headers = new Headers(extra);
   headers.set("origin", origin);
   const url = new URL(path, origin);
   if (data === undefined)
-    return yield* Effect.promise(() => env.TEST_WORKER.fetch(url, { method, headers }));
+    return yield* Effect.promise(() => worker.fetch(url, { method, headers }));
   headers.set("content-type", "application/json");
   const body = yield* encode(data);
-  return yield* Effect.promise(() => env.TEST_WORKER.fetch(url, { method, headers, body }));
+  return yield* Effect.promise(() => worker.fetch(url, { method, headers, body }));
 });
 
 export const signIn = Effect.runSync(

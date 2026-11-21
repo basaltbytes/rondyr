@@ -32,7 +32,12 @@ it.live("validates, persists and resets overrides with organization-scoped permi
     const put = (override: Schema.Json) => call("PUT", path, override, headers);
     assert.strictEqual((yield* call("GET", path)).status, 401);
     const initial = yield* get();
-    assert.deepEqual(initial, { classifier: "jev", defaults: defaultPolicy, override: null });
+    assert.deepEqual(initial, {
+      classifier: "jev",
+      escalationClassifier: null,
+      defaults: defaultPolicy,
+      override: null,
+    });
 
     const invalid = [
       {},
@@ -64,6 +69,30 @@ it.live("validates, persists and resets overrides with organization-scoped permi
     assert.strictEqual((yield* call("DELETE", path, undefined, headers)).status, 204);
     assert.strictEqual((yield* call("DELETE", path, undefined, headers)).status, 204);
     assert.isNull((yield* get()).override);
+  }),
+);
+
+it.live("says which second classifier the stage offers, and none when it repeats the first", () =>
+  Effect.gen(function* () {
+    const headers = yield* signIn;
+    const inbox = yield* createInbox("Second classifier", headers);
+    const stages = [
+      { worker: env.TEST_WORKER, escalationClassifier: null },
+      { worker: env.SAME_CLASSIFIER_WORKER, escalationClassifier: null },
+      { worker: env.ESCALATION_WORKER, escalationClassifier: "openai" },
+    ] as const;
+    for (const { worker, escalationClassifier } of stages) {
+      const settings = yield* call("GET", policyPath(inbox.id), undefined, headers, worker).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readSettings),
+      );
+      assert.deepEqual(settings, {
+        classifier: "jev",
+        escalationClassifier,
+        defaults: defaultPolicy,
+        override: null,
+      });
+    }
   }),
 );
 

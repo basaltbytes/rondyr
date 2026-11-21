@@ -382,6 +382,9 @@
         "lowRelevance": "Un message dont le score de pertinence est inférieur à cette valeur est mis à vérifier, ou accepté avec l’étiquette Hors sujet si vous acceptez les soumissions hors sujet."
       },
       "offTopic": "Soumissions hors sujet",
+      "escalation": "Utiliser un second modèle pour les soumissions ambiguës",
+      "escalationHint": "{{model}} attribue un second score de spam aux soumissions ambiguës. Les règles de démarchage commercial et de faible pertinence s’appliquent toujours.",
+      "escalationUnavailable": "Ce déploiement n’a pas de second modèle : les soumissions ambiguës sont mises à vérifier.",
       "review": "Mettre en quarantaine",
       "accept": "Accepter avec l’étiquette Hors sujet",
       "save": "Enregistrer les réglages de classification",
