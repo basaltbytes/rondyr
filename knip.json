@@ -6,6 +6,10 @@
       "entry": ["scripts/*.mjs"],
       "project": ["scripts/**/*.mjs"]
     },
+    "apps/docs": {
+      "entry": ["src/components/*.astro", "scripts/*.ts", "**/*.test.ts"],
+      "project": ["**/*.{ts,astro,mdx}"]
+    },
     "apps/rondyr": {
       "entry": ["alchemy-run.ts", "drizzle-config.ts", "i18next.config.ts", "scripts/*.mjs"],
       "project": ["**/*.{ts,tsx,mjs}"],
