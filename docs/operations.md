@@ -39,7 +39,7 @@ A classifier outage puts messages in **To review** with the reason **Analysis un
 
 ## Production health check
 
-After each deployment, GitHub Actions runs `scripts/smoke.mjs` against `BETTER_AUTH_URL_PROD` in the step **Check production health**. It asks for `/health` every 10 seconds until the Worker answers `ok`, for up to 15 minutes, and prints one line for each failed try, such as `Health check 3 failed: The deployment returned HTTP 522; expected 200 for /health. Trying again.` It never prints a response body.
+After each deployment, GitHub Actions runs `apps/rondyr/scripts/smoke.mjs` against `BETTER_AUTH_URL_PROD` in the step **Check production health**. It asks for `/health` every 10 seconds until the Worker answers `ok`, for up to 15 minutes, and prints one line for each failed try, such as `Health check 3 failed: The deployment returned HTTP 522; expected 200 for /health. Trying again.` It never prints a response body.
 
 When the step fails, the run shows the error `Production health`. `prod` is deployed: the failed check does not roll it back.
 
@@ -82,18 +82,20 @@ A person with access to the Cloudflare account must carry out and verify the res
 3. Export the current database into restricted backup storage and record its current bookmark. Look up the target bookmark and have the incident operator confirm the database and recovery point. A restore overwrites the database in place, including any later submissions, auth changes, and schema migrations.
 
    ```sh
-   pnpm exec wrangler d1 export "$RONDYR_D1_NAME" --remote --output "$RONDYR_INCIDENT_BACKUP"
-   pnpm exec wrangler d1 time-travel info "$RONDYR_D1_NAME"
-   pnpm exec wrangler d1 time-travel info "$RONDYR_D1_NAME" --timestamp "$RONDYR_RECOVERY_UTC"
-   pnpm exec wrangler d1 time-travel restore "$RONDYR_D1_NAME" --bookmark "$RONDYR_RECOVERY_BOOKMARK"
+   pnpm --filter rondyr exec wrangler d1 export "$RONDYR_D1_NAME" --remote --output "$RONDYR_INCIDENT_BACKUP"
+   pnpm --filter rondyr exec wrangler d1 time-travel info "$RONDYR_D1_NAME"
+   pnpm --filter rondyr exec wrangler d1 time-travel info "$RONDYR_D1_NAME" --timestamp "$RONDYR_RECOVERY_UTC"
+   pnpm --filter rondyr exec wrangler d1 time-travel restore "$RONDYR_D1_NAME" --bookmark "$RONDYR_RECOVERY_BOOKMARK"
    ```
+
+   `pnpm --filter rondyr exec` runs Wrangler in `apps/rondyr/`, so give `RONDYR_INCIDENT_BACKUP` as an absolute path.
 
 4. Follow [Reconcile after recovery](#reconcile-after-recovery) before resuming traffic. Keep the pre-restore bookmark and backup until the incident is resolved. Cloudflare documents the 30-day window and how to return to the pre-restore bookmark. [D1 Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/)
 
 ## Roll back the Worker
 
 1. Pause deployments. In **Workers & Pages**, select the stage’s Worker and open **Deployments**. Record the current version and select the last good version. Compare bindings, D1 schema compatibility, Durable Object migrations, and the secrets the old version would use before routing traffic to it.
-2. Use **Rollback** on that version, or run `pnpm exec wrangler rollback "$RONDYR_WORKER_VERSION" --name "rondyr-$RONDYR_STAGE"`. If Cloudflare rejects the rollback across a Durable Object migration or a removed binding, prepare a forward fix with the required bindings and classes. Preserve the Durable Object namespaces and their data. [Cloudflare Worker rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)
+2. Use **Rollback** on that version, or run `pnpm --filter rondyr exec wrangler rollback "$RONDYR_WORKER_VERSION" --name "rondyr-$RONDYR_STAGE"`. If Cloudflare rejects the rollback across a Durable Object migration or a removed binding, prepare a forward fix with the required bindings and classes. Preserve the Durable Object namespaces and their data. [Cloudflare Worker rollbacks](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)
 3. Confirm the active version and `/health`. Sign in and check the dashboard. Follow the reconciliation steps below before resuming normal deployments.
 
 A version older than the stuck processing change (the `stuck-outbox-events` migration) ignores `stuck_at`, so it publishes stuck events again every five minutes, and it routes dead-letter batches to the classification consumer. It also does not know the `ReclassificationRequested` event, so the consumers of a reclassified submission's event stream can fail on it until the newer version is back. Prefer a forward fix to a rollback across that change.

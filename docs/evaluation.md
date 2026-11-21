@@ -1,10 +1,12 @@
 # Classifier evaluation
 
-`pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `src/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
+`pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `apps/rondyr/src/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
 
-The runner and the Worker read their default policies from `src/domain/submissions/classification-policy.ts`. The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31), and [#40](https://github.com/basaltbytes/rondyr/issues/40) records the measurement behind the solicitation threshold. [Architecture section 5](../architecture.md#5-intelligent-classification) describes the current defaults.
+The runner and the Worker read their default policies from `apps/rondyr/src/domain/submissions/classification-policy.ts`. The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31), and [#40](https://github.com/basaltbytes/rondyr/issues/40) records the measurement behind the solicitation threshold. [Architecture section 5](../architecture.md#5-intelligent-classification) describes the current defaults.
 
-The harness isn't part of the Worker: nothing in `src/` imports `evals/`, and `pnpm deploy:dry` checks the bundle size as before.
+The harness isn't part of the Worker: nothing in `apps/rondyr/src/` imports `apps/rondyr/evals/`, and `pnpm deploy:dry` checks the bundle size as before.
+
+`pnpm evaluate` runs in `apps/rondyr/`, even when you start it from the repository root. The paths it takes, the corpus, `--policy` and `--out`, are relative to that folder, so the commands on this page write `evals/corpus/synthetic.jsonl` for `apps/rondyr/evals/corpus/synthetic.jsonl`.
 
 ## Corpus format
 
@@ -33,7 +35,7 @@ Dated lines are replayed by `received`, with ties resolved by file order. Undate
 
 ### Business context
 
-The business context of the form is in a second file next to the corpus. For `evals/corpus/synthetic.jsonl`, use `evals/corpus/synthetic.context.txt`. The harness and the Worker both trim the context and keep as many whole characters as fit within 2,000 UTF-16 code units. An empty file means the form has no business context. Both classifiers ask about spam and unsolicited sales outreach on every call. They ask about business relevance only when the context is present.
+The business context of the form is in a second file next to the corpus. For `apps/rondyr/evals/corpus/synthetic.jsonl`, use `apps/rondyr/evals/corpus/synthetic.context.txt`. The harness and the Worker both trim the context and keep as many whole characters as fit within 2,000 UTF-16 code units. An empty file means the form has no business context. Both classifiers ask about spam and unsolicited sales outreach on every call. They ask about business relevance only when the context is present.
 
 A separate file keeps the corpus lines in the shape the issue describes, so an existing corpus works once the context file is next to it. A command-line option would let two runs of the same corpus use different contexts, and the results would no longer be comparable; the file is versioned, or kept local, together with its corpus. The context is part of the cache key, so changing it scores every entry again.
 
@@ -45,21 +47,21 @@ The replay checks the submission's `email` field against the declared domains an
 
 ### Synthetic corpus
 
-`evals/corpus/synthetic.jsonl` contains 60 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. Unsolicited SEO, lead generation, and subcontracting offers use the `spam` label, as does a message that asks who handles the workshop's social media so the sender can send them an idea. A quote request, a delivery question from an existing supplier, a proposal from a peer, a shop that wants to resell the workshop's pieces, and a podcast recording request use the `legitimate` label; the last two read a little like a pitch, which makes them the boundary cases of the solicitation question. People appear by first name only, and every address and link uses the reserved `.example` domain.
+`apps/rondyr/evals/corpus/synthetic.jsonl` contains 60 lines for a fictional pottery workshop in Lyon, including a series from one sender, a series with the same content, and a legitimate double submission. The organization declares `atelier-terre.example`. Promotions and messages from colleagues use that domain and its subdomains. Unsolicited SEO, lead generation, and subcontracting offers use the `spam` label, as does a message that asks who handles the workshop's social media so the sender can send them an idea. A quote request, a delivery question from an existing supplier, a proposal from a peer, a shop that wants to resell the workshop's pieces, and a podcast recording request use the `legitimate` label; the last two read a little like a pitch, which makes them the boundary cases of the solicitation question. People appear by first name only, and every address and link uses the reserved `.example` domain.
 
 It's small: a result on it says whether the pipeline works and gives a first idea, not a measure of the classifiers.
 
 ### Local corpora
 
-Real submissions stay out of git. Put a real corpus and its sidecars in `evals/corpus/local/`:
+Real submissions stay out of git. Put a real corpus and its sidecars in `apps/rondyr/evals/corpus/local/`:
 
 ```text
-evals/corpus/local/basaltbytes.jsonl
-evals/corpus/local/basaltbytes.context.txt
-evals/corpus/local/basaltbytes.domains.txt
+apps/rondyr/evals/corpus/local/basaltbytes.jsonl
+apps/rondyr/evals/corpus/local/basaltbytes.context.txt
+apps/rondyr/evals/corpus/local/basaltbytes.domains.txt
 ```
 
-`.gitignore` excludes everything in `evals/corpus/` except the three synthetic files. Check `git status` before committing.
+`.gitignore` excludes everything in `apps/rondyr/evals/corpus/` except the three synthetic files. Check `git status` before committing.
 
 ## Running
 
@@ -129,7 +131,7 @@ pnpm evaluate --escalation evals/corpus/synthetic.jsonl
 pnpm evaluate --escalation --classifier jev --policy policy.json evals/corpus/synthetic.jsonl
 ```
 
-Use an output directory from a previous run with both classifiers. By default the report compares both directions. Select `--classifier jev` or `--classifier openai` to choose the primary model. The mode simulates an organization that has enabled escalation, and it applies `escalatedDecision` from `src/domain/submissions/classification.ts`, the function the Worker uses.
+Use an output directory from a previous run with both classifiers. By default the report compares both directions. Select `--classifier jev` or `--classifier openai` to choose the primary model. The mode simulates an organization that has enabled escalation, and it applies `escalatedDecision` from `apps/rondyr/src/domain/submissions/classification.ts`, the function the Worker uses.
 
 The second model only settles the spam doubt. It uses its default thresholds with the primary policy's off-topic choice, and any reason it finds keeps the submission ambiguous. When it finds nothing, the primary model's solicitation and low relevance rules still apply to the primary scores, so a submission can end up in quarantine as `solicitation` or `low-relevance`. An accepted submission gets the off-topic label when either model finds it off-topic.
 
@@ -143,13 +145,13 @@ A call has 12 seconds, as in the Worker. A failure that the adapter marks retrya
 
 ### Cache
 
-Each scored call is appended to `evals/out/cache.jsonl` as soon as it returns, so an interrupted run can resume. The key is the transport (`workers-ai` or `dry`), the classifier, the requested model, the scoring version, the line ID and a SHA-256 of the full classifier input. Editing an earlier submission can change the facts and invalidate later cache entries. Policy changes preserve cached scores. Failures aren't cached.
+Each scored call is appended to `apps/rondyr/evals/out/cache.jsonl` as soon as it returns, so an interrupted run can resume. The key is the transport (`workers-ai` or `dry`), the classifier, the requested model, the scoring version, the line ID and a SHA-256 of the full classifier input. Editing an earlier submission can change the facts and invalidate later cache entries. Policy changes preserve cached scores. Failures aren't cached.
 
-The model name in the key is the one the adapter requests, such as `typesafe/jev`. The model that answers can change behind that name. The report lists the models that answered, and `--refresh` scores everything with the current one. Advance the scoring version in `evals/evaluate.ts` when a change to the adapters or model questions invalidates existing scores.
+The model name in the key is the one the adapter requests, such as `typesafe/jev`. The model that answers can change behind that name. The report lists the models that answered, and `--refresh` scores everything with the current one. Advance the scoring version in `apps/rondyr/evals/evaluate.ts` when a change to the adapters or model questions invalidates existing scores.
 
 ## Report
 
-The terminal shows the summary. The full report, with the threshold sweep, is written to `evals/out/<corpus>.report.json` and `evals/out/<corpus>.report.md` (`.dry.report.*` for a dry run). Both contain ids, labels, families, scores and decisions, and never a field value, a note or the business context.
+The terminal shows the summary. The full report, with the threshold sweep, is written to `apps/rondyr/evals/out/<corpus>.report.json` and `apps/rondyr/evals/out/<corpus>.report.md` (`.dry.report.*` for a dry run). Both contain ids, labels, families, scores and decisions, and never a field value, a note or the business context.
 
 For each classifier, in this order:
 
@@ -159,7 +161,7 @@ For each classifier, in this order:
 - **Expected label and decision.** The table includes `solicitation` and `repetition`. Each cell counts distinct corpus lines and the submissions those lines represent. A line can appear in more than one cell when its occurrences get different decisions. The decision list identifies the first occurrence and number of submissions in each result.
 - **Quarantine of spam.** Spam is the positive class; legitimate and off-topic lines are the negatives; ambiguous lines and failed calls are left out. Precision is the share of quarantined lines that are spam, and recall the share of spam that is quarantined, for any reason. Both are given for lines and for submissions.
 - **Latency**: p50, p90, p95, p99 and max of the scored calls, in milliseconds, from the client. Results from the cache keep the latency of the run that recorded them.
-- **Cost**: the token usage of the answers times the per-million prices of the model pages, checked on 2026-11-20 and kept in `evals/classifiers.ts`. If an answer has no usage, the cost is reported as unavailable. Calls that failed may also be billed and aren't counted.
+- **Cost**: the token usage of the answers times the per-million prices of the model pages, checked on 2026-11-20 and kept in `apps/rondyr/evals/classifiers.ts`. If an answer has no usage, the cost is reported as unavailable. Calls that failed may also be billed and aren't counted.
 - **Failed calls**, with the number of calls, whether the failure was retryable and the last error: an HTTP status with the Cloudflare error codes, a timeout, or an answer the adapter refused. Error messages from Cloudflare aren't kept, since they can repeat the request.
 
 The report also gives the returned model ids and their counts, `rulesVersion`, the policy applied to each classifier, and the gateway options.
@@ -178,8 +180,8 @@ By default, the Worker quarantines a message whose relevance is below 0.50 with 
 
 - A real run sends each message to Workers AI, and through it to the model provider: TypeSafe for Jev, OpenAI for Decisions. Only run a real corpus if the people who sent those messages would expect them to go to these providers, as they do in production.
 - The gateway options of the Worker turn off logging and the cache of AI Gateway for each call (`cf-aig-collect-log: false`, `cf-aig-skip-cache: true`), so the messages don't appear in the gateway logs.
-- The cache and the reports contain no message content. The cache holds a SHA-256 of each input, which can confirm a guess about a short message; keep `evals/out/` local, as `.gitignore` does.
-- The local corpus is the sensitive file. Keep it in `evals/corpus/local/`, and don't paste its lines into issues or pull requests.
+- The cache and the reports contain no message content. The cache holds a SHA-256 of each input, which can confirm a guess about a short message; keep `apps/rondyr/evals/out/` local, as `.gitignore` does.
+- The local corpus is the sensitive file. Keep it in `apps/rondyr/evals/corpus/local/`, and don't paste its lines into issues or pull requests.
 
 ## Tests
 

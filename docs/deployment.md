@@ -20,8 +20,10 @@ Do these two steps once per Cloudflare account, before the first deployment from
 Alchemy keeps the state of each stage in a store on the Cloudflare account. Create it once:
 
 ```sh
-pnpm exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts
+pnpm --filter rondyr exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts
 ```
+
+The Alchemy commands run in `apps/rondyr/`, where `alchemy-run.ts` is: `pnpm --filter rondyr exec` runs them there from the repository root.
 
 ### API token
 
@@ -37,7 +39,7 @@ On the zone of your domain, grant `Zone Read` and `Workers Routes Write`. Set th
 
 ## Environment
 
-To deploy from your machine, create an environment file, for example `.env.prod`. GitHub Actions reads the same settings from the repository's secrets and variables; see [GitHub Actions](#github-actions).
+To deploy from your machine, create an environment file in `apps/rondyr/`, for example `apps/rondyr/.env.prod`. The deployment commands run in that folder, so `--env-file .env.prod` finds it there. GitHub Actions reads the same settings from the repository's secrets and variables; see [GitHub Actions](#github-actions).
 
 | Variable | Required | Value |
 | --- | --- | --- |
@@ -58,7 +60,7 @@ Alchemy attaches the hostname of `BETTER_AUTH_URL` to the Worker `rondyr-prod` a
 Connect your Cloudflare account in Alchemy, then plan and deploy the `prod` stage:
 
 ```sh
-pnpm exec alchemy profile edit --config alchemy-run.ts --add Cloudflare
+pnpm --filter rondyr exec alchemy profile edit --config alchemy-run.ts --add Cloudflare
 pnpm deploy:plan --stage prod --env-file .env.prod
 pnpm run deploy --stage prod --env-file .env.prod
 ```
@@ -67,9 +69,9 @@ On the first plan or deployment, Alchemy can offer to create its state Worker. P
 
 The stack deploys the Worker with the Vite assets and the Durable Objects of the domain model. It applies the D1 migrations, and it configures the classification and delivery queues, their dead-letter queues and consumers, and the cron trigger that runs every minute. The Worker receives the generated queue names as `CLASSIFICATION_QUEUE_NAME`, `DELIVERY_QUEUE_NAME`, `CLASSIFICATION_DEAD_LETTER_QUEUE_NAME` and `DELIVERY_DEAD_LETTER_QUEUE_NAME` to tell the four queues apart. Each dead-letter queue has a consumer that logs and acknowledges its messages; see [Dead-letter queues](./operations.md#dead-letter-queues).
 
-The Worker also gets the Rate Limiting binding `CLIENT_RATE_LIMIT`, which limits each client to 5 submissions per minute on a form. Nothing has to be created on the account for it, and the API token needs no permission beyond `Workers Scripts Write`; the limit and the namespace come from `ratelimits` in `wrangler.json`, which the stack reads. A namespace is shared by every Worker of the account: the stages of one account all use namespace `7001`, and they don't share counts because each key starts with the public ID of a form. Another Worker of the account that uses the same namespace would share a count only for an identical key. Cloudflare doesn't show rate limits in the dashboard; see [Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
+The Worker also gets the Rate Limiting binding `CLIENT_RATE_LIMIT`, which limits each client to 5 submissions per minute on a form. Nothing has to be created on the account for it, and the API token needs no permission beyond `Workers Scripts Write`; the limit and the namespace come from `ratelimits` in `apps/rondyr/wrangler.json`, which the stack reads. A namespace is shared by every Worker of the account: the stages of one account all use namespace `7001`, and they don't share counts because each key starts with the public ID of a form. Another Worker of the account that uses the same namespace would share a count only for an identical key. Cloudflare doesn't show rate limits in the dashboard; see [Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/).
 
-A second Rate Limiting binding, `TARGET_TEST_RATE_LIMIT` in namespace `7002`, limits the test messages of each destination to 3 per minute. Its keys start with `target-test:` and the ID of the destination, so stages don't share counts either. Like the first one, it needs no setting: the stack declares it from `wrangler.json`, and `pnpm doctor` checks that both files declare it. If the binding doesn't answer, a test is refused with `503` and `{"error":"test-limit-unavailable"}`, sends nothing, and the dashboard says so.
+A second Rate Limiting binding, `TARGET_TEST_RATE_LIMIT` in namespace `7002`, limits the test messages of each destination to 3 per minute. Its keys start with `target-test:` and the ID of the destination, so stages don't share counts either. Like the first one, it needs no setting: the stack declares it from `apps/rondyr/wrangler.json`, and `pnpm doctor` checks that both files declare it. If the binding doesn't answer, a test is refused with `503` and `{"error":"test-limit-unavailable"}`, sends nothing, and the dashboard says so.
 
 A new custom domain can take a few minutes to get its DNS record and certificate. Wait for Rondyr to answer, up to 15 minutes, with the [smoke test](./operations.md#smoke-test):
 
@@ -77,7 +79,7 @@ A new custom domain can take a few minutes to get its DNS record and certificate
 pnpm smoke https://forms.example.com --health-timeout 900
 ```
 
-The dashboard assets get their security headers from `public/_headers`. After a deployment, check them:
+The dashboard assets get their security headers from `apps/rondyr/public/_headers`. After a deployment, check them:
 
 ```sh
 curl -sI https://forms.example.com/ | grep -iE 'content-security-policy|strict-transport-security|x-frame-options|x-content-type-options|referrer-policy'
@@ -85,14 +87,14 @@ curl -sI https://forms.example.com/ | grep -iE 'content-security-policy|strict-t
 
 ### Trial copy
 
-To try Rondyr, or a change, without touching your deployment, deploy a second stage by hand with the same commands, another stage name and its own environment file, for example `pnpm run deploy --stage trial --env-file .env.trial`. A stage other than `prod` gets its own Worker, D1 database, queues and Durable Objects, and the address `https://rondyr-trial.<subdomain>.workers.dev` instead of a custom domain: set that address as its `BETTER_AUTH_URL`, and enable a `workers.dev` subdomain on the account first. GitHub Actions never deploys it. Remove it with `pnpm exec alchemy destroy --config alchemy-run.ts --stage trial --env-file .env.trial`.
+To try Rondyr, or a change, without touching your deployment, deploy a second stage by hand with the same commands, another stage name and its own environment file, for example `pnpm run deploy --stage trial --env-file .env.trial` with `apps/rondyr/.env.trial`. A stage other than `prod` gets its own Worker, D1 database, queues and Durable Objects, and the address `https://rondyr-trial.<subdomain>.workers.dev` instead of a custom domain: set that address as its `BETTER_AUTH_URL`, and enable a `workers.dev` subdomain on the account first. GitHub Actions never deploys it. Remove it with `pnpm --filter rondyr exec alchemy destroy --config alchemy-run.ts --stage trial --env-file .env.trial`.
 
 ## First account
 
 Public sign-up is closed. With `RONDYR_SETUP_TOKEN` set, run the setup script against your origin:
 
 ```sh
-./scripts/setup-owner.sh https://forms.example.com
+./apps/rondyr/scripts/setup-owner.sh https://forms.example.com
 ```
 
 The script reads `RONDYR_SETUP_TOKEN` from the environment or asks for it, then asks for a name, an email address, and a password of 12 to 128 characters. After the `201` response, sign in at `/`. Remove the setup token from the configuration and redeploy. D1 refuses a second account through this endpoint even while the token is still set.
@@ -158,7 +160,7 @@ For Resend, set `RESEND_API_KEY` and `RONDYR_EMAIL_FROM` in the stage environmen
 
 For Cloudflare, onboard the sender domain, set `RONDYR_EMAIL_PROVIDER=cloudflare` and `RONDYR_EMAIL_FROM` on the stage, then redeploy. Alchemy adds `CLOUDFLARE_EMAIL` only to the Worker for that stage. In GitHub, set the `RONDYR_EMAIL_PROVIDER_PROD` variable alongside the sender variable. Cloudflare Email Sending uses a native binding and requires no extra secret. [Email setup, limits and retries](./email.md#setup-with-cloudflare-email-sending)
 
-For local development with the Cloudflare simulator, set `RONDYR_EMAIL_FROM` in `.env` and run `CLOUDFLARE_ENV=cloudflare-email pnpm dev`. The named Wrangler environment enables the binding locally. Cloudflare's local simulator captures emails without delivering them. [Local Email Sending](https://developers.cloudflare.com/email-service/observability/local-development/sending/)
+For local development with the Cloudflare simulator, set `RONDYR_EMAIL_FROM` in `apps/rondyr/.env` and run `CLOUDFLARE_ENV=cloudflare-email pnpm dev`. The named Wrangler environment enables the binding locally. Cloudflare's local simulator captures emails without delivering them. [Local Email Sending](https://developers.cloudflare.com/email-service/observability/local-development/sending/)
 
 ## GitHub Actions
 
@@ -166,7 +168,7 @@ Pull requests run `pnpm check` and `pnpm deploy:dry` in one job and the dashboar
 
 To redeploy by hand, start the **Deploy** workflow on `main`. Without `CLOUDFLARE_API_TOKEN`, the workflow skips the deployment.
 
-Before any deployment, the **Changed packages** job asks pnpm which workspace packages changed since the commit of the last successful prod deployment (`pnpm --filter "...[<commit>]" list`, in `scripts/deploy-scope.mjs`). It finds that commit through the GitHub Actions API, in the recent runs of this workflow and of the **Deploy** workflow whose `Deploy prod` job succeeded, so a Worker change whose own run failed or was cancelled still deploys with the next push. The push deploys, and applies the D1 migrations, only if the Worker package, the repository root, is among the changed packages. A change to `pnpm-lock.yaml`, `pnpm-workspace.yaml` or a file under `.github/` counts as a Worker change. A merge that touches only `packages/emdash-plugin/` runs the checks and deploys nothing. When in doubt the push deploys: no deployment found in the last 30 runs, a commit missing from the history, an API error, or a failure of the job itself. The job log and the run's notices end with `Deployment planned` or `Deployment skipped` and the reason; pull requests show the same line, compared with their base, and still run every check on every package.
+Before any deployment, the **Changed packages** job asks pnpm which workspace packages changed since the commit of the last successful prod deployment (`pnpm --filter "...[<commit>]" list`, in `scripts/deploy-scope.mjs`). It finds that commit through the GitHub Actions API, in the recent push runs of this workflow and the recent manual runs of the **Deploy** workflow whose `Deploy prod` job succeeded, counting only runs of this repository's own commits so that a pull request from a fork cannot pass for a deployment, so a Worker change whose own run failed or was cancelled still deploys with the next push. The push deploys, and applies the D1 migrations, if the Worker package `rondyr` (`apps/rondyr/`) is among the changed packages, which pnpm also reports when a package it depends on changed. A change to `apps/rondyr/`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` (with its catalog of versions), the root `package.json`, `.nvmrc`, `patches/` or `.github/` counts as a Worker change. Any other changed file must belong to another changed package, such as `packages/emdash-plugin/` or `tooling/oxlint/`, or to the documentation (`README.md`, `architecture.md`, `AGENTS.md`, `CONTRIBUTING.md`, `docs/`, the agent instructions); otherwise the push deploys. A merge that touches only the plugin or the documentation runs the checks and deploys nothing. When in doubt the push deploys: no deployment found in the last 30 runs, a commit missing from the history, an API error, or a failure of the job itself. The job log and the run's notices end with `Deployment planned` or `Deployment skipped` and the reason; pull requests show the same line, compared with their base, and still run every check on every package.
 
 The workflow reads these settings. The `_PROD` suffix names the `prod` stage that it deploys.
 
@@ -221,7 +223,7 @@ Before you start, write down the date, the commit of Rondyr, and the Cloudflare 
 ### 1. Account, state and API token
 
 - [ ] The account has Workers Paid and your domain as an active zone. Note how long the zone took to become active.
-- [ ] Bootstrap the Alchemy state with `pnpm exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts`, as in [Alchemy state](#alchemy-state). Note what the command creates in the account and every prompt it shows.
+- [ ] Bootstrap the Alchemy state with `pnpm --filter rondyr exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts`, as in [Alchemy state](#alchemy-state). Note what the command creates in the account and every prompt it shows.
 - [ ] Create the API token with exactly the permissions of [API token](#api-token), and nothing more. Keep the list of permissions you had to add during the steps below.
 - [ ] In your fork, set the secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BETTER_AUTH_SECRET_PROD` and `RONDYR_SETUP_TOKEN_PROD`, and the variable `BETTER_AUTH_URL_PROD` (the HTTPS origin on your domain), from [GitHub Actions](#github-actions).
 
@@ -230,16 +232,16 @@ Before you start, write down the date, the commit of Rondyr, and the Cloudflare 
 - [ ] Push a commit to `main` of your fork, or start the **Deploy** workflow on `main`. CI runs the checks, deploys `prod`, then waits for `/health`. In the step **Check production health**, note how many tries the new domain needed: each failed try prints one line.
 - [ ] Open your origin in a browser and check that the certificate is valid.
 - [ ] In the Cloudflare dashboard, check that each resource exists, without any manual step that this page does not describe:
-  - [ ] the D1 database, with every migration of `database/migrations` applied: in the D1 console, `outbox_events` has the columns `publication_count` and `stuck_at`, and `PRAGMA index_list('outbox_events')` lists `outbox_due_idx` and `outbox_stuck_idx`;
+  - [ ] the D1 database, with every migration of `apps/rondyr/database/migrations` applied: in the D1 console, `outbox_events` has the columns `publication_count` and `stuck_at`, and `PRAGMA index_list('outbox_events')` lists `outbox_due_idx` and `outbox_stuck_idx`;
   - [ ] the classification queue and the delivery queue, each with its dead-letter queue, and four consumers on the Worker: one per queue and one per dead-letter queue;
   - [ ] the Cron trigger `* * * * *` on the Worker, and a **Last successful Cron run** on **Status** after the first sign-in;
-  - [ ] the Durable Object classes of `wrangler.json`, listed under the Worker's bindings;
+  - [ ] the Durable Object classes of `apps/rondyr/wrangler.json`, listed under the Worker's bindings;
   - [ ] the Rate Limiting bindings `CLIENT_RATE_LIMIT` and `TARGET_TEST_RATE_LIMIT` under the Worker's bindings. Cloudflare does not show rate limits elsewhere.
 - [ ] Check the security headers of the dashboard with the `curl` command of [First deployment](#first-deployment).
 
 ### 3. First account and first message
 
-- [ ] Create the first account with `./scripts/setup-owner.sh <origin>` ([First account](#first-account)), then sign in.
+- [ ] Create the first account with `./apps/rondyr/scripts/setup-owner.sh <origin>` ([First account](#first-account)), then sign in.
 - [ ] Delete `RONDYR_SETUP_TOKEN_PROD` in GitHub and start the **Deploy** workflow. Check that `POST /api/setup` now answers `404`.
 - [ ] Create an organization and a form with a business context, and send a message with `curl` as in the README. Check that it is accepted or quarantined with a reason other than **Analysis unavailable**, within a minute.
 - [ ] Check **Status**: the Cron run is recent, and the pending and stuck counts are zero.
