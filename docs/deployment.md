@@ -205,7 +205,7 @@ pnpm smoke https://forms.example.com --health-timeout 900
 
 A push to `main` of the fork runs the **CI** workflow: `pnpm check` and `pnpm deploy:dry`, the dashboard browser tests, and the **Changed packages** job. When they pass and the Worker changed, its **Production** job runs `.github/workflows/deploy.yml`: `pnpm run deploy:alchemy --stage prod`, which applies the D1 migrations, then a check that `/health` answers `ok` within 15 minutes, the time a first deployment on a new domain can take for its DNS record and certificate. When `/health` does not answer in time, the run fails with the error `Production health`; [the runbook](./operations.md#production-health-check) says what to check.
 
-In a fork, the browser tests run only when the repository variable `RONDYR_BROWSER_TESTS` is `true`, and the deployment job needs them: set that variable. To deploy by hand, start the **Deploy** workflow on `main`.
+Setting the [Alchemy settings](#alchemy-settings) is enough: the variable `BETTER_AUTH_URL_PROD` turns on the browser tests and the **Production** job in the fork. A copy made by the button has no such variable, so its CI never deploys. To deploy by hand, start the **Deploy** workflow on `main`.
 
 The **Changed packages** job asks pnpm which workspace packages changed since the commit of the last successful deployment of `prod` (`pnpm --filter "...[<commit>]" list`, in `scripts/deploy-scope.mjs`). It finds that commit through the GitHub Actions API, in the recent push runs of **CI** and the manual runs of **Deploy** whose `Deploy prod` job succeeded, counting only runs of the repository's own commits so that a pull request from a fork cannot pass for a deployment. A change to `apps/rondyr/`, the root `wrangler.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, the root `package.json`, `.nvmrc`, `patches/` or `.github/` counts as a Worker change. Any other changed file must belong to another changed package, such as `packages/emdash-plugin/`, or to the documentation; otherwise the push deploys. When in doubt the push deploys: no deployment found in the last 30 runs, a commit missing from the history, an API error, or a failure of the job itself. The job log ends with `Deployment planned` or `Deployment skipped` and the reason.
 
@@ -389,7 +389,7 @@ Before you start, write down the date, the commit of Rondyr, and the Cloudflare 
 - [ ] The account has Workers Paid and your domain as an active zone. Note how long the zone took to become active.
 - [ ] Bootstrap the Alchemy state as in [Alchemy state](#alchemy-state). Note what the command creates in the account and every prompt it shows.
 - [ ] Create the API token with exactly the permissions of [API token](#api-token), and nothing more. Keep the list of permissions you had to add during the steps below.
-- [ ] In your fork, set the secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BETTER_AUTH_SECRET_PROD` and `RONDYR_SETUP_TOKEN_PROD`, and the variables `BETTER_AUTH_URL_PROD` and `RONDYR_BROWSER_TESTS=true`, from [Alchemy settings](#alchemy-settings).
+- [ ] In your fork, set the secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `BETTER_AUTH_SECRET_PROD` and `RONDYR_SETUP_TOKEN_PROD`, and the variable `BETTER_AUTH_URL_PROD`, from [Alchemy settings](#alchemy-settings).
 
 ### A2. First deployment
 
