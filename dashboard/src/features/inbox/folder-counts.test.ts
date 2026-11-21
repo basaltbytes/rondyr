@@ -24,6 +24,7 @@ function form(publicId: string): Inbox["forms"][number] {
     businessContext: null,
     successUrl: null,
     honeypotField: null,
+    turnstileSiteKey: null,
   };
 }
 

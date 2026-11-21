@@ -1,6 +1,7 @@
 import { Context, Effect, Option, Schema } from "effect";
 
 import type { SuccessUrl } from "../domain/forms/form.ts";
+import type { TurnstileToken } from "../domain/forms/turnstile.ts";
 import type { SubmissionFields } from "../domain/submissions/submission-fields.ts";
 import type { SubmissionId } from "../domain/submissions/submission.id.ts";
 import type { StorageUnavailable } from "./storage.ts";
@@ -23,6 +24,11 @@ export class FormRateLimited extends Schema.TaggedError<
   FormRateLimited,
   { readonly brand: unique symbol }
 >()("FormRateLimited", { origins: OriginMatch }) {}
+
+export class OrganizationRateLimited extends Schema.TaggedError<
+  OrganizationRateLimited,
+  { readonly brand: unique symbol }
+>()("OrganizationRateLimited", { origins: OriginMatch, retryAfter: Schema.Int }) {}
 
 /** The request has an `Origin` header that is not one of the form's allowed origins. */
 export class OriginRefused extends Schema.TaggedError<
@@ -63,16 +69,20 @@ export class SubmissionIntake extends Context.Service<
      * When the form has a honeypot field, an empty value of that field is
      * removed before storage, and a filled one is stored with the intake reason
      * `honeypot`, so that the submission is quarantined without a classifier.
-     * The result is the same in both cases.
+     * Turnstile failures and exhausted classification quotas also quarantine the
+     * message without changing the response. The organization storage quota can
+     * refuse the submission before it is stored.
      */
     readonly receive: (
       publicId: string,
       fields: typeof SubmissionFields.Type,
       origin: Option.Option<string>,
+      token?: Option.Option<TurnstileToken>,
     ) => Effect.Effect<
       ReceivedSubmission,
       | FormNotFound
       | FormRateLimited
+      | OrganizationRateLimited
       | FormSuspended
       | OriginRefused
       | EmptySubmission

@@ -80,18 +80,18 @@ Don't send cookies: `credentials: "include"` makes the browser refuse the respon
 
 A `202` means D1 has stored the submission and the event that queues it for classification, in one transaction. It doesn't mean the classifier has run.
 
-The body can be `application/json`, `application/x-www-form-urlencoded`, or `multipart/form-data`, up to 16 KiB, with 1 to 32 text fields of at most 4,000 characters each. A field name has 1 to 100 characters, with no control character or line break. One client can send 5 submissions per minute to a form, and a form accepts 30 per minute from all its clients together; see [Rate limits](#rate-limits).
+The body can be `application/json`, `application/x-www-form-urlencoded`, or `multipart/form-data`, up to 16 KiB, with 1 to 32 message fields of at most 4,000 characters each. A field name has 1 to 100 characters, with no control character or line break. The optional `cf-turnstile-response` field is separate from the message. See [Rate limits](#rate-limits) for the per-client, per-form, and daily organization limits.
 
 | Status | Meaning |
 | --- | --- |
 | `202` | Stored. The JSON body has `submission-id` and `status: "received"` |
 | `303` | Stored, and the browser is sent to the form's success URL (see below) |
-| `400` | Invalid body or fields, a file in a multipart body, or a body whose only field is the empty honeypot field |
+| `400` | Invalid body or fields, a file in a multipart body, or no message fields after removing the Turnstile token and an empty honeypot |
 | `403` | The form is suspended, or a browser on an origin that the form doesn't allow sent it. Nothing is stored |
 | `404` | Unknown form |
 | `413` | Body larger than 16 KiB |
 | `415` | Another content type |
-| `429` | More than 5 submissions in a minute from this client, or more than 30 on this form, with `Retry-After: 60`. Nothing is stored |
+| `429` | The client or form reached its minute limit, or the organization reached its daily submission quota. `Retry-After` gives the wait in seconds. Nothing is stored |
 | `503` | D1 unavailable |
 
 ### HTML forms
@@ -123,6 +123,12 @@ When the field arrives empty, Rondyr removes it before storing the message, so i
 
 A suspended form answers `403` to every submission and stores nothing, with the same CORS headers as an active form. Its messages, its destinations, its allowed origins, and its URL don't change, and reactivating it accepts submissions again. Suspend and reactivate a form in **Forms**.
 
+### Turnstile
+
+Create a Cloudflare Turnstile widget for the hostname that serves your form. In **Forms**, pick the form, save the widget's site key and secret key, then copy the HTML into your form. For a JSON integration, send the widget's token in the `cf-turnstile-response` field. The Worker needs `RONDYR_SECRETS_KEY` to encrypt the widget secret in D1. [Cloudflare's widget setup guide](https://developers.cloudflare.com/turnstile/get-started/)
+
+Rondyr removes the token before storing the message. A missing or refused token sends the message to **To review** with the reason **Turnstile verification failed**, and the visitor still gets the usual response. If Siteverify fails to answer within five seconds or the verification service is unavailable, Rondyr logs the incident and lets the other intake checks and classification proceed.
+
 ### Allowed origins
 
 By default a form accepts submissions from a page on any origin. To restrict it, open **Allowed origins** in the dashboard and add the origins of your site, such as `https://www.example.com`. An origin is a scheme, a host, and an optional port, with no path. It must use HTTPS, except `http://localhost` and loopback addresses such as `http://127.0.0.1:8080` during development.
@@ -135,7 +141,11 @@ Locally there is no Workers AI binding, so every message is quarantined with the
 
 Rondyr limits each client to 5 submissions per minute on each form, before it stores anything, so a single client can't use up the form's own cap of 30 per minute and get other visitors' messages refused. A client is the IP address that Cloudflare sends in `CF-Connecting-IP`, or the `/64` network of an IPv6 address. The counters are in Cloudflare's [Workers Rate Limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/) binding, not in D1, so Rondyr stores no IP address. Cloudflare counts per data center and approximately: a client can get a few more submissions through, and the form's cap still applies to everyone. When the counter doesn't answer, the submission is accepted. A request without `CF-Connecting-IP`, as in local development, isn't counted.
 
-Both limits answer `429` with `Retry-After: 60` and store nothing. A page on an allowed origin can read the response and the `Retry-After` header.
+Both minute limits answer `429` with `Retry-After: 60` and store nothing. A page on an allowed origin can read the response and the `Retry-After` header.
+
+**Daily quotas** shows usage across the organization's forms for the current UTC day. The defaults are 2,000 stored submissions and 1,000 submissions admitted to classification. An organization member can change the limits there or with `PUT /api/organizations/:organizationId/quotas`, using integer fields `submissions` (1 to 100,000) and `classifications` (0 to 100,000). A `GET` on the same URL returns the UTC day, limits and usage.
+
+After the storage quota is reached, Rondyr returns `429` with the number of seconds until midnight UTC in `Retry-After`. After the classification quota is reached, Rondyr stores messages and sends them to review with the reason **Daily classification quota reached**. Every stored submission uses one storage slot. A submission uses one classification slot when intake admits it to the classifier. Workflow retries use the same slot.
 
 ## Features
 
@@ -162,7 +172,7 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 
 | Gap | Issue |
 | --- | --- |
-| Turnstile, and per-organization quotas for intake and classifier calls | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
+| Single D1 round trip for submissions that include a Turnstile token | [#7](https://github.com/basaltbytes/rondyr/issues/7) |
 | Thresholds measured on a test corpus, per-organization policy | [#6](https://github.com/basaltbytes/rondyr/issues/6) |
 | Roles and invitations | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
 | Search, export, retention, and purge | [#9](https://github.com/basaltbytes/rondyr/issues/9) |

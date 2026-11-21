@@ -53,6 +53,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.hostname === "api.resend.com") return env.RESEND.fetch(request);
+    if (url.hostname === "challenges.cloudflare.com") return env.SITEVERIFY.fetch(request);
     if (url.pathname === "/__received") {
       const prefix = url.searchParams.get("prefix") ?? "/";
       return Response.json(received.filter((entry) => entry.path.startsWith(prefix)));
@@ -81,6 +82,31 @@ export default {
       default:
         return new Response(null, { status: 404 });
     }
+  },
+};
+`;
+
+// Siteverify accepts a token only for its corresponding fixture secret.
+const siteverifyFixture = `
+const calls = [];
+export default {
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname === "/__calls") {
+      return Response.json(calls.filter(({ secret }) => secret === url.searchParams.get("secret")));
+    }
+    if (request.method !== "POST" || url.pathname !== "/turnstile/v0/siteverify") {
+      return new Response(null, { status: 404 });
+    }
+    const body = await request.formData();
+    const secret = body.get("secret");
+    const token = body.get("response");
+    calls.push({ secret, token });
+    if (token === "unavailable") return new Response(null, { status: 503 });
+    if (token === "slow") await scheduler.wait(15_000);
+    return token === "valid-" + secret
+      ? Response.json({ success: true })
+      : Response.json({ success: false, "error-codes": ["invalid-input-response"] });
   },
 };
 `;
@@ -159,12 +185,18 @@ export function externalWorkers(compatibilityDate: string) {
       modules: true,
       script: webhookReceiverFixture,
       compatibilityDate,
-      serviceBindings: { RESEND: "resend-fixture" },
+      serviceBindings: { RESEND: "resend-fixture", SITEVERIFY: "siteverify-fixture" },
     },
     {
       name: "resend-fixture",
       modules: true,
       script: resendFixture,
+      compatibilityDate,
+    },
+    {
+      name: "siteverify-fixture",
+      modules: true,
+      script: siteverifyFixture,
       compatibilityDate,
     },
   ];

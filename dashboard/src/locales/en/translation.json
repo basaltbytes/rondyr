@@ -49,7 +49,9 @@
       "solicitation": "Unsolicited sales outreach",
       "classification-error": "Analysis unavailable",
       "honeypot": "Honeypot field filled",
-      "repetition": "Repeated submissions"
+      "repetition": "Repeated submissions",
+      "turnstile-failed": "Turnstile verification failed",
+      "quota": "Daily classification quota reached"
     },
     "deliveries": {
       "pending": "Pending",
@@ -105,6 +107,7 @@
       "origins": "Allowed origins",
       "domains": "Organization domains",
       "classification": "Classification",
+      "quotas": "Daily quotas",
       "organization": "New organization"
     },
     "statuses": {
@@ -286,6 +289,21 @@
         "save": "Save honeypot field",
         "remove": "Remove honeypot field"
       },
+      "turnstile": {
+        "title": "Turnstile",
+        "description": "Use the site key and secret key from your Cloudflare Turnstile widget.",
+        "siteKey": "Site key",
+        "secretKey": "Secret key",
+        "save": "Save Turnstile keys",
+        "saving": "Saving Turnstile settings…",
+        "disable": "Disable Turnstile",
+        "embed": "Paste this HTML inside your form. Load the script only once per page.",
+        "copy": "Copy HTML",
+        "copied": "HTML copied.",
+        "copyFailed": "Couldn’t copy. Select and copy the HTML above.",
+        "secretsKeyMissing": "Set RONDYR_SECRETS_KEY on the Worker to enable Turnstile.",
+        "saveFailed": "Couldn’t save the Turnstile settings."
+      },
       "suspension": {
         "title": "Suspension",
         "suspendedTitle": "Form suspended",
@@ -316,6 +334,18 @@
       "retry": "Try again",
       "addFailed": "Could not add the domain. Try again.",
       "removeFailed": "Could not remove the domain. Try again."
+    },
+    "quotas": {
+      "description": "Limits apply across all forms in this organization and reset at midnight UTC.",
+      "day": "Usage for {{day}} (UTC)",
+      "submissions": "Daily submission limit",
+      "classifications": "Daily classification limit",
+      "used": "{{used}} of {{limit}} used",
+      "saving": "Saving quotas…",
+      "saved": "Quotas saved.",
+      "saveFailed": "Couldn’t save the quotas.",
+      "loadFailed": "Couldn’t load the daily quotas.",
+      "retry": "Try again"
     },
     "policy": {
       "description": "{{classifier}} classifies submissions for this organization. Custom settings apply to new classification runs.",

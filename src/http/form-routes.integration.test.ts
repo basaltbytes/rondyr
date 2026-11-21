@@ -117,6 +117,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       businessContext: null,
       successUrl: null,
       honeypotField: null,
+      turnstileSiteKey: null,
     });
     const forms = `/api/organizations/${inbox.id}/forms`;
     const formPath = (publicId: string) => `${forms}/${encodeURIComponent(publicId)}`;
@@ -164,6 +165,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       businessContext: "Pottery workshops",
       successUrl: null,
       honeypotField: null,
+      turnstileSiteKey: null,
     });
     assert.notStrictEqual(classes.publicId, first.publicId);
     const shop = yield* call("POST", forms, { name: "Shop", businessContext: "" }, headers).pipe(
