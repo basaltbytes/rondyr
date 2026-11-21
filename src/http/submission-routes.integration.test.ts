@@ -856,6 +856,7 @@ it.live("sends the CORS headers with a 503 when D1 is unavailable", () =>
     const unavailable = Layer.mergeAll(
       Layer.succeed(SubmissionIntake, {
         receive: () => Effect.fail(StorageUnavailable.make()),
+        receiveFromServer: () => Effect.fail(StorageUnavailable.make()),
         matchOrigin: () => Effect.fail(StorageUnavailable.make()),
       }),
       Layer.succeed(BackgroundTasks, { run: () => Effect.void }),

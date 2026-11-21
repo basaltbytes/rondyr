@@ -109,6 +109,8 @@ flowchart TD
 
 `202 Accepted` means that D1 has stored the submission and its outbox event in the same transaction. The response says nothing about classification or about a delivery. A request refused before this write is not covered by the guarantee, including a `429`.
 
+A request with a Bearer credential is a server intake (section 7): a site's server sends the message with an API token of the form's organization. It skips the per-client limit, the origin check and Turnstile, and joins the same D1 batch, which also looks for an earlier submission with the same idempotency key.
+
 A submission whose honeypot field is filled follows the same path up to the `202`, and the response is identical: the bot learns nothing. The D1 batch stores the intake reason `honeypot` with it, then the consumer sends `QuarantineAtIntake` instead of `RequestClassification`, and the aggregate quarantines it without starting the saga.
 
 An `application/x-www-form-urlencoded` or `multipart/form-data` post whose `Accept` header contains `text/html` gets an HTML confirmation page with the status `202`, with fixed text, in French or in English depending on the visitor's `Accept-Language` header. If the form has a success URL, it gets `303` to that URL instead.
@@ -120,6 +122,8 @@ D1 and Queues do not share a transaction, and Queues delivers messages at least 
 ### Intake
 
 When the request contains a usable Turnstile token, the `SubmissionIntake` adapter reads the form's encrypted key from D1 and calls Siteverify if Turnstile is active. A single `db.batch` then reads the access conditions, decides on admission and on the intake reason, writes the submission and its event in `outbox_events`, then increments the daily counters. D1 runs the batch in a transaction. A test forces the outbox insert to fail with a trigger and checks that the submission does not exist and that the route answers `503`.
+
+A server intake with an `Idempotency-Key` uses the same batch. Its first statement reads the form's submission with that key, if any, and the insert has a `NOT EXISTS` on the same key. D1 runs one batch at a time, so of two concurrent requests with the same key, the second one's batch sees the first one's row: it stores nothing, inserts no outbox event, increments no counter, and the route answers `202` with the first submission's ID without publishing. A unique partial index on `(form_id, idempotency_key)` backs this rule. An accepted server intake still takes one D1 round trip, after the token read.
 
 ### Publication
 
@@ -271,7 +275,7 @@ State is split between two stores. D1 contains the configuration, the message co
 | `organization_daily_usage` | One row per organization with the last UTC day `day` and its counters: `submissions` (stored submissions other than junk), `classifications` and `junk` (stored junk, section 8) |
 | `forms` | `id`, `organization_id`, unique `public_id`, `name`, `business_context`, `status` (`active` by default, or `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (public) and `turnstile_secret` (encrypted). The last four fields are optional |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` is normalized: scheme, host and optional port, without a path or a trailing slash |
-| `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (optional), `sender_fingerprint` and `content_fingerprint` (optional), `prior_same_sender` and `prior_same_content` |
+| `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (optional), `sender_fingerprint` and `content_fingerprint` (optional), `prior_same_sender` and `prior_same_content`, `idempotency_key` (optional, unique per form) |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
 | `submission_inbox` | `submission_id`, `version`, `status`, `reason`, `label` (optional) |
 | `notification_targets` | `id`, `organization_id`, `form_id`, `type`, `configuration` (JSON read by the provider of the type), `active`, `created_at`. For a webhook, `configuration` contains `url`, `secret` (encrypted) and `previousSecret` (`null`, or the previous encrypted secret and the end of its validity). For an email, it contains `recipients`, the list of recipients |
@@ -293,6 +297,8 @@ The `turnstile-and-organization-quotas` migration adds the settings with `ALTER 
 The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
 The `api-tokens` migration creates `api_tokens` with a unique index on `token_hash` and a partial index on `(organization_id, created_at, id)` limited to active tokens, which serves both the token list and the count of active tokens at creation. It changes no existing table.
+
+The `server-intake-idempotency` migration adds `submissions.idempotency_key` with `ALTER TABLE … ADD`, without a default value, and a unique partial index on `(form_id, idempotency_key)` limited to rows with a key. The table is not rebuilt, and existing submissions have no key.
 
 A delivery has one of the statuses `pending`, `processing`, `delivered`, `retrying` or `failed`. `next_attempt_at` says when an attempt can start: the creation, the end of the retry delay or the end of the current attempt's lease. An attempt has the outcome `delivered`, `retryable-failure`, `permanent-failure` or `interrupted`, or none while it runs. A manual retry opens a new series on the same delivery without erasing its attempts; the history and the retry needed no migration. The admin API creates webhook and email destinations; the existing `notification_targets` table is enough, without a migration. The adapter reads the recipient list back with the same schema as at creation: a row edited by hand that no longer follows the rule makes the delivery fail without a retry.
 
@@ -342,6 +348,14 @@ The fields are stored in a JSON object. Names that are JavaScript array indices 
 | `503` | D1 unavailable |
 
 Responses reveal nothing about the anti-spam decision: a submission with a filled honeypot field gets the same `202`, the same page or the same redirect as any other. `GET /health` returns `{"status":"ok"}`.
+
+#### Server intake
+
+A `POST /f/:public-id` with a Bearer credential in `Authorization` is a server intake: a site validates its own form, then forwards each message from its server with an API token of the form's organization. The token middleware (section 8) verifies the credential before the route runs. A credential that is not an active token gets `401`, a token of another organization gets `404` like an unknown form, and in both cases nothing is stored: the request never falls back to the public path. The route then calls `SubmissionIntake.receiveFromServer` with the token's organization, and the D1 batch only finds that organization's forms.
+
+A server intake is subject to neither the origin check nor the per-client limit: all of a site's requests come from one address, which would make the per-client limit the limit of the whole site. The form cap of 30 per minute and the organization's daily quotas apply, with `429` and `Retry-After` as for a browser, and a suspended form answers `403`. The honeypot field applies. Turnstile does not: the calling server has done its own verification, and the message goes through normal classification. The body is flat JSON (another content type gets `415`), and the response is always `202` with `{"submission-id", "status"}`, never the redirect or the confirmation page.
+
+The `Idempotency-Key` header, 1 to 128 printable ASCII characters (`IdempotencyKey`, in `src/domain/submissions/idempotency-key.ts`), is read only on a server intake; a malformed key gets `400`. Elsewhere it is ignored, and the preflight does not allow it. Its scope is the form: `submissions.idempotency_key` stores it, and it lives as long as the submission. A later request with the same key on the same form answers `202` with the first submission's ID, whatever the body, the form's status or the quotas are by then; nothing is stored or published. The repetition rules do not change: a replay is not stored, so it is not a repetition. [docs/api.md](docs/api.md) documents the contract.
 
 There is one exception: once the organization's junk quota is reached for the day, junk gets `429` while other submissions still get `202`, so a bot can tell that it was caught. Without the refusal, junk would have to use the quota of real messages again (section 8).
 
@@ -444,6 +458,8 @@ The honeypot field costs one SQL statement and asks nothing of the visitor. It s
 
 Allowed origins serve browser integration and do not protect against abuse: a client outside a browser sends no `Origin` header, or chooses its value. They only prevent another site from having its visitors' browsers send messages. The limits apply whatever the origin.
 
+A server intake (section 7) skips the per-client limit, the origin check and Turnstile, because an API token of the form's organization identifies the caller. It keeps the form cap, the daily quotas and the honeypot field, so a leaked token can fill no more than what a browser can, and revoking it stops the flow at the next request. The idempotency key cannot reach another organization's submissions: the batch looks it up only on the token's organization's form.
+
 #### Turnstile
 
 Each form can use its own Cloudflare Turnstile widget. The dashboard shows the site key in the HTML snippet. The `SecretCipher` port encrypts the secret key in D1 with `RONDYR_SECRETS_KEY` and the owner `turnstile/<publicId>`. Admin responses contain only the site key.
@@ -466,7 +482,7 @@ The classification quota counts 1,000 slots per day by default. The intake batch
 
 - Public sign-up is closed. `/api/setup` requires `RONDYR_SETUP_TOKEN`, compared in constant time, and D1 refuses to create a second account through this path. The token is removed after setup.
 - The authentication routes, and every admin request that relies on the session, refuse a request whose origin differs from `BETTER_AUTH_URL`. The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`.
-- A request with `Authorization: Bearer rdr_…` never uses the session, even with a valid cookie, and needs no `Origin` header. A router middleware (`src/http/api-token-authentication.ts`) hashes the token with SHA-256 and looks the hash up among active tokens, without writing to D1. An unknown or revoked token gets `401`. A valid token gets `403` on every `/api` route outside its allow list, which the middleware checks against the matched route, so a route added later is refused by default. A resource outside the token's organization answers `404`, as for an account that is not a member.
+- A request with `Authorization: Bearer rdr_…` never uses the session, even with a valid cookie, and needs no `Origin` header. On `POST /f/:public-id`, any Bearer credential makes a server intake, and the same middleware verifies it. A router middleware (`src/http/api-token-authentication.ts`) hashes the token with SHA-256 and looks the hash up among active tokens, without writing to D1. An unknown or revoked token gets `401`. A valid token gets `403` on every `/api` route outside its allow list, which the middleware checks against the matched route, so a route added later is refused by default. A resource outside the token's organization answers `404`, as for an account that is not a member.
 - Tokens go through the `ApiTokens` port. D1 keeps the hash and the last four characters; the full value appears only in the creation response. At most ten tokens are active per organization: the insert counts them in the same statement, so concurrent creations cannot exceed the limit. Decision events keep the token ID. The Worker wraps the token in `Redacted` as soon as it reads the header, and the token appears in no log or error summary.
 - Better Auth rate-limits sign-in attempts, with a counter in D1.
 - Every admin query is scoped to the account's organizations or to the token's organization, and the aggregate checks this access again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, the delivery history, retries and test sends, and every review route with a token of another organization.
@@ -646,7 +662,7 @@ In production on 20 November 2026: reliable intake, classification with Jev or O
 
 Three issues remain open. They are independent of each other and can be worked on in any order or in parallel; each one is delivered whole, in one pull request:
 
-- #59, EmDash integration. Part 1, API tokens per organization, is delivered. Part 2, authenticated intake from a server with an idempotency key, and Part 3, the EmDash plugin, remain.
+- #59, EmDash integration. Part 1, API tokens per organization, and Part 2, authenticated intake from a server with an idempotency key, are delivered. Part 3, the EmDash plugin, remains.
 - #11, organization administration: members and roles, confirmed email recipients and limited test sends, search, export and purge.
 - #43, operations: processing status, stuck processing, runbook, staging and the install guide. The run-through on a fresh Cloudflare account needs a person.
 

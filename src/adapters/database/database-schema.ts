@@ -169,6 +169,8 @@ export const submissions = sqliteTable(
     contentFingerprint: text("content_fingerprint"),
     priorSameSender: integer("prior_same_sender").notNull().default(0),
     priorSameContent: integer("prior_same_content").notNull().default(0),
+    // The Idempotency-Key of a server intake, unique per form. It lives as long as the submission.
+    idempotencyKey: text("idempotency_key"),
   },
   (table) => [
     index("submissions_inbox_idx").on(table.organizationId, table.receivedAt, table.id),
@@ -179,6 +181,9 @@ export const submissions = sqliteTable(
     index("submissions_content_repetition_idx")
       .on(table.organizationId, table.contentFingerprint, table.receivedAt)
       .where(sql`${table.contentFingerprint} is not null`),
+    uniqueIndex("submissions_form_idempotency_key_idx")
+      .on(table.formId, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
   ],
 );
 
