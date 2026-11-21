@@ -106,6 +106,16 @@ const stuckSubmission = Effect.fnUntraced(function* (
   return submissionId;
 });
 
+/** The classifications that the organization used today. */
+const classificationsUsed = (organizationId: string) =>
+  Effect.promise(() =>
+    env.DB.prepare(
+      "SELECT classifications FROM organization_daily_usage WHERE organization_id = ? AND day = date('now')",
+    )
+      .bind(organizationId)
+      .first<number>("classifications"),
+  );
+
 const submit = Effect.fnUntraced(function* (publicId: string, fields: Schema.Json) {
   const response = yield* call("POST", `/f/${publicId}`, fields);
   assert.strictEqual(response.status, 202);
@@ -216,6 +226,7 @@ it.live(
         "fixture-verdict": "accept-after-error",
       });
       yield* waitForInbox(submissionId, { status: "quarantined", reason: "classification-error" });
+      const usedAtIntake = yield* classificationsUsed(inbox.id);
 
       const reclassified = yield* decision(submissionId, "reclassify");
       assert.strictEqual(reclassified.status, 200);
@@ -232,9 +243,15 @@ it.live(
         "SubmissionAccepted",
       ]);
 
-      // Accepted: no decision applies any more.
+      // The run took exactly one slot, beside the one of intake.
+      const afterRun = yield* classificationsUsed(inbox.id);
+      assert.strictEqual(afterRun, (usedAtIntake ?? 0) + 1);
+
+      // Accepted: no decision applies any more, and the refusal gives its slot back.
       const late = yield* decision(submissionId, "reclassify");
       assert.strictEqual(late.status, 409);
+      const afterLate = yield* classificationsUsed(inbox.id);
+      assert.strictEqual(afterLate, afterRun);
 
       // A quarantine for another reason is the classifier's or intake's answer.
       const solicitation = yield* submit(form.publicId, {
@@ -242,10 +259,14 @@ it.live(
         "fixture-verdict": "solicitation",
       });
       yield* waitForInbox(solicitation, { status: "quarantined", reason: "solicitation" });
+      const beforeRefusal = yield* classificationsUsed(inbox.id);
       const refused = yield* decision(solicitation, "reclassify");
       assert.strictEqual(refused.status, 409);
       const unchanged = yield* Effect.promise(() => inboxRow(solicitation));
       assert.deepEqual(unchanged, { status: "quarantined", reason: "solicitation" });
+      // The aggregate refused the request: its slot is given back.
+      const afterRefusal = yield* classificationsUsed(inbox.id);
+      assert.strictEqual(afterRefusal, beforeRefusal);
     }),
   45_000,
 );
@@ -378,13 +399,6 @@ it.live(
           undefined,
           { cookie },
         );
-      const classificationsUsed = Effect.promise(() =>
-        env.DB.prepare(
-          "SELECT classifications FROM organization_daily_usage WHERE organization_id = ?",
-        )
-          .bind(inbox.id)
-          .first("classifications"),
-      );
       const limitClassifications = (limit: number) =>
         Effect.promise(() =>
           env.DB.prepare("UPDATE organizations SET daily_classification_limit = ? WHERE id = ?")
@@ -397,7 +411,7 @@ it.live(
         "fixture-verdict": "accept-after-error",
       });
       yield* waitForInbox(submissionId, { status: "quarantined", reason: "classification-error" });
-      const usedAtIntake = yield* classificationsUsed;
+      const usedAtIntake = yield* classificationsUsed(inbox.id);
       assert.strictEqual(usedAtIntake, 1);
 
       // The day's classifications are used up: the message stays in quarantine.
@@ -407,15 +421,15 @@ it.live(
       assert.strictEqual(refused.headers.get("cache-control"), "no-store");
       const refusal = yield* json(refused);
       assert.deepEqual(refusal, { error: "classification-quota-reached" });
-      const usedAfterRefusal = yield* classificationsUsed;
+      const usedAfterRefusal = yield* classificationsUsed(inbox.id);
       assert.strictEqual(usedAfterRefusal, 1);
       const kept = yield* Effect.promise(() => inboxRow(submissionId));
       assert.deepEqual(kept, { status: "quarantined", reason: "classification-error" });
       const unchanged = yield* recordedEvents(submissionId);
       assert.deepEqual(unchanged, ["ClassificationRequested", "SubmissionQuarantined"]);
 
-      // Two clicks at once start one run; the second gets 409. Each click that found the
-      // message in quarantine took a slot before the aggregate decided.
+      // Two clicks at once start one run; the second gets 409. Each click takes a slot
+      // before the aggregate decides, and the refused one gives it back.
       yield* limitClassifications(10);
       const responses = yield* Effect.all([reclassify(submissionId), reclassify(submissionId)], {
         concurrency: 2,
@@ -432,8 +446,8 @@ it.live(
         "ReclassificationRequested",
         "SubmissionAccepted",
       ]);
-      const used = yield* classificationsUsed;
-      assert.include([2, 3], used);
+      const used = yield* classificationsUsed(inbox.id);
+      assert.strictEqual(used, 2);
     }),
   45_000,
 );
