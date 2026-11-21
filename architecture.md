@@ -265,6 +265,7 @@ L’état est réparti entre deux stockages. D1 contient la configuration, le co
 | `deliveries` | `id` (UUID v4 stable), `submission_id`, `target_id`, `status`, `attempt_count` (tentatives de la série en cours), `last_error`, `next_attempt_at`, `lease_until`, `published_at`, `created_at`, `updated_at` ; unique sur `(submission_id, target_id)` |
 | `delivery_attempts` | `(delivery_id, attempt)`, `started_at`, `finished_at`, `outcome`, `error`. `attempt` numérote les tentatives sur tout l’historique, relances manuelles comprises |
 | `auth_*` | Comptes, sessions, vérifications et limites de débit de Better Auth |
+| `api_tokens` | `id`, `organization_id`, `name`, `token_hash` (SHA-256 unique), `token_suffix` (quatre caractères), `created_at`, `created_by`, `revoked_at` (facultatif) |
 
 La migration `form-administration` ajoute `status` et `success_url` par `ALTER TABLE` : les formulaires existants passent à `active` par la valeur par défaut. `status` n’a pas de contrainte `CHECK`, car l’ajouter reconstruirait la table, et la suppression de `forms` sur D1 se propagerait à `form_origins` ; les adaptateurs ne l’écrivent qu’avec les deux valeurs, et Effect Schema refuse une autre valeur à la lecture.
 
@@ -284,14 +285,14 @@ Une livraison a l’un des statuts `pending`, `processing`, `delivered`, `retryi
 | --- | --- |
 | `ClassificationRequested` | Organisation |
 | `SubmissionQuarantined` | Organisation, motif, scores éventuels (absents pour un motif d’entrée ou un échec du classificateur), version des règles |
-| `SubmissionAccepted` | Organisation, puis scores et version des règles (automatique) ou relecteur (manuelle) |
-| `SubmissionDismissed` | Organisation, relecteur |
+| `SubmissionAccepted` | Organisation, puis scores et version des règles (automatique) ou identifiant de l’utilisateur ou du jeton (manuelle) |
+| `SubmissionDismissed` | Organisation, identifiant de l’utilisateur ou du jeton |
 
 L’agrégat passe de `Unrecorded` à `Classifying`, puis à `Quarantined` ou `Accepted`. Avec un motif d’entrée, il passe directement de `Unrecorded` à `Quarantined`. Seul un message `Quarantined` peut être accepté ou archivé à la main. La projection `Inbox` écrit le dernier statut dans `submission_inbox`, protégée par le numéro de séquence de l’événement. Une soumission sans ligne de projection a le statut `received`.
 
 Les statuts visibles sont `received`, `classifying`, `quarantined`, `accepted` et `archived`. Le champ `reason` de l’Inbox contient le motif de quarantaine, dont `turnstile-failed` ou `quota` pour ces contrôles d’entrée.
 
-Le contenu des messages n’existe que dans `submissions.fields`, et n’en sort que dans le corps des requêtes webhook et dans le texte des e-mails. Les événements ne contiennent que des identifiants, des scores et l’identifiant du relecteur, et les livraisons que des identifiants, des états et des résumés d’erreur, ce qui limite une purge aux lignes D1 (#9). Supprimer une soumission supprime ses livraisons et leurs tentatives.
+Le contenu des messages n’existe que dans `submissions.fields`, et n’en sort que dans le corps des requêtes webhook et dans le texte des e-mails. Les événements ne contiennent que des identifiants, des scores et l’identifiant de l’auteur de la décision, et les livraisons que des identifiants, des états et des résumés d’erreur, ce qui limite une purge aux lignes D1 (#9). Supprimer une soumission supprime ses livraisons et leurs tentatives.
 
 ### Tables à venir
 
@@ -357,13 +358,16 @@ Le lot D1 vérifie l’origine et le statut du formulaire, applique les plafonds
 
 ### API d’administration
 
-Elle sert le dashboard et n’est pas publiée pour des clients tiers.
+Le dashboard utilise la session Better Auth. Un client tiers peut utiliser un jeton d’organisation pour les routes de revue décrites dans [docs/api.md](docs/api.md).
 
 | Route | Rôle |
 | --- | --- |
 | `POST /api/setup` | Crée le premier compte, avec le jeton d’installation |
 | `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Session Better Auth |
-| `GET /api/organizations` | Organisations du compte et leurs formulaires |
+| `GET /api/organizations` | Organisations du compte et leurs formulaires, ou uniquement l’organisation du jeton et ses formulaires |
+| `GET /api/organizations/:organizationId/api-tokens` | Liste les jetons actifs avec leur nom, leurs quatre derniers caractères et leur date de création |
+| `POST /api/organizations/:organizationId/api-tokens` | Crée un jeton (`{"name":…}`) et renvoie sa valeur une fois avec `201` et `Cache-Control: no-store`. Le onzième jeton actif reçoit `409` |
+| `DELETE /api/organizations/:organizationId/api-tokens?id=…` | Révoque le jeton définitivement et répond `204` |
 | `POST /api/organizations` | Crée une organisation et son premier formulaire |
 | `GET /api/organizations/:organizationId/domains` | Liste les domaines déclarés par ordre alphabétique |
 | `POST /api/organizations/:organizationId/domains` | Ajoute un domaine (`{"domain":…}`). Répond `201` pour une création, `200` pour un doublon, `400` pour un nom invalide ou `409` si la liste est pleine |
@@ -435,11 +439,13 @@ Le plafond de stockage protège l’ensemble des formulaires d’une organisatio
 ### Authentification et isolation
 
 - Les inscriptions publiques sont fermées. `/api/setup` exige `RONDYR_SETUP_TOKEN`, comparé en temps constant, et D1 refuse la création d’un second compte par ce chemin. Le jeton se retire après l’installation.
-- Les routes d’authentification et d’administration refusent toute requête dont l’origine diffère de `BETTER_AUTH_URL`. Le cookie de session est `Secure`, `HttpOnly` et `SameSite=Lax`.
+- Les requêtes authentifiées par session sont soumises au contrôle d’origine de `BETTER_AUTH_URL`. Le cookie de session est `Secure`, `HttpOnly` et `SameSite=Lax`.
+- `Authorization: Bearer rdr_…` a priorité sur le cookie et fonctionne sans en-tête `Origin`. Le Worker calcule le SHA-256 du jeton et recherche son empreinte parmi les jetons actifs, sans écrire dans D1. Un jeton inconnu ou révoqué reçoit `401`. Un jeton valide reçoit `403` sur les routes absentes de la liste d’autorisation et `404` pour une ressource hors de son organisation.
+- La vérification du jeton passe par le port `ApiTokens`. D1 conserve l’empreinte et les quatre derniers caractères. La valeur complète est renvoyée à la création, puis seuls l’identifiant et les métadonnées sont disponibles. Les événements de décision conservent un identifiant, et le jeton complet est absent des journaux et des résumés d’erreur.
 - Better Auth limite le débit des tentatives de connexion, avec un compteur en D1.
-- Chaque requête d’administration est bornée par les organisations du compte, et l’agrégat revérifie cette appartenance avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages, les destinations, les origines autorisées, les formulaires, l’historique des livraisons, la relance et l’envoi d’essai.
+- Chaque requête d’administration est bornée par les organisations du compte ou par l’organisation du jeton, et l’agrégat revérifie cet accès avant une décision de revue. Des tests couvrent la lecture et l’écriture depuis un compte d’une autre organisation, pour les messages, les destinations, les origines autorisées, les formulaires, l’historique des livraisons, la relance et l’envoi d’essai.
 
-Tout membre a aujourd’hui tous les droits sur son organisation, y compris l’ajout, la modification et la suspension de ses formulaires, et tout compte connecté peut en créer une (#11). Pour les livraisons, `deliveryOperator`, dans `src/http/delivery-routes.ts`, décide qui lit l’historique, relance et envoie un essai : c’est là que #11 vérifiera le rôle.
+Tout membre a aujourd’hui tous les droits sur son organisation, y compris la gestion des jetons et de ses formulaires, et tout compte connecté peut en créer une (#11). Pour les livraisons, `deliveryOperator`, dans `src/http/delivery-routes.ts`, décide qui lit l’historique, relance et envoie un essai : c’est là que #11 vérifiera le rôle.
 
 L’URL de succès ne permet pas de redirection ouverte : elle vient de D1, son origine est une origine autorisée du formulaire, et seul un membre de l’organisation la modifie.
 
@@ -618,10 +624,11 @@ Chaque issue indique ce qui la bloque, dans sa section « Ordre » et par la rel
 2. Domaines de l’organisation (#39).
 3. Seuils par classificateur et politique par organisation (#6).
 4. Turnstile et plafonds par organisation (#7).
-5. Confirmation des destinataires e-mail (#36).
-6. Rôles et invitations (#11).
-7. Recherche, export et purge (#9).
-8. Traitements bloqués : outbox, files d’échec, reclassement (#10).
+5. Jetons par organisation (#57).
+6. Confirmation des destinataires e-mail (#36).
+7. Rôles et invitations (#11).
+8. Recherche, export et purge (#9).
+9. Traitements bloqués : outbox, files d’échec, reclassement (#10).
 
 **Après une étape de la file.** Question « démarchage commercial » après #31 (#40). Escalade vers un second modèle après #6 (#15).
 

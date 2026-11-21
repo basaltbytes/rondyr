@@ -24,7 +24,10 @@ type Picked = Form["publicId"] | "new" | null;
 const newForm = "new";
 
 interface FormListProps {
-  readonly section: Exclude<Section, "classification" | "domains" | "operations" | "quotas">;
+  readonly section: Exclude<
+    Section,
+    "classification" | "domains" | "operations" | "quotas" | "apiTokens"
+  >;
   readonly forms: readonly Form[];
   /** The form shown in the next pane. */
   readonly shown: Form | undefined;

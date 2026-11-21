@@ -3,9 +3,11 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { ApiTokenList } from "@rondyr/organizations/api-token";
 import type { OrganizationDomainList } from "@rondyr/organizations/organization-domain";
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
+import { listApiTokens } from "~/lib/api-tokens-client";
 import { getClassificationSettings } from "~/lib/classification-policy-client";
 import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
 import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
@@ -24,6 +26,10 @@ import { SubmissionReader } from "./submission-reader.tsx";
 // The settings are not part of the first paint, so their code loads when one of them opens.
 const InboxSettings = lazy(async () => {
   const { InboxSettings: Settings } = await import("./inbox-settings.tsx");
+  return { default: Settings };
+});
+const ApiTokenSettings = lazy(async () => {
+  const { ApiTokenSettings: Settings } = await import("./api-token-settings.tsx");
   return { default: Settings };
 });
 const OrganizationDomains = lazy(async () => {
@@ -63,6 +69,7 @@ interface Listing {
 }
 
 type SettingsSelection =
+  | { readonly section: "apiTokens"; readonly tokens: Promise<ApiTokenList | null> }
   | { readonly section: "domains"; readonly domains: Promise<OrganizationDomainList | null> }
   | {
       readonly section: "classification";
@@ -72,7 +79,7 @@ type SettingsSelection =
       readonly section: "quotas";
       readonly usage: Promise<Awaited<ReturnType<typeof getDailyUsage>> | null>;
     }
-  | { readonly section: Exclude<Section, "domains" | "classification" | "quotas"> };
+  | { readonly section: Exclude<Section, "domains" | "classification" | "quotas" | "apiTokens"> };
 
 interface InboxViewProps {
   readonly inboxes: readonly Inbox[];
@@ -173,12 +180,17 @@ function InboxView({
     setSettings({ section: "quotas", usage: getDailyUsage(inbox.id).catch(() => null) });
   }
 
+  function openApiTokens() {
+    setSettings({ section: "apiTokens", tokens: listApiTokens(inbox.id).catch(() => null) });
+  }
+
   function openSection(next: Section) {
     if (next === section) return;
     setOpened(null);
     if (next === "domains") openDomains();
     else if (next === "classification") openClassification();
     else if (next === "quotas") openQuotas();
+    else if (next === "apiTokens") openApiTokens();
     else setSettings({ section: next });
   }
 
@@ -306,6 +318,12 @@ function InboxView({
                 inboxId={inbox.id}
                 settings={settings.policy}
                 onRetry={openClassification}
+              />
+            ) : settings.section === "apiTokens" ? (
+              <ApiTokenSettings
+                inboxId={inbox.id}
+                tokens={settings.tokens}
+                onRetry={openApiTokens}
               />
             ) : settings.section === "quotas" ? (
               <QuotaSettings inboxId={inbox.id} usage={settings.usage} onRetry={openQuotas} />
