@@ -28,13 +28,20 @@ jobs:
       - run: pnpm check
       - run: pnpm deploy:dry
 
-  # Which workspace packages changed, compared with the previous commit on main (push)
-  # or the base of the pull request. Pull request checks run on every package anyway;
-  # on main, the result decides whether the Worker deploys. Read it in the job log.
+  # Which workspace packages changed, compared with the commit of the last successful
+  # prod deployment (push) or the base of the pull request. Comparing with the last
+  # deployment, not the previous commit, keeps a Worker change whose own run failed or
+  # was cancelled in the next deployment. Pull request checks run on every package
+  # anyway; on main, the result decides whether the Worker deploys. Read it in the job
+  # log and in the run's notices.
   scope:
     name: Changed packages
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      # Read the earlier runs to find the last prod deployment.
+      actions: read
     outputs:
       worker: ${{ steps.scope.outputs.worker }}
     steps:
@@ -49,7 +56,8 @@ jobs:
       - id: scope
         name: Detect changed packages
         env:
-          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '--last-deployment' }}
         run: node scripts/deploy-scope.mjs "$BASE"
 
   dashboard-e2e:
@@ -74,10 +82,14 @@ jobs:
           if-no-files-found: ignore
 
   # Every deployment below waits for this job, so it also waits for both test jobs.
-  # A push that changes no file of the Worker package deploys nothing.
+  # A push deploys unless the scope job answered that the Worker package did not
+  # change: when that job fails, the push deploys, as for any doubt.
   gate:
     name: Staging gate configuration
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.scope.outputs.worker == 'true'
+    if: >-
+      !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.check.result == 'success' && needs.dashboard-e2e.result == 'success' &&
+      needs.scope.outputs.worker != 'false'
     needs: [check, dashboard-e2e, scope]
     runs-on: ubuntu-latest
     timeout-minutes: 5
