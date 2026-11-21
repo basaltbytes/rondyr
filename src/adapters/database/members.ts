@@ -353,6 +353,10 @@ const acceptWithNewAccount = Effect.fn("Members.acceptWithNewAccount")(function*
   token: Redacted.Redacted<string>,
   account: NewAccount,
 ) {
+  // A cheap read first: hashing a password costs CPU, which nobody should be
+  // able to spend with a random link.
+  const summary = yield* readInvitation(token);
+  if (summary.account === "existing") return yield* InvitationNeedsSignIn.make();
   const db = yield* database;
   const tokenHash = yield* hashSecret(token);
   const password = yield* passwordHash(account.password);
