@@ -36,11 +36,13 @@ Only forms that post to `/api/form`, or to a site route that calls `submitForm`,
 
 ### Package
 
-The repository is private, so installing from it needs read access to `basaltbytes/rondyr` over SSH, on your machine and in the site's CI:
+Install the package from this repository over HTTPS, pinned to a commit of `main`. The part after `&path:` selects the package's directory:
 
 ```sh
-pnpm add "git+ssh://git@github.com/basaltbytes/rondyr.git#main&path:/packages/emdash-plugin"
+pnpm add "git+https://github.com/basaltbytes/rondyr.git#<commit>&path:/packages/emdash-plugin"
 ```
+
+Replace `<commit>` with the full hash of the commit you want, for example the latest one on [the commit list of `main`](https://github.com/basaltbytes/rondyr/commits/main/). A pinned commit gives the site's CI the same plugin code on every install; to update, run the command again with a newer commit. No GitHub account or token is needed.
 
 A checkout of this repository works too, with `pnpm add file:../rondyr/packages/emdash-plugin`. pnpm copies the directory when it installs, so after a change to the package, `pnpm install --force` brings the copy up to date.
 
