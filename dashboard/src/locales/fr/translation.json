@@ -107,6 +107,7 @@
       "origins": "Origines autorisées",
       "domains": "Domaines de l’organisation",
       "classification": "Classification",
+      "apiTokens": "Jetons d’API",
       "quotas": "Plafonds quotidiens",
       "organization": "Nouvelle organisation"
     },
@@ -345,6 +346,30 @@
       "retry": "Réessayer",
       "addFailed": "Impossible d’ajouter le domaine. Réessayez.",
       "removeFailed": "Impossible de retirer le domaine. Réessayez."
+    },
+    "apiTokens": {
+      "description": "Utilisez des jetons d’API pour lire cette boîte et traiter les messages en quarantaine depuis une autre application.",
+      "name": "Nom du jeton",
+      "create": "Créer un jeton",
+      "creating": "Création du jeton…",
+      "invalidName": "Saisissez un nom de 100 caractères maximum.",
+      "limit": "Cette organisation peut avoir jusqu’à {{limit}} jetons actifs. Révoquez-en un pour en créer un autre.",
+      "createFailed": "Impossible de créer le jeton.",
+      "issued": "Copiez ce jeton maintenant. Rondyr ne l’affiche qu’une fois.",
+      "copy": "Copier le jeton",
+      "copied": "Jeton copié",
+      "copyFailed": "Impossible de copier le jeton. Sélectionnez le texte pour le copier.",
+      "hide": "Masquer le jeton",
+      "empty": "Aucun jeton d’API actif.",
+      "revokeLabel": "Révoquer {{name}}",
+      "revoke": "Révoquer",
+      "confirmTitle": "Révoquer le jeton d’API ?",
+      "confirmDescription": "Les requêtes utilisant {{name}} (qui se termine par {{suffix}}) cesseront de fonctionner immédiatement.",
+      "confirm": "Révoquer le jeton",
+      "revoking": "Révocation du jeton…",
+      "revokeFailed": "Impossible de révoquer le jeton.",
+      "loadFailed": "Impossible de charger les jetons d’API.",
+      "retry": "Recharger les jetons"
     },
     "quotas": {
       "description": "Les plafonds s’appliquent à tous les formulaires de l’organisation. Les compteurs repartent à zéro à minuit UTC.",

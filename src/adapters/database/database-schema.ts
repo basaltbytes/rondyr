@@ -100,6 +100,29 @@ export const organizationMembers = sqliteTable(
   ],
 );
 
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: text().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    tokenHash: text("token_hash").notNull(),
+    tokenSuffix: text("token_suffix").notNull(),
+    createdAt: integer("created_at").notNull(),
+    createdBy: text("created_by").notNull(),
+    revokedAt: integer("revoked_at"),
+  },
+  (table) => [
+    check("api_tokens_id_not_null", sql`${table.id} is not null`),
+    uniqueIndex("api_tokens_hash_unique").on(table.tokenHash),
+    index("api_tokens_active_by_organization")
+      .on(table.organizationId, table.createdAt, table.id)
+      .where(sql`${table.revokedAt} is null`),
+  ],
+);
+
 export const organizationDomains = sqliteTable(
   "organization_domains",
   {

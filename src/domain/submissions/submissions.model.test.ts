@@ -1,6 +1,6 @@
 import * as Domain from "@alchemy.run/domain";
 import { Story } from "@alchemy.run/domain/Story";
-import { assert, it } from "@effect/vitest";
+import { assert, expectTypeOf, it } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
 
 import { ApproveSubmission } from "./approve-submission.command.ts";
@@ -29,7 +29,7 @@ import { CurrentReviewer } from "./review-session.middleware.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
 import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import { Submission } from "./submission.aggregate.ts";
-import { OrganizationId, SubmissionId, UserId } from "./submission.id.ts";
+import { ApiTokenId, OrganizationId, SubmissionId, UserId } from "./submission.id.ts";
 import { SubmissionNotFound, SubmissionNotReviewable } from "./submission.rejection.ts";
 import { Submissions, submissionHandlers } from "./submissions.model.ts";
 
@@ -642,6 +642,55 @@ it.effect("lets a reviewer dismiss a submission quarantined at intake", () =>
     Story.state(submission, { _tag: "Archived" }),
   ),
 );
+
+it.effect("records the token that accepts a quarantined submission", () => {
+  const apiTokenId = ApiTokenId.make("site-inbox-token");
+  return story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.when(submission, ApproveSubmission.make()),
+    Story.then(
+      submission,
+      SubmissionAccepted.make({ organizationId, acceptance: { _tag: "Manual", apiTokenId } }),
+    ),
+    Story.call(DeliveryScheduler.schedule, {
+      submissionId,
+      organizationId,
+      acceptedAt: storyStart,
+    }),
+    Story.succeed(DeliveryScheduler.schedule, undefined),
+    Story.state(submission, { _tag: "Accepted" }),
+  );
+});
+
+it.effect("records the token that archives a quarantined submission", () => {
+  const apiTokenId = ApiTokenId.make("site-inbox-token");
+  return story(
+    Story.when(submission, QuarantineAtIntake.make({ organizationId, reason: "honeypot" })),
+    Story.then(
+      submission,
+      SubmissionQuarantined.make({ organizationId, reason: "honeypot", rulesVersion }),
+    ),
+    Story.provide(CurrentReviewer, { apiTokenId, organizations: [organizationId] }),
+    Story.when(submission, DismissSubmission.make()),
+    Story.then(submission, SubmissionDismissed.make({ organizationId, apiTokenId })),
+    Story.state(submission, { _tag: "Archived" }),
+  );
+});
+
+it("builds a dismissal only with exactly one author", () => {
+  type Dismissal = Parameters<typeof SubmissionDismissed.make>[0];
+  const apiTokenId = ApiTokenId.make("site-inbox-token");
+
+  expectTypeOf({ organizationId }).not.toExtend<Dismissal>();
+  expectTypeOf({ organizationId, reviewerId: userId, apiTokenId }).not.toExtend<Dismissal>();
+  expectTypeOf({ organizationId, reviewerId: userId }).toExtend<Dismissal>();
+  expectTypeOf({ organizationId, apiTokenId }).toExtend<Dismissal>();
+});
 
 it.effect("ignores a quarantine at intake once classification has started", () => {
   const scores = { model: "jev-fixture", spam: 0.1, solicitation: 0 };

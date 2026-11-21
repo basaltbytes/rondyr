@@ -107,6 +107,7 @@
       "origins": "Allowed origins",
       "domains": "Organization domains",
       "classification": "Classification",
+      "apiTokens": "API tokens",
       "quotas": "Daily quotas",
       "organization": "New organization"
     },
@@ -345,6 +346,30 @@
       "retry": "Try again",
       "addFailed": "Could not add the domain. Try again.",
       "removeFailed": "Could not remove the domain. Try again."
+    },
+    "apiTokens": {
+      "description": "Use API tokens to read this inbox and resolve quarantined messages from another application.",
+      "name": "Token name",
+      "create": "Create token",
+      "creating": "Creating token…",
+      "invalidName": "Enter a name of up to 100 characters.",
+      "limit": "This organization can have up to {{limit}} active tokens. Revoke one to create another.",
+      "createFailed": "Could not create the token.",
+      "issued": "Copy this token now. Rondyr only shows it once.",
+      "copy": "Copy token",
+      "copied": "Token copied",
+      "copyFailed": "Could not copy the token. Select the token text to copy it.",
+      "hide": "Hide token",
+      "empty": "No active API tokens.",
+      "revokeLabel": "Revoke {{name}}",
+      "revoke": "Revoke",
+      "confirmTitle": "Revoke API token?",
+      "confirmDescription": "Requests using {{name}} (ending in {{suffix}}) will stop working immediately.",
+      "confirm": "Revoke token",
+      "revoking": "Revoking token…",
+      "revokeFailed": "Could not revoke the token.",
+      "loadFailed": "Could not load API tokens.",
+      "retry": "Reload tokens"
     },
     "quotas": {
       "description": "Limits apply across all forms in this organization and reset at midnight UTC.",
