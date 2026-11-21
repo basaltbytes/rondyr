@@ -6,20 +6,22 @@ The roadmap is the list of [GitHub issues](https://github.com/basaltbytes/rondyr
 
 ```sh
 pnpm install --frozen-lockfile
-pnpm check         # lint, format, types, tests in workerd, Knip, migrations
+pnpm check         # lint, format, types, tests in workerd and Node, Knip, migrations, for every package
 pnpm deploy:dry    # build, validate the bundle with Wrangler, check its size budget
 ```
 
-Both commands must pass before you open a pull request; CI runs them again. The [README](./README.md#quick-start) covers the local setup, and it needs no Cloudflare account.
+Run them from the repository root: the root scripts run in each workspace package (`apps/rondyr`, `packages/emdash-plugin`, `tooling/*`). Both commands must pass before you open a pull request; CI runs them again. The [README](./README.md#quick-start) covers the local setup, and it needs no Cloudflare account.
 
-After a schema change in `src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `database/migrations` with its snapshot.
+After a schema change in `apps/rondyr/src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `apps/rondyr/database/migrations` with its snapshot.
+
+A new dependency goes into the `catalog:` of `pnpm-workspace.yaml` with an exact version, and the package's manifest references it as `catalog:`. The `dependencies` and `peerDependencies` of `packages/emdash-plugin` are the exception: sites install the plugin from outside the workspace, so they keep real version ranges.
 
 ## Dashboard browser tests
 
 Install Chromium for Playwright after installing the project dependencies.
 
 ```sh
-pnpm exec playwright install --only-shell chromium
+pnpm --filter rondyr exec playwright install --only-shell chromium
 pnpm test:e2e
 ```
 
@@ -27,7 +29,7 @@ On Linux, add `--with-deps` to the install command if Chromium needs system libr
 
 The suite builds the dashboard and Worker, applies the D1 migrations to a fresh local database for each test, and starts a second local site for cross-origin submissions. Workers AI, the webhook receiver, and Resend run as local fixtures. The suite needs no Cloudflare credentials, API keys, or running dev server.
 
-CI runs the suite in the **Dashboard browser tests** job. To inspect a failed test's trace, run `pnpm exec playwright show-trace <path-to-trace.zip>` with the trace from `test-results/`.
+CI runs the suite in the **Dashboard browser tests** job. To inspect a failed test's trace, run `pnpm --filter rondyr exec playwright show-trace <path-to-trace.zip>` with the trace from `apps/rondyr/test-results/`.
 
 ## Pull requests
 

@@ -21,10 +21,10 @@ You need Node.js 24.22 or later and pnpm 11. The local setup needs no Cloudflare
 
 ```sh
 pnpm install --frozen-lockfile
-cp .env.example .env
+cp apps/rondyr/.env.example apps/rondyr/.env
 ```
 
-Generate two different values with `openssl rand -hex 32`, and set them as `BETTER_AUTH_SECRET` and `RONDYR_SETUP_TOKEN` in `.env`. To try webhooks or Turnstile, also set `RONDYR_SECRETS_KEY` to the output of `openssl rand -base64 32`. The default email provider, Resend, needs `RESEND_API_KEY` and `RONDYR_EMAIL_FROM` and sends real email. [Email setup](./docs/email.md)
+Generate two different values with `openssl rand -hex 32`, and set them as `BETTER_AUTH_SECRET` and `RONDYR_SETUP_TOKEN` in `apps/rondyr/.env`. To try webhooks or Turnstile, also set `RONDYR_SECRETS_KEY` to the output of `openssl rand -base64 32`. The default email provider, Resend, needs `RESEND_API_KEY` and `RONDYR_EMAIL_FROM` and sends real email. [Email setup](./docs/email.md)
 
 Apply the migrations and start the Worker and the dashboard.
 
@@ -36,10 +36,10 @@ pnpm dev
 Vite prints the local URL, usually `http://localhost:5173`. Public sign-up is closed, so create the first account with the setup script in a second terminal:
 
 ```sh
-./scripts/setup-owner.sh http://localhost:5173
+./apps/rondyr/scripts/setup-owner.sh http://localhost:5173
 ```
 
-The script asks for the setup token, a name, an email address, and a password of 12 to 128 characters. After it prints `HTTP 201`, sign in at `/`, then remove `RONDYR_SETUP_TOKEN` from `.env` and restart `pnpm dev`. The setup endpoint refuses to create a second account even if the token stays. Other people join an organization through an invitation link from **Settings → Members**; see [Members and invitations](./docs/deployment.md#members-and-invitations).
+The script asks for the setup token, a name, an email address, and a password of 12 to 128 characters. After it prints `HTTP 201`, sign in at `/`, then remove `RONDYR_SETUP_TOKEN` from `apps/rondyr/.env` and restart `pnpm dev`. The setup endpoint refuses to create a second account even if the token stays. Other people join an organization through an invitation link from **Settings → Members**; see [Members and invitations](./docs/deployment.md#members-and-invitations).
 
 ## Send a submission
 
@@ -193,13 +193,13 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 ## Deploy to Cloudflare
 
 ```sh
-pnpm exec alchemy profile edit --config alchemy-run.ts --add Cloudflare
+pnpm --filter rondyr exec alchemy profile edit --config alchemy-run.ts --add Cloudflare
 pnpm deploy:plan --stage prod --env-file .env.prod
 pnpm run deploy --stage prod --env-file .env.prod
 pnpm smoke https://forms.example.com --health-timeout 900
 ```
 
-The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues and consumers, the cron trigger, the Durable Objects, and the client rate limit. Plan on Workers Paid: [Costs and plan limits](./docs/deployment.md#costs-and-plan-limits) lists what each Cloudflare product costs, and the [fresh account checklist](./docs/deployment.md#fresh-account-checklist) walks through a first installation. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account, the classifier choice, the email settings, deployment from GitHub Actions, and a trial copy on a second stage.
+The stack creates the Worker with the dashboard assets, a D1 database with its migrations applied, the classification and delivery queues with their dead-letter queues and consumers, the cron trigger, the Durable Objects, and the client rate limit. Plan on Workers Paid: [Costs and plan limits](./docs/deployment.md#costs-and-plan-limits) lists what each Cloudflare product costs, and the [fresh account checklist](./docs/deployment.md#fresh-account-checklist) walks through a first installation. The deployment commands run in `apps/rondyr/`, so `.env.prod` lives there. [docs/deployment.md](./docs/deployment.md) covers the environment file, the custom domain, the first account, the classifier choice, the email settings, deployment from GitHub Actions, and a trial copy on a second stage.
 
 ## Documentation
 
@@ -219,14 +219,16 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 
 ## Development
 
+The repository is a pnpm workspace. `apps/rondyr/` is the Worker and its dashboard, `packages/emdash-plugin/` the EmDash plugin, and `tooling/` the lint rules and the shared TypeScript settings. Dependency versions are in the catalog of `pnpm-workspace.yaml`. Run the commands from the root; they run in each package.
+
 ```sh
-pnpm check         # lint, format, types, tests in workerd and Node, Knip, migrations, for the Worker and the EmDash plugin
+pnpm check         # lint, format, types, tests in workerd and Node, Knip, migrations, for every package
 pnpm deploy:dry    # build, validate the bundle with Wrangler, check its size budget
 ```
 
-CI runs both commands without Cloudflare credentials. The tests build the Worker first and run it in workerd with D1, the queues, and the Durable Objects emulated. The tests of the classifier evaluation harness in `evals/` run in Node; `pnpm evaluate --dry evals/corpus/synthetic.jsonl` runs it without credentials, and [docs/evaluation.md](./docs/evaluation.md) covers real runs.
+CI runs both commands without Cloudflare credentials. The tests build the Worker first and run it in workerd with D1, the queues, and the Durable Objects emulated. The tests of the classifier evaluation harness in `apps/rondyr/evals/` run in Node; `pnpm evaluate --dry evals/corpus/synthetic.jsonl` runs it without credentials, and [docs/evaluation.md](./docs/evaluation.md) covers real runs.
 
-After a schema change in `src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `database/migrations`. `pnpm dev:alchemy` runs the Alchemy stack locally with its own state and D1 database, as an alternative to `pnpm dev`.
+After a schema change in `apps/rondyr/src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `apps/rondyr/database/migrations`. `pnpm dev:alchemy` runs the Alchemy stack locally with its own state and D1 database, as an alternative to `pnpm dev`.
 
 ## License
 

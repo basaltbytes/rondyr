@@ -15,7 +15,7 @@ import {
 } from "effect";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
 
-import { verifyRondyrWebhook } from "../../docs/examples/verify-webhook.ts";
+import { verifyRondyrWebhook } from "../../../../docs/examples/verify-webhook.ts";
 import { testSecretsKey } from "../../tests/integration/auth-fixture.ts";
 import { confirmRecipients } from "../../tests/integration/recipient-fixture.ts";
 import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";

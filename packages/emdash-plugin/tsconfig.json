@@ -4,7 +4,7 @@
     "src/**/*.tsx",
     "test/**/*.ts",
     "*.ts",
-    "../../tests/integration/test-bindings.d.ts"
+    "../../apps/rondyr/tests/integration/test-bindings.d.ts"
   ],
   "compilerOptions": {
     "target": "ES2024",

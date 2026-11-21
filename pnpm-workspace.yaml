@@ -1,5 +1,58 @@
 packages:
+  - "apps/*"
   - "packages/*"
+  - "tooling/*"
+
+# Every dependency version of every workspace package, referenced as `catalog:` in the
+# manifests. packages/emdash-plugin keeps real ranges in its dependencies and peer
+# dependencies, because sites install it from outside the workspace.
+catalog:
+  "@alchemy.run/cloudflare": 2.0.0-beta.87
+  "@alchemy.run/domain": 2.0.0-beta.87
+  "@babel/core": 8.1.2
+  "@base-ui/react": 1.9.0
+  "@cloudflare/kumo": 2.15.0
+  "@cloudflare/vite-plugin": 1.70.1
+  "@cloudflare/vitest-plugin": 1.8.5
+  "@effect/platform-node": 4.1.4
+  "@effect/tsgo": 0.70.0
+  "@effect/vitest": 4.1.4
+  "@emdash-cms/plugin-forms": 0.2.13
+  "@oxlint/plugins": 1.94.0
+  "@playwright/test": 1.65.1
+  "@rolldown/plugin-babel": 0.3.1
+  "@shadcn/lint": 0.2.5
+  "@tailwindcss/vite": 4.3.5
+  "@types/node": 24.19.2
+  "@types/react": 19.3.0
+  "@types/react-dom": 19.3.0
+  "@vitejs/plugin-react": 6.3.0
+  alchemy: 2.0.0-beta.87
+  astro: 7.4.13
+  babel-plugin-react-compiler: 1.0.0
+  better-auth: 1.7.26
+  class-variance-authority: 0.7.1
+  cn: 0.5.2
+  drizzle-kit: 1.0.0-rc.5
+  drizzle-orm: 1.0.0-rc.5
+  effect: 4.1.4
+  emdash: 1.5.0
+  i18next: 27.2.2
+  i18next-cli: 1.91.3
+  knip: 6.46.1
+  lucide-react: 1.76.0
+  miniflare: 5.20261118.0-beta
+  oxfmt: 0.79.0
+  oxlint: 1.94.0
+  react: 19.3.1
+  react-dom: 19.3.1
+  react-i18next: 18.0.3
+  tailwindcss: 4.3.5
+  typescript: 7.0.2
+  vite: 8.3.8
+  vitest: 5.1.1
+  wrangler: 4.165.0
+
 allowBuilds:
   "@swc/core": false
   esbuild: true

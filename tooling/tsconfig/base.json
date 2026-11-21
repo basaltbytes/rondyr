@@ -1,15 +1,5 @@
 {
-  "include": [
-    "*.ts",
-    "src/**/*.ts",
-    "dashboard/src/**/*.ts",
-    "dashboard/src/**/*.tsx",
-    "tests/**/*.ts",
-    "tooling/oxlint/**/*.ts",
-    "docs/examples/**/*.ts",
-    "evals/**/*.ts",
-    "worker-configuration.d.ts"
-  ],
+  "include": [],
   "compilerOptions": {
     "target": "ES2024",
     "module": "ESNext",
@@ -27,7 +17,6 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
     "noErrorTruncation": true,
-    "types": ["node", "vite/client", "@cloudflare/vitest-plugin/types"],
     "plugins": [
       {
         "name": "@effect/language-service",
@@ -192,11 +181,11 @@
         "overrides": [
           {
             "include": [
-              "dashboard/src/**/*",
-              "docs/examples/**/*",
-              "vite.config.ts",
-              "vitest.config.ts",
-              "tooling/oxlint/**/*"
+              "../../apps/rondyr/dashboard/src/**/*",
+              "../../docs/examples/**/*",
+              "../../apps/rondyr/vite.config.ts",
+              "../../apps/rondyr/vitest.config.ts",
+              "../../tooling/oxlint/**/*"
             ],
             "options": {
               "diagnosticSeverity": {
@@ -221,13 +210,6 @@
     "moduleResolution": "Bundler",
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "paths": {
-      "~/*": ["./dashboard/src/*"],
-      "@rondyr/contracts/*": ["./src/domain/submissions/*"],
-      "@rondyr/deliveries/*": ["./src/domain/deliveries/*"],
-      "@rondyr/forms/*": ["./src/domain/forms/*"],
-      "@rondyr/organizations/*": ["./src/domain/organizations/*"]
-    },
     "resolveJsonModule": true,
     "noEmit": true
   }

@@ -1,0 +1,10 @@
+{
+  "name": "@rondyr/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The TypeScript settings and Effect diagnostics shared by the Worker application and the Oxlint rules.",
+  "license": "AGPL-3.0-only",
+  "exports": {
+    "./base.json": "./base.json"
+  }
+}

@@ -4,7 +4,7 @@ import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Clock, Effect, Layer, Schema } from "effect";
 import { HttpRouter, HttpServer } from "effect/http";
 
-import { verifyRondyrWebhook } from "../../docs/examples/verify-webhook.ts";
+import { verifyRondyrWebhook } from "../../../../docs/examples/verify-webhook.ts";
 import {
   testEmailFrom,
   testOrigin as origin,

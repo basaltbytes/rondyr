@@ -5,12 +5,13 @@ Rondyr is a self-hosted form backend on Cloudflare. Read [architecture.md](archi
 ## Code
 
 - Keep a single application Worker. The domain stays independent of Cloudflare, Drizzle and Alchemy. Ports declare the Effect services. Adapters provide the layers.
-- The repository is a pnpm workspace. The Worker is the root package. `packages/emdash-plugin/` is the EmDash plugin, MIT-licensed because sites compile it into their own Worker: the Worker imports nothing from it, and it copies no AGPL code from `src/`. `pnpm check` covers it, and a merge that changes only the plugin deploys nothing.
+- The repository is a pnpm workspace. `apps/rondyr/` is the Worker and its dashboard (package `rondyr`). `packages/emdash-plugin/` is the EmDash plugin, MIT-licensed because sites compile it into their own Worker: the Worker imports nothing from it, and it copies no AGPL code from `apps/rondyr/src/`. `tooling/` holds the Oxlint rules and the shared TypeScript settings. The root package only delegates its scripts, so `pnpm check`, `pnpm dev` or `pnpm run deploy` work from the root and cover every package; a merge that changes only the plugin or the documentation deploys nothing.
+- Every dependency version lives in the `catalog:` of `pnpm-workspace.yaml`, and the manifests say `catalog:`. The exception is the `dependencies` and `peerDependencies` of `packages/emdash-plugin`, which sites install from outside the workspace: they keep real ranges.
 - Use Effect 4 and Effect Schema for business logic, errors and data boundaries. Compose the layers at the Worker's entry point. Keep files in kebab-case, except where a tool's convention or a generated file says otherwise.
-- Migrations belong to development tooling and to deployment. Version Drizzle migrations and snapshots in `database/migrations`.
+- Migrations belong to development tooling and to deployment. Version Drizzle migrations and snapshots in `apps/rondyr/database/migrations`.
 - For intake, a `202` response means the submission and its outbox event were persisted atomically. Consumers must tolerate duplicated events.
 - Write everything in English: code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions. Older issues are still in French; do not add French text to them.
-- Write in English first everything a user of the product reads: dashboard text, the confirmation page, emails, script prompts. The dashboard, the confirmation page and the emails also exist in French: a dashboard text is an i18next key present in `dashboard/src/locales/en` and `dashboard/src/locales/fr`, never a string in a component.
+- Write in English first everything a user of the product reads: dashboard text, the confirmation page, emails, script prompts. The dashboard, the confirmation page and the emails also exist in French: a dashboard text is an i18next key present in `apps/rondyr/dashboard/src/locales/en` and `apps/rondyr/dashboard/src/locales/fr`, never a string in a component.
 
 ## Working on an issue
 
@@ -25,7 +26,7 @@ The GitHub issues are the roadmap. There are few of them and each one is large: 
 - Routes and jobs import ports only. Runtime queries are prepared SQL, decoded by Effect Schema.
 - A new setting or secret is optional at deployment: without it, the deployment succeeds and the feature concerned answers with a clear error.
 - Both classifiers stay available through `RONDYR_CLASSIFIER`. Any change to a rule or to the classifier's input is measured with `pnpm evaluate` before and after, and increments `rulesVersion`.
-- Integration tests run in workerd against the built Worker, without module mocks. External services are simulated in `vitest.config.ts` (Workers AI, webhook recipient, Resend, Siteverify). Never weaken an existing assertion and never disable a lint rule.
+- Integration tests run in workerd against the built Worker, without module mocks. External services are simulated in `apps/rondyr/vitest.config.ts` (Workers AI, webhook recipient, Resend, Siteverify). Never weaken an existing assertion and never disable a lint rule.
 - The final report says what is done for each criterion, the exact results of `pnpm check` and `pnpm deploy:dry`, the decisions the issue did not settle, and what was not verified.
 
 ## Local skills
@@ -33,7 +34,7 @@ The GitHub issues are the roadmap. There are few of them and each one is large: 
 - [effect-ts](.agents/skills/effect-ts/SKILL.md) for Effect code and its tests.
 - [coding-guidelines](.agents/skills/coding-guidelines/SKILL.md) for domain rules and code review.
 - [rondyr-cloudflare](.agents/skills/rondyr-cloudflare/SKILL.md) for Alchemy, Worker bindings, D1 and workerd.
-- [react-app-structure](.agents/skills/react-app-structure/SKILL.md) for the code in `dashboard/src`.
+- [react-app-structure](.agents/skills/react-app-structure/SKILL.md) for the code in `apps/rondyr/dashboard/src`.
 - [anti-slop-writing](.agents/skills/anti-slop-writing/SKILL.md) for documentation and interface text.
 
 ## Verification

@@ -1,0 +1,23 @@
+{
+  "extends": "@rondyr/tsconfig/base.json",
+  "include": [
+    "*.ts",
+    "src/**/*.ts",
+    "dashboard/src/**/*.ts",
+    "dashboard/src/**/*.tsx",
+    "tests/**/*.ts",
+    "evals/**/*.ts",
+    "../../docs/examples/**/*.ts",
+    "worker-configuration.d.ts"
+  ],
+  "compilerOptions": {
+    "types": ["node", "vite/client", "@cloudflare/vitest-plugin/types"],
+    "paths": {
+      "~/*": ["./dashboard/src/*"],
+      "@rondyr/contracts/*": ["./src/domain/submissions/*"],
+      "@rondyr/deliveries/*": ["./src/domain/deliveries/*"],
+      "@rondyr/forms/*": ["./src/domain/forms/*"],
+      "@rondyr/organizations/*": ["./src/domain/organizations/*"]
+    }
+  }
+}

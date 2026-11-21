@@ -6,11 +6,16 @@ import { fileURLToPath } from "node:url";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 
 /**
- * Lints `source` as `filename` under `dashboard/src`, in a probe folder next to it that keeps the
+ * Lints `source` as `filename` under `apps/rondyr/dashboard/src`, in a probe folder next to it that keeps the
  * file's name, and returns the oxlint process result.
  */
 export const lint = (filename, source) => {
-  const folder = join(root, "dashboard/src", dirname(filename), `oxlint-probe-${process.pid}`);
+  const folder = join(
+    root,
+    "apps/rondyr/dashboard/src",
+    dirname(filename),
+    `oxlint-probe-${process.pid}`,
+  );
   mkdirSync(folder, { recursive: true });
   const probe = join(folder, basename(filename));
   writeFileSync(probe, source);

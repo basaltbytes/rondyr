@@ -36,11 +36,11 @@ jobs:
           fi
           echo "ready=true" >> "$GITHUB_OUTPUT"
       - if: steps.credentials.outputs.ready == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - if: steps.credentials.outputs.ready == 'true'
         uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
       - if: steps.credentials.outputs.ready == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -75,7 +75,7 @@ jobs:
           BETTER_AUTH_URL: ${{ vars.BETTER_AUTH_URL_PROD }}
         run: |
           # A first deployment on a new custom domain waits for its DNS record and certificate.
-          if ! node scripts/smoke.mjs "$BETTER_AUTH_URL" --health-timeout 900; then
+          if ! node apps/rondyr/scripts/smoke.mjs "$BETTER_AUTH_URL" --health-timeout 900; then
             echo "::error title=Production health::prod is deployed, but its /health did not answer ok within 15 minutes. See docs/operations.md#production-health-check."
             exit 1
           fi
