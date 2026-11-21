@@ -68,7 +68,7 @@ for (const [name, filename, source, rule] of [
   ["UI default exports", "components/ui/example.ts", "export default 1;", "no-default-export"],
 ]) {
   test(`rejects ${name}`, () => {
-    const result = lint(`dashboard/src/${filename}`, source);
+    const result = lint(`apps/rondyr/dashboard/src/${filename}`, source);
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout + result.stderr, new RegExp(rule));
   });
@@ -85,7 +85,7 @@ for (const [filename, source] of [
   ["components/example.ts", "export const value = 1;"],
 ]) {
   test(`allows ${source} in ${filename}`, () => {
-    const result = lint(`dashboard/src/${filename}`, source);
+    const result = lint(`apps/rondyr/dashboard/src/${filename}`, source);
     assert.equal(result.status, 0, result.stdout + result.stderr);
   });
 }

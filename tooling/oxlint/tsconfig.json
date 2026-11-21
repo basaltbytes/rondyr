@@ -1,0 +1,7 @@
+{
+  "extends": "@rondyr/tsconfig/base.json",
+  "include": ["**/*.ts"],
+  "compilerOptions": {
+    "types": ["node"]
+  }
+}

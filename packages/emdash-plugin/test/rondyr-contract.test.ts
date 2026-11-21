@@ -1,10 +1,10 @@
-// `cloudflare:workers` is typed by the root's generated worker-configuration.d.ts,
+// `cloudflare:workers` is typed by the app's generated apps/rondyr/worker-configuration.d.ts,
 // which pulls in the Worker's sources; `cloudflare:test` gives the same bindings.
 import { applyD1Migrations, env } from "cloudflare:test";
 import { z } from "astro/zod";
 import { beforeAll, expect, it, vi } from "vitest";
 
-import { testOrigin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
+import { testOrigin, testSetupToken } from "../../../apps/rondyr/tests/integration/auth-fixture.ts";
 import { flattenFields, type FormLayout } from "../src/core/fields.ts";
 import { newEntry, QueueEntry } from "../src/core/queue.ts";
 import { RondyrClient } from "../src/core/rondyr-client.ts";

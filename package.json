@@ -1,0 +1,44 @@
+{
+  "name": "rondyr-workspace",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter rondyr run dev",
+    "dev:alchemy": "pnpm --filter rondyr run dev:alchemy",
+    "build": "pnpm --recursive --sequential --if-present run build",
+    "start": "pnpm --filter rondyr run start",
+    "deploy": "pnpm --filter rondyr run deploy",
+    "deploy:plan": "pnpm --filter rondyr run deploy:plan",
+    "deploy:dry": "pnpm --filter rondyr run deploy:dry",
+    "smoke": "pnpm --filter rondyr run smoke",
+    "cf:types": "pnpm --filter rondyr run cf:types",
+    "db:generate": "pnpm --filter rondyr run db:generate",
+    "db:check": "pnpm --filter rondyr run db:check",
+    "db:migrate": "pnpm --filter rondyr run db:migrate",
+    "lint": "oxlint --deny-warnings",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "typecheck": "pnpm --recursive --sequential --if-present run typecheck",
+    "test": "pnpm --recursive --sequential --if-present run test",
+    "test:e2e": "pnpm --filter rondyr run test:e2e",
+    "test:lint": "pnpm --filter @rondyr/oxlint run test",
+    "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "knip": "knip",
+    "doctor": "pnpm --filter rondyr run doctor",
+    "evaluate": "pnpm --filter rondyr run evaluate",
+    "i18n:check": "pnpm --filter rondyr run i18n:check",
+    "i18n:extract": "pnpm --filter rondyr run i18n:extract",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm test:scripts && pnpm knip && pnpm i18n:check && pnpm db:check && pnpm run doctor"
+  },
+  "devDependencies": {
+    "@shadcn/lint": "catalog:",
+    "knip": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:"
+  },
+  "engines": {
+    "node": ">=24.22.2"
+  },
+  "packageManager": "pnpm@11.28.9"
+}

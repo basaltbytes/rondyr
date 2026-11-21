@@ -5,8 +5,8 @@ import { Clock, Context, DateTime, Effect, Layer, Option, Redacted, Result, Sche
 import { FetchHttpClient } from "effect/http";
 import { TestClock } from "effect/testing";
 
-import { verifyRondyrWebhook } from "../../docs/examples/verify-webhook.ts";
-import guide from "../../docs/webhooks.md?raw";
+import { verifyRondyrWebhook } from "../../../../docs/examples/verify-webhook.ts";
+import guide from "../../../../docs/webhooks.md?raw";
 import { testSecretsKey } from "../../tests/integration/auth-fixture.ts";
 import { secretCipherLayer } from "../adapters/crypto/secret-cipher.ts";
 import { deliveryStoreLive } from "../adapters/database/delivery-store.ts";
@@ -416,7 +416,7 @@ it.effect("signs with both secrets during the rotation window, then with the new
 });
 
 // The ?raw source of the example, as text rather than as a module.
-const examples = import.meta.glob<string>("../../docs/examples/verify-webhook.ts", {
+const examples = import.meta.glob<string>("../../../../docs/examples/verify-webhook.ts", {
   query: "?raw",
   import: "default",
   eager: true,

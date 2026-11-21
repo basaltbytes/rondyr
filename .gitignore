@@ -1,3 +1,5 @@
+# A rule without a slash before its end, such as dist/ or .env, applies in every package.
+# A rule with one, such as apps/rondyr/evals/out/, applies only to that path from the root.
 node_modules/
 dist/
 .alchemy/
@@ -22,8 +24,11 @@ worker-configuration.d.ts
 !.dev.vars.example
 
 # Evaluation corpora with real submissions and evaluation output stay local (docs/evaluation.md).
-evals/corpus/*
-!evals/corpus/synthetic.jsonl
-!evals/corpus/synthetic.context.txt
-!evals/corpus/synthetic.domains.txt
-evals/out/
+apps/rondyr/evals/corpus/*
+!apps/rondyr/evals/corpus/synthetic.jsonl
+!apps/rondyr/evals/corpus/synthetic.context.txt
+!apps/rondyr/evals/corpus/synthetic.domains.txt
+apps/rondyr/evals/out/
+# Before the move to apps/rondyr, they lived in evals/ at the root. A checkout from
+# that time may still hold a real corpus there; it stays out of git too.
+/evals/

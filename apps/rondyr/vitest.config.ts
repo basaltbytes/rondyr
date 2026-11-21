@@ -202,15 +202,14 @@ export default defineConfig({
         test: {
           name: "workerd",
           // The EmDash plugin's contract tests run its code against the built Worker.
-          include: ["src/**/*.test.ts", "packages/emdash-plugin/test/**/*.test.ts"],
+          // Its unit tests run in Node with the plugin's own Vitest configuration.
+          include: ["src/**/*.test.ts", "../../packages/emdash-plugin/test/**/*.test.ts"],
         },
       },
       // The evaluation harness runs in Node, outside the Worker.
       "./evals/vitest.config.ts",
       // The dashboard's calculations run in Node, without a DOM.
       "./dashboard/vitest.config.ts",
-      // The EmDash plugin's unit tests run in Node.
-      "./packages/emdash-plugin/vitest.config.ts",
     ],
   },
 });

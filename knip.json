@@ -1,20 +1,27 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreDependencies": ["@effect/language-service"],
   "workspaces": {
     ".": {
-      "entry": [
-        "alchemy-run.ts",
-        "drizzle-config.ts",
-        "i18next.config.ts",
-        "scripts/*.mjs",
-        "tooling/oxlint/**/*.test.mjs"
-      ],
+      "entry": ["scripts/*.mjs"],
+      "project": ["scripts/**/*.mjs"]
+    },
+    "apps/rondyr": {
+      "entry": ["alchemy-run.ts", "drizzle-config.ts", "i18next.config.ts", "scripts/*.mjs"],
       "project": ["**/*.{ts,tsx,mjs}"],
-      "ignoreDependencies": ["@effect/language-service", "tailwindcss"]
+      "ignoreDependencies": ["tailwindcss"]
     },
     "packages/emdash-plugin": {
       "entry": ["test/**/*.test.ts"],
       "project": ["**/*.{ts,tsx}"]
+    },
+    "tooling/oxlint": {
+      "entry": ["**/*.test.mjs"],
+      "project": ["**/*.{ts,mjs}"]
+    },
+    "tooling/tsconfig": {
+      "entry": [],
+      "project": []
     }
   },
   "rules": {

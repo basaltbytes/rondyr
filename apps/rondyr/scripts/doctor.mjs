@@ -5,7 +5,21 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
 const wrangler = JSON.parse(readFileSync(new URL("../wrangler.json", import.meta.url), "utf8"));
 const alchemyWorker = readFileSync(new URL("../src/alchemy-worker.ts", import.meta.url), "utf8");
 const alchemyRun = readFileSync(new URL("../alchemy-run.ts", import.meta.url), "utf8");
-const dependencies = { ...pkg.dependencies, ...pkg.devDependencies };
+const workspace = readFileSync(new URL("../../../pnpm-workspace.yaml", import.meta.url), "utf8");
+// The versions live in the default catalog of pnpm-workspace.yaml; the manifest says `catalog:`.
+const catalog = Object.fromEntries(
+  [
+    ...(/^catalog:\n((?: {2}.+\n)+)/mu.exec(workspace)?.[1] ?? "").matchAll(
+      /^ {2}"?([^":]+)"?: (.+)$/gmu,
+    ),
+  ].map(([, name, version]) => [name, version]),
+);
+const dependencies = Object.fromEntries(
+  Object.entries({ ...pkg.dependencies, ...pkg.devDependencies }).map(([name, specifier]) => [
+    name,
+    specifier === "catalog:" ? catalog[name] : specifier,
+  ]),
+);
 const expectedBindings = ["CLASSIFICATION_QUEUE", "DELIVERY_QUEUE"];
 // Each queue's dead-letter queue, as alchemy-run.ts names its resource and its consumer.
 const deadLetters = {

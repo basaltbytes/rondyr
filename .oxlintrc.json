@@ -60,7 +60,15 @@
   },
   "overrides": [
     {
-      "files": ["src/**", "dashboard/**", "evals/**", "scripts/**", "tests/**", "tooling/**"],
+      "files": [
+        "apps/rondyr/src/**",
+        "apps/rondyr/dashboard/**",
+        "apps/rondyr/evals/**",
+        "apps/rondyr/scripts/**",
+        "apps/rondyr/tests/**",
+        "scripts/**",
+        "tooling/**"
+      ],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -80,7 +88,7 @@
       }
     },
     {
-      "files": ["src/domain/**"],
+      "files": ["apps/rondyr/src/domain/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -126,7 +134,7 @@
       }
     },
     {
-      "files": ["src/application/**", "src/ports/**"],
+      "files": ["apps/rondyr/src/application/**", "apps/rondyr/src/ports/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -162,7 +170,7 @@
       }
     },
     {
-      "files": ["src/http/**", "src/jobs/**"],
+      "files": ["apps/rondyr/src/http/**", "apps/rondyr/src/jobs/**"],
       "excludeFiles": ["**/*.test.ts"],
       "rules": {
         "no-restricted-imports": [
@@ -171,7 +179,7 @@
             "patterns": [
               {
                 "group": ["**/adapters/**"],
-                "message": "Routes and jobs use ports. src/worker-implementation.ts provides the adapters."
+                "message": "Routes and jobs use ports. apps/rondyr/src/worker-implementation.ts provides the adapters."
               },
               {
                 "group": [
@@ -187,7 +195,7 @@
       }
     },
     {
-      "files": ["dashboard/src/**"],
+      "files": ["apps/rondyr/dashboard/src/**"],
       "rules": {
         "rondyr/web-import-direction": "error",
         "rondyr/require-react-disable-reason": "error",
@@ -253,7 +261,12 @@
       }
     },
     {
-      "files": ["vite.config.ts", "vitest.config.ts", "drizzle-config.ts", "tooling/oxlint/**"],
+      "files": [
+        "apps/rondyr/vite.config.ts",
+        "apps/rondyr/vitest.config.ts",
+        "apps/rondyr/drizzle-config.ts",
+        "tooling/oxlint/**"
+      ],
       "rules": {
         "unicorn/filename-case": "off"
       }
@@ -302,12 +315,12 @@
     ".agents/**",
     ".claude/**",
     ".codex/**",
-    ".alchemy/**",
-    ".wrangler/**",
+    "**/.alchemy/**",
+    "**/.wrangler/**",
     ".agent-sources/**",
     ".scratchpad/**",
-    "database/migrations/**",
+    "apps/rondyr/database/migrations/**",
     "pnpm-lock.yaml",
-    "worker-configuration.d.ts"
+    "**/worker-configuration.d.ts"
   ]
 }
