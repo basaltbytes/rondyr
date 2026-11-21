@@ -2,18 +2,28 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Clock, Context, Deferred, Effect, Fiber, Layer, Option, Schema } from "effect";
+import { FetchHttpClient } from "effect/http";
 
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
+import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
 import { submissionIntakeLive } from "../adapters/database/intake.ts";
 import { outboxLive } from "../adapters/database/outbox.ts";
 import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
+import { turnstileVerifierLive } from "../adapters/workers/siteverify.ts";
 import { SubmissionId } from "../domain/submissions/submission.id.ts";
 import { ClassificationQueue, QueueUnavailable } from "../ports/classification-queue.ts";
 import { SubmissionIntake } from "../ports/intake.ts";
 import { publishPendingSubmissions, publishSubmission } from "./submission-outbox.ts";
 
 const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
-const adapters = Layer.mergeAll(submissionIntakeLive, outboxLive, classificationQueueLive);
+const verifier = turnstileVerifierLive.pipe(
+  Layer.provide([secretCipherLive, FetchHttpClient.layer]),
+);
+const adapters = Layer.mergeAll(
+  submissionIntakeLive.pipe(Layer.provide(verifier)),
+  outboxLive,
+  classificationQueueLive,
+);
 const OutboxRow = Schema.Struct({
   lease_until: Schema.Int,
   published_at: Schema.NullOr(Schema.Int),

@@ -39,10 +39,13 @@ export const ClassificationReason = Schema.Literals([
  * Why intake quarantines a submission before any classifier runs. Intake
  * records the reason with the submission, in the same transaction, so every
  * hand-off of the submission carries the same reason.
- * `honeypot`: the form's honeypot field has a value.
- * `repetition`: intake counted enough recent submissions from the same sender or with the same content.
  */
-export const IntakeReason = Schema.Literals(["honeypot", "repetition"]);
+export const IntakeReason = Schema.Literals([
+  "honeypot",
+  "repetition",
+  "turnstile-failed",
+  "quota",
+]);
 export type IntakeReason = typeof IntakeReason.Type;
 
 /** Why a submission is quarantined: a classification rule or an intake check. */
