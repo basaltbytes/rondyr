@@ -186,6 +186,10 @@ function administrationRoutes(organizationId: string, publicId: string) {
     ["DELETE", `${org}/members/example-user`],
     ["POST", `${org}/invitations`, { email: "someone@example.com", role: "reviewer" }],
     ["DELETE", `${org}/invitations?id=${invitation}`],
+    ["GET", `${org}/submission-export?format=csv`],
+    ["DELETE", submission],
+    ["GET", `${org}/retention`],
+    ["PUT", `${org}/retention`, { accepted: 30, quarantine: 30 }],
   ] as const;
 }
 

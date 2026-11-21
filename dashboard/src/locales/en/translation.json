@@ -110,7 +110,8 @@
       "apiTokens": "API tokens",
       "quotas": "Daily quotas",
       "organization": "New organization",
-      "members": "Members"
+      "members": "Members",
+      "retention": "Retention"
     },
     "statuses": {
       "received": "Received",
@@ -179,6 +180,22 @@
           "others_other": "The other forms have {{count}} messages here.",
           "showAll": "Show all forms"
         }
+      },
+      "search": {
+        "label": "Search messages",
+        "placeholder": "Search the messages",
+        "clear": "Clear the search",
+        "tooShort_one": "Enter at least {{count}} character.",
+        "tooShort_other": "Enter at least {{count}} characters.",
+        "empty": "No message contains “{{search}}”",
+        "showAll": "Show every message",
+        "tooShort_many": "Enter at least {{count}} characters."
+      },
+      "export": {
+        "label": "Export this list:",
+        "csv": "CSV",
+        "jsonl": "JSON Lines",
+        "limit": "(the 10,000 newest messages at most)"
       }
     },
     "reader": {
@@ -205,6 +222,14 @@
         "notSaved": "The decision could not be saved. Try again.",
         "alreadyHandled": "This message was already handled.",
         "alreadyHandledRefresh": "This message was already handled. Refresh the list to see its status."
+      },
+      "delete": {
+        "action": "Delete this message",
+        "title": "Delete this message?",
+        "description": "The message, its deliveries and their attempts are deleted for good. Rondyr keeps only a line saying who deleted which message and when.",
+        "confirm": "Delete for good",
+        "deleting": "Deleting…",
+        "failed": "The message could not be deleted. Try again."
       }
     },
     "deliveries": {
@@ -579,6 +604,22 @@
         "alreadyMember": "This address already belongs to a member.",
         "limit": "This organization has 20 pending invitations. Cancel one before inviting someone else.",
         "inviteFailed": "The invitation could not be created. Check the address and try again."
+      }
+    },
+    "retention": {
+      "title": "How long to keep messages",
+      "description": "Rondyr deletes the messages older than these periods, counted from their reception, once an hour. Leave a field empty to keep the messages without limit. Deleted messages can't be recovered from the dashboard.",
+      "accepted": "Accepted messages, in days",
+      "quarantine": "Messages to review and archived ones, in days",
+      "hint": "From 1 to {{maximum}} days, or empty to keep them.",
+      "unlimited": "Without limit",
+      "saving": "Saving…",
+      "loadFailed": "Could not load the retention periods.",
+      "retry": "Try again",
+      "outcomes": {
+        "saved": "Retention periods saved.",
+        "invalid": "Enter a whole number of days from 1 to 3,650, or leave the field empty.",
+        "failed": "The retention periods could not be saved. Try again."
       }
     }
   },

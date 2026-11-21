@@ -86,12 +86,25 @@ export const OrganizationCounts = InboxCounts.mapFields((fields) => ({
   forms: Schema.Array(FormCounts),
 }));
 
+/** The shortest search: shorter text would match most messages. */
+export const minSearchLength = 3;
+
+/**
+ * Text to find in the values of the fields, without regard to the case of
+ * ASCII letters. `%` and `_` are ordinary characters.
+ */
+export const SearchText = Schema.Trim.check(
+  Schema.isMinLength(minSearchLength),
+  Schema.isMaxLength(100),
+);
+
 /** Narrows a list of submissions. Without a key, the list has every submission. */
 export const InboxFilter = Schema.Struct({
   status: Schema.optionalKey(SubmissionStatus),
   formPublicId: Schema.optionalKey(
     Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(128)),
   ),
+  search: Schema.optionalKey(SearchText),
 });
 
 export const InboxOrganization = Schema.Struct({ id: OrganizationId, name: Schema.String });

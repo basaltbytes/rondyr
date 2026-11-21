@@ -47,6 +47,14 @@ export function countsAfterMove(
   return { ...afterMove(counts, from, to), forms: [...others, moved] };
 }
 
+/** The counts once a message of a form is deleted for good. A count never goes below zero. */
+export function countsAfterRemoval(counts: Counts, form: Form["publicId"], status: Status): Counts {
+  const removed = (known: StatusCounts) => ({ ...known, [status]: Math.max(0, known[status] - 1) });
+  const others = counts.forms.filter(({ publicId }) => publicId !== form);
+  const own = { publicId: form, counts: removed(countsOfForm(counts, form)) };
+  return { ...removed(counts), forms: [...others, own] };
+}
+
 export interface FolderForm {
   readonly form: Form;
   /** How many messages of the folder the form has. */

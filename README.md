@@ -160,7 +160,7 @@ After a storage quota is reached, Rondyr returns `429` with the number of second
 - Quarantines instead of deleting. Probable spam, ambiguous scores, sales pitches, off-topic messages, and classifier failures all go to human review, each with its reason.
 - Limits each client per form with Cloudflare's Rate Limiting binding before anything is stored, without keeping IP addresses. A form can have a honeypot field: a filled one sends the message to quarantine without a classifier call, and the visitor gets the usual answer.
 - Calls the classifier up to three times in a durable saga, which resumes after a restart in the middle of a classification.
-- Shows an inbox per organization with status filters and cursor pagination. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
+- Shows an inbox per organization with status filters, a search in the field values, and cursor pagination. An admin exports the filtered list as CSV or JSON Lines (the 10,000 newest messages at most), deletes a message for good after a confirmation, and sets how many days the organization keeps its accepted messages and its quarantined or archived ones; an hourly purge deletes the older ones, and a log keeps who deleted which message and when, without its content. Two reviewers who decide on the same message at the same time get one accepted decision and one `409`.
 - Answers CORS preflights on the form URL, so a page on another origin can post JSON with `fetch`. Each form can restrict the origins that browsers may submit from.
 - Manages the forms of an organization in the dashboard: add a form, rename it, edit its business context, suspend and reactivate it, and redirect HTML form posts to a page of your site. A form keeps its public URL through every change.
 - Lets an organization declare up to ten domains in the dashboard. When the submitted email address uses one of these domains or a subdomain, both classifiers are told so and get the email field blank; for any other sender, the classifier input is unchanged.
@@ -181,7 +181,6 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 | Gap | Issue |
 | --- | --- |
 | Server intake with an idempotency key, EmDash plugin | [#59](https://github.com/basaltbytes/rondyr/issues/59) |
-| Search, export, retention, and purge | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
 
 ## Concepts
 

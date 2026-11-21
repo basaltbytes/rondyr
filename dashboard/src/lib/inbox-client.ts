@@ -53,17 +53,29 @@ export async function createInbox(form: FormData) {
   });
 }
 
-/** A page of messages: of one status or of all, of one form or of all. */
-export async function listSubmissions(
-  id: Inbox["id"],
+/** The filters of a list, as the query of the API: the status, the form and the search. */
+function listQuery(
   status: Status | "",
   form: SubmissionEntry["formPublicId"] | null,
-  cursor: string | null,
-  signal: AbortSignal,
+  search: string | null,
 ) {
   const params = new URLSearchParams();
   if (status !== "") params.set("status", status);
   if (form !== null) params.set("form", form);
+  if (search !== null) params.set("q", search);
+  return params;
+}
+
+/** A page of messages: of one status or of all, of one form or of all, with a text or not. */
+export async function listSubmissions(
+  id: Inbox["id"],
+  status: Status | "",
+  form: SubmissionEntry["formPublicId"] | null,
+  search: string | null,
+  cursor: string | null,
+  signal: AbortSignal,
+) {
+  const params = listQuery(status, form, search);
   if (cursor !== null) params.set("after", cursor);
   const response = await send(`${submissions(id)}?${params}`, { signal });
   return decodePage(await response.json());
@@ -100,4 +112,25 @@ export async function reviewSubmission(
     method: "POST",
   });
   return decodeSubmission(await response.json());
+}
+
+/**
+ * The address of an export of a list, which the browser downloads with the
+ * session cookie. The API sends at most the 10,000 newest messages.
+ */
+export function exportAddress(
+  id: Inbox["id"],
+  format: "csv" | "jsonl",
+  status: Status | "",
+  form: SubmissionEntry["formPublicId"] | null,
+  search: string | null,
+) {
+  const params = listQuery(status, form, search);
+  params.set("format", format);
+  return `${organizations}/${encodeURIComponent(id)}/submission-export?${params}`;
+}
+
+/** Delete a message, its deliveries and their attempts, for good. */
+export async function deleteSubmission(id: Inbox["id"], submission: Submission["submissionId"]) {
+  await send(`${submissions(id)}/${encodeURIComponent(submission)}`, { method: "DELETE" });
 }

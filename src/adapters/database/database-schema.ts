@@ -26,6 +26,9 @@ export const organizations = sqliteTable(
     dailyClassificationLimit: integer("daily_classification_limit")
       .notNull()
       .default(defaultDailyClassifications),
+    // Days of retention from the reception of a message, or NULL to keep it.
+    acceptedRetentionDays: integer("accepted_retention_days"),
+    quarantineRetentionDays: integer("quarantine_retention_days"),
   },
   // SQLite permits NULL in a non-integer primary key unless explicitly constrained.
   (table) => [check("organizations_id_not_null", sql`${table.id} is not null`)],
@@ -237,6 +240,26 @@ export const submissions = sqliteTable(
     index("submissions_content_repetition_idx")
       .on(table.organizationId, table.contentFingerprint, table.receivedAt)
       .where(sql`${table.contentFingerprint} is not null`),
+  ],
+);
+
+// A message deleted by a member or by the retention period, without its content:
+// the organization, its ID, when, and the account that deleted it, which is NULL
+// for the retention period.
+export const submissionDeletions = sqliteTable(
+  "submission_deletions",
+  {
+    submissionId: text("submission_id").primaryKey().notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    deletedAt: integer("deleted_at").notNull(),
+    deletedBy: text("deleted_by"),
+    // `request` or `retention`.
+    cause: text().notNull(),
+  },
+  (table) => [
+    index("submission_deletions_organization_idx").on(table.organizationId, table.deletedAt),
   ],
 );
 

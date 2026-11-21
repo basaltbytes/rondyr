@@ -289,6 +289,19 @@ it.live("returns 403 to a token on every other API route, even with a member's c
       ["GET", deliveriesPath],
       ["POST", `${deliveriesPath}/example-delivery/retry`],
       ["POST", `${orgPath}/submissions/example/disallowed-decision`],
+      ["DELETE", `${orgPath}/submissions/73123ee4-40bf-4c5f-b8ff-1d56cdaa7640`],
+      ["GET", `${orgPath}/submission-export?format=csv`],
+      ["GET", `${orgPath}/retention`],
+      ["PUT", `${orgPath}/retention`],
+      ["GET", `${orgPath}/members`],
+      ["PATCH", `${orgPath}/members/example-user`],
+      ["DELETE", `${orgPath}/members/example-user`],
+      ["POST", `${orgPath}/invitations`],
+      ["DELETE", `${orgPath}/invitations`],
+      ["POST", `${targetPath}/confirmations`],
+      ["POST", "/api/invitations/read"],
+      ["POST", "/api/invitations/accept"],
+      ["POST", "/api/recipient-confirmations"],
     ] as const;
     const statuses = yield* Effect.forEach(requests, ([method, path]) =>
       tokenRequest(method, path, token, cookie).pipe(
