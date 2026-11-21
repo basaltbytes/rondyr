@@ -2,13 +2,38 @@
 
 Rondyr deploys to Cloudflare with [Alchemy](https://alchemy.run). Each stage has its own Worker, D1 database, queues, and Durable Objects, so `staging` and `prod` share nothing.
 
-No one has followed this guide on a Cloudflare account other than the Basaltbytes one yet; [#43](https://github.com/basaltbytes/rondyr/issues/43) tracks that check.
+No one has followed this guide on a Cloudflare account other than the Basaltbytes one yet. The [fresh account checklist](#fresh-account-checklist) at the end of this page is the way to check it: follow it on a new account, tick each step, and fix this page where it differs.
 
 ## Prerequisites
 
-- A Cloudflare account with a `workers.dev` subdomain enabled.
-- For `prod`, a domain in an active zone of the same account.
+- A Cloudflare account with a `workers.dev` subdomain enabled. Plan on Workers Paid; [Costs and plan limits](#costs-and-plan-limits) says why.
+- For `prod`, a domain in an active zone of the same account: the domain uses Cloudflare's nameservers.
 - Node.js 24.22 or later and pnpm 11, as for local development.
+- For deployment from GitHub Actions, a fork or a copy of the repository where you can set secrets and variables.
+
+## Cloudflare account setup
+
+Do these two steps once per Cloudflare account, before the first deployment from GitHub Actions. A first deployment from your machine with an Alchemy profile can also create the state store; see [First deployment](#first-deployment).
+
+### Alchemy state
+
+Alchemy keeps the state of each stage in a store on the Cloudflare account. Create it once:
+
+```sh
+pnpm exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts
+```
+
+### API token
+
+Create a Cloudflare account API token for CI only. On the account of the Worker, grant:
+
+- `Workers Scripts Write`
+- `D1 Write`
+- `Queues Write`
+- `Account Settings Read`
+- **Account Secrets Store Edit**, which Alchemy calls `Secrets Store Write`. Alchemy needs it to bind the state secret to its preview Worker. See [Secrets Store permissions](https://developers.cloudflare.com/secrets-store/access-control/).
+
+On the zone of the custom domain, grant `Zone Read` and `Workers Routes Write`. Set the token as the `CLOUDFLARE_API_TOKEN` secret of the repository, and the account ID as `CLOUDFLARE_ACCOUNT_ID`.
 
 ## Stage environment
 
@@ -158,24 +183,83 @@ The token can read and review the inbox of the test organization only. To revoke
 
 When a check fails, the job `staging / Deploy staging` of the CI run is red, `production` is skipped, and production keeps its previous version. The step **Verify staging health and submission processing** prints one line, for example `Staging returned HTTP 401; expected 200 for /api/organizations` or `Staging did not classify the smoke submission within three minutes.`, and never a response body or credential. A partial configuration fails the job **Staging gate configuration** instead, before any deployment. Fix staging or the settings, then push again or re-run the failed jobs. See [the runbook](./operations.md#staging-gate) for the diagnosis.
 
-### API token
+## Costs and plan limits
 
-Create a Cloudflare account API token for CI only. On the account of the Worker, grant:
+Rondyr runs on your Cloudflare account and bills nothing itself, but it is not free to run. Cloudflare bills each product it uses, and its prices and limits change: check the linked pages before you rely on the figures below, which date from November 2026. Nobody has measured Rondyr on a Workers Free account.
 
-- `Workers Scripts Write`
-- `D1 Write`
-- `Queues Write`
-- `Account Settings Read`
-- **Account Secrets Store Edit**, which Alchemy calls `Secrets Store Write`. Alchemy needs it to bind the state secret to its preview Worker. See [Secrets Store permissions](https://developers.cloudflare.com/secrets-store/access-control/).
+Plan on [Workers Paid](https://developers.cloudflare.com/workers/platform/pricing/), at least $5 a month per account, for three reasons:
 
-On the zone of the custom domain, grant `Zone Read` and `Workers Routes Write`.
+- Workers Free allows 10 ms of CPU time per invocation. Signing in hashes the password with scrypt, which is designed to take more CPU than that, and the Worker's start-up adds to every request. Sign-in and other requests can fail on Free.
+- Workers Free allows 10,000 queue operations a day. A message takes about 3 operations to reach the classifier and 3 more for each delivery, so a few thousand messages a day use it up, and a spam wave can do it in minutes.
+- Cloudflare Email Sending needs Workers Paid.
 
-### Alchemy state
+Each stage has its own resources and its own usage. A stage with no traffic still runs the Cron every minute: 1,440 Worker invocations a day, each with a few D1 queries and one Durable Object request to record its success. Each message adds a Worker request, a D1 transaction, queue operations, several Durable Object requests, one classifier call, and the same again for each delivery.
 
-Create the Alchemy state store on the Cloudflare account once, before the first non-interactive deployment:
+| Product | What Rondyr uses it for | Workers Free | Workers Paid |
+| --- | --- | --- | --- |
+| [Workers](https://developers.cloudflare.com/workers/platform/pricing/) | Intake, dashboard API, Cron, queue consumers | 100,000 requests a day, 10 ms CPU per invocation | 10 million requests and 30 million CPU ms a month included, then $0.30 per million requests and $0.02 per million CPU ms |
+| [D1](https://developers.cloudflare.com/d1/platform/pricing/) | Messages, outbox, deliveries, accounts | 5 million rows read and 100,000 rows written a day, 5 GB | 25 billion rows read and 50 million rows written a month included, then $0.001 and $1.00 per million, 5 GB included then $0.75 per GB-month |
+| [Queues](https://developers.cloudflare.com/queues/platform/pricing/) | Classification, delivery and dead-letter queues | 10,000 operations a day, 24-hour retention | 1 million operations a month included, then $0.40 per million |
+| [Durable Objects](https://developers.cloudflare.com/durable-objects/platform/pricing/) | Event stream of each message, classification runs, Inbox projection, Cron heartbeat | 100,000 requests and 13,000 GB-s a day | 1 million requests and 400,000 GB-s a month included, then $0.15 per million requests and $12.50 per million GB-s |
+| [Workers AI](https://developers.cloudflare.com/workers-ai/platform/pricing/) | Jev, the default classifier | 10,000 Neurons a day, then calls fail | The same 10,000 Neurons a day, then $0.011 per 1,000 Neurons |
+| [AI Gateway](https://developers.cloudflare.com/ai-gateway/reference/pricing/) | The `default` gateway in front of both classifiers | No charge for the gateway. Rondyr turns log storage off on each call | Same |
+| [Unified billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/) | OpenAI Decisions, when `RONDYR_CLASSIFIER=openai` or as the second model | Prepaid credits, per call | Same |
+| [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) | The Worker's logs, which the runbook relies on | 200,000 log events a day, 3 days of retention | 20 million a month included, then $0.60 per million, 7 days of retention. Cloudflare moves Workers Logs to its Observability pricing on 1 December 2026 |
+| [Cron Triggers](https://developers.cloudflare.com/workers/platform/limits/) | One per stage | 5 per account | 250 per account |
+| Email | Email destinations | [Resend](./email.md#resend-limits-and-cost) has its own plans. Cloudflare Email Sending is not available | [Cloudflare Email Sending](./email.md#cloudflare-limits-and-cost): 3,000 emails a month included, then $0.35 per 1,000 |
 
-```sh
-pnpm exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts
-```
+When a Workers Free limit is reached, Cloudflare refuses the excess until midnight UTC instead of billing it. For Rondyr that means refused submissions (`503` or Cloudflare's own error page), messages quarantined with **Analysis unavailable** when the Workers AI allowance runs out, and messages that wait in a queue. The stored messages are not lost, but nothing alerts you. On Workers Paid, usage over the included amounts is billed. The organization quotas in **Daily quotas** cap stored submissions and classifications per organization; they are the main lever on the classifier's cost. Check usage in the Cloudflare dashboard under **Workers & Pages**, **D1**, **Queues** and **AI**, and set billing notifications on the account.
+
+## Fresh account checklist
+
+This list checks the guide on a Cloudflare account that has never run Rondyr. It needs a person: a new Cloudflare account, a domain and credentials that an agent does not have. Copy it into an issue or a pull request, tick each step, and for each one note what differed from this page: a missing permission, a step in another order, a delay, an error message. Fix this page and the other guides in the same pull request.
+
+Before you start, write down the date, the commit of Rondyr, and the Cloudflare plan of the account.
+
+### 1. Account, state and API token
+
+- [ ] The account has Workers Paid, a `workers.dev` subdomain, and the domain of `prod` as an active zone. Note how long the zone took to become active.
+- [ ] Bootstrap the Alchemy state with `pnpm exec alchemy state bootstrap --backend cloudflare --config alchemy-run.ts`, as in [Alchemy state](#alchemy-state). Note what the command creates in the account and every prompt it shows.
+- [ ] Create the API token with exactly the permissions of [API token](#api-token), and nothing more. Keep the list of permissions you had to add during the steps below.
+- [ ] In a fork or a copy of the repository, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, then the variables and secrets of both stages from [GitHub Actions](#github-actions): `BETTER_AUTH_URL_STAGING`, `BETTER_AUTH_SECRET_STAGING`, `BETTER_AUTH_URL_PROD` (the custom domain), `BETTER_AUTH_SECRET_PROD`, and `RONDYR_SETUP_TOKEN_STAGING` and `RONDYR_SETUP_TOKEN_PROD`.
+
+### 2. First deployments
+
+- [ ] Start the **Deploy** workflow with stage `staging`. It deploys staging and checks `/health`. Note the duration and any error.
+- [ ] Push a commit to `main` of the fork, or merge a pull request. CI deploys `staging`, checks it, then deploys `prod`. Check that `prod` answers on the custom domain with a valid certificate, and note how long the certificate took.
+- [ ] In the Cloudflare dashboard, check that each resource exists for each stage, without any manual step that this page does not describe:
+  - [ ] the D1 database, with every migration of `database/migrations` applied: in the D1 console, `outbox_events` has the columns `publication_count` and `stuck_at`, which the last migration adds;
+  - [ ] the classification queue and the delivery queue, each with its dead-letter queue, and four consumers on the Worker: one per queue and one per dead-letter queue;
+  - [ ] the Cron trigger `* * * * *` on the Worker, and a **Last successful Cron run** on **Status** after the first sign-in;
+  - [ ] the Durable Object classes of `wrangler.json`, listed under the Worker's bindings;
+  - [ ] the Rate Limiting binding `CLIENT_RATE_LIMIT` under the Worker's bindings. Cloudflare does not show rate limits elsewhere.
+- [ ] Check the security headers of the dashboard with the `curl` command of [First deployment](#first-deployment), on both stages.
+
+### 3. First account and first message
+
+- [ ] On `prod`, create the first account with `./scripts/setup-owner.sh <origin>` ([First account](#first-account)), then sign in.
+- [ ] Delete `RONDYR_SETUP_TOKEN_PROD` in GitHub and deploy `prod` again. Check that `POST /api/setup` now answers `404`.
+- [ ] Create an organization and a form with a business context, and send a message with `curl` as in the README. Check that it is accepted or quarantined with a reason other than **Analysis unavailable**, within a minute.
+- [ ] Check **Status**: the Cron run is recent, and the outbox and stuck counts are zero.
+
+### 4. AI gateway
+
+- [ ] In **AI → AI Gateway**, check that the gateway `default` exists after the first classified message, and that it was created with log collection on. Note whether you had to create it.
+- [ ] Open its logs and confirm that no entry holds a message: Rondyr turns log collection off on each call. Note anything that the gateway stored for these calls.
+
+### 5. Optional features, one at a time
+
+For each feature, set its settings, deploy, use the feature, and note what it required beyond this page.
+
+- [ ] Webhooks: set `RONDYR_SECRETS_KEY_PROD` ([Encryption key](#encryption-key)), deploy, add a webhook destination, send a test, and verify a signature with [docs/webhooks.md](./webhooks.md).
+- [ ] Email with Resend: set `RESEND_API_KEY_PROD` and `RONDYR_EMAIL_FROM_PROD` ([docs/email.md](./email.md#setup-with-resend)), deploy, add an email destination and send a test.
+- [ ] Email with Cloudflare, if the account sends with it: set `RONDYR_EMAIL_PROVIDER_PROD=cloudflare` and the sender ([docs/email.md](./email.md#setup-with-cloudflare-email-sending)), deploy, and send a test.
+- [ ] OpenAI Decisions: load credits for [unified billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/), check that the `default` gateway does not require provider credentials, set `RONDYR_CLASSIFIER_PROD=openai`, deploy, and send a message. Note the cost of a message in the credit balance.
+- [ ] Staging submission check: follow [Submission check](#submission-check), then push to `main` and check the step **Verify staging health and submission processing**.
+
+### 6. Costs and recovery
+
+- [ ] After a day, note the usage of each product in [Costs and plan limits](#costs-and-plan-limits) for the stage with no traffic and for the stage that received messages, and correct the table where it is wrong.
+- [ ] Rehearse a D1 restore and a Worker rollback on staging with the [operations runbook](./operations.md#restore-d1-with-time-travel), and correct the runbook from what you observe.
 
 For queue diagnosis, recovery, and secret rotation, see the [operations runbook](./operations.md).
