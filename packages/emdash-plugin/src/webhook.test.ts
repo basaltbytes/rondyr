@@ -79,7 +79,7 @@ describe("receiveWebhook", () => {
     const body = payload();
     const outcome = await receiveWebhook(
       { ...host, email, input: body, request: { headers: await signed(body) } },
-      secret,
+      [secret],
       now,
     );
     expect(outcome).toEqual({ status: 200, emailed: 2 });
@@ -104,23 +104,37 @@ describe("receiveWebhook", () => {
     const body = payload();
     const context = (headers: Headers) => ({ ...host, email, input: body, request: { headers } });
 
-    const wrong = await receiveWebhook(context(await signed(body, "whsec_other")), secret, now);
+    const wrong = await receiveWebhook(context(await signed(body, "whsec_other")), [secret], now);
     expect(wrong).toEqual({ status: 401, code: "invalid-signature" });
     const old = await receiveWebhook(
       context(await signed(body, secret, now - 301_000)),
-      secret,
+      [secret],
       now,
     );
     expect(old).toEqual({ status: 401, code: "stale-timestamp" });
     expect(sent).toEqual([]);
 
-    expect(await receiveWebhook(context(await signed(body)), secret, now)).toEqual({
+    expect(await receiveWebhook(context(await signed(body)), [secret], now)).toEqual({
       status: 200,
       emailed: 2,
     });
-    const again = await receiveWebhook(context(await signed(body)), secret, now);
+    const again = await receiveWebhook(context(await signed(body)), [secret], now);
     expect(again).toEqual({ status: 200, emailed: 0 });
     expect(sent).toHaveLength(2);
+  });
+
+  it("accepts the secret of any of the site's Rondyr webhooks", async () => {
+    const { host, email, sent } = await site();
+    const body = payload();
+    const context = { ...host, email, input: body, request: { headers: await signed(body) } };
+    const secrets = ["whsec_another-form", secret];
+    expect(await receiveWebhook(context, secrets, now)).toEqual({ status: 200, emailed: 2 });
+    expect(sent).toHaveLength(2);
+    const stale = { ...context, request: { headers: await signed(body, secret, now - 301_000) } };
+    expect(await receiveWebhook(stale, secrets, now)).toEqual({
+      status: 401,
+      code: "stale-timestamp",
+    });
   });
 
   it("answers a test request without email", async () => {
@@ -128,7 +142,7 @@ describe("receiveWebhook", () => {
     const body = payload("test");
     const outcome = await receiveWebhook(
       { ...host, email, input: body, request: { headers: await signed(body) } },
-      secret,
+      [secret],
       now,
     );
     expect(outcome).toEqual({ status: 200, emailed: 0 });
@@ -145,12 +159,15 @@ describe("receiveWebhook", () => {
       input: body,
       request: { headers: await signed(body) },
     });
-    expect(await receiveWebhook(await context(), secret, now)).toEqual({
+    expect(await receiveWebhook(await context(), [secret], now)).toEqual({
       status: 503,
       code: "EMAIL_FAILED",
     });
     failing.clear();
-    expect(await receiveWebhook(await context(), secret, now)).toEqual({ status: 200, emailed: 1 });
+    expect(await receiveWebhook(await context(), [secret], now)).toEqual({
+      status: 200,
+      emailed: 1,
+    });
     expect(sent.map(({ to }) => to)).toEqual(["team@example.com", "owner@example.com"]);
     // The log names the delivery and the form, never the message or a recipient.
     expect(lines).toEqual([
@@ -177,13 +194,13 @@ describe("receiveWebhook", () => {
     const headers = await signed(body);
     const first = receiveWebhook(
       { ...host, email: held, input: body, request: { headers } },
-      secret,
+      [secret],
       now,
     );
     await sending.promise;
     const second = await receiveWebhook(
       { ...host, email, input: body, request: { headers } },
-      secret,
+      [secret],
       now + 1_000,
     );
     expect(second).toEqual({ status: 503, code: "DELIVERY_IN_PROGRESS" });
@@ -204,14 +221,14 @@ describe("receiveWebhook", () => {
     const body = payload();
     void receiveWebhook(
       { ...host, email: stuck, input: body, request: { headers: await signed(body) } },
-      secret,
+      [secret],
       now,
     );
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     const later = now + 5 * 60_000;
     const retry = await receiveWebhook(
       { ...host, email, input: body, request: { headers: await signed(body, secret, later) } },
-      secret,
+      [secret],
       later,
     );
     expect(retry).toEqual({ status: 200, emailed: 1 });
@@ -223,7 +240,7 @@ describe("receiveWebhook", () => {
     const body = payload();
     const outcome = await receiveWebhook(
       { ...host, email, input: body, request: { headers: await signed(body) } },
-      null,
+      [],
       now,
     );
     expect(outcome).toEqual({ status: 503, code: "NOT_CONFIGURED" });

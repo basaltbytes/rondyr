@@ -8,6 +8,7 @@ Installation, configuration and operation: [docs/emdash.md](https://github.com/b
 | --- | --- |
 | `@basaltbytes/emdash-plugin-rondyr` | `rondyr({ url })` and `formsWithoutSubmissions()` for `astro.config.mjs` |
 | `@basaltbytes/emdash-plugin-rondyr/plugin` | The plugin, loaded by EmDash |
+| `@basaltbytes/emdash-plugin-rondyr/forms` | The forms plugin without its Submissions page and widget, loaded by EmDash for `formsWithoutSubmissions()` |
 | `@basaltbytes/emdash-plugin-rondyr/admin` | The admin pages and widget, loaded by EmDash |
 | `@basaltbytes/emdash-plugin-rondyr/route` | The site's submission route: `export { POST, prerender } from "@basaltbytes/emdash-plugin-rondyr/route";` |
 

@@ -201,8 +201,8 @@ it("sends, reads, decides and verifies the webhook with the plugin's code", asyn
   const sent: { to: string; subject: string; text: string; replyTo?: string }[] = [];
   const email = { send: async (message: (typeof sent)[number]) => void sent.push(message) };
   const site = { ...host, email, input: body, request: { headers } };
-  expect(await receiveWebhook(site, secret, Date.now())).toEqual({ status: 200, emailed: 1 });
-  expect(await receiveWebhook(site, secret, Date.now())).toEqual({ status: 200, emailed: 0 });
+  expect(await receiveWebhook(site, [secret], Date.now())).toEqual({ status: 200, emailed: 1 });
+  expect(await receiveWebhook(site, [secret], Date.now())).toEqual({ status: 200, emailed: 0 });
   expect(sent).toEqual([
     {
       to: "team@example.com",

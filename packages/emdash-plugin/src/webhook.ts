@@ -63,12 +63,17 @@ export type WebhookOutcome =
  */
 export async function receiveWebhook(
   ctx: WebhookHost,
-  webhookSecret: string | null,
+  webhookSecrets: readonly string[],
   now: number,
 ): Promise<WebhookOutcome> {
-  if (webhookSecret === null) return { status: 503, code: "NOT_CONFIGURED" };
-  const verdict = await verifyWebhook(ctx.input, ctx.request.headers, webhookSecret, now);
-  if (verdict !== "valid") return { status: 401, code: verdict };
+  if (webhookSecrets.length === 0) return { status: 503, code: "NOT_CONFIGURED" };
+  const verdicts = await Promise.all(
+    webhookSecrets.map((secret) => verifyWebhook(ctx.input, ctx.request.headers, secret, now)),
+  );
+  if (!verdicts.includes("valid")) {
+    const code = verdicts.includes("stale-timestamp") ? "stale-timestamp" : "invalid-signature";
+    return { status: 401, code };
+  }
   const payload = parsePayload(ctx.input);
   if (payload === null) return { status: 400, code: "UNKNOWN_PAYLOAD" };
   if (payload.type === "test") return { status: 200, emailed: 0 };

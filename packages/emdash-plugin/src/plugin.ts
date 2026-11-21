@@ -130,7 +130,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
         methods: ["POST"],
         request: { body: "bytes", maxBytes: 65_536 },
         handler: async (ctx: RouteContext<Uint8Array>) => {
-          const outcome = await receiveWebhook(ctx, rondyrSecrets().webhookSecret, Date.now());
+          const outcome = await receiveWebhook(ctx, rondyrSecrets().webhookSecrets, Date.now());
           if (outcome.status !== 200) {
             throw new PluginRouteError(outcome.code, "Webhook refused", outcome.status);
           }
@@ -150,7 +150,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
           ]);
           return {
             tokenProblem: secrets.tokenProblem,
-            webhookSecret: secrets.webhookSecret !== null,
+            webhookSecret: secrets.webhookSecrets.length > 0,
             queue: { pending, failed, unlinked },
             unqueued: {
               count: unqueued.reduce((total, { record }) => total + record.count, 0),
@@ -222,7 +222,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
             links,
             unqueued,
             tokenProblem: secrets.tokenProblem,
-            webhookSecret: secrets.webhookSecret !== null,
+            webhookSecret: secrets.webhookSecrets.length > 0,
             webhookUrl: ctx.url(`/_emdash/api/plugins/${pluginId}/webhook`),
             organization,
             error,
