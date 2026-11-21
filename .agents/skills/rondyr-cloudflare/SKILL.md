@@ -3,15 +3,15 @@ name: rondyr-cloudflare
 description: Work on Rondyr's Cloudflare Worker, Alchemy stack, D1 migrations, bindings, static assets, or workerd tests.
 ---
 
-# Cloudflare dans Rondyr
+# Cloudflare in Rondyr
 
-`alchemy-run.ts` définit les ressources distantes. `wrangler.json` décrit les bindings locaux utilisés par Vite, la génération de types et Vitest. Vérifier les deux fichiers quand un binding change. Alchemy injecte son plugin Vite dans ses propres exécutions. Respecter le garde-fou `ALCHEMY_CLOUDFLARE_VITE_INJECTED` dans la configuration Vite.
+`alchemy-run.ts` defines the remote resources. `wrangler.json` describes the local bindings used by Vite, type generation and Vitest. Check both files when a binding changes. Alchemy injects its Vite plugin into its own runs. Respect the `ALCHEMY_CLOUDFLARE_VITE_INJECTED` guard in the Vite configuration.
 
-Les en-têtes des assets du dashboard sont dans `public/_headers`. Vite le copie dans `dist/client`, et Alchemy comme Wrangler l’appliquent aux assets, pas aux réponses du Worker. Garder les APIs Cloudflare dans les adaptateurs et les points d’entrée. Décrire les services consommés par le métier avec Effect et exposer les erreurs via son canal typé.
+The headers of the dashboard assets are in `public/_headers`. Vite copies the file to `dist/client`, and Alchemy and Wrangler both apply it to the assets, not to the Worker's responses. Keep the Cloudflare APIs in the adapters and the entry points. Describe the services that the business logic uses with Effect, and expose errors through Effect's typed channel.
 
-- `pnpm dev` démarre Vite et workerd. Après une modification D1, lancer `pnpm db:migrate` sur la base locale.
-- `pnpm dev:alchemy` exerce le graphe local et applique les migrations à la base Alchemy. L’état des stages distants est dans Cloudflare.
-- `pnpm db:generate --name nom-de-la-migration` génère le SQL et le snapshot du schéma. Ajouter une migration pour faire évoluer un schéma déjà appliqué.
-- `pnpm test` utilise le vrai runtime Workers en local. `pnpm deploy:dry` valide le build et la configuration du Worker sans identifiants.
+- `pnpm dev` starts Vite and workerd. After a D1 change, run `pnpm db:migrate` on the local database.
+- `pnpm dev:alchemy` exercises the local graph and applies the migrations to the Alchemy database. The state of the remote stages is in Cloudflare.
+- `pnpm db:generate --name your-migration-name` generates the SQL and the schema snapshot. Add a migration to change a schema that is already applied.
+- `pnpm test` uses the real Workers runtime locally. `pnpm deploy:dry` validates the build and the Worker configuration without credentials.
 
-La pile Alchemy utilise un stage explicite pour un déploiement distant. Vérifier le profil Cloudflare avant un déploiement demandé. Le premier plan Alchemy peut proposer de provisionner son Worker d’état. Voir le README pour les commandes.
+The Alchemy stack uses an explicit stage for a remote deployment. Check the Cloudflare profile before a requested deployment. The first Alchemy plan can offer to provision its state Worker. See the README for the commands.

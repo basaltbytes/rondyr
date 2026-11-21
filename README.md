@@ -179,9 +179,8 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 
 | Gap | Issue |
 | --- | --- |
-| Thresholds measured on a test corpus, per-organization policy | [#6](https://github.com/basaltbytes/rondyr/issues/6) |
 | Roles and invitations | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
-| Search, export, retention, and purge | [#9](https://github.com/basaltbytes/rondyr/issues/9) |
+| Search, export, retention, and purge | [#11](https://github.com/basaltbytes/rondyr/issues/11) |
 
 ## Concepts
 
@@ -189,7 +188,7 @@ The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
 - A **form** has a public URL, `/f/<public-id>`, and an optional **business context** that describes what the organization does. A form is **active** or **suspended**; a suspended form refuses new submissions and keeps the ones it has.
 - A **submission** is one message: a set of text fields sent to a form.
 - The **classifier** returns a spam score, a sales outreach score and, when the form has a business context, a relevance score. Each one is between 0 and 1. The outreach score measures whether the sender is trying to sell or pitch something of their own to the organization. A customer asking for a quote, a shop that wants to stock the organization's products, a journalist, or a peer proposing a partnership doesn't count as outreach.
-- A submission is **accepted** when its spam score is under 0.30, its outreach score is 0.50 or less, and its relevance score, if it has one, is at least 0.35. Otherwise it is **quarantined** with the first reason that applies, in this order: probable spam (0.70 and above), ambiguous, unsolicited sales outreach, low relevance. A failed or incomplete classifier answer gives the reason classifier error. A submission with a filled honeypot field is quarantined with the reason honeypot, and the classifier doesn't score it.
+- A submission is **accepted** when its spam score is under 0.30, its outreach score is 0.50 or less, and its relevance score, if it has one, is at least 0.50 with Jev or 0.45 with OpenAI Decisions. Otherwise it is **quarantined** with the first reason that applies, in this order: probable spam (0.70 and above), ambiguous, unsolicited sales outreach, low relevance. A failed or incomplete classifier answer gives the reason classifier error. A submission with a filled honeypot field is quarantined with the reason honeypot, and the classifier doesn't score it.
 - A **review** is a person's decision on a quarantined submission: accept it, or archive it.
 - A **destination** receives the accepted submissions of a form: a **webhook**, or an **email** destination with a list of recipients. Each accepted submission creates one **delivery** per active destination.
 
@@ -207,7 +206,7 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 
 | Topic | Page |
 | --- | --- |
-| What is built, what is planned, and why | [architecture.md](./architecture.md) (French) |
+| What is built, what is planned, and why | [architecture.md](./architecture.md) |
 | Stages, secrets, API token permissions, CI deployment | [docs/deployment.md](./docs/deployment.md) |
 | Queue diagnosis, D1 recovery, Worker rollback, secret rotation | [docs/operations.md](./docs/operations.md) |
 | Rondyr API tokens: authentication, the review routes they allow, errors | [docs/api.md](./docs/api.md) |
@@ -215,7 +214,7 @@ The stack creates the Worker with the dashboard assets, a D1 database with its m
 | Email setup with Resend and Cloudflare, limits, message format, retries | [docs/email.md](./docs/email.md) |
 | Evaluating the classifiers on a labeled corpus | [docs/evaluation.md](./docs/evaluation.md) |
 | Development setup, pull requests, license of contributions | [CONTRIBUTING.md](./CONTRIBUTING.md) |
-| Rules for contributors and coding agents | [AGENTS.md](./AGENTS.md) (French) |
+| Rules for contributors and coding agents | [AGENTS.md](./AGENTS.md) |
 | Local lint rules and where they come from | [tooling/oxlint/README.md](./tooling/oxlint/README.md) |
 
 ## Development

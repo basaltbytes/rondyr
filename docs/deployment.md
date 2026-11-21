@@ -2,7 +2,7 @@
 
 Rondyr deploys to Cloudflare with [Alchemy](https://alchemy.run). Each stage has its own Worker, D1 database, queues, and Durable Objects, so `staging` and `prod` share nothing.
 
-No one has followed this guide on a Cloudflare account other than the Basaltbytes one yet; [#12](https://github.com/basaltbytes/rondyr/issues/12) tracks that check.
+No one has followed this guide on a Cloudflare account other than the Basaltbytes one yet; [#43](https://github.com/basaltbytes/rondyr/issues/43) tracks that check.
 
 ## Prerequisites
 
@@ -72,7 +72,7 @@ To offer a second opinion for ambiguous submissions, set `RONDYR_ESCALATION_CLAS
 
 The stack doesn't create the `default` gateway. When an account has no gateway with that name, AI Gateway creates it on the first authenticated request, with log collection on; see [Manage gateways](https://developers.cloudflare.com/ai-gateway/configuration/manage-gateway/). Jev calls made with the Workers AI binding go through the same gateway. The Worker turns log collection and caching off on every call of both classifiers, so the submission fields aren't stored in the gateway logs even with the gateway setting on. Logs written before this was in place stay in the gateway until you delete them.
 
-Both classifiers use the same thresholds today, although their scores haven't been compared on a test corpus ([#6](https://github.com/basaltbytes/rondyr/issues/6)).
+The two classifiers have different default relevance thresholds, measured on a labeled corpus: 0.50 for Jev and 0.45 for OpenAI Decisions. [docs/evaluation.md](./evaluation.md) has the measurements.
 
 ## Encryption key
 
