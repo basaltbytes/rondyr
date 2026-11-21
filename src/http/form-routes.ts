@@ -17,7 +17,7 @@ import {
   type FormStatus,
   type SuccessUrlRefusalReason,
 } from "../domain/forms/form.ts";
-import { SetTurnstile } from "../domain/forms/turnstile.ts";
+import { SetTurnstile, TurnstileKeyCheck } from "../domain/forms/turnstile.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
 import { Forms } from "../ports/forms.ts";
 import { reviewer } from "./review-routes.ts";
@@ -31,6 +31,7 @@ const FormPath = OrganizationPath.mapFields((fields) => ({
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const formJson = HttpServerResponse.schemaJson(ManagedForm);
 const errorJson = HttpServerResponse.schemaJson(FormRequestError);
+const keyCheckJson = HttpServerResponse.schemaJson(TurnstileKeyCheck);
 
 function empty(status: number) {
   return Effect.succeed(HttpServerResponse.empty({ status, ...jsonOptions }));
@@ -142,6 +143,13 @@ const clearTurnstile = Effect.gen(function* () {
   return yield* formJson(updated, jsonOptions);
 });
 
+const checkTurnstile = Effect.gen(function* () {
+  const form = yield* scope;
+  const forms = yield* Forms;
+  const state = yield* forms.checkTurnstile(form);
+  return yield* keyCheckJson({ state }, jsonOptions);
+});
+
 const organizationForms = "/api/organizations/:organizationId/forms";
 const form = `${organizationForms}/:publicId`;
 
@@ -154,6 +162,7 @@ export const formRoutes = Layer.mergeAll(
   HttpRouter.add("DELETE", `${form}/success-url`, withErrors(clearSuccessUrl)),
   HttpRouter.add("PUT", `${form}/honeypot`, withErrors(setHoneypotField)),
   HttpRouter.add("DELETE", `${form}/honeypot`, withErrors(clearHoneypotField)),
+  HttpRouter.add("GET", `${form}/turnstile`, withErrors(checkTurnstile)),
   HttpRouter.add("PUT", `${form}/turnstile`, withErrors(setTurnstile)),
   HttpRouter.add("DELETE", `${form}/turnstile`, withErrors(clearTurnstile)),
 );

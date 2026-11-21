@@ -91,7 +91,7 @@ The body can be `application/json`, `application/x-www-form-urlencoded`, or `mul
 | `404` | Unknown form |
 | `413` | Body larger than 16 KiB |
 | `415` | Another content type |
-| `429` | The client or form reached its minute limit, or the organization reached its daily submission quota. `Retry-After` gives the wait in seconds. Nothing is stored |
+| `429` | The client or form reached its minute limit, or the organization reached a daily quota: the submission quota, or the junk quota for a submission that intake would quarantine as junk. `Retry-After` gives the wait in seconds. Nothing is stored |
 | `503` | D1 unavailable |
 
 ### HTML forms
@@ -131,6 +131,8 @@ When you save the keys, Rondyr asks Siteverify whether it knows the secret key. 
 
 Rondyr removes the token before storing the message. A missing or refused token sends the message to **To review** with the reason **Turnstile verification failed**, and the visitor still gets the usual response. Rondyr reads Siteverify's answer from the JSON body of an HTTP 200 or 400 reply, so a refusal counts whatever its status. If Siteverify doesn't answer within five seconds, answers with another status, reports `internal-error`, or no longer recognizes the secret key, Rondyr logs the incident and lets the other intake checks and classification proceed.
 
+A key can stop working after you saved it: someone deletes the widget in Cloudflare, or `RONDYR_SECRETS_KEY` changes and the stored key no longer decrypts. Messages then go to classification without the Turnstile check. Each time you open the form in **Forms**, Rondyr decrypts the stored key and asks Siteverify about it again. If the key no longer works, the Turnstile card warns that Turnstile isn't protecting the form; save both keys again to turn it back on. If Cloudflare doesn't answer, the card says so, and reloading the page checks again. The same check is available at `GET /api/organizations/:organizationId/forms/:publicId/turnstile`, which returns `{"state":"working"}`, `refused`, `unreadable` or `unchecked`.
+
 ### Allowed origins
 
 By default a form accepts submissions from a page on any origin. To restrict it, open **Allowed origins** in the dashboard and add the origins of your site, such as `https://www.example.com`. An origin is a scheme, a host, and an optional port, with no path. It must use HTTPS, except `http://localhost` and loopback addresses such as `http://127.0.0.1:8080` during development.
@@ -147,7 +149,9 @@ Both minute limits answer `429` with `Retry-After: 60` and store nothing. A page
 
 **Daily quotas** shows usage across the organization's forms for the current UTC day. The defaults are 2,000 stored submissions and 1,000 classifications. An organization member can change the limits there or with `PUT /api/organizations/:organizationId/quotas`, using integer fields `submissions` (1 to 100,000) and `classifications` (0 to 100,000). A `GET` on the same URL returns the UTC day, limits and usage.
 
-After the storage quota is reached, Rondyr returns `429` with the number of seconds until midnight UTC in `Retry-After`. After the classification quota is reached, Rondyr stores messages and sends them to review with the reason **Daily classification quota reached**. Every stored submission uses one storage slot. A submission uses one classification slot when intake admits it to the classifier. Workflow retries use the same slot. When an ambiguous submission goes to a second model, the escalation uses one more slot, taken before the call; if none is left, the second model isn't called and the submission stays in review as ambiguous.
+Junk has its own storage quota, equal to the submission limit. Junk is a message that intake quarantines because it filled the honeypot field, failed Turnstile, or repeats earlier messages; **Daily quotas** counts it under **Junk caught at intake**, and the API under `used.junk`. A bot that sends junk all day uses up the junk quota, not the one of your visitors. An organization therefore stores at most twice its submission limit per day: 4,000 messages with the default.
+
+After a storage quota is reached, Rondyr returns `429` with the number of seconds until midnight UTC in `Retry-After`, and stores nothing: junk is refused once the junk quota is reached, any other submission once the submission quota is reached. Junk normally gets the same `202` as other messages, so the `429` tells a bot that it was caught; that is the price of not letting it fill the submission quota. After the classification quota is reached, Rondyr stores messages and sends them to review with the reason **Daily classification quota reached**. Those messages can be real, so they use the submission quota, not the junk one. A submission uses one classification slot when intake admits it to the classifier. Workflow retries use the same slot. When an ambiguous submission goes to a second model, the escalation uses one more slot, taken before the call; if none is left, the second model isn't called and the submission stays in review as ambiguous.
 
 ## Features
 
