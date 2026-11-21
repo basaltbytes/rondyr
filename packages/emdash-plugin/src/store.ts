@@ -15,7 +15,9 @@ export type FormLink = z.infer<typeof FormLink>;
 
 /**
  * A Rondyr webhook delivery: the recipients already emailed, whether it is
- * done, and until when a request that is sending its emails holds it.
+ * done, and until when a request that is sending its emails holds it. `sent`
+ * has the lowercase address of each recipient emailed; records written before
+ * several EmDash forms could share a Rondyr form have `<slug>:<address>`.
  */
 export const DeliveryRecord = z.object({
   receivedAt: z.number().int(),
@@ -24,6 +26,16 @@ export const DeliveryRecord = z.object({
   heldUntil: z.number().int().default(0),
 });
 export type DeliveryRecord = z.infer<typeof DeliveryRecord>;
+
+/**
+ * The EmDash form a message came from, stored under the submission ID that
+ * Rondyr returned with its `202`, which is the webhook's `submission.id`.
+ */
+export const OriginRecord = z.object({
+  formSlug: z.string().min(1).max(200),
+  recordedAt: z.number().int(),
+});
+export type OriginRecord = z.infer<typeof OriginRecord>;
 
 /**
  * Submissions of an EmDash form that the forms plugin accepted but that could
@@ -50,6 +62,7 @@ export const storageConfig = {
   layouts: { indexes: [] },
   links: { indexes: ["rondyrFormId"] },
   deliveries: { indexes: ["receivedAt"] },
+  origins: { indexes: ["recordedAt"] },
   unqueued: { indexes: [] },
 } satisfies PluginStorageConfig;
 
@@ -59,6 +72,7 @@ export const descriptorStorage = {
   layouts: { indexes: [] },
   links: { indexes: ["rondyrFormId"] },
   deliveries: { indexes: ["receivedAt"] },
+  origins: { indexes: ["recordedAt"] },
   unqueued: { indexes: [] },
 } satisfies PluginStorageConfig;
 
@@ -178,6 +192,14 @@ export class Store {
     });
   }
 
+  /** Whether one of these EmDash forms has a pending entry, whose last attempt may have reached Rondyr. */
+  async hasPendingEntry(formSlugs: readonly string[]): Promise<boolean> {
+    for (const formSlug of formSlugs) {
+      if ((await this.queueEntries("pending", 1, null, formSlug)).length > 0) return true;
+    }
+    return false;
+  }
+
   queueCount(state: QueueState) {
     return this.#collection("queue").count({ state });
   }
@@ -226,6 +248,26 @@ export class Store {
   async writeDelivery(id: string, revision: string | null, record: DeliveryRecord) {
     const result = await this.#collection("deliveries").compareAndSet(id, revision, record);
     return result.applied ? result.revision : null;
+  }
+
+  /** The EmDash form that the Rondyr submission `submissionId` came from, if recorded. */
+  origin(submissionId: string) {
+    return this.#get("origins", OriginRecord, submissionId);
+  }
+
+  /** Record where a Rondyr submission came from. A replay of the same submission writes the same form. */
+  putOrigin(submissionId: string, origin: OriginRecord) {
+    return this.#collection("origins").put(submissionId, origin);
+  }
+
+  /** Forget the origins recorded before `before`. */
+  async forgetOrigins(before: number) {
+    const page = await this.#collection("origins").query({
+      where: { recordedAt: { lt: before } },
+      limit: 100,
+    });
+    const ids = page.items.map(({ id }) => id);
+    if (ids.length > 0) await this.#collection("origins").deleteMany(ids);
   }
 
   /** Forget delivery IDs older than `before`. Rondyr stops retrying long before. */

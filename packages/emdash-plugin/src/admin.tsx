@@ -671,6 +671,7 @@ function FormLinkEditor({
       )}
       <Select
         label={text.settings.rondyrForm}
+        description={text.settings.rondyrFormHelp}
         hideLabel={false}
         value={rondyrFormId}
         onValueChange={(value) => setRondyrFormId(value === null ? "" : String(value))}

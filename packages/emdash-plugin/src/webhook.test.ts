@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { newEntry } from "./core/queue.ts";
+import { attempt } from "./delivery.ts";
 import { Store } from "./store.ts";
 import { memoryHost } from "./testing/memory-storage.ts";
 import { receiveWebhook } from "./webhook.ts";
@@ -244,5 +246,248 @@ describe("receiveWebhook", () => {
       now,
     );
     expect(outcome).toEqual({ status: 503, code: "NOT_CONFIGURED" });
+  });
+});
+
+const submissionId = "6f0e2a4b-8c1d-4e3f-9a5b-7c6d8e9f0a1b";
+const sentAt = "2026-11-21T11:59:00.000Z";
+const options = { url: "https://rondyr.example.com" };
+const token = `rdr_${"T".repeat(43)}`;
+
+/** A message sent from the French form: its field names are the French form's. */
+function frenchMessage(receivedAt = sentAt) {
+  return encoder.encode(
+    JSON.stringify({
+      version: 1,
+      type: "submission.accepted",
+      deliveryId,
+      submission: {
+        id: submissionId,
+        receivedAt,
+        fields: { nom: "Ada", courriel: "ada@example.com", message: "Reste-t-il de la place ?" },
+      },
+      form: { id: "rondyr-contact", name: "Rondyr contact" },
+    }),
+  );
+}
+
+/** `contact-en` and `contact-fr`, the same form in two languages, both linked to `rondyr-contact`. */
+async function bilingualSite(recipients: {
+  readonly en: readonly string[];
+  readonly fr: readonly string[];
+}) {
+  const { host, collections, lines } = memoryHost();
+  const store = new Store(host);
+  await store.putLink("contact-en", {
+    rondyrFormId: "rondyr-contact",
+    recipients: [...recipients.en],
+  });
+  await store.putLink("contact-fr", {
+    rondyrFormId: "rondyr-contact",
+    recipients: [...recipients.fr],
+  });
+  await store.putLayout({
+    slug: "contact-en",
+    name: "Contact us",
+    fields: [
+      { name: "name", label: "Your name", type: "text" },
+      { name: "email", label: "Email", type: "email", required: true },
+      { name: "message", label: "Message", type: "textarea" },
+    ],
+  });
+  await store.putLayout({
+    slug: "contact-fr",
+    name: "Nous écrire",
+    fields: [
+      { name: "nom", label: "Votre nom", type: "text" },
+      { name: "courriel", label: "Courriel", type: "email", required: true },
+      { name: "message", label: "Votre message", type: "textarea" },
+    ],
+  });
+  const sent: Sent[] = [];
+  const failing = new Set<string>();
+  const email = {
+    send: async (message: Sent) => {
+      if (failing.has(message.to)) throw new Error("Mailer refused");
+      sent.push(message);
+    },
+  };
+  const deliver = async (body: Uint8Array, at = now) =>
+    receiveWebhook(
+      { ...host, email, input: body, request: { headers: await signed(body, secret, at) } },
+      [secret],
+      at,
+    );
+  return { host, store, collections, lines, sent, failing, deliver };
+}
+
+/** The French form's message goes through the queue: Rondyr answers `202` with its ID. */
+async function sendThroughQueue(host: Parameters<typeof attempt>[0], formSlug: string) {
+  const store = new Store(host);
+  const entryId = crypto.randomUUID();
+  await store.createQueueEntry(entryId, newEntry(formSlug, { nom: "Ada" }, now - 60_000));
+  const http = {
+    fetch: async () =>
+      Response.json({ "submission-id": submissionId, status: "received" }, { status: 202 }),
+  };
+  expect(await attempt({ ...host, http }, options, token, entryId, () => now - 60_000)).toBe(
+    "sent",
+  );
+}
+
+const frenchText = [
+  'New submission for "Nous écrire"',
+  "",
+  "Votre nom: Ada",
+  "Courriel: ada@example.com",
+  "Votre message: Reste-t-il de la place ?",
+  "",
+  `Submitted at: ${sentAt}`,
+].join("\n");
+
+describe("receiveWebhook with several EmDash forms on one Rondyr form", () => {
+  it("emails an address listed on both forms once, with the layout of the form used", async () => {
+    const shared = await bilingualSite({ en: ["team@example.com"], fr: ["team@example.com"] });
+    await sendThroughQueue(shared.host, "contact-fr");
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent).toEqual([
+      {
+        to: "team@example.com",
+        subject: "New submission: Nous écrire",
+        replyTo: "ada@example.com",
+        text: frenchText,
+      },
+    ]);
+  });
+
+  it("emails only the recipients of the form the message came from", async () => {
+    const shared = await bilingualSite({
+      en: ["sales@example.com", "team@example.com"],
+      fr: ["equipe@example.com"],
+    });
+    await sendThroughQueue(shared.host, "contact-fr");
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to, subject }) => ({ to, subject }))).toEqual([
+      { to: "equipe@example.com", subject: "New submission: Nous écrire" },
+    ]);
+  });
+
+  it("emails every linked form's recipients once, with the first form's layout, when the origin is unknown", async () => {
+    const shared = await bilingualSite({
+      en: ["team@example.com", "sales@example.com"],
+      fr: ["Team@Example.com", "equipe@example.com"],
+    });
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 200, emailed: 3 });
+    expect(shared.sent.map(({ to }) => to)).toEqual([
+      "team@example.com",
+      "sales@example.com",
+      "equipe@example.com",
+    ]);
+    // `contact-en` comes first by slug. Its layout doesn't know the French fields,
+    // which keep their names, and it has no filled email field for Reply-To.
+    expect(shared.sent[0]).toEqual({
+      to: "team@example.com",
+      subject: "New submission: Contact us",
+      text: [
+        'New submission for "Contact us"',
+        "",
+        "Message: Reste-t-il de la place ?",
+        "nom: Ada",
+        "courriel: ada@example.com",
+        "",
+        `Submitted at: ${sentAt}`,
+      ].join("\n"),
+    });
+  });
+
+  it("treats a form linked to another Rondyr form since as an unknown origin", async () => {
+    const shared = await bilingualSite({ en: ["team@example.com"], fr: ["equipe@example.com"] });
+    await sendThroughQueue(shared.host, "contact-fr");
+    await shared.store.putLink("contact-fr", {
+      rondyrFormId: "rondyr-other",
+      recipients: ["equipe@example.com"],
+    });
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to }) => to)).toEqual(["team@example.com"]);
+  });
+
+  it("emails only the remaining addresses when Rondyr retries after a partial send", async () => {
+    const shared = await bilingualSite({
+      en: ["team@example.com", "sales@example.com"],
+      fr: ["TEAM@example.com", "equipe@example.com"],
+    });
+    shared.failing.add("sales@example.com");
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 503, code: "EMAIL_FAILED" });
+    shared.failing.clear();
+    const later = now + 60_000;
+    expect(await shared.deliver(frenchMessage(), later)).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to }) => to)).toEqual([
+      "team@example.com",
+      "equipe@example.com",
+      "sales@example.com",
+    ]);
+    expect(shared.lines).toEqual([
+      {
+        level: "error",
+        message: "Failed to send a Rondyr notification",
+        data: { deliveryId, form: "contact-en" },
+      },
+    ]);
+  });
+
+  it("skips the addresses of a delivery record written before, keyed by form", async () => {
+    const shared = await bilingualSite({
+      en: ["team@example.com"],
+      fr: ["team@example.com", "equipe@example.com"],
+    });
+    await sendThroughQueue(shared.host, "contact-fr");
+    // The previous version emailed `contact-en`'s recipient, then stopped.
+    await shared.collections.deliveries.put(deliveryId, {
+      receivedAt: now - 120_000,
+      sent: ["contact-en:Team@Example.com"],
+      done: false,
+      heldUntil: 0,
+    });
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to }) => to)).toEqual(["equipe@example.com"]);
+  });
+
+  it("asks Rondyr to retry while the queue may still record the origin", async () => {
+    const shared = await bilingualSite({
+      en: ["team@example.com"],
+      fr: ["equipe@example.com"],
+    });
+    // Rondyr stored the message, but its `202` never reached the site: the entry is pending.
+    const entryId = crypto.randomUUID();
+    await shared.store.createQueueEntry(entryId, newEntry("contact-fr", { nom: "Ada" }, now));
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 503, code: "ORIGIN_PENDING" });
+    expect(shared.sent).toEqual([]);
+    expect(shared.collections.deliveries.rows.size).toBe(0);
+
+    // The queue's next attempt replays the idempotency key and gets the same ID.
+    const http = {
+      fetch: async () =>
+        Response.json({ "submission-id": submissionId, status: "received" }, { status: 202 }),
+    };
+    const later = now + 60_000;
+    expect(await attempt({ ...shared.host, http }, options, token, entryId, () => later)).toBe(
+      "sent",
+    );
+    expect(await shared.deliver(frenchMessage(), later)).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to }) => to)).toEqual(["equipe@example.com"]);
+  });
+
+  it("stops waiting for the origin 15 minutes after Rondyr received the message", async () => {
+    const shared = await bilingualSite({
+      en: ["team@example.com"],
+      fr: ["equipe@example.com"],
+    });
+    await shared.store.createQueueEntry(
+      crypto.randomUUID(),
+      newEntry("contact-fr", { nom: "Ada" }, now),
+    );
+    const receivedAt = new Date(now - 15 * 60_000).toISOString();
+    expect(await shared.deliver(frenchMessage(receivedAt))).toEqual({ status: 200, emailed: 2 });
+    expect(shared.sent.map(({ to }) => to)).toEqual(["team@example.com", "equipe@example.com"]);
   });
 });
