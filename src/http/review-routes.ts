@@ -41,6 +41,7 @@ const ListParams = OrganizationPath.mapFields((fields) => ({
   ...fields,
   status: InboxFilter.fields.status,
   form: InboxFilter.fields.formPublicId,
+  q: InboxFilter.fields.search,
   after: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(160))),
 }));
 
@@ -130,9 +131,13 @@ const create = Effect.gen(function* () {
 
 const list = Effect.gen(function* () {
   const client = yield* reviewClient;
-  const { after, form, ...input } = yield* HttpRouter.schemaParams(ListParams);
+  const { after, form, q, ...input } = yield* HttpRouter.schemaParams(ListParams);
   const page = yield* client.ListSubmissions(
-    form === undefined ? input : { ...input, formPublicId: form },
+    {
+      ...input,
+      ...(form !== undefined && { formPublicId: form }),
+      ...(q !== undefined && { search: q }),
+    },
     after === undefined ? {} : { after },
   );
   return yield* HttpServerResponse.schemaJson(InboxPage)(page, jsonOptions);

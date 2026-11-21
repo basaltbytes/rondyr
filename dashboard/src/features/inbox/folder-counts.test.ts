@@ -2,7 +2,13 @@ import { assert, it } from "@effect/vitest";
 
 import type { Inbox } from "~/lib/inbox-client";
 
-import { countsAfterMove, countsOfForm, formsOfFolder, totalOf } from "./folder-counts.ts";
+import {
+  countsAfterMove,
+  countsAfterRemoval,
+  countsOfForm,
+  formsOfFolder,
+  totalOf,
+} from "./folder-counts.ts";
 
 const none = { received: 0, classifying: 0, accepted: 0, quarantined: 0, archived: 0 };
 const statuses = { received: 1, classifying: 2, accepted: 30, quarantined: 4, archived: 500 };
@@ -148,4 +154,34 @@ it("keeps a folder unfolded while its only form with a message is the open one",
   const rows = formsOfFolder([contact, quotes, press], counts, "accepted", "contact");
 
   assert.deepEqual(rows, [{ form: contact, total: 30 }]);
+});
+
+it("removes a deleted message from its status, for the organization and its form", () => {
+  const known = {
+    received: 0,
+    classifying: 0,
+    accepted: 2,
+    quarantined: 1,
+    archived: 0,
+    forms: [
+      {
+        publicId: "contact",
+        counts: { received: 0, classifying: 0, accepted: 2, quarantined: 0, archived: 0 },
+      },
+      {
+        publicId: "orders",
+        counts: { received: 0, classifying: 0, accepted: 0, quarantined: 1, archived: 0 },
+      },
+    ],
+  };
+
+  const after = countsAfterRemoval(known, "contact", "accepted");
+
+  assert.strictEqual(after.accepted, 1);
+  assert.strictEqual(after.quarantined, 1);
+  assert.strictEqual(
+    after.forms.find(({ publicId }) => publicId === "contact")?.counts.accepted,
+    1,
+  );
+  assert.strictEqual(countsAfterRemoval(after, "orders", "archived").archived, 0);
 });

@@ -110,7 +110,8 @@
       "apiTokens": "Jetons d’API",
       "quotas": "Plafonds quotidiens",
       "organization": "Nouvelle organisation",
-      "members": "Membres"
+      "members": "Membres",
+      "retention": "Conservation"
     },
     "statuses": {
       "received": "Reçu",
@@ -179,6 +180,22 @@
           "others_other": "Les autres formulaires ont {{count}} messages ici.",
           "showAll": "Afficher tous les formulaires"
         }
+      },
+      "search": {
+        "label": "Rechercher dans les messages",
+        "placeholder": "Rechercher dans les messages",
+        "clear": "Effacer la recherche",
+        "tooShort_one": "Saisissez au moins {{count}} caractère.",
+        "tooShort_many": "Saisissez au moins {{count}} caractères.",
+        "tooShort_other": "Saisissez au moins {{count}} caractères.",
+        "empty": "Aucun message ne contient « {{search}} »",
+        "showAll": "Afficher tous les messages"
+      },
+      "export": {
+        "label": "Exporter cette liste :",
+        "csv": "CSV",
+        "jsonl": "JSON Lines",
+        "limit": "(les 10 000 messages les plus récents au plus)"
       }
     },
     "reader": {
@@ -205,6 +222,14 @@
         "notSaved": "La décision n’a pas pu être enregistrée. Réessayez.",
         "alreadyHandled": "Ce message a déjà été traité.",
         "alreadyHandledRefresh": "Ce message a déjà été traité. Actualisez la liste pour voir son statut."
+      },
+      "delete": {
+        "action": "Supprimer ce message",
+        "title": "Supprimer ce message ?",
+        "description": "Le message, ses livraisons et leurs tentatives sont supprimés définitivement. Rondyr ne garde qu’une ligne indiquant qui a supprimé quel message et quand.",
+        "confirm": "Supprimer définitivement",
+        "deleting": "Suppression…",
+        "failed": "Le message n’a pas pu être supprimé. Réessayez."
       }
     },
     "deliveries": {
@@ -579,6 +604,22 @@
         "alreadyMember": "Cette adresse appartient déjà à un membre.",
         "limit": "Cette organisation a 20 invitations en attente. Annulez-en une avant d’inviter quelqu’un d’autre.",
         "inviteFailed": "L’invitation n’a pas pu être créée. Vérifiez l’adresse et réessayez."
+      }
+    },
+    "retention": {
+      "title": "Durée de conservation des messages",
+      "description": "Rondyr supprime, une fois par heure, les messages plus anciens que ces durées, comptées depuis leur réception. Laissez un champ vide pour conserver les messages sans limite. Un message supprimé ne peut pas être récupéré depuis le dashboard.",
+      "accepted": "Messages acceptés, en jours",
+      "quarantine": "Messages à relire et archivés, en jours",
+      "hint": "De 1 à {{maximum}} jours, ou vide pour les conserver.",
+      "unlimited": "Sans limite",
+      "saving": "Enregistrement…",
+      "loadFailed": "Impossible de charger les durées de conservation.",
+      "retry": "Réessayer",
+      "outcomes": {
+        "saved": "Durées de conservation enregistrées.",
+        "invalid": "Saisissez un nombre entier de jours de 1 à 3 650, ou laissez le champ vide.",
+        "failed": "Les durées de conservation n’ont pas pu être enregistrées. Réessayez."
       }
     }
   },

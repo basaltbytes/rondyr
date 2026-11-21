@@ -258,6 +258,6 @@ Delivery is at least once. If the Worker stops between sending a request and rec
 
 Attempts for different messages run independently, so a recipient can receive them out of order. Use `submission.receivedAt` to order them.
 
-## Not built yet
+## Roles
 
-- Every member of an organization can manage its webhooks, read the delivery history, retry a failed delivery and send a test; roles come with [#11](https://github.com/basaltbytes/rondyr/issues/11).
+Only an admin of the organization manages its webhooks, retries a failed delivery and sends a test, at most 3 tests a minute per destination. A reviewer reads the delivery history.

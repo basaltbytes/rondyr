@@ -12,7 +12,7 @@ curl --fail-with-body \
   https://rondyr.example.com/api/organizations
 ```
 
-The response is an array with one entry, the token's organization: `id`, `name`, and `forms`, each form with `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` and `turnstileSiteKey`. Use the organization's `id` in the review routes below.
+The response is an array with one entry, the token's organization: `id`, `name`, `role` (always `reviewer` for a token), and `forms`, each form with `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` and `turnstileSiteKey`. Use the organization's `id` in the review routes below.
 
 ## Routes
 
@@ -21,7 +21,7 @@ Paths beginning with `/{organizationId}` in this table are relative to `/api/org
 | Method | Path | Result |
 | --- | --- | --- |
 | `GET` | `/api/organizations` | An array with the token's organization and its forms |
-| `GET` | `/{organizationId}/submissions` | Up to 25 submissions, newest first, and a cursor for the next page. Optional filters are `status`, `form` (the form's public ID), and `after` (the cursor) |
+| `GET` | `/{organizationId}/submissions` | Up to 25 submissions, newest first, and a cursor for the next page. Optional filters are `status`, `form` (the form's public ID), `q` (text to find in the field values, 3 to 100 characters, ignoring the case of ASCII letters; `%` and `_` are ordinary characters), and `after` (the cursor) |
 | `GET` | `/{organizationId}/submission-counts` | Submission counts by status for the organization and each form with submissions |
 | `GET` | `/{organizationId}/submissions/{submissionId}` | Submission detail |
 | `POST` | `/{organizationId}/submissions/{submissionId}/approve` | Accepts a quarantined submission and returns its updated detail |

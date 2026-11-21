@@ -9,16 +9,17 @@ import type { OrganizationDomainList } from "@rondyr/organizations/organization-
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { listApiTokens } from "~/lib/api-tokens-client";
 import { getClassificationSettings } from "~/lib/classification-policy-client";
-import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
+import { countSubmissions, exportAddress, listInboxes, listSubmissions } from "~/lib/inbox-client";
 import { listMembers } from "~/lib/members-client";
 import type { MemberList } from "~/lib/members-client";
 import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
 import { listDomains } from "~/lib/organization-domains-client";
 import { getDailyUsage } from "~/lib/organization-quotas-client";
+import { getRetention } from "~/lib/retention-client";
 import { productName } from "~/lib/product";
 
 import { InboxSetup } from "./inbox-setup.tsx";
-import { countsAfterMove, countsOfForm, totalOf } from "./folder-counts.ts";
+import { countsAfterMove, countsAfterRemoval, countsOfForm, totalOf } from "./folder-counts.ts";
 import type { Folder } from "./folder-counts.ts";
 import { InboxSidebar } from "./inbox-sidebar.tsx";
 import type { Section } from "./inbox-sidebar.tsx";
@@ -44,6 +45,10 @@ const ClassificationSettings = lazy(async () => {
 });
 const MemberSettings = lazy(async () => {
   const { MemberSettings: Settings } = await import("./member-settings.tsx");
+  return { default: Settings };
+});
+const RetentionSettings = lazy(async () => {
+  const { RetentionSettings: Settings } = await import("./retention-settings.tsx");
   return { default: Settings };
 });
 const QuotaSettings = lazy(async () => {
@@ -77,6 +82,10 @@ interface Listing {
 type SettingsSelection =
   | { readonly section: "apiTokens"; readonly tokens: Promise<ApiTokenList | null> }
   | {
+      readonly section: "retention";
+      readonly retention: Promise<Awaited<ReturnType<typeof getRetention>> | null>;
+    }
+  | {
       readonly section: "members";
       readonly members: Promise<MemberList | null>;
       readonly readAt: number;
@@ -93,7 +102,7 @@ type SettingsSelection =
   | {
       readonly section: Exclude<
         Section,
-        "domains" | "classification" | "quotas" | "apiTokens" | "members"
+        "domains" | "classification" | "quotas" | "apiTokens" | "members" | "retention"
       >;
     };
 
@@ -122,6 +131,8 @@ function InboxView({
   const [folder, setFolder] = useState<Folder>("quarantined");
   // The public ID of the form that the list is narrowed to.
   const [form, setForm] = useState<string | null>(null);
+  // The text that the list is narrowed to.
+  const [searchText, setSearch] = useState<string | null>(null);
   const [selected, setSettings] = useState<SettingsSelection | null>(null);
   // A reviewer has no settings page, even one that was open before a change of role.
   const settings = inbox.role === "admin" || selected?.section === "organization" ? selected : null;
@@ -138,7 +149,7 @@ function InboxView({
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the list of messages with the Rondyr API.
   useEffect(() => {
     const request = new AbortController();
-    void listSubmissions(inbox.id, status, form, null, request.signal).then(
+    void listSubmissions(inbox.id, status, form, searchText, null, request.signal).then(
       ({ entries, cursor }) => {
         setFailed(false);
         setListing({ entries, cursor, readAt: Date.now() });
@@ -149,7 +160,7 @@ function InboxView({
     );
     return () => request.abort();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh initiates a new API request. A decision changes the list without one.
-  }, [inbox.id, status, form, revision]);
+  }, [inbox.id, status, form, searchText, revision]);
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the folder counts with the Rondyr API.
   useEffect(() => {
@@ -169,8 +180,11 @@ function InboxView({
   const above = listing?.entries[index - 1];
   const below = index < 0 ? undefined : listing?.entries[index + 1];
   const inFolder = counts === null ? null : totalOf(counts, folder);
-  const total =
+  const inForm =
     counts === null || form === null ? inFolder : totalOf(countsOfForm(counts, form), folder);
+  // The counts know nothing of a search.
+  const total = searchText === null ? inForm : null;
+  const administrator = inbox.role === "admin";
   const formName = inbox.forms.find(({ publicId }) => publicId === form)?.name ?? null;
 
   function openFolder(next: Folder, nextForm: string | null) {
@@ -202,6 +216,18 @@ function InboxView({
     setSettings({ section: "apiTokens", tokens: listApiTokens(inbox.id).catch(() => null) });
   }
 
+  function openRetention() {
+    setSettings({ section: "retention", retention: getRetention(inbox.id).catch(() => null) });
+  }
+
+  function search(next: string | null) {
+    setOpened(null);
+    if (next === searchText) return;
+    setSearch(next);
+    setListing(null);
+    setFailed(false);
+  }
+
   function openMembers() {
     setSettings({
       section: "members",
@@ -218,6 +244,7 @@ function InboxView({
     else if (next === "quotas") openQuotas();
     else if (next === "apiTokens") openApiTokens();
     else if (next === "members") openMembers();
+    else if (next === "retention") openRetention();
     else setSettings({ section: next });
   }
 
@@ -229,6 +256,7 @@ function InboxView({
         inbox.id,
         status,
         form,
+        searchText,
         listing.cursor,
         new AbortController().signal,
       );
@@ -241,6 +269,18 @@ function InboxView({
       setFailed(true);
     }
     setLoadingMore(false);
+  }
+
+  /** A message deleted for good leaves the list and the counts. */
+  function deleted(gone: SubmissionEntry) {
+    setCounts((known) =>
+      known === null ? null : countsAfterRemoval(known, gone.formPublicId, gone.status),
+    );
+    if (listing === null) return;
+    const at = listing.entries.findIndex((entry) => entry.submissionId === gone.submissionId);
+    const entries = listing.entries.filter((entry) => entry.submissionId !== gone.submissionId);
+    setListing({ ...listing, entries });
+    setOpened(entries[at] ?? entries[at - 1] ?? null);
   }
 
   function reviewed(updated: Submission) {
@@ -304,6 +344,16 @@ function InboxView({
               onMore={() => void loadMore()}
               onRefresh={() => setRevision((value) => value + 1)}
               onAllForms={() => openFolder(folder, null)}
+              search={searchText}
+              onSearch={search}
+              exports={
+                administrator
+                  ? {
+                      csv: exportAddress(inbox.id, "csv", status, form, searchText),
+                      jsonl: exportAddress(inbox.id, "jsonl", status, form, searchText),
+                    }
+                  : null
+              }
             />
             <section
               aria-label={t("inbox.reader.label")}
@@ -326,7 +376,8 @@ function InboxView({
                   onNext={below === undefined ? null : () => setOpened(below)}
                   onReviewed={reviewed}
                   onClose={() => setOpened(null)}
-                  administrator={inbox.role === "admin"}
+                  administrator={administrator}
+                  onDeleted={() => deleted(current)}
                 />
               )}
             </section>
@@ -360,6 +411,12 @@ function InboxView({
                 readAt={settings.readAt}
                 onRetry={openMembers}
                 onOwnMembershipChanged={() => void onFormsChanged()}
+              />
+            ) : settings.section === "retention" ? (
+              <RetentionSettings
+                inboxId={inbox.id}
+                retention={settings.retention}
+                onRetry={openRetention}
               />
             ) : settings.section === "quotas" ? (
               <QuotaSettings inboxId={inbox.id} usage={settings.usage} onRetry={openQuotas} />

@@ -876,3 +876,57 @@ test("invite a reviewer, who creates an account from the link and sees no settin
   ).toHaveValue("reviewer");
   await expect(page.getByText(t("inbox.members.noInvitations"))).toBeVisible();
 });
+
+test("search the messages, export the list, delete a message and keep messages 30 days", async ({
+  dashboard: page,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  for (const message of ["The needle is here", "Only hay in this one"]) {
+    const posted = await page.request.post(endpoint.href, {
+      data: { message, "fixture-verdict": "accept" },
+    });
+    expect(posted.status()).toBe(202);
+  }
+  await openSubmission(page, t("inbox.folders.accepted"), "Only hay in this one");
+
+  const list = page.getByRole("region", { name: t("inbox.list.label") });
+  await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).fill("NEEDLE");
+  await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).press("Enter");
+  await expect(list.getByRole("button").filter({ hasText: "The needle is here" })).toBeVisible();
+  await expect(list.getByRole("button").filter({ hasText: "Only hay in this one" })).toHaveCount(0);
+  const csv = list.getByRole("link", { name: t("inbox.list.export.csv"), exact: true });
+  const exported = await page.request.get(new URL(await csv.getAttribute("href"), endpoint).href);
+  expect(exported.headers()["cache-control"]).toBe("no-store");
+  const text = await exported.text();
+  expect(text).toContain("The needle is here");
+  expect(text).not.toContain("Only hay in this one");
+
+  const reader = await openMessage(page, "The needle is here");
+  const remove = reader.getByRole("button", { name: t("inbox.reader.delete.action") });
+  await remove.click();
+  const confirmation = page.getByRole("alertdialog", { name: t("inbox.reader.delete.title") });
+  await confirmation.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(remove).toBeFocused();
+  await remove.click();
+  await confirmation
+    .getByRole("button", { name: t("inbox.reader.delete.confirm"), exact: true })
+    .click();
+  await expect(list.getByRole("button").filter({ hasText: "The needle is here" })).toHaveCount(0);
+  await expect(
+    list.getByRole("heading", { name: t("inbox.list.search.empty", { search: "NEEDLE" }) }),
+  ).toBeVisible();
+
+  await openSection(page, t("inbox.sections.retention"));
+  const accepted = page.getByRole("spinbutton", { name: t("inbox.retention.accepted") });
+  await accepted.fill("30");
+  await page.getByRole("button", { name: t("common.save"), exact: true }).click();
+  await expect(page.getByText(t("inbox.retention.outcomes.saved"))).toBeVisible();
+  await page.reload();
+  await openSection(page, t("inbox.sections.retention"));
+  await expect(accepted).toHaveValue("30");
+  await expect(page.getByRole("spinbutton", { name: t("inbox.retention.quarantine") })).toHaveValue(
+    "",
+  );
+});

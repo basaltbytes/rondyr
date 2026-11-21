@@ -14,6 +14,7 @@ import {
   Network,
   ScanSearch,
   Send,
+  Timer,
   Users,
 } from "lucide-react";
 import { useState } from "react";
@@ -53,6 +54,7 @@ export type Section =
   | "quotas"
   | "apiTokens"
   | "members"
+  | "retention"
   | "organization"
   | "operations";
 
@@ -71,6 +73,7 @@ const settings = [
   ["quotas", Gauge],
   ["apiTokens", KeyRound],
   ["members", Users],
+  ["retention", Timer],
 ] as const;
 
 interface InboxSidebarProps {

@@ -16,6 +16,8 @@ import { formsLive } from "./adapters/database/forms.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
 import { membersLive } from "./adapters/database/members.ts";
 import { recipientConfirmationsLive } from "./adapters/database/recipient-confirmations.ts";
+import { submissionExportsLive } from "./adapters/database/submission-exports.ts";
+import { submissionRetentionLive } from "./adapters/database/submission-retention.ts";
 import { submissionIntakeLive } from "./adapters/database/intake.ts";
 import { notificationTargetsLive } from "./adapters/database/notification-targets.ts";
 import { operationsStoreLive } from "./adapters/database/operations-status.ts";
@@ -42,6 +44,7 @@ import { formRoutes } from "./http/form-routes.ts";
 import { invitationRoutes } from "./http/invitation-routes.ts";
 import { memberRoutes } from "./http/member-routes.ts";
 import { recipientConfirmationRoutes } from "./http/recipient-confirmation-routes.ts";
+import { submissionAdministrationRoutes } from "./http/submission-administration-routes.ts";
 import { operationsRoute } from "./http/operations-route.ts";
 import { organizationDomainRoutes } from "./http/organization-domain-routes.ts";
 import { organizationQuotaRoutes } from "./http/organization-quota-routes.ts";
@@ -52,6 +55,7 @@ import { submissionRoutes } from "./http/submission-routes.ts";
 import { targetRoutes } from "./http/target-routes.ts";
 import { consumeDeliveries, deliverySchedulerLive } from "./jobs/delivery-outbox.ts";
 import { publishOutboxes } from "./jobs/publish-outboxes.ts";
+import { purgeOnTheHour } from "./jobs/retention-purge.ts";
 import { consumeSubmissions } from "./jobs/submission-outbox.ts";
 import { BackgroundTasks } from "./ports/background-tasks.ts";
 
@@ -67,6 +71,8 @@ const services = Layer.mergeAll(
   clientRateLimitLive,
   testSendLimitLive,
   recipientConfirmationsLive,
+  submissionExportsLive,
+  submissionRetentionLive,
   formOriginsLive,
   formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,
@@ -114,6 +120,7 @@ const routes = Layer.mergeAll(
   memberRoutes,
   invitationRoutes,
   recipientConfirmationRoutes,
+  submissionAdministrationRoutes,
   operationsRoute,
 ).pipe(Layer.provide(apiTokenAuthentication));
 
@@ -151,7 +158,11 @@ export const workerImplementation = Effect.gen(function* () {
   yield* worker.listen((event) => {
     if (!isWorkerEvent(event)) return;
     if (event.type === "scheduled") {
-      return publishOutboxes().pipe(Effect.provideContext(context));
+      // The purge never fails the Cron, and runs whatever the publication did.
+      return publishOutboxes().pipe(
+        Effect.ensuring(purgeOnTheHour()),
+        Effect.provideContext(context),
+      );
     }
     if (event.type === "queue") {
       return consumeBatch(event.input).pipe(Effect.provideContext(context));

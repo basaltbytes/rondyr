@@ -37,6 +37,7 @@ export default defineConfig({
       "inbox.emails.resend.*",
       "recipientConfirmation.confirmed.*",
       "recipientConfirmation.invalid.*",
+      "inbox.retention.outcomes.*",
     ],
   },
   status: {
@@ -54,6 +55,8 @@ export default defineConfig({
       "inbox.forms.turnstile.title",
       "inbox.webhooks.title",
       "inbox.emails.active",
+      "inbox.list.export.csv",
+      "inbox.list.export.jsonl",
     ],
   },
   lint: {

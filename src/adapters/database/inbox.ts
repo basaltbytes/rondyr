@@ -14,6 +14,7 @@ import {
 } from "../../domain/submissions/submission.rejection.ts";
 import { SubmissionId } from "../../domain/submissions/submission.id.ts";
 import { d1, database } from "./d1.ts";
+import { filterConditions } from "./submission-filter.ts";
 
 const Cursor = Schema.fromJsonString(Schema.Tuple([Schema.Int, SubmissionId]));
 const decodeCursor = Schema.decodeUnknownEffect(Cursor);
@@ -50,7 +51,8 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
     yield* d1(() =>
       db
         .prepare(`
-      INSERT INTO submission_inbox (submission_id, version, status, reason, label) VALUES (?, ?, ?, ?, ?)
+      INSERT INTO submission_inbox (submission_id, version, status, reason, label)
+      SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM submissions WHERE id = ?1)
       ON CONFLICT (submission_id) DO UPDATE SET version = excluded.version,
         status = excluded.status, reason = excluded.reason, label = excluded.label
       WHERE excluded.version > submission_inbox.version
@@ -60,28 +62,23 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
     );
   }, Effect.mapError(inboxUnavailable)),
   list: Effect.fn("Inbox.list")(
-    function* (organizationId, { status, formPublicId }, take, after) {
+    function* (organizationId, filter, take, after) {
       const db = yield* database;
       const cursor =
         after === undefined
           ? null
           : yield* decodeCursor(after).pipe(Effect.mapError(() => InvalidInboxCursor.make()));
+      const conditions = filterConditions(organizationId, filter);
       const rows = yield* d1(() =>
         db
           .prepare(`
       SELECT ${columns}, s.fields ${tables}
-      WHERE s.organization_id = ?
-        AND (? IS NULL OR COALESCE(i.status, 'received') = ?)
-        AND (? IS NULL OR f.public_id = ?)
+      WHERE ${conditions.sql}
         AND (? IS NULL OR (s.received_at, s.id) < (?, ?))
       ORDER BY s.received_at DESC, s.id DESC LIMIT ?
     `)
           .bind(
-            organizationId,
-            status ?? null,
-            status ?? null,
-            formPublicId ?? null,
-            formPublicId ?? null,
+            ...conditions.bindings,
             cursor?.[0] ?? null,
             cursor?.[0] ?? null,
             cursor?.[1] ?? null,

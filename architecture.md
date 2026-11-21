@@ -1,7 +1,7 @@
 # Rondyr: technical architecture
 
 > **Tagline:** *The gatekeeper for your forms.*
-> **Status:** v0.1 in progress, document updated on 20 November 2026.
+> **Status:** v0.1 in progress, document updated on 21 November 2026.
 > **Production:** `https://rondyr.basaltbytes.com` (stage `prod`).
 
 This document describes what is built and what remains to be done for v0.1. Each gap between the two refers to a GitHub issue. Section 12 gives the order of work.
@@ -25,7 +25,7 @@ What distinguishes Rondyr from a SaaS form service: the filtering takes the orga
 | Intake limits | Done: size, schema, per-minute limits per client and per form, honeypot field, Turnstile and daily quotas per organization | |
 | Durable storage and outbox | Done | |
 | Classification and quarantine | Done: thresholds per classifier, policy per organization and optional escalation to a second model | |
-| Inbox and human review | Done | #11 for search, export and purge |
+| Inbox and human review | Done: search in the field values, export, deletion, retention per organization and hourly purge | |
 | API tokens per organization | Done, Part 1 of #59: a token reads its organization's inbox, accepts and archives messages | #59 Part 2 (server intake with an idempotency key) and Part 3 (EmDash plugin) |
 | Deliveries: tables, queue, attempts and retries | Done | |
 | Delivery history, manual retry, test send | Done, in the dashboard | |
@@ -263,7 +263,7 @@ State is split between two stores. D1 contains the configuration, the message co
 
 | Table | Content |
 | --- | --- |
-| `organizations` | `id`, `name`, `daily_submission_limit` (2,000 by default), `daily_classification_limit` (1,000 by default) |
+| `organizations` | `id`, `name`, `daily_submission_limit` (2,000 by default), `daily_classification_limit` (1,000 by default), `accepted_retention_days` and `quarantine_retention_days` (empty to keep messages without limit, the default) |
 | `organization_members` | `(organization_id, user_id)`, `role` (`reviewer` by default, or `admin`) |
 | `organization_invitations` | `id`, `organization_id`, `email` (in lowercase), `role`, `token_hash` (SHA-256 of the link's secret, unique), `created_by`, `created_at`, `expires_at`, `accepted_at` and `cancelled_at` (empty while the invitation is pending) |
 | `organization_domains` | `(organization_id, domain)`, up to ten per organization |
@@ -272,6 +272,7 @@ State is split between two stores. D1 contains the configuration, the message co
 | `forms` | `id`, `organization_id`, unique `public_id`, `name`, `business_context`, `status` (`active` by default, or `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (public) and `turnstile_secret` (encrypted). The last four fields are optional |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` is normalized: scheme, host and optional port, without a path or a trailing slash |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (optional), `sender_fingerprint` and `content_fingerprint` (optional), `prior_same_sender` and `prior_same_content` |
+| `submission_deletions` | `submission_id` (primary key), `organization_id`, `deleted_at`, `deleted_by` (the account, or empty for the retention period), `cause` (`request` or `retention`). No content |
 | `outbox_events` | `submission_id`, `lease_until`, `published_at`, `handed_off_at` |
 | `submission_inbox` | `submission_id`, `version`, `status`, `reason`, `label` (optional) |
 | `email_recipient_confirmations` | `(organization_id, address)` with the address in lowercase, `token_hash` (SHA-256 of the pending link's secret, unique) and `token_expires_at`, `confirmed_at` (empty while pending), `emails_day` and `emails_sent` (the confirmation emails of the address on that UTC day), `created_at` |
@@ -293,7 +294,7 @@ The `turnstile-and-organization-quotas` migration adds the settings with `ALTER 
 
 The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
-The `organization-administration` migration adds `organization_members.role` with `ALTER TABLE`, `NOT NULL` and the default `reviewer`, the least right, then gives every existing member the `admin` role: before roles, every member had every right. It creates `organization_invitations` with a unique index on `token_hash`, a partial unique index on `(organization_id, email)` limited to pending invitations, and an index on `(email, created_at)` for the daily count of invitation emails per address. `role` has no `CHECK` constraint, for the same reason as `forms.status`; `MemberRole` decodes it on every read. The same migration creates `email_recipient_confirmations`, with a unique index on `token_hash` and an index on `(address, emails_day)` for the daily count, and marks every recipient of the email destinations that exist at that moment as confirmed for its organization, so that they keep their deliveries.
+The `organization-administration` migration adds `organization_members.role` with `ALTER TABLE`, `NOT NULL` and the default `reviewer`, the least right, then gives every existing member the `admin` role: before roles, every member had every right. It creates `organization_invitations` with a unique index on `token_hash`, a partial unique index on `(organization_id, email)` limited to pending invitations, and an index on `(email, created_at)` for the daily count of invitation emails per address. `role` has no `CHECK` constraint, for the same reason as `forms.status`; `MemberRole` decodes it on every read. The same migration creates `email_recipient_confirmations`, with a unique index on `token_hash` and an index on `(address, emails_day)` for the daily count, and marks every recipient of the email destinations that exist at that moment as confirmed for its organization, so that they keep their deliveries. It adds `organizations.accepted_retention_days` and `organizations.quarantine_retention_days` with `ALTER TABLE`, without a default value: every organization keeps its messages, as before. It creates `submission_deletions` with an index on `(organization_id, deleted_at)`. It changes neither `forms` nor `submissions`.
 
 The `api-tokens` migration creates `api_tokens` with a unique index on `token_hash` and a partial index on `(organization_id, created_at, id)` limited to active tokens, which serves both the token list and the count of active tokens at creation. It changes no existing table.
 
@@ -312,11 +313,10 @@ The aggregate goes from `Unrecorded` to `Classifying`, then to `Quarantined` or 
 
 The visible statuses are `received`, `classifying`, `quarantined`, `accepted` and `archived`. The Inbox `reason` field contains the quarantine reason, including `turnstile-failed` or `quota` for these intake checks.
 
-Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests and in the text of emails. Events contain only IDs, scores and the ID of the account or API token that decided, and deliveries only IDs, states and error summaries, which limits a purge to D1 rows (#11). Deleting a submission deletes its deliveries and their attempts.
+Message content exists only in `submissions.fields`, and leaves it only in the body of webhook requests, in the text of emails and in an export. Events contain only IDs, scores and the ID of the account or API token that decided, and deliveries only IDs, states and error summaries, so a deletion only has D1 rows to delete. Deleting a submission deletes its outbox event, its inbox row, its deliveries and their attempts, through the `ON DELETE CASCADE` foreign keys, which D1 enforces.
 
 ### Planned tables
 
-- Retention periods (#11).
 
 The `classification-attempts` and `audit-events` tables of the initial document are not planned: the aggregate's event stream records the decisions and who made them.
 
@@ -415,7 +415,10 @@ The dashboard uses the Better Auth session. Another program can call the review 
 | `PUT /api/organizations/:organizationId/forms/:publicId/turnstile` | Turns Turnstile on or replaces both keys (`{ "siteKey", "secretKey" }`) if Siteverify recognizes the secret key. A refused key answers `400` with `{"error":"turnstile-secret-refused"}`, and an unreachable Siteverify `503` with `{"error":"siteverify-unavailable"}`; the stored keys do not change. Without an encryption key, answers `503` with `{"error":"secrets-key-missing"}` |
 | `GET /api/organizations/:organizationId/forms/:publicId/turnstile` | Decrypts the stored secret key, asks Siteverify about it with `checkSecret`, and returns `{"state":…}`: `working`, `refused` (Siteverify no longer knows the key), `unreadable` (the key does not decrypt with the current `RONDYR_SECRETS_KEY`, or that variable is missing) or `unchecked` (Siteverify did not answer). Writes nothing. A form without Turnstile answers `404`, like another organization's form, and neither calls Siteverify |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/turnstile` | Turns Turnstile off and erases both keys |
-| `GET /api/organizations/:organizationId/submissions` | Paginated list (`status`, `form`, `after`), 25 messages per page, each with a preview of its fields (`preview`): each value is cut at 240 characters, so that a page of long messages stays light. `form` is the public ID of a form and narrows the list to its messages |
+| `GET /api/organizations/:organizationId/submissions` | Paginated list (`status`, `form`, `q`, `after`), 25 messages per page, each with a preview of its fields (`preview`): each value is cut at 240 characters, so that a page of long messages stays light. `form` is the public ID of a form and narrows the list to its messages |
+| `GET /api/organizations/:organizationId/submission-export?format=csv` or `jsonl` | The list with the same filters (`status`, `form`, `q`), newest first, with the full fields: at most 10,000 messages, streamed page by page, with `Cache-Control: no-store`, `Content-Disposition: attachment` and `Rondyr-Export-Truncated: true` when the list has more. The CSV has a column per field name and an apostrophe before a value that a spreadsheet would run as a formula; a JSON Lines line has `submissionId`, `receivedAt` (ISO 8601), `form`, `status`, `reason`, `label` and `fields` |
+| `DELETE /api/organizations/:organizationId/submissions/:submissionId` | Deletes the message and what depends on it, logs the deletion, and answers `204`, or `404` |
+| `GET /api/organizations/:organizationId/retention`, `PUT` the same | The retention periods `{ "accepted", "quarantine" }`, each a number of days from 1 to 3,650 or `null` for no limit. An invalid body answers `400` |
 | `GET /api/organizations/:organizationId/submission-counts` | Number of the organization's messages per status, and in `forms` the same count for each form that has at least one message (`[{"publicId", "counts"}]`) |
 | `GET /api/organizations/:organizationId/submissions/:submissionId` | Message detail |
 | `POST /api/organizations/:organizationId/submissions/:submissionId/approve` or `/dismiss` | Review decision |
@@ -441,7 +444,7 @@ A refused success URL answers `400` with `{"error":"success-url-refused","reason
 
 Every route of this table under `/api/organizations/:organizationId` asks `authorize`, in `src/http/organization-access.ts`, for a permission, except the review routes, which go through the domain model. A `reviewer` may list and read messages, count them, accept, archive and read the delivery history; every other route needs the `admin` role and answers `403` to a reviewer. An account without a role in the organization gets `404`, as for an organization that does not exist. `GET /api/operations` returns only the organizations that the account administers.
 
-Still to add: search and export (#11).
+The search (`q`) finds 3 to 100 characters anywhere in the values of the fields, not in their names, with `LIKE … ESCAPE '\\'` on `json_each(fields)`: `%`, `_` and `\\` are escaped and match themselves. SQLite's `LIKE` ignores the case of ASCII letters only, so `é` does not find `É`. There is no full-text index: a search reads the messages of the organization from the newest until it fills a page. It combines with the status, the form and the cursor, and an API token may use it. The export, the deletion and the retention need the `admin` role; the counts of the folders ignore the search.
 
 ## 8. Defenses and privacy
 
@@ -543,7 +546,19 @@ The `email` provider reads the confirmed addresses among the recipients before e
 
 ### Personal data
 
-Message content is in D1, and the technical logs contain none of it: the consumer writes only the error type. Retention is unlimited until #11 adds retention periods, scheduled purge, export and deletion on request. Self-hosting does not exempt the operator from its GDPR obligations; the documentation must list the subprocessors, including the model provider and the stage's email provider, Resend or Cloudflare Email Sending. Resend keeps sent emails for the period of its plan; `docs/email.md` points this out.
+Message content is in D1, and the technical logs contain none of it: the consumer writes only the error type.
+
+#### Deletion and retention
+
+An admin deletes a message from the dashboard, after a confirmation in the page rather than a browser dialog, or with `DELETE …/submissions/:submissionId`. One D1 batch writes a line to `submission_deletions` (organization, message ID, date, account) and deletes the row of `submissions`; the foreign keys delete its outbox event, its inbox row, its deliveries and their attempts. The deleted message leaves the Inbox and the delivery history, and a review command on its ID answers `404`, because the route reads the message first. The aggregate keeps its state in its Durable Object: if a classification was running, its result reaches the projection, which writes an inbox row only for a submission that still exists, and the delivery policy finds no submission to deliver.
+
+Each organization can set two retention periods, in days from the reception of the message: one for accepted messages, one for messages in quarantine and archived ones. Both are empty by default, which keeps messages without limit, as before. A message still received or being classified has no status yet and is never purged. Once an hour, in the first minute of the hour, the Cron runs the purge after the publications: it selects up to 500 expired messages, the oldest first, then one D1 batch logs them with the author `retention` (an empty `deleted_by` and the cause `retention`) and deletes them, checking the period again. A run does at most 20 batches. A batch is one transaction, so a run that stops leaves whole batches behind it, and the next run selects what is still expired. A message is expired once its age reaches the period: `received_at <= now - days × 86,400,000`. Selecting the expired messages reads every older message of an organization that has a period, which is why the purge runs hourly and not every minute; a failure is logged and does not fail the Cron.
+
+What remains after a deletion:
+
+- The event stream of the submission in its Durable Object: IDs, the organization, scores, the classifier, the quarantine reason and the account or API token that decided, without any field value. Nothing deletes it.
+- D1 Time Travel keeps a restorable history of the database for 30 days on Workers Paid and 7 days on the free plan: a restore to an earlier point brings the deleted rows back.
+- The copies sent out before the deletion: webhook requests received by the recipients, emails in the mailboxes and in the provider's logs (Resend keeps sent emails for the period of its plan), and the exports that someone downloaded. Self-hosting does not exempt the operator from its GDPR obligations; the documentation must list the subprocessors, including the model provider and the stage's email provider, Resend or Cloudflare Email Sending. Resend keeps sent emails for the period of its plan; `docs/email.md` points this out.
 
 ## 9. Directory tree
 
@@ -625,6 +640,7 @@ A recipient Worker, declared in the same place, records each request and answers
 - Intake atomicity, recovery through the outbox, double delivery of a queue message, isolation between organizations, concurrent review decisions.
 - Publication at intake without republication by the Cron, send failure picked up by the Cron after the lease expires, Cron kept out during a direct publication.
 - Turnstile: secret key encrypted and absent from responses; storage refused without `RONDYR_SECRETS_KEY`, for a key that Siteverify refuses (`400`) and when Siteverify does not answer or reports `internal-error` (`503`), without changing the stored keys; `404` for another account, without a Siteverify call; valid token, missing token, token refused with status 200 or 400, key that became unknown, service unavailable and timeout at intake, with a fake Siteverify defined in `tests/integration/external-workers.ts`. Daily quotas: exact boundary of both quotas under concurrency, duplicate queue message, reset at the UTC day change, bounds and isolation of the API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
+- Search, export, deletion and retention, through the built Worker: a search with `%` and `_` that match only themselves, without regard to the case of ASCII letters, in the values and not the names of the fields, combined with the status and paged with the cursor; a CSV export with a column per field, quotes and a neutralized formula, and a JSON Lines export of the searched list, both with `Cache-Control: no-store`; the 10,000 newest of 10,001 messages with `Rondyr-Export-Truncated: true`; a deletion that removes the submission, its outbox event, its inbox row, its delivery and its attempt, checked table by table, logs the account, and leaves the message out of the list, the detail, the delivery history and the review routes (`404`); a quarantined message deleted then accepted gets `404` and no inbox row comes back; retention periods saved and refused out of bounds; a purge that deletes accepted, quarantined and archived messages at the exact end of their period and keeps those a millisecond younger, a message still received and the messages of an organization without a period, with a log line per message; a purge stopped by a trigger in its second batch keeps the first batch done, and the next run deletes the rest, logging each message once; `404` for each of these routes in another organization. Playwright searches, downloads the CSV of the search, deletes a message after cancelling once, and saves a retention period.
 - Confirmed recipients, through the built Worker with the fake Resend: a link that confirms once, then answers `404`, from an email that names neither the organization nor the form; an expired link; a delivery and a test that go to the confirmed recipient only, and a destination without a confirmed recipient whose delivery fails with its message still accepted; 3 tests a minute then `429` with `Retry-After: 60`; 3 confirmation emails a day for an address across two organizations, then `429`; another organization's admin gets `404` for listing and resending, an address confirmed in one organization stays pending in another, which sends it nothing, and `409` for a confirmed address. The Cloudflare test Worker confirms its recipient from the email that the binding received before sending its test. Playwright confirms a recipient from the link of its email before the test send.
 - Roles and invitations, through the built Worker: each administration route refused with `403` to a reviewer and with `404` to an account of another organization, without changing the organization; a reviewer lists, counts, accepts, archives and reads the delivery history, and the status page leaves out its organization; an invitation emailed through the fake Resend with a link whose secret D1 keeps only hashed, and whose email names no organization; expired, reused and cancelled invitations refused, without creating an account; acceptance with a new account that then signs in, and with an existing account after sign-in, refused without a session and with another account; invitation of a member and over the limit of 20 refused; role change and removal, the last admin refused, and under concurrency when two admins leave, step down or demote each other at the same time. Stories: a reviewer accepts one message and archives another; an admin of another organization gets `SubmissionNotFound` for the list, an acceptance and an archiving.
 - API tokens, through the built Worker: creation that stores only the SHA-256 hash and the last four characters; `401` for an unknown and for a revoked token, even with a valid cookie; each allowed route with a token and no `Origin`; `403` on every other `/api` route; `404` on every review route of another organization and on its messages, which stay quarantined; a token that wins over another account's cookie; ten active tokens under concurrent creation, then a free slot after a revocation; management refused to a non-member; acceptance and archiving recorded with the token ID; manual decisions stored before API tokens still decode. Stories for acceptance and archiving by a token, and a type test that a dismissal cannot be built without exactly one author. Playwright creates a token, copies it, sees it only once, and revokes it after a confirmation.
@@ -681,19 +697,16 @@ The project depends on Alchemy 2.0 beta, Drizzle 1.0 RC and Effect 4, pinned to 
 
 In production on 20 November 2026: reliable intake, classification with Jev or OpenAI Decisions, quarantine and review, delivery by signed webhook and by email (Resend), delivery history and retry, JSON from a browser with allowed origins, form administration, per-client limit and honeypot field. `pnpm evaluate` measures the classifiers on a labeled corpus.
 
-Three issues remain open. They are independent of each other and can be worked on in any order or in parallel; each one is delivered whole, in one pull request:
+Two issues remain open. They are independent of each other and can be worked on in any order or in parallel; each one is delivered whole, in one pull request:
 
 - #59, EmDash integration. Part 1, API tokens per organization, is delivered. Part 2, authenticated intake from a server with an idempotency key, and Part 3, the EmDash plugin, remain.
-- #11, organization administration: members and roles, confirmed email recipients and limited test sends, search, export and purge.
 - #43, operations: processing status, stuck processing, runbook, staging and the install guide. The run-through on a fresh Cloudflare account needs a person.
 
 **Migrations.** Each issue has one Drizzle migration, generated at the end with `pnpm db:generate --name …`. Another branch may carry a migration at the same time; a migration is regenerated on top of `main` when its pull request merges.
 
 ## 13. Open decisions
 
-| Decision | Tracking |
-| --- | --- |
-| Default retention periods, export and purge | #11 |
+None at the moment.
 
 ### Decisions made
 
