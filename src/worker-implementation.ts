@@ -2,7 +2,7 @@ import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import { isWorkerEvent } from "@alchemy.run/cloudflare/Workers/WorkerRuntime";
 import * as DomainCloudflare from "@alchemy.run/domain/Cloudflare";
 import { Effect, Layer } from "effect";
-import { HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
+import { FetchHttpClient, HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
 
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
@@ -17,6 +17,7 @@ import { submissionIntakeLive } from "./adapters/database/intake.ts";
 import { notificationTargetsLive } from "./adapters/database/notification-targets.ts";
 import { operationsStoreLive } from "./adapters/database/operations-status.ts";
 import { organizationDirectoryLive } from "./adapters/database/organization-directory.ts";
+import { organizationQuotasLive } from "./adapters/database/organization-quotas.ts";
 import { outboxLive } from "./adapters/database/outbox.ts";
 import { storedMessagesLive } from "./adapters/database/stored-messages.ts";
 import { emailSenderLive } from "./adapters/email/email-sender.ts";
@@ -26,6 +27,7 @@ import { deliveryQueueLive } from "./adapters/queues/delivery-queue.ts";
 import { eventBackgroundTasks } from "./adapters/workers/background-tasks.ts";
 import { clientRateLimitLive } from "./adapters/workers/client-rate-limit.ts";
 import { cronHeartbeatLive } from "./adapters/workers/cron-heartbeat.ts";
+import { turnstileVerifierLive } from "./adapters/workers/siteverify.ts";
 import { Submissions, submissionHandlers } from "./domain/submissions/submissions.model.ts";
 import { authenticationRoutes } from "./http/authentication.ts";
 import { classificationPolicyRoutes } from "./http/classification-policy-routes.ts";
@@ -33,6 +35,7 @@ import { deliveryRoutes } from "./http/delivery-routes.ts";
 import { formRoutes } from "./http/form-routes.ts";
 import { operationsRoute } from "./http/operations-route.ts";
 import { organizationDomainRoutes } from "./http/organization-domain-routes.ts";
+import { organizationQuotaRoutes } from "./http/organization-quota-routes.ts";
 import { originRoutes } from "./http/origin-routes.ts";
 import { publicRoutes } from "./http/public-routes.ts";
 import { reviewRoutes } from "./http/review-routes.ts";
@@ -44,14 +47,18 @@ import { consumeSubmissions } from "./jobs/submission-outbox.ts";
 import { BackgroundTasks } from "./ports/background-tasks.ts";
 
 const deliveries = Layer.mergeAll(deliveryStoreLive, deliveryQueueLive);
+const turnstile = turnstileVerifierLive.pipe(
+  Layer.provide([secretCipherLive, FetchHttpClient.layer]),
+);
 const services = Layer.mergeAll(
   authenticationLive,
   HttpServer.layerServices,
-  submissionIntakeLive,
+  submissionIntakeLive.pipe(Layer.provide(turnstile)),
   clientRateLimitLive,
   formOriginsLive,
-  formsLive,
+  formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,
+  organizationQuotasLive,
   classificationPoliciesLive,
   outboxLive,
   classificationQueueLive,
@@ -83,6 +90,7 @@ const routes = Layer.mergeAll(
   targetRoutes,
   originRoutes,
   organizationDomainRoutes,
+  organizationQuotaRoutes,
   classificationPolicyRoutes,
   formRoutes,
   deliveryRoutes,

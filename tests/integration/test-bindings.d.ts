@@ -5,6 +5,7 @@ declare global {
     interface Env {
       TEST_WORKER: Fetcher;
       CLOUDFLARE_EMAIL_WORKER: Fetcher;
+      KEYLESS_WORKER: Fetcher;
       CLOUDFLARE_EMAIL_FIXTURE: Fetcher;
       CLOUDFLARE_EMAIL_DB: D1Database;
       WEBHOOK_RECEIVER: Fetcher;
@@ -12,6 +13,7 @@ declare global {
       WORKERS_AI_FIXTURE: Fetcher;
       ESCALATION_WORKER: Fetcher;
       SAME_CLASSIFIER_WORKER: Fetcher;
+      SITEVERIFY_FIXTURE: Fetcher;
       WORKER_LOGS: Fetcher;
       TEST_MIGRATIONS: D1Migration[];
     }

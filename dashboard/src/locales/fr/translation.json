@@ -49,7 +49,9 @@
       "solicitation": "Démarchage commercial non sollicité",
       "classification-error": "Analyse indisponible",
       "honeypot": "Champ piège rempli",
-      "repetition": "Envois répétés"
+      "repetition": "Envois répétés",
+      "turnstile-failed": "Échec de la vérification Turnstile",
+      "quota": "Plafond quotidien de classification atteint"
     },
     "deliveries": {
       "pending": "En attente",
@@ -105,6 +107,7 @@
       "origins": "Origines autorisées",
       "domains": "Domaines de l’organisation",
       "classification": "Classification",
+      "quotas": "Plafonds quotidiens",
       "organization": "Nouvelle organisation"
     },
     "statuses": {
@@ -286,6 +289,23 @@
         "save": "Enregistrer le champ piège",
         "remove": "Retirer le champ piège"
       },
+      "turnstile": {
+        "title": "Turnstile",
+        "description": "Utilisez la clé de site et la clé secrète de votre widget Cloudflare Turnstile.",
+        "siteKey": "Clé de site",
+        "secretKey": "Clé secrète",
+        "save": "Enregistrer les clés Turnstile",
+        "saving": "Enregistrement des réglages Turnstile…",
+        "disable": "Désactiver Turnstile",
+        "embed": "Collez ce HTML dans votre formulaire. Chargez le script une seule fois par page.",
+        "copy": "Copier le HTML",
+        "copied": "HTML copié.",
+        "copyFailed": "La copie a échoué. Sélectionnez et copiez le HTML ci-dessus.",
+        "secretsKeyMissing": "Configurez RONDYR_SECRETS_KEY sur le Worker pour activer Turnstile.",
+        "secretKeyRefused": "Cloudflare ne reconnaît pas cette clé secrète. Copiez-la de nouveau depuis les réglages du widget dans le tableau de bord Cloudflare.",
+        "siteverifyUnavailable": "Cloudflare n’a pas pu vérifier la clé secrète, donc rien n’a été enregistré. Réessayez dans un instant.",
+        "saveFailed": "Impossible d’enregistrer les réglages Turnstile."
+      },
       "suspension": {
         "title": "Suspension",
         "suspendedTitle": "Formulaire suspendu",
@@ -316,6 +336,18 @@
       "retry": "Réessayer",
       "addFailed": "Impossible d’ajouter le domaine. Réessayez.",
       "removeFailed": "Impossible de retirer le domaine. Réessayez."
+    },
+    "quotas": {
+      "description": "Les plafonds s’appliquent à tous les formulaires de l’organisation. Les compteurs repartent à zéro à minuit UTC.",
+      "day": "Consommation du {{day}} (UTC)",
+      "submissions": "Plafond quotidien de soumissions",
+      "classifications": "Plafond quotidien de classifications",
+      "used": "{{used}} sur {{limit}} utilisés",
+      "saving": "Enregistrement des plafonds…",
+      "saved": "Plafonds enregistrés.",
+      "saveFailed": "Impossible d’enregistrer les plafonds.",
+      "loadFailed": "Impossible de charger les plafonds quotidiens.",
+      "retry": "Réessayer"
     },
     "policy": {
       "description": "{{classifier}} analyse les soumissions de cette organisation. Les réglages personnalisés s’appliquent aux nouvelles analyses.",

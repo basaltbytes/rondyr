@@ -27,6 +27,8 @@ import {
 import type { Form, FormProblem as FormRequestProblem } from "~/lib/forms-client";
 import type { Inbox } from "~/lib/inbox-client";
 
+import { FormTurnstile } from "./form-turnstile.tsx";
+
 const isFailed = Schema.is(FormRequestFailed);
 
 /** Why a request to the forms API failed: the problem that the API names, or no stated reason. */
@@ -57,7 +59,9 @@ function FormFailureNote({ failure, fallback }: FormFailureNoteProps) {
   if (failure === null) return null;
   return (
     <FormProblem>
-      {failure === "unexplained" ? fallback : t(`inbox.forms.redirect.refusals.${failure.reason}`)}
+      {failure !== "unexplained" && failure.error === "success-url-refused"
+        ? t(`inbox.forms.redirect.refusals.${failure.reason}`)
+        : fallback}
     </FormProblem>
   );
 }
@@ -312,6 +316,8 @@ export function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
           </form>
         </CardContent>
       </Card>
+
+      <FormTurnstile inboxId={inboxId} form={form} onChanged={onChanged} />
 
       <Card>
         <CardHeader>

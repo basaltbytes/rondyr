@@ -7,6 +7,9 @@ import { HttpRouter, HttpServer } from "effect/http";
 import { testOrigin as origin } from "../../tests/integration/auth-fixture.ts";
 import wrangler from "../../wrangler.json" with { type: "json" };
 import { submissionIntakeLive } from "../adapters/database/intake.ts";
+import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
+import { turnstileVerifierLive } from "../adapters/workers/siteverify.ts";
+import { FetchHttpClient } from "effect/http";
 import { outboxLive } from "../adapters/database/outbox.ts";
 import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { BackgroundTasks } from "../ports/background-tasks.ts";
@@ -79,7 +82,10 @@ it.live(
           Option.none(),
         ),
       );
-      const services = yield* Layer.build(submissionIntakeLive);
+      const verifier = turnstileVerifierLive.pipe(
+        Layer.provide([secretCipherLive, FetchHttpClient.layer]),
+      );
+      const services = yield* Layer.build(submissionIntakeLive.pipe(Layer.provide(verifier)));
       const context = yield* Effect.context<never>();
       const run = Effect.runPromiseWith(context);
       yield* Effect.promise(() =>

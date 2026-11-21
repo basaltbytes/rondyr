@@ -87,7 +87,6 @@ export default defineConfig({
         BETTER_AUTH_SECRET: "workerd-test-only-better-auth-secret-8ea101",
         BETTER_AUTH_URL: testOrigin,
         RONDYR_SETUP_TOKEN: testSetupToken,
-        RONDYR_SECRETS_KEY: testSecretsKey,
         RONDYR_EMAIL_FROM: testEmailFrom,
       };
       const queueProducers = Object.fromEntries(
@@ -106,10 +105,12 @@ export default defineConfig({
           serviceBindings: {
             TEST_WORKER: "rondyr-test-app",
             CLOUDFLARE_EMAIL_WORKER: "rondyr-test-cloudflare-email",
+            KEYLESS_WORKER: "rondyr-test-keyless",
             CLOUDFLARE_EMAIL_FIXTURE: "cloudflare-email-fixture",
             WEBHOOK_RECEIVER: "webhook-receiver-fixture",
             RESEND_FIXTURE: "resend-fixture",
             WORKERS_AI_FIXTURE: "workers-ai-fixture",
+            SITEVERIFY_FIXTURE: "siteverify-fixture",
             WORKER_LOGS: "worker-log-fixture",
             ...Object.fromEntries(escalationWorkers.map(({ binding, name }) => [binding, name])),
           },
@@ -129,6 +130,7 @@ export default defineConfig({
               bindings: {
                 ...bindings,
                 RESEND_API_KEY: testResendKey,
+                RONDYR_SECRETS_KEY: testSecretsKey,
               },
             },
             {
@@ -137,7 +139,17 @@ export default defineConfig({
               d1Databases: { DB: cloudflareEmailDatabase },
               queueConsumers: {},
               unsafeBindings: [cloudflareEmailBinding],
-              bindings: { ...bindings, RONDYR_EMAIL_PROVIDER: "cloudflare" },
+              bindings: {
+                ...bindings,
+                RONDYR_EMAIL_PROVIDER: "cloudflare",
+                RONDYR_SECRETS_KEY: testSecretsKey,
+              },
+            },
+            {
+              ...worker,
+              name: "rondyr-test-keyless",
+              queueConsumers: {},
+              bindings,
             },
             ...escalationWorkers.map(({ name, classifier }) => {
               const queue = `${name}-classification`;

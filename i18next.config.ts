@@ -42,6 +42,7 @@ export default defineConfig({
       "inbox.deliveries.webhook",
       "inbox.forms.honeypot.placeholder",
       "inbox.forms.suspension.title",
+      "inbox.forms.turnstile.title",
       "inbox.webhooks.title",
       "inbox.emails.active",
     ],

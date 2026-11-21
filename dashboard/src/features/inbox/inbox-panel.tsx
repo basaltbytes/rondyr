@@ -10,6 +10,7 @@ import { getClassificationSettings } from "~/lib/classification-policy-client";
 import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
 import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
 import { listDomains } from "~/lib/organization-domains-client";
+import { getDailyUsage } from "~/lib/organization-quotas-client";
 import { productName } from "~/lib/product";
 
 import { InboxSetup } from "./inbox-setup.tsx";
@@ -31,6 +32,10 @@ const OrganizationDomains = lazy(async () => {
 });
 const ClassificationSettings = lazy(async () => {
   const { ClassificationSettings: Settings } = await import("./classification-settings.tsx");
+  return { default: Settings };
+});
+const QuotaSettings = lazy(async () => {
+  const { QuotaSettings: Settings } = await import("./quota-settings.tsx");
   return { default: Settings };
 });
 
@@ -63,7 +68,11 @@ type SettingsSelection =
       readonly section: "classification";
       readonly policy: Promise<Awaited<ReturnType<typeof getClassificationSettings>> | null>;
     }
-  | { readonly section: Exclude<Section, "domains" | "classification"> };
+  | {
+      readonly section: "quotas";
+      readonly usage: Promise<Awaited<ReturnType<typeof getDailyUsage>> | null>;
+    }
+  | { readonly section: Exclude<Section, "domains" | "classification" | "quotas"> };
 
 interface InboxViewProps {
   readonly inboxes: readonly Inbox[];
@@ -160,11 +169,16 @@ function InboxView({
     });
   }
 
+  function openQuotas() {
+    setSettings({ section: "quotas", usage: getDailyUsage(inbox.id).catch(() => null) });
+  }
+
   function openSection(next: Section) {
     if (next === section) return;
     setOpened(null);
     if (next === "domains") openDomains();
     else if (next === "classification") openClassification();
+    else if (next === "quotas") openQuotas();
     else setSettings({ section: next });
   }
 
@@ -293,6 +307,8 @@ function InboxView({
                 settings={settings.policy}
                 onRetry={openClassification}
               />
+            ) : settings.section === "quotas" ? (
+              <QuotaSettings inboxId={inbox.id} usage={settings.usage} onRetry={openQuotas} />
             ) : (
               <InboxSettings
                 section={settings.section}
