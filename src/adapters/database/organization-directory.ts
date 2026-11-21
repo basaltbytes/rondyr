@@ -2,6 +2,7 @@ import { Effect, Layer, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
 import { ManagedForm } from "../../domain/forms/form.ts";
+import { MemberRole } from "../../domain/organizations/member-role.ts";
 import {
   maxOrganizationDomains,
   OrganizationDomain,
@@ -22,7 +23,10 @@ import { d1, database } from "./d1.ts";
 import { managedFormColumns } from "./forms.ts";
 
 const decodeOrganization = Schema.decodeUnknownEffect(InboxOrganization);
-const decodeOrganizations = Schema.decodeUnknownEffect(Schema.Array(InboxOrganization));
+const decodeMemberships = Schema.decodeUnknownEffect(
+  Schema.Array(InboxOrganization.mapFields((fields) => ({ ...fields, role: MemberRole }))),
+);
+const decodeRole = Schema.decodeUnknownEffect(Schema.Struct({ role: MemberRole }));
 const decodeForms = Schema.decodeUnknownEffect(Schema.Array(ManagedForm));
 const unavailable = () => InboxUnavailable.make();
 const unreadable = () => StorageUnavailable.make();
@@ -40,14 +44,28 @@ const organizationsFor = Effect.fn("OrganizationDirectory.organizationsFor")(fun
   const rows = yield* d1(() =>
     db
       .prepare(`
-    SELECT o.id, o.name FROM organizations o JOIN organization_members m ON m.organization_id = o.id
+    SELECT o.id, o.name, m.role FROM organizations o
+      JOIN organization_members m ON m.organization_id = o.id
     WHERE m.user_id = ? ORDER BY o.name, o.id
   `)
       .bind(userId)
       .all(),
   );
-  return yield* decodeOrganizations(rows.results);
+  return yield* decodeMemberships(rows.results);
 }, Effect.mapError(unavailable));
+
+const roleOf = Effect.fn("OrganizationDirectory.roleOf")(function* (scope: OrganizationScope) {
+  const db = yield* database;
+  const row = yield* d1(() =>
+    db
+      .prepare("SELECT role FROM organization_members WHERE user_id = ? AND organization_id = ?")
+      .bind(scope.userId, scope.organizationId)
+      .first(),
+  );
+  if (row === null) return null;
+  const { role } = yield* decodeRole(row).pipe(Effect.mapError(unreadable));
+  return role;
+});
 
 const formsOf = Effect.fn("OrganizationDirectory.formsOf")(function* (
   userId: typeof UserId.Type,
@@ -103,7 +121,9 @@ const create = Effect.fn("OrganizationDirectory.create")(function* (
         .prepare("INSERT INTO organizations (id, name) VALUES (?, ?)")
         .bind(organizationId, input.organizationName),
       db
-        .prepare("INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)")
+        .prepare(
+          "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
+        )
         .bind(organizationId, userId),
       db
         .prepare(`
@@ -185,6 +205,7 @@ const removeDomain = Effect.fn("OrganizationDirectory.removeDomain")(function* (
 
 export const organizationDirectoryLive = Layer.succeed(OrganizationDirectory, {
   organizationsFor,
+  roleOf,
   formsOf,
   inboxFor,
   create,

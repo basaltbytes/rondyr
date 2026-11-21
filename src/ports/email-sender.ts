@@ -1,6 +1,5 @@
 import { Context, Effect, Option, Schema } from "effect";
 
-import type { DeliveryId } from "../domain/deliveries/delivery.ts";
 import type { EmailAddress, EmailRecipients } from "../domain/deliveries/email.ts";
 
 /** The stage has no email provider: its credentials or its sender address are not set. */
@@ -31,8 +30,11 @@ export interface EmailMessage {
   readonly replyTo: Option.Option<EmailAddress>;
   readonly subject: string;
   readonly text: string;
-  /** The same on every attempt of a delivery, so that the provider sends the message once. */
-  readonly idempotencyKey: DeliveryId;
+  /**
+   * The same on every attempt of a delivery, so that the provider sends the
+   * message once. Another email has a new key of its own.
+   */
+  readonly idempotencyKey: string;
 }
 
 export class EmailSender extends Context.Service<

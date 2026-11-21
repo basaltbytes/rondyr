@@ -26,7 +26,7 @@ const newForm = "new";
 interface FormListProps {
   readonly section: Exclude<
     Section,
-    "classification" | "domains" | "operations" | "quotas" | "apiTokens"
+    "classification" | "domains" | "operations" | "quotas" | "apiTokens" | "members"
   >;
   readonly forms: readonly Form[];
   /** The form shown in the next pane. */

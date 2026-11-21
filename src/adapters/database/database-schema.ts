@@ -93,10 +93,42 @@ export const organizationMembers = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    // `reviewer` or `admin`, decoded by MemberRole. The least right is the default.
+    role: text().notNull().default("reviewer"),
   },
   (table) => [
     primaryKey({ columns: [table.organizationId, table.userId] }),
     index("organization_members_user_idx").on(table.userId),
+  ],
+);
+
+// An address invited to an organization with a role. D1 keeps the hash of the
+// link's secret only. An invitation is pending while it has neither
+// `accepted_at` nor `cancelled_at`, and usable while it has not expired either.
+export const organizationInvitations = sqliteTable(
+  "organization_invitations",
+  {
+    id: text().primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // In lowercase, as Better Auth stores the address of an account.
+    email: text().notNull(),
+    role: text().notNull(),
+    tokenHash: text("token_hash").notNull(),
+    createdBy: text("created_by").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    acceptedAt: integer("accepted_at"),
+    cancelledAt: integer("cancelled_at"),
+  },
+  (table) => [
+    check("organization_invitations_id_not_null", sql`${table.id} is not null`),
+    uniqueIndex("organization_invitations_token_unique").on(table.tokenHash),
+    uniqueIndex("organization_invitations_pending_unique")
+      .on(table.organizationId, table.email)
+      .where(sql`${table.acceptedAt} is null and ${table.cancelledAt} is null`),
+    index("organization_invitations_email_idx").on(table.email, table.createdAt),
   ],
 );
 

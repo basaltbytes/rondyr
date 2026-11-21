@@ -28,6 +28,11 @@ export default defineConfig({
       "inbox.origins.refusals.*",
       "inbox.webhooks.refusals.*",
       "inbox.emails.refusals.*",
+      "inbox.members.roles.*",
+      "inbox.members.emails.*",
+      "inbox.members.problems.*",
+      "invitation.as.*",
+      "invitation.problems.*",
     ],
   },
   status: {

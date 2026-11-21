@@ -28,7 +28,7 @@ import {
   TargetStatus,
   type FormScope,
 } from "../ports/notification-targets.ts";
-import { reviewer } from "./review-routes.ts";
+import { authorize } from "./organization-access.ts";
 
 const FormPath = Schema.Struct({
   organizationId: OrganizationId,
@@ -59,6 +59,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
+        PermissionDenied: () => empty(403),
+        OrganizationNotFound: () => empty(404),
         TargetNotFound: () => empty(404),
         TargetChanged: () => empty(409),
         SchemaError: () => empty(400),
@@ -70,11 +72,13 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
     }),
   );
 
-const account = Effect.map(reviewer(), ({ userId }) => userId);
+/** An admin of the organization of the path, who manages the destinations of its forms. */
+const account = (organizationId: OrganizationId) =>
+  Effect.map(authorize(organizationId, "manage-destinations"), ({ userId }) => userId);
 
 const list = Effect.gen(function* () {
-  const userId = yield* account;
   const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
+  const userId = yield* account(organizationId);
   const targets = yield* NotificationTargets;
   const found = yield* targets.list({ userId, organizationId, formPublicId: publicId });
   return yield* HttpServerResponse.schemaJson(Schema.Array(DestinationTarget))(found, jsonOptions);
@@ -119,16 +123,16 @@ const createEmail = Effect.fnUntraced(function* (
 });
 
 const create = Effect.gen(function* () {
-  const userId = yield* account;
   const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
+  const userId = yield* account(organizationId);
   const input = yield* HttpServerRequest.schemaBodyJson(CreateTarget);
   const form: FormScope = { userId, organizationId, formPublicId: publicId };
   return yield* input.type === "webhook" ? createWebhook(form, input) : createEmail(form, input);
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
 
 const replaceRecipients = Effect.gen(function* () {
-  const userId = yield* account;
   const { organizationId, targetId } = yield* HttpRouter.schemaPathParams(TargetPath);
+  const userId = yield* account(organizationId);
   const input = yield* HttpServerRequest.schemaBodyJson(ReplaceEmailRecipients);
   const recipients = parseEmailRecipients(input.recipients);
   if (Result.isFailure(recipients)) return yield* recipientsRefused(recipients.failure);
@@ -142,16 +146,16 @@ const replaceRecipients = Effect.gen(function* () {
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
 
 const rotate = Effect.gen(function* () {
-  const userId = yield* account;
   const { organizationId, targetId } = yield* HttpRouter.schemaPathParams(TargetPath);
+  const userId = yield* account(organizationId);
   const targets = yield* NotificationTargets;
   const issued = yield* targets.rotateSecret({ userId, organizationId, targetId });
   return yield* issuedJson(issued, jsonOptions);
 });
 
 const setStatus = Effect.gen(function* () {
-  const userId = yield* account;
   const { action, organizationId, targetId } = yield* HttpRouter.schemaPathParams(StatusPath);
+  const userId = yield* account(organizationId);
   const targets = yield* NotificationTargets;
   const status: typeof TargetStatus.Type = action === "activate" ? "active" : "inactive";
   const target = yield* targets.setStatus({ userId, organizationId, targetId }, status);

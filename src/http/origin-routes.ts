@@ -15,7 +15,7 @@ import {
 } from "../domain/forms/allowed-origin.ts";
 import { OrganizationId } from "../domain/submissions/submission.id.ts";
 import { FormOrigins } from "../ports/form-origins.ts";
-import { reviewer } from "./review-routes.ts";
+import { authorize } from "./organization-access.ts";
 
 const FormPath = Schema.Struct({
   organizationId: OrganizationId,
@@ -39,6 +39,8 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => empty(401),
         AuthOriginRefused: () => empty(403),
+        PermissionDenied: () => empty(403),
+        OrganizationNotFound: () => empty(404),
         FormOriginNotFound: () => empty(404),
         OriginInUse: () => errorJson({ error: "origin-in-use" }, { status: 409, ...jsonOptions }),
         SchemaError: () => empty(400),
@@ -46,10 +48,10 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
     }),
   );
 
-/** The signed-in account and the form of the path. */
+/** An admin of the organization and the form of the path. */
 const scope = Effect.gen(function* () {
-  const { userId } = yield* reviewer();
   const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
+  const { userId } = yield* authorize(organizationId, "manage-forms");
   return { userId, organizationId, formPublicId: publicId };
 });
 

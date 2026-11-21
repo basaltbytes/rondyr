@@ -65,8 +65,8 @@ it.live(
           env.DB.prepare(
             `INSERT INTO organizations (id, name) VALUES ('studio', 'Atelier'), ('empty', 'Vide'), ('hidden', 'Autre')`,
           ),
-          env.DB.prepare(`INSERT INTO organization_members (organization_id, user_id)
-        SELECT o.id, u.id FROM auth_users u CROSS JOIN organizations o WHERE o.id IN ('studio', 'empty')`),
+          env.DB.prepare(`INSERT INTO organization_members (organization_id, user_id, role)
+        SELECT o.id, u.id, 'admin' FROM auth_users u CROSS JOIN organizations o WHERE o.id IN ('studio', 'empty')`),
           env.DB.prepare(`INSERT INTO forms (id, organization_id, public_id, name)
         VALUES ('studio-form', 'studio', 'studio-public', 'Atelier'), ('hidden-form', 'hidden', 'hidden-public', 'Autre')`),
           env.DB.prepare(`INSERT INTO submissions (id, organization_id, form_id, fields, received_at) VALUES

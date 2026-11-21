@@ -20,7 +20,7 @@ What distinguishes Rondyr from a SaaS form service: the filtering takes the orga
 | --- | --- | --- |
 | Alchemy deployment, `staging` and `prod` stages, CI | Done | #43 for a fresh account |
 | First account, sessions, closed sign-up | Done | |
-| Organizations and forms | Done: adding, name, business context, suspension, success redirect and allowed origins per form | #11 for roles |
+| Organizations and forms | Done: adding, name, business context, suspension, success redirect and allowed origins per form; members with the `reviewer` or `admin` role, invitations | |
 | JSON, `application/x-www-form-urlencoded` and `multipart/form-data` intake without files | Done, including JSON from a browser on another origin | |
 | Intake limits | Done: size, schema, per-minute limits per client and per form, honeypot field, Turnstile and daily quotas per organization | |
 | Durable storage and outbox | Done | |
@@ -28,7 +28,7 @@ What distinguishes Rondyr from a SaaS form service: the filtering takes the orga
 | Inbox and human review | Done | #11 for search, export and purge |
 | API tokens per organization | Done, Part 1 of #59: a token reads its organization's inbox, accepts and archives messages | #59 Part 2 (server intake with an idempotency key) and Part 3 (EmDash plugin) |
 | Deliveries: tables, queue, attempts and retries | Done | |
-| Delivery history, manual retry, test send | Done, in the dashboard | #11 for roles |
+| Delivery history, manual retry, test send | Done, in the dashboard | |
 | Signed webhook delivery | Done | |
 | Email delivery | Resend by default, Cloudflare Email Sending on the stages that choose it | Recipient confirmation (#11) |
 | Processing status and recovery procedures | Counters per organization, last successful Cron and runbook | #43 for the staging gate and stuck processing |
@@ -265,7 +265,8 @@ State is split between two stores. D1 contains the configuration, the message co
 | Table | Content |
 | --- | --- |
 | `organizations` | `id`, `name`, `daily_submission_limit` (2,000 by default), `daily_classification_limit` (1,000 by default) |
-| `organization_members` | `(organization_id, user_id)`, without a role |
+| `organization_members` | `(organization_id, user_id)`, `role` (`reviewer` by default, or `admin`) |
+| `organization_invitations` | `id`, `organization_id`, `email` (in lowercase), `role`, `token_hash` (SHA-256 of the link's secret, unique), `created_by`, `created_at`, `expires_at`, `accepted_at` and `cancelled_at` (empty while the invitation is pending) |
 | `organization_domains` | `(organization_id, domain)`, up to ten per organization |
 | `organization_classification_policies` | Custom classification settings, at most one row per organization |
 | `organization_daily_usage` | One row per organization with the last UTC day `day` and its counters: `submissions` (stored submissions other than junk), `classifications` and `junk` (stored junk, section 8) |
@@ -292,6 +293,8 @@ The `turnstile-and-organization-quotas` migration adds the settings with `ALTER 
 
 The `junk-budget` migration adds `organization_daily_usage.junk` with `ALTER TABLE`, `NOT NULL` and a default of 0. On the day of the deployment, junk stored before the migration stays counted in `submissions`, so that day can refuse a little earlier than the next ones. Every statement that moves `day` to a new date must reset `junk` along with the other counters.
 
+The `organization-administration` migration adds `organization_members.role` with `ALTER TABLE`, `NOT NULL` and the default `reviewer`, the least right, then gives every existing member the `admin` role: before roles, every member had every right. It creates `organization_invitations` with a unique index on `token_hash`, a partial unique index on `(organization_id, email)` limited to pending invitations, and an index on `(email, created_at)` for the daily count of invitation emails per address. `role` has no `CHECK` constraint, for the same reason as `forms.status`; `MemberRole` decodes it on every read.
+
 The `api-tokens` migration creates `api_tokens` with a unique index on `token_hash` and a partial index on `(organization_id, created_at, id)` limited to active tokens, which serves both the token list and the count of active tokens at creation. It changes no existing table.
 
 A delivery has one of the statuses `pending`, `processing`, `delivered`, `retrying` or `failed`. `next_attempt_at` says when an attempt can start: the creation, the end of the retry delay or the end of the current attempt's lease. An attempt has the outcome `delivered`, `retryable-failure`, `permanent-failure` or `interrupted`, or none while it runs. A manual retry opens a new series on the same delivery without erasing its attempts; the history and the retry needed no migration. The admin API creates webhook and email destinations; the existing `notification_targets` table is enough, without a migration. The adapter reads the recipient list back with the same schema as at creation: a row edited by hand that no longer follows the rule makes the delivery fail without a retry.
@@ -313,7 +316,6 @@ Message content exists only in `submissions.fields`, and leaves it only in the b
 
 ### Planned tables
 
-- Role in `organization_members` and invitations (#11).
 - Retention periods (#11).
 
 The `classification-attempts` and `audit-events` tables of the initial document are not planned: the aggregate's event stream records the decisions and who made them.
@@ -382,8 +384,15 @@ The dashboard uses the Better Auth session. Another program can call the review 
 | Route | Purpose |
 | --- | --- |
 | `POST /api/setup` | Creates the first account, with the setup token |
+| `POST /api/invitations/read` | Returns the invitation of a link (`{"token":…}`): `organizationName`, `email`, `role` and `account` (`existing` or `new`). An unknown, expired, accepted or cancelled invitation answers `404` with `{"error":"invitation-invalid"}`. No session is needed |
+| `POST /api/invitations/accept` | Accepts an invitation (`{"token":…}`). A signed-in account at the invited address joins with `200`; another account gets `403` with `{"error":"other-account"}`. Without a session, `name` and `password` create an account at the invited address and join, with `201`; if an account already has the address, `409` with `{"error":"sign-in-required"}` |
 | `GET /api/auth/get-session`, `POST /api/auth/sign-in/email`, `POST /api/auth/sign-out` | Better Auth session |
-| `GET /api/organizations` | The account's organizations and their forms. With an API token, only the token's organization and its forms |
+| `GET /api/organizations` | The account's organizations, its `role` in each and their forms. With an API token, only the token's organization and its forms, with the role `reviewer` |
+| `GET /api/organizations/:organizationId/members` | `{ "members", "invitations" }`: each member's `userId`, `name`, `email` and `role`, and the pending invitations with their `expiresAt` |
+| `POST /api/organizations/:organizationId/invitations` | Invites an address (`{"email":…,"role":…,"language":…}`, language `en` by default) and answers `201` with the invitation, its `link`, the only time it is shown, and what became of the email (`sent`, `no-provider`, `limit-reached` or `failed`). A new invitation replaces the pending one of the same address. `409` with `{"error":"already-member"}` or `{"error":"invitation-limit"}` (20 unexpired invitations) |
+| `DELETE /api/organizations/:organizationId/invitations?id=…` | Cancels a pending invitation: `204`, or `404` |
+| `PATCH /api/organizations/:organizationId/members/:userId` | Changes the role (`{"role":…}`) and returns the member; `409` with `{"error":"last-admin"}` for the last admin |
+| `DELETE /api/organizations/:organizationId/members/:userId` | Removes the member: `204`, `404` for an account that is not a member, `409` with `{"error":"last-admin"}` for the last admin |
 | `GET /api/organizations/:organizationId/api-tokens` | Lists the active tokens, newest first, with their name, last four characters and creation date |
 | `POST /api/organizations/:organizationId/api-tokens` | Creates a token (`{"name":…}`) and returns its value, the only time it is shown, with `201` and `Cache-Control: no-store`. An eleventh active token gets `409` |
 | `DELETE /api/organizations/:organizationId/api-tokens?id=…` | Revokes the token for good and answers `204`, or `404` for a token that is unknown or already revoked |
@@ -428,7 +437,9 @@ The submission routes go through `ReviewApi`, the domain model's API, called in 
 
 A refused success URL answers `400` with `{"error":"success-url-refused","reason":…}`. A refused webhook URL answers `400` with `{"error":"destination-refused","reason":…}`. A refused origin answers `400` with `{"error":"origin-refused","reason":…}`; `parseAllowedOrigin`, in `src/domain/forms/allowed-origin.ts`, accepts HTTPS, and HTTP only for `localhost`, `127.0.0.0/8` and `[::1]`, then normalizes the origin. It refuses a path, query parameters, a fragment, credentials and wildcards (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Without `RONDYR_SECRETS_KEY`, creation and rotation answer `503` with `{"error":"secrets-key-missing"}`; listing and activation work. A refused recipient list answers `400` with `{"error":"recipients-refused","reason":…}` (`no-recipients`, `too-many-recipients`, `invalid-address`, `duplicate-address`). Without `RONDYR_EMAIL_FROM`, or without the key or binding of the chosen email provider, creating an email destination answers `503` with `{"error":"email-provider-missing"}`; listing, editing recipients and activation work. Responses that contain a secret have `Cache-Control: no-store`, like every admin API response. [docs/webhooks.md](docs/webhooks.md) documents the contract for recipients, and [docs/email.md](docs/email.md) the provider setup and the message format.
 
-Still to add: members and roles, search and export (#11).
+Every route of this table under `/api/organizations/:organizationId` asks `authorize`, in `src/http/organization-access.ts`, for a permission, except the review routes, which go through the domain model. A `reviewer` may list and read messages, count them, accept, archive and read the delivery history; every other route needs the `admin` role and answers `403` to a reviewer. An account without a role in the organization gets `404`, as for an organization that does not exist. `GET /api/operations` returns only the organizations that the account administers.
+
+Still to add: search and export (#11).
 
 ## 8. Defenses and privacy
 
@@ -471,7 +482,21 @@ The classification quota counts 1,000 slots per day by default. The intake batch
 - Better Auth rate-limits sign-in attempts, with a counter in D1.
 - Every admin query is scoped to the account's organizations or to the token's organization, and the aggregate checks this access again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, the delivery history, retries and test sends, and every review route with a token of another organization.
 
-Today every member has all rights over their organization, including adding, editing and suspending its forms and managing its API tokens, and any signed-in account can create one (#11). For deliveries, `deliveryOperator`, in `src/http/delivery-routes.ts`, decides who reads the history, retries and sends a test: that is where #11 will check the role. #11 will also reserve API token management, in `src/http/api-token-routes.ts`, to administrators.
+#### Roles
+
+A member of an organization is a `reviewer` or an `admin`. `allows(role, permission)`, in `src/domain/organizations/member-role.ts`, decides every right from the role, and nothing else does. The administration routes call `authorize(organizationId, permission)`, which reads the account's role with one D1 query and answers `404` without a role and `403` with a role that lacks the permission. The review session gives the domain model the account's organizations with its role in each, and the queries and the aggregate check `reviewerMay(reviewer, organizationId, permission)`, which calls `allows`: an account without a role in the organization gets `SubmissionNotFound`. An API token has the role `reviewer` of its organization (`apiTokenRole`), and its middleware keeps its narrower list of routes. The D1 adapters still join `organization_members` on every query, so a route that forgot the check would still be limited to the account's organizations.
+
+A reviewer reads the Inbox and the delivery history, accepts and archives. An admin also manages forms, allowed origins, honeypot field, Turnstile, destinations, retries, test sends, members, organization settings, API tokens, export, deletion and retention. Any signed-in account can create an organization and becomes its admin.
+
+The last admin of an organization can be neither removed nor demoted. The `UPDATE` or `DELETE` statement that changes the member counts the admins itself, so two admins who leave or demote each other at the same time leave one admin. A removed member keeps a session, which no longer opens anything of the organization.
+
+#### Invitations
+
+An admin invites an address with a role. The link is `/invitation#<secret>`: 32 random bytes in base64url, in the fragment, which neither a request nor a log carries. D1 keeps the SHA-256 hash; the secret is in the creation response only. An invitation works once, for 7 days, and an admin can cancel it; inviting the same address again replaces it. An organization has at most 20 unexpired pending invitations. The dashboard page sends the secret in the body of `POST /api/invitations/read` and `/accept`, which refuse a request from another origin like every session route.
+
+When the stage has an email provider, the route also emails the link through the `EmailSender` port, with fixed text in English or French that names neither the organization nor the person who invited: a compromised account cannot use it to send its own words. An address gets at most 3 invitation emails in 24 hours, across organizations; beyond that, and without a provider, the admin copies the link.
+
+Accepting with a new account creates the Better Auth user and credential account, the membership and the acceptance in one D1 batch, with Better Auth's password hash and the rules of the first account (name of 1 to 100 characters, password of 12 to 128). The account gets the invited address, so nobody can choose another one. If an account already has the address, its owner signs in first; a signed-in account with another address is refused.
 
 The success URL does not allow an open redirect: it comes from D1, its origin is an allowed origin of the form, and only a member of the organization can change it.
 
@@ -535,7 +560,7 @@ Message content is in D1, and the technical logs contain none of it: the consume
 │   │                               # delivery-queue, notification-provider,
 │   │                               # notification-targets, secret-cipher, form-origins,
 │   │                               # forms, email-sender, delivery-history,
-│   │                               # client-rate-limit
+│   │                               # client-rate-limit, members
 │   ├── adapters/
 │   │   ├── ai/                     # classifier, jev, openai-decisions
 │   │   ├── authentication/         # better-auth, provider
@@ -550,7 +575,7 @@ Message content is in D1, and the technical logs contain none of it: the consume
 │   │   └── workers/                # background-tasks (Alchemy's waitUntil), client-rate-limit
 │   │                               # (Rate Limiting binding)
 │   ├── http/                       # public, submission, authentication, review, target, origin,
-│   │                               # form, delivery
+│   │                               # form, delivery, member, invitation, organization-access
 │   └── jobs/
 │       ├── submission-outbox.ts    # publication (intake and Cron), queue consumer
 │       └── delivery-outbox.ts      # DeliveryScheduler, publication (policy and Cron),
@@ -590,6 +615,7 @@ A recipient Worker, declared in the same place, records each request and answers
 - Intake atomicity, recovery through the outbox, double delivery of a queue message, isolation between organizations, concurrent review decisions.
 - Publication at intake without republication by the Cron, send failure picked up by the Cron after the lease expires, Cron kept out during a direct publication.
 - Turnstile: secret key encrypted and absent from responses; storage refused without `RONDYR_SECRETS_KEY`, for a key that Siteverify refuses (`400`) and when Siteverify does not answer or reports `internal-error` (`503`), without changing the stored keys; `404` for another account, without a Siteverify call; valid token, missing token, token refused with status 200 or 400, key that became unknown, service unavailable and timeout at intake, with a fake Siteverify defined in `tests/integration/external-workers.ts`. Daily quotas: exact boundary of both quotas under concurrency, duplicate queue message, reset at the UTC day change, bounds and isolation of the API. Junk quota: other submissions accepted once junk has used up its quota, junk quarantined and then refused once other submissions have used up theirs, exact boundary across concurrent posts on two forms, reset at the next UTC day, also when an escalation reservation opens the day, and no counter change on a duplicated queue message. Stored Turnstile key: `working`, `refused`, `unreadable` (a key encrypted with a previous `RONDYR_SECRETS_KEY`, and a Worker without that variable) and `unchecked`, then `404` for another organization's form and for a form without Turnstile, without a call to Siteverify. Playwright checks the warning for a key that Cloudflare no longer accepts and the junk count in Daily quotas.
+- Roles and invitations, through the built Worker: each administration route refused with `403` to a reviewer and with `404` to an account of another organization, without changing the organization; a reviewer lists, counts, accepts, archives and reads the delivery history, and the status page leaves out its organization; an invitation emailed through the fake Resend with a link whose secret D1 keeps only hashed, and whose email names no organization; expired, reused and cancelled invitations refused, without creating an account; acceptance with a new account that then signs in, and with an existing account after sign-in, refused without a session and with another account; invitation of a member and over the limit of 20 refused; role change and removal, the last admin refused, and under concurrency when two admins leave, step down or demote each other at the same time. Stories: a reviewer accepts one message and archives another; an admin of another organization gets `SubmissionNotFound` for the list, an acceptance and an archiving.
 - API tokens, through the built Worker: creation that stores only the SHA-256 hash and the last four characters; `401` for an unknown and for a revoked token, even with a valid cookie; each allowed route with a token and no `Origin`; `403` on every other `/api` route; `404` on every review route of another organization and on its messages, which stay quarantined; a token that wins over another account's cookie; ten active tokens under concurrent creation, then a free slot after a revocation; management refused to a non-member; acceptance and archiving recorded with the token ID; manual decisions stored before API tokens still decode. Stories for acceptance and archiving by a token, and a type test that a dismissal cannot be built without exactly one author. Playwright creates a token, copies it, sees it only once, and revokes it after a confirmation.
 - Intake responses `400`, `413`, `415` and `429`, including a body of exactly 16 KiB accepted, and `X-Content-Type-Options` on the Worker's responses.
 - Per-client limit: a client over its limit gets `429` with `Retry-After`, `Access-Control-Expose-Headers` and the list's CORS headers, without storage, while another client and a request without an address go through; form cap reached by two clients under their limit; grouping of IPv6 addresses by `/64`.

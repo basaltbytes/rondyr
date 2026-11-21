@@ -10,6 +10,8 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/s
 import { listApiTokens } from "~/lib/api-tokens-client";
 import { getClassificationSettings } from "~/lib/classification-policy-client";
 import { countSubmissions, listInboxes, listSubmissions } from "~/lib/inbox-client";
+import { listMembers } from "~/lib/members-client";
+import type { MemberList } from "~/lib/members-client";
 import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
 import { listDomains } from "~/lib/organization-domains-client";
 import { getDailyUsage } from "~/lib/organization-quotas-client";
@@ -38,6 +40,10 @@ const OrganizationDomains = lazy(async () => {
 });
 const ClassificationSettings = lazy(async () => {
   const { ClassificationSettings: Settings } = await import("./classification-settings.tsx");
+  return { default: Settings };
+});
+const MemberSettings = lazy(async () => {
+  const { MemberSettings: Settings } = await import("./member-settings.tsx");
   return { default: Settings };
 });
 const QuotaSettings = lazy(async () => {
@@ -70,6 +76,11 @@ interface Listing {
 
 type SettingsSelection =
   | { readonly section: "apiTokens"; readonly tokens: Promise<ApiTokenList | null> }
+  | {
+      readonly section: "members";
+      readonly members: Promise<MemberList | null>;
+      readonly readAt: number;
+    }
   | { readonly section: "domains"; readonly domains: Promise<OrganizationDomainList | null> }
   | {
       readonly section: "classification";
@@ -79,7 +90,12 @@ type SettingsSelection =
       readonly section: "quotas";
       readonly usage: Promise<Awaited<ReturnType<typeof getDailyUsage>> | null>;
     }
-  | { readonly section: Exclude<Section, "domains" | "classification" | "quotas" | "apiTokens"> };
+  | {
+      readonly section: Exclude<
+        Section,
+        "domains" | "classification" | "quotas" | "apiTokens" | "members"
+      >;
+    };
 
 interface InboxViewProps {
   readonly inboxes: readonly Inbox[];
@@ -106,7 +122,9 @@ function InboxView({
   const [folder, setFolder] = useState<Folder>("quarantined");
   // The public ID of the form that the list is narrowed to.
   const [form, setForm] = useState<string | null>(null);
-  const [settings, setSettings] = useState<SettingsSelection | null>(null);
+  const [selected, setSettings] = useState<SettingsSelection | null>(null);
+  // A reviewer has no settings page, even one that was open before a change of role.
+  const settings = inbox.role === "admin" || selected?.section === "organization" ? selected : null;
   const [listing, setListing] = useState<Listing | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [opened, setOpened] = useState<SubmissionEntry | null>(null);
@@ -184,6 +202,14 @@ function InboxView({
     setSettings({ section: "apiTokens", tokens: listApiTokens(inbox.id).catch(() => null) });
   }
 
+  function openMembers() {
+    setSettings({
+      section: "members",
+      members: listMembers(inbox.id).catch(() => null),
+      readAt: Date.now(),
+    });
+  }
+
   function openSection(next: Section) {
     if (next === section) return;
     setOpened(null);
@@ -191,6 +217,7 @@ function InboxView({
     else if (next === "classification") openClassification();
     else if (next === "quotas") openQuotas();
     else if (next === "apiTokens") openApiTokens();
+    else if (next === "members") openMembers();
     else setSettings({ section: next });
   }
 
@@ -299,6 +326,7 @@ function InboxView({
                   onNext={below === undefined ? null : () => setOpened(below)}
                   onReviewed={reviewed}
                   onClose={() => setOpened(null)}
+                  administrator={inbox.role === "admin"}
                 />
               )}
             </section>
@@ -324,6 +352,14 @@ function InboxView({
                 inboxId={inbox.id}
                 tokens={settings.tokens}
                 onRetry={openApiTokens}
+              />
+            ) : settings.section === "members" ? (
+              <MemberSettings
+                inboxId={inbox.id}
+                members={settings.members}
+                readAt={settings.readAt}
+                onRetry={openMembers}
+                onOwnMembershipChanged={() => void onFormsChanged()}
               />
             ) : settings.section === "quotas" ? (
               <QuotaSettings inboxId={inbox.id} usage={settings.usage} onRetry={openQuotas} />

@@ -6,6 +6,7 @@ import {
   HttpServerResponse,
 } from "effect/http";
 
+import { apiTokenRole } from "../domain/organizations/member-role.ts";
 import { InboxOrganizationWithForms, SetupInbox } from "../domain/submissions/inbox-setup.ts";
 import {
   InboxFilter,
@@ -14,13 +15,8 @@ import {
   SubmissionDetail,
 } from "../domain/submissions/inbox.ts";
 import { ReviewApi } from "../domain/submissions/review.api.ts";
-import {
-  CurrentReviewer,
-  ReviewSession,
-  ReviewUnauthorized,
-} from "../domain/submissions/review-session.middleware.ts";
-import { OrganizationId, SubmissionId, UserId } from "../domain/submissions/submission.id.ts";
-import { Authentication } from "../ports/authentication.ts";
+import { CurrentReviewer, ReviewSession } from "../domain/submissions/review-session.middleware.ts";
+import { OrganizationId, SubmissionId } from "../domain/submissions/submission.id.ts";
 import { OrganizationDirectory } from "../ports/organization-directory.ts";
 import {
   countsPath,
@@ -30,6 +26,7 @@ import {
   organizationPath,
   submissionsPath,
 } from "./api-token-authentication.ts";
+import { signedInAccount } from "./organization-access.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
 const SubmissionPath = Schema.Struct({
@@ -49,23 +46,19 @@ const ListParams = OrganizationPath.mapFields((fields) => ({
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 
-/** The signed-in account and its organizations, or `ReviewUnauthorized`. */
-export const reviewer = Effect.fn("ReviewRoute.reviewer")(function* () {
-  const auth = yield* Authentication;
-  const incoming = yield* HttpServerRequest.HttpServerRequest;
-  const request = yield* HttpServerRequest.toWeb(incoming);
-  const user = yield* auth.userId(request);
-  if (user === null) return yield* ReviewUnauthorized.make();
-  const userId = yield* Schema.decodeEffect(UserId)(user);
+/** The signed-in account and its organizations, each with the account's role in it. */
+const memberships = Effect.gen(function* () {
+  const userId = yield* signedInAccount();
   const directory = yield* OrganizationDirectory;
   const organizations = yield* directory.organizationsFor(userId);
   return { userId, organizations };
 });
 
-const sessionReviewer = reviewer().pipe(
+/** The domain decides each review right from these roles, with `allows`. */
+const sessionReviewer = memberships.pipe(
   Effect.map(({ userId, organizations }) => ({
     userId,
-    organizations: organizations.map(({ id }) => id),
+    memberships: organizations.map(({ id, role }) => ({ organizationId: id, role })),
   })),
 );
 
@@ -74,7 +67,10 @@ const reviewClient = Effect.gen(function* () {
   const actor =
     token === null
       ? yield* sessionReviewer
-      : { apiTokenId: token.apiTokenId, organizations: [token.organizationId] };
+      : {
+          apiTokenId: token.apiTokenId,
+          memberships: [{ organizationId: token.organizationId, role: apiTokenRole }],
+        };
   const session = ReviewSession.of((effect) =>
     Effect.provideService(effect, CurrentReviewer, actor),
   );
@@ -94,6 +90,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => errorResponse(401),
         AuthOriginRefused: () => errorResponse(403),
+        PermissionDenied: () => errorResponse(403),
         SubmissionNotFound: () => errorResponse(404),
         SubmissionNotReviewable: () => errorResponse(409),
         SchemaError: () => errorResponse(400),
@@ -108,11 +105,11 @@ const organizationList = Effect.gen(function* () {
   if (token !== null) {
     const inbox = yield* directory.inboxFor(token.organizationId);
     return yield* HttpServerResponse.schemaJson(Schema.Array(InboxOrganizationWithForms))(
-      inbox === null ? [] : [inbox],
+      inbox === null ? [] : [{ ...inbox, role: apiTokenRole }],
       jsonOptions,
     );
   }
-  const { organizations, userId } = yield* reviewer();
+  const { organizations, userId } = yield* memberships;
   const inboxes = yield* Effect.forEach(organizations, (organization) =>
     Effect.map(directory.formsOf(userId, organization.id), (forms) => ({ ...organization, forms })),
   );
@@ -122,8 +119,9 @@ const organizationList = Effect.gen(function* () {
   );
 });
 
+/** Any signed-in account can create an organization, and becomes its admin. */
 const create = Effect.gen(function* () {
-  const { userId } = yield* reviewer();
+  const userId = yield* signedInAccount();
   const input = yield* HttpServerRequest.schemaBodyJson(SetupInbox);
   const directory = yield* OrganizationDirectory;
   yield* directory.create(userId, input);

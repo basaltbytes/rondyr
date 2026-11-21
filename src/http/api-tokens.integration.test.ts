@@ -178,7 +178,9 @@ it.live("lists just the token's organization", () =>
 
     assert.strictEqual(listed.status, 200);
     const inboxes = yield* json(listed).pipe(Effect.flatMap(readInboxes));
-    assert.deepEqual(inboxes, [own]);
+    // The token acts as a reviewer of its organization, whatever the role of its creator.
+    assert.strictEqual(own.role, "admin");
+    assert.deepEqual(inboxes, [{ ...own, role: "reviewer" }]);
   }),
 );
 
