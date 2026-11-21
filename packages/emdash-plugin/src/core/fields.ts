@@ -1,10 +1,15 @@
 import { z } from "astro/zod";
 
-/** A field of an EmDash form, as the forms plugin's public definition describes it. */
+/**
+ * A field of an EmDash form, as the forms plugin's public definition describes
+ * it. `required` is set only on a required field; layouts stored before it
+ * existed don't have it.
+ */
 export const LayoutField = z.object({
   name: z.string().min(1).max(200),
   label: z.string().max(500),
   type: z.string().max(40),
+  required: z.literal(true).optional(),
 });
 export type LayoutField = z.infer<typeof LayoutField>;
 
@@ -27,7 +32,12 @@ export type FormLayout = z.infer<typeof FormLayout>;
 export function formLayout(
   slug: string,
   name: string,
-  fields: readonly { readonly name: string; readonly label: string; readonly type: string }[],
+  fields: readonly {
+    readonly name: string;
+    readonly label: string;
+    readonly type: string;
+    readonly required?: boolean | undefined;
+  }[],
 ): FormLayout {
   return {
     slug: slug.slice(0, 200),
@@ -35,11 +45,15 @@ export function formLayout(
     fields: fields
       .filter((field) => field.name.length > 0 && field.name.length <= 200)
       .slice(0, 200)
-      .map((field) => ({
-        name: field.name,
-        label: field.label.slice(0, 500),
-        type: field.type.slice(0, 40),
-      })),
+      .map((field) => {
+        const layoutField: LayoutField = {
+          name: field.name,
+          label: field.label.slice(0, 500),
+          type: field.type.slice(0, 40),
+        };
+        if (field.required === true) layoutField.required = true;
+        return layoutField;
+      }),
   };
 }
 
@@ -58,15 +72,16 @@ export type FlatFields = z.infer<typeof FlatFields>;
 
 function flatValue(value: SubmittedValue | undefined): string {
   if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) return value.map(String).join(", ");
-  return String(value);
+  if (Array.isArray(value)) return value.map(String).join(", ").trim();
+  return String(value).trim();
 }
 
 /**
  * The fields of a submission as Rondyr takes them: the form's own fields, each
- * value a string. A list is joined with `, `, an empty value is left out, and a
- * file field is never forwarded. Fields the form does not define, such as the
- * honeypot or the Turnstile token, are left out too.
+ * value a string. A value is trimmed, as the forms plugin trims what it stores,
+ * a list is joined with `, `, an empty value is left out, and a file field is
+ * never forwarded. Fields the form does not define, such as the honeypot or the
+ * Turnstile token, are left out too.
  */
 export function flattenFields(layout: FormLayout, data: SubmittedData): FlatFields {
   const fields: FlatFields = {};
@@ -81,19 +96,21 @@ export function flattenFields(layout: FormLayout, data: SubmittedData): FlatFiel
 const Email = z.email();
 
 /**
- * The submitter's address for `replyTo`: the first valid value of an email
- * field of the form, then of a field named `email`.
+ * The submitter's address for `replyTo`, chosen as the forms plugin chooses it:
+ * the first filled email field of the form, a required one before an optional
+ * one, and only when it is a plain address. A form without a filled email
+ * field, or an unknown layout, falls back to a field named `email`.
  */
 export function replyToAddress(layout: FormLayout | null, fields: FlatFields): string | null {
-  const names = [
-    ...(layout?.fields.filter(({ type }) => type === "email").map(({ name }) => name) ?? []),
-    "email",
-  ];
-  for (const name of names) {
-    const value = fields[name];
-    if (value !== undefined && Email.safeParse(value).success) return value;
-  }
-  return null;
+  const emailFields = layout?.fields.filter(({ type }) => type === "email") ?? [];
+  const candidates = [
+    ...emailFields.filter(({ required }) => required === true),
+    ...emailFields.filter(({ required }) => required !== true),
+  ].map(({ name }) => fields[name]);
+  const value = [...candidates, fields["email"]].find(
+    (candidate) => candidate !== undefined && candidate !== "",
+  );
+  return value !== undefined && Email.safeParse(value).success ? value : null;
 }
 
 export interface Notification {
