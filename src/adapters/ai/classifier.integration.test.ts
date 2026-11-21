@@ -42,33 +42,45 @@ it.live("does not retry the lookup of a stored policy that does not decode", () 
 );
 
 const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));
+// The second model clears the spam doubt of both verdicts. Jev also finds a sales
+// pitch in `ambiguous-solicitation`, and that rule still applies.
 const configurations = [
   {
-    name: "stage without a second classifier",
+    name: "an ambiguous message on a stage without a second classifier",
     worker: "TEST_WORKER",
+    verdict: "ambiguous",
     status: { status: "quarantined", reason: "ambiguous" },
     models: ["typesafe/jev"],
   },
   {
-    name: "stage configured with the primary classifier twice",
+    name: "an ambiguous message on a stage configured with the primary classifier twice",
     worker: "SAME_CLASSIFIER_WORKER",
+    verdict: "ambiguous",
     status: { status: "quarantined", reason: "ambiguous" },
     models: ["typesafe/jev"],
   },
   {
-    name: "stage configured with a different second classifier",
+    name: "an ambiguous message on a stage configured with a different second classifier",
     worker: "ESCALATION_WORKER",
+    verdict: "ambiguous",
     status: { status: "accepted", reason: null },
+    models: ["typesafe/jev", "openai/decisions"],
+  },
+  {
+    name: "an ambiguous sales pitch on a stage configured with a different second classifier",
+    worker: "ESCALATION_WORKER",
+    verdict: "ambiguous-solicitation",
+    status: { status: "quarantined", reason: "solicitation" },
     models: ["typesafe/jev", "openai/decisions"],
   },
 ] as const;
 
-for (const { name, worker, status, models } of configurations) {
+for (const { name, worker, verdict, status, models } of configurations) {
   it.live(
-    `records the classification and AI calls for a ${name}`,
+    `records the classification and AI calls for ${name}`,
     () =>
       Effect.gen(function* () {
-        const id = `classifier-${worker.toLowerCase()}`;
+        const id = `classifier-${worker.toLowerCase()}-${verdict}`;
         yield* Effect.promise(() =>
           env.DB.batch([
             env.DB.prepare("INSERT INTO organizations (id, name) VALUES (?, ?)").bind(id, name),
@@ -83,7 +95,7 @@ for (const { name, worker, status, models } of configurations) {
         const response = yield* Effect.promise(() =>
           env[worker].fetch(new URL(`/f/${id}`, testOrigin), {
             method: "POST",
-            body: new URLSearchParams({ message: id, "fixture-verdict": "ambiguous-solicitation" }),
+            body: new URLSearchParams({ message: id, "fixture-verdict": verdict }),
           }),
         );
         assert.strictEqual(response.status, 202);

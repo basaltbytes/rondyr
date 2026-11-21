@@ -178,6 +178,25 @@ layer(Layer.mergeAll(NodeServices.layer, Digest.layerWebCrypto))((it) => {
         entries: 0,
         submissions: 0,
       });
+
+      // The second model settles the spam doubt only; the primary scores keep their other rules.
+      const primaryFinds = Effect.fnUntraced(function* (scores: {
+        readonly solicitation: number;
+        readonly relevance: number;
+      }) {
+        yield* Context.get(cache, ResultCache).put(firstKey, {
+          scores: { model: "jev", spam: 0.4, ...scores },
+          latencyMs: 1,
+        });
+        const report = yield* escalate;
+        return report.directions[0]?.byLabel.legitimate;
+      });
+      const pitch = yield* primaryFinds({ solicitation: 0.93, relevance: 0.9 });
+      assert.deepEqual(pitch?.solicitation, { entries: 1, submissions: 1 });
+      assert.deepEqual(pitch?.accepted, { entries: 0, submissions: 0 });
+      const offTopic = yield* primaryFinds({ solicitation: 0.03, relevance: 0.1 });
+      assert.deepEqual(offTopic?.lowRelevance, { entries: 1, submissions: 1 });
+      assert.deepEqual(offTopic?.accepted, { entries: 0, submissions: 0 });
     }),
   );
 
