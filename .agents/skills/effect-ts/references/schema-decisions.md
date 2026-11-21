@@ -1,6 +1,6 @@
 # Schema Decision Matrix
 
-Adapted from [artimath/effect-skills](https://github.com/artimath/effect-skills) (MIT), updated for Effect v4.
+Adapted from [artimath/effect-skills](https://github.com/artimath/effect-skills), updated for Effect v4. The MIT license of that project, with its copyright notice, is in [LICENSE-EFFECT-SKILLS](LICENSE-EFFECT-SKILLS).
 
 ## Decision Tree
 
