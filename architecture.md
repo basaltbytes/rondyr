@@ -209,7 +209,7 @@ Le [rapport d’évaluation](docs/evaluation.md) compte les occurrences représe
 
 ### Escalade vers un second modèle
 
-L’escalade est désactivée par défaut. Le stage doit déclarer un modèle différent du premier avec `RONDYR_ESCALATION_CLASSIFIER`, et l’organisation doit activer le réglage dans **Classification**. Uniquement pour le motif `ambiguous`, `ClassifySubmission` lance un second appel logique. Chaque modèle dispose de 12 secondes par tentative et de deux reprises après un échec réessayable, à 10 puis 30 secondes.
+L’escalade est désactivée par défaut. Le stage doit déclarer un modèle différent du premier avec `RONDYR_ESCALATION_CLASSIFIER`, et l’organisation doit activer le réglage dans **Classification**. Les réglages renvoyés au dashboard indiquent ce second modèle dans `escalationClassifier`, ou `null` si le stage n’en déclare pas ou déclare le premier. Dans ce cas, le dashboard désactive l’interrupteur et une sauvegarde conserve le choix déjà enregistré. Uniquement pour le motif `ambiguous`, `ClassifySubmission` lance un second appel logique. Chaque modèle dispose de 12 secondes par tentative et de deux reprises après un échec réessayable, à 10 puis 30 secondes.
 
 Le second modèle tranche seulement le doute sur le spam. Il utilise ses seuils par défaut et le choix de l’organisation pour les messages hors sujet. S’il trouve un motif de quarantaine, ou si le second appel échoue, le motif final reste `ambiguous`. S’il ne trouve rien, `escalatedDecision` applique encore aux scores du premier modèle les règles qui suivent celles du spam, avec la politique de l’organisation : un score de démarchage au-dessus du seuil donne le motif `solicitation`, et une faible pertinence avec le choix `review` donne `low-relevance`. Sinon la soumission est acceptée, avec l’étiquette `off-topic` si l’un des deux modèles la juge hors sujet. L’escalade n’accepte donc qu’une soumission que le premier modèle aurait acceptée sans son score de spam.
 
@@ -374,8 +374,8 @@ Elle sert le dashboard et n’est pas publiée pour des clients tiers.
 | `GET /api/organizations/:organizationId/domains` | Liste les domaines déclarés par ordre alphabétique |
 | `POST /api/organizations/:organizationId/domains` | Ajoute un domaine (`{"domain":…}`). Répond `201` pour une création, `200` pour un doublon, `400` pour un nom invalide ou `409` si la liste est pleine |
 | `DELETE /api/organizations/:organizationId/domains?domain=…` | Retire un domaine et répond `204`, ou `404` si le domaine n’est pas déclaré |
-| `GET /api/organizations/:organizationId/classification-policy` | Renvoie le classificateur, sa politique par défaut et les réglages de l’organisation, ou `null` si elle utilise les réglages par défaut |
-| `PUT /api/organizations/:organizationId/classification-policy` | Remplace les réglages de l’organisation. Accepte `thresholds` et `offTopic`, ensemble ou seuls. Répond `204`, ou `400` pour un réglage invalide |
+| `GET /api/organizations/:organizationId/classification-policy` | Renvoie le classificateur, le second classificateur que le stage propose pour l’escalade ou `null`, la politique par défaut et les réglages de l’organisation, ou `null` si elle utilise les réglages par défaut |
+| `PUT /api/organizations/:organizationId/classification-policy` | Remplace les réglages de l’organisation. Accepte `thresholds`, `offTopic` et `escalation`, ensemble ou seuls. Répond `204`, ou `400` pour un réglage invalide |
 | `DELETE /api/organizations/:organizationId/classification-policy` | Rétablit les réglages du classificateur et répond `204` |
 | `POST /api/organizations/:organizationId/forms` | Ajoute un formulaire actif (`{"name":…,"businessContext":…}`, contexte facultatif) : `201` et le formulaire |
 | `PATCH /api/organizations/:organizationId/forms/:publicId` | Renomme le formulaire, modifie son contexte métier, ou les deux (`{"name":…}`, `{"businessContext":…}`) ; un contexte vide l’efface |

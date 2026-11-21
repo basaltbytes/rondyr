@@ -21,6 +21,8 @@ export type OrganizationClassificationPolicy = typeof OrganizationClassification
 
 export const OrganizationClassificationSettings = Schema.Struct({
   classifier: ClassifierProvider,
+  /** The second classifier that the stage offers for escalation, if any. */
+  escalationClassifier: Schema.NullOr(ClassifierProvider),
   defaults: ClassificationPolicy,
   override: Schema.NullOr(OrganizationClassificationPolicy),
 });

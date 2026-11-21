@@ -18,6 +18,11 @@ const thresholdNames = ["probableSpam", "ambiguous", "solicitation", "lowRelevan
 const decodeOverride = Schema.decodeUnknownOption(OrganizationClassificationPolicy);
 type Settings = typeof OrganizationClassificationSettings.Type;
 type SaveResult = "saved" | "invalid" | "saveFailed" | null;
+type Translate = ReturnType<typeof useTranslation>["t"];
+
+function modelName(t: Translate, classifier: Settings["classifier"]) {
+  return classifier === "jev" ? t("inbox.policy.models.jev") : t("inbox.policy.models.openai");
+}
 
 interface PolicyFormInput {
   thresholds?: Record<string, number>;
@@ -33,11 +38,12 @@ function PolicyForm({
   readonly settings: Settings;
 }) {
   const { t } = useTranslation();
-  const { defaults, override } = settings;
+  const { defaults, override, escalationClassifier } = settings;
   const [thresholdMode, setThresholdMode] = useState(
     override?.thresholds === undefined ? "defaults" : "custom",
   );
   const [offTopic, setOffTopic] = useState<string>(override?.offTopic ?? "defaults");
+  // Without a second model the switch is disabled, and a save keeps the stored choice.
   const [escalation, setEscalation] = useState(override?.escalation ?? false);
   const escalationHint = useId();
   const [edited, setEdited] = useState(false);
@@ -117,7 +123,7 @@ function PolicyForm({
         <option value="accept">{t("inbox.policy.accept")}</option>
       </SelectField>
       <div className="grid gap-1.5">
-        <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm font-medium pointer-coarse:min-h-11">
+        <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm font-medium has-disabled:cursor-default pointer-coarse:min-h-11">
           <input
             type="checkbox"
             role="switch"
@@ -125,7 +131,7 @@ function PolicyForm({
             aria-checked={escalation}
             aria-describedby={escalationHint}
             checked={escalation}
-            disabled={saving}
+            disabled={saving || escalationClassifier === null}
             onChange={(event) => setEscalation(event.currentTarget.checked)}
           />
           <span
@@ -135,7 +141,9 @@ function PolicyForm({
           {t("inbox.policy.escalation")}
         </label>
         <p id={escalationHint} className="text-xs text-pretty text-muted-foreground">
-          {t("inbox.policy.escalationHint")}
+          {escalationClassifier === null
+            ? t("inbox.policy.escalationUnavailable")
+            : t("inbox.policy.escalationHint", { model: modelName(t, escalationClassifier) })}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -181,12 +189,7 @@ export function ClassificationSettings({
           {initial !== null && (
             <CardHeader>
               <CardDescription>
-                {t("inbox.policy.description", {
-                  classifier:
-                    initial.classifier === "jev"
-                      ? t("inbox.policy.models.jev")
-                      : t("inbox.policy.models.openai"),
-                })}
+                {t("inbox.policy.description", { classifier: modelName(t, initial.classifier) })}
               </CardDescription>
             </CardHeader>
           )}
