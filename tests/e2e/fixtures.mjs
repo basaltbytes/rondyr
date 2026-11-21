@@ -78,7 +78,10 @@ export default {
 `;
 
 export const test = base.extend({
-  dashboardOrigin: async ({ request }, use) => {
+  /** The stage's `RONDYR_ESCALATION_CLASSIFIER`. A stage has no second classifier by default. */
+  escalationClassifier: [null, { option: true }],
+
+  dashboardOrigin: async ({ request, escalationClassifier }, use) => {
     const {
       workerOptions: { modulesRules: _rules, ...workerOptions },
     } = unstable_getMiniflareWorkerOptions("./dist/rondyr/wrangler.json");
@@ -102,6 +105,9 @@ export const test = base.extend({
               RONDYR_SECRETS_KEY: testSecretsKey,
               RESEND_API_KEY: testResendKey,
               RONDYR_EMAIL_FROM: testEmailFrom,
+              ...(escalationClassifier !== null && {
+                RONDYR_ESCALATION_CLASSIFIER: escalationClassifier,
+              }),
             },
           },
           ...externalWorkers(workerOptions.compatibilityDate),

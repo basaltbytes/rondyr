@@ -16,6 +16,14 @@ export const DailyQuotas = Schema.Struct({
 });
 export type DailyQuotas = typeof DailyQuotas.Type;
 
+/**
+ * The outcome of reserving one classification for an organization's current
+ * UTC day: `reserved` counted it under the daily limit, `limit-reached` found
+ * the day's count at the limit and counted nothing.
+ */
+export const ClassificationReservation = Schema.Literals(["reserved", "limit-reached"]);
+export type ClassificationReservation = typeof ClassificationReservation.Type;
+
 const Used = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 export const DailyUsage = Schema.Struct({
   day: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/u)),
