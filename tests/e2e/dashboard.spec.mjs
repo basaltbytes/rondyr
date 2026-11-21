@@ -147,55 +147,109 @@ test("add a domain and remove it after reopening the settings in French", async 
   await expect(page.getByText(frenchT("inbox.domains.empty"))).toBeVisible();
 });
 
-test("edit classification thresholds and off-topic handling, then restore the defaults in French", async ({
+test.describe("on a deployment with OpenAI Decisions as the second model", () => {
+  test.use({ escalationClassifier: "openai" });
+
+  test("edit the classification policy, then restore the defaults in French", async ({
+    dashboard: page,
+  }) => {
+    await createOrganization(page);
+    await accountMenu(page).click();
+    await page.getByRole("menuitemradio", { name: t("languages.fr") }).click();
+    await page.keyboard.press("Escape");
+    const openPolicy = () =>
+      openSection(
+        page,
+        frenchT("inbox.sections.classification"),
+        frenchT("inbox.navigation.settings"),
+      );
+    await openPolicy();
+    const mode = page.getByRole("combobox", { name: frenchT("inbox.policy.thresholdMode") });
+    const offTopic = page.getByRole("combobox", { name: frenchT("inbox.policy.offTopic") });
+    const escalation = page.getByRole("switch", { name: frenchT("inbox.policy.escalation") });
+    const relevance = page.getByRole("spinbutton", {
+      name: frenchT("inbox.policy.thresholds.lowRelevance"),
+    });
+    const ambiguous = page.getByRole("spinbutton", {
+      name: frenchT("inbox.policy.thresholds.ambiguous"),
+    });
+    const save = page.getByRole("button", { name: frenchT("inbox.policy.save") });
+    await expect(relevance).toHaveValue("0.5");
+    await expect(relevance).toHaveAccessibleDescription(frenchT("inbox.policy.hints.lowRelevance"));
+    await expect(ambiguous).toHaveAccessibleDescription(frenchT("inbox.policy.hints.ambiguous"));
+    await expect(escalation).not.toBeChecked();
+    await expect(escalation).toHaveAccessibleDescription(
+      frenchT("inbox.policy.escalationHint", { model: frenchT("inbox.policy.models.openai") }),
+    );
+    await mode.selectOption({ label: frenchT("inbox.policy.custom") });
+    await ambiguous.fill("0.9");
+    await save.click();
+    await expect(page.getByRole("alert")).toHaveText(frenchT("inbox.policy.invalid"));
+    await ambiguous.fill("0.35");
+    await relevance.fill("0.62");
+    await offTopic.selectOption({ label: frenchT("inbox.policy.accept") });
+    await escalation.press("Space");
+    await save.click();
+    await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
+
+    await page.reload();
+    await openPolicy();
+    await expect(relevance).toHaveValue("0.62");
+    await expect(offTopic).toHaveValue("accept");
+    await expect(escalation).toBeChecked();
+    await mode.selectOption({ label: frenchT("inbox.policy.defaults") });
+    await offTopic.selectOption({ label: frenchT("inbox.policy.defaults") });
+    await escalation.press("Space");
+    await save.click();
+    await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
+
+    await page.reload();
+    await openPolicy();
+    await expect(relevance).toHaveValue("0.5");
+    await expect(offTopic).toHaveValue("defaults");
+    await expect(escalation).not.toBeChecked();
+  });
+});
+
+test("keep the stored escalation choice when saving without a second model", async ({
   dashboard: page,
 }) => {
   await createOrganization(page);
-  await accountMenu(page).click();
-  await page.getByRole("menuitemradio", { name: t("languages.fr") }).click();
-  await page.keyboard.press("Escape");
-  const openPolicy = () =>
-    openSection(
-      page,
-      frenchT("inbox.sections.classification"),
-      frenchT("inbox.navigation.settings"),
+  await openSection(page, t("inbox.sections.classification"));
+  const escalation = page.getByRole("switch", { name: t("inbox.policy.escalation") });
+  const offTopic = page.getByRole("combobox", { name: t("inbox.policy.offTopic") });
+  await expect(escalation).toBeDisabled();
+  await expect(escalation).not.toBeChecked();
+  await expect(escalation).toHaveAccessibleDescription(t("inbox.policy.escalationUnavailable"));
+
+  // A choice stored while the deployment had a second model, or sent through the API.
+  const stored = await page.evaluate(async (name) => {
+    const organizations = await fetch("/api/organizations").then((response) => response.json());
+    const { id } = organizations.find((organization) => organization.name === name);
+    const response = await fetch(
+      `/api/organizations/${encodeURIComponent(id)}/classification-policy`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ escalation: true }),
+      },
     );
-  await openPolicy();
-  const mode = page.getByRole("combobox", { name: frenchT("inbox.policy.thresholdMode") });
-  const offTopic = page.getByRole("combobox", { name: frenchT("inbox.policy.offTopic") });
-  const relevance = page.getByRole("spinbutton", {
-    name: frenchT("inbox.policy.thresholds.lowRelevance"),
-  });
-  const ambiguous = page.getByRole("spinbutton", {
-    name: frenchT("inbox.policy.thresholds.ambiguous"),
-  });
-  const save = page.getByRole("button", { name: frenchT("inbox.policy.save") });
-  await expect(relevance).toHaveValue("0.5");
-  await expect(relevance).toHaveAccessibleDescription(frenchT("inbox.policy.hints.lowRelevance"));
-  await expect(ambiguous).toHaveAccessibleDescription(frenchT("inbox.policy.hints.ambiguous"));
-  await mode.selectOption({ label: frenchT("inbox.policy.custom") });
-  await ambiguous.fill("0.9");
-  await save.click();
-  await expect(page.getByRole("alert")).toHaveText(frenchT("inbox.policy.invalid"));
-  await ambiguous.fill("0.35");
-  await relevance.fill("0.62");
-  await offTopic.selectOption({ label: frenchT("inbox.policy.accept") });
-  await save.click();
-  await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
+    return response.status;
+  }, organizationName);
+  expect(stored).toBe(204);
 
   await page.reload();
-  await openPolicy();
-  await expect(relevance).toHaveValue("0.62");
+  await openSection(page, t("inbox.sections.classification"));
+  await expect(escalation).toBeChecked();
+  await expect(escalation).toBeDisabled();
+  await offTopic.selectOption({ label: t("inbox.policy.accept") });
+  await page.getByRole("button", { name: t("inbox.policy.save") }).click();
+  await expect(page.getByText(t("inbox.policy.saved"))).toBeVisible();
+
+  await page.reload();
+  await openSection(page, t("inbox.sections.classification"));
   await expect(offTopic).toHaveValue("accept");
-  await mode.selectOption({ label: frenchT("inbox.policy.defaults") });
-  await offTopic.selectOption({ label: frenchT("inbox.policy.defaults") });
-  await save.click();
-  await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
-
-  await page.reload();
-  await openPolicy();
-  await expect(relevance).toHaveValue("0.5");
-  await expect(offTopic).toHaveValue("defaults");
+  await expect(escalation).toBeChecked();
 });
 
 test("sign in, create an organization and manage its forms, then sign out", async ({

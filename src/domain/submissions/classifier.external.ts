@@ -1,6 +1,7 @@
 import * as Domain from "@alchemy.run/domain";
 import { Schema } from "effect";
 
+import { ClassificationReservation } from "../organizations/organization-quotas.ts";
 import { ClassifierProvider, ResolvedClassificationPolicy } from "./classification-policy.ts";
 import { ClassifierScores } from "./classification.ts";
 import { OrganizationId, SubmissionId } from "./submission.id.ts";
@@ -25,6 +26,12 @@ export class Classifier extends Domain.ExternalSystem(
         classifier: ClassifierProvider,
       },
       success: ClassifierScores.fields,
+      error: ClassificationFailed,
+    },
+    // One more classification for the organization's current UTC day, before a second model call.
+    reserveEscalation: {
+      args: { organizationId: OrganizationId },
+      success: ClassificationReservation,
       error: ClassificationFailed,
     },
   },

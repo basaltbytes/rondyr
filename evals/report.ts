@@ -20,7 +20,7 @@ import { Decision, sweepPolicies } from "./thresholds.ts";
 import { Transport } from "./workers-ai.ts";
 
 /** A count of corpus lines, and of the submissions they stand for once `duplicates` is applied. */
-const Count = Schema.Struct({ entries: Schema.Int, submissions: Schema.Int });
+export const Count = Schema.Struct({ entries: Schema.Int, submissions: Schema.Int });
 
 type Count = typeof Count.Type;
 
@@ -143,7 +143,7 @@ export const Report = Schema.Struct({
 
 export type Report = typeof Report.Type;
 
-function byLabel<A>(value: (label: Label) => A) {
+export function byLabel<A>(value: (label: Label) => A) {
   return {
     legitimate: value("legitimate"),
     spam: value("spam"),
@@ -170,7 +170,7 @@ export function decisionOf(outcome: Outcome, policy: ClassificationPolicy): Deci
   return reviewReason(outcome.call.scores, policy) ?? "accepted";
 }
 
-function count(entries: readonly CorpusEntry[]): Count {
+export function count(entries: readonly CorpusEntry[]): Count {
   return {
     entries: new Set(entries.map(({ id }) => id)).size,
     submissions: entries.reduce((total, entry) => total + weight(entry), 0),

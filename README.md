@@ -145,9 +145,9 @@ Rondyr limits each client to 5 submissions per minute on each form, before it st
 
 Both minute limits answer `429` with `Retry-After: 60` and store nothing. A page on an allowed origin can read the response and the `Retry-After` header.
 
-**Daily quotas** shows usage across the organization's forms for the current UTC day. The defaults are 2,000 stored submissions and 1,000 submissions admitted to classification. An organization member can change the limits there or with `PUT /api/organizations/:organizationId/quotas`, using integer fields `submissions` (1 to 100,000) and `classifications` (0 to 100,000). A `GET` on the same URL returns the UTC day, limits and usage.
+**Daily quotas** shows usage across the organization's forms for the current UTC day. The defaults are 2,000 stored submissions and 1,000 classifications. An organization member can change the limits there or with `PUT /api/organizations/:organizationId/quotas`, using integer fields `submissions` (1 to 100,000) and `classifications` (0 to 100,000). A `GET` on the same URL returns the UTC day, limits and usage.
 
-After the storage quota is reached, Rondyr returns `429` with the number of seconds until midnight UTC in `Retry-After`. After the classification quota is reached, Rondyr stores messages and sends them to review with the reason **Daily classification quota reached**. Every stored submission uses one storage slot. A submission uses one classification slot when intake admits it to the classifier. Workflow retries use the same slot.
+After the storage quota is reached, Rondyr returns `429` with the number of seconds until midnight UTC in `Retry-After`. After the classification quota is reached, Rondyr stores messages and sends them to review with the reason **Daily classification quota reached**. Every stored submission uses one storage slot. A submission uses one classification slot when intake admits it to the classifier. Workflow retries use the same slot. When an ambiguous submission goes to a second model, the escalation uses one more slot, taken before the call; if none is left, the second model isn't called and the submission stays in review as ambiguous.
 
 ## Features
 

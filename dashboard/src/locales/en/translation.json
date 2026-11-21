@@ -371,6 +371,9 @@
         "lowRelevance": "A message with a relevance score below this value goes to review, or is accepted with the Off-topic label if you accept off-topic submissions."
       },
       "offTopic": "Off-topic submissions",
+      "escalation": "Use a second model for ambiguous submissions",
+      "escalationHint": "{{model}} gives ambiguous submissions a second spam score. The sales outreach and low relevance rules still apply.",
+      "escalationUnavailable": "This deployment has no second model, so ambiguous submissions go to review.",
       "review": "Send to review",
       "accept": "Accept with the Off-topic label",
       "save": "Save classification settings",
