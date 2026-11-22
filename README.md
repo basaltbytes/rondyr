@@ -90,17 +90,14 @@ Contributor documentation stays in this repository:
 
 Report security vulnerabilities privately through [GitHub security advisories](https://github.com/basaltbytes/rondyr/security/advisories/new); see [SECURITY.md](./SECURITY.md).
 
-## License
+## Credits
 
-Rondyr is licensed under the [GNU Affero General Public License v3.0](./LICENSE). You can run it, change it, and deploy it for your own forms. If you offer Rondyr, or software that includes it, to others over a network, you have to publish the complete source of that software under the same license.
+Rondyr includes code from these projects. Each keeps its own license, with the license file next to the code:
 
-These parts are under other licenses, each with its license file in the same directory:
-
-- [`packages/emdash-plugin/`](./packages/emdash-plugin/): MIT, so that sites can compile the plugin into their own Worker.
-- [`tooling/oxlint/`](./tooling/oxlint/): the 16 rules and 3 shared modules from [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop) listed in its README are under MIT, in `LICENSE-ANTI-SLOP`. The rest of the directory comes from usine and is under AGPL-3.0.
-- [`apps/rondyr/dashboard/src/components/ui/`](./apps/rondyr/dashboard/src/components/ui/): the components derive from [shadcn/ui](https://github.com/shadcn/ui), whose MIT notice is in `LICENSE-SHADCN`.
-- [`.agents/skills/alchemy-domain/`](./.agents/skills/alchemy-domain/): copied from [Alchemy](https://github.com/alchemy-run/alchemy) under Apache-2.0, with its `LICENSE` and `NOTICE`.
-- [`.agents/skills/effect-ts/references/schema-decisions.md`](./.agents/skills/effect-ts/references/schema-decisions.md): adapted from [artimath/effect-skills](https://github.com/artimath/effect-skills), whose MIT notice is in `LICENSE-EFFECT-SKILLS` next to it.
+- [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop) (MIT): 16 lint rules and 3 shared modules in [`tooling/oxlint/`](./tooling/oxlint/).
+- [shadcn/ui](https://github.com/shadcn/ui) (MIT): the dashboard components in [`apps/rondyr/dashboard/src/components/ui/`](./apps/rondyr/dashboard/src/components/ui/).
+- [Alchemy](https://github.com/alchemy-run/alchemy) (Apache-2.0): the agent skill in [`.agents/skills/alchemy-domain/`](./.agents/skills/alchemy-domain/).
+- [artimath/effect-skills](https://github.com/artimath/effect-skills) (MIT): the Schema reference in [`.agents/skills/effect-ts/references/schema-decisions.md`](./.agents/skills/effect-ts/references/schema-decisions.md).
 
 ## Author
 
