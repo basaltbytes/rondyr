@@ -26,9 +26,9 @@ export function deployArguments(value: string | undefined): readonly string[] {
     if (!url.hostname.startsWith(`${workerName}.`)) {
       throw new Error(`A workers.dev address of this Worker starts with ${workerName}.: ${value}`);
     }
-    return ["deploy"];
+    return ["deploy", "--config", "wrangler.jsonc"];
   }
-  return ["deploy", "--domain", url.hostname];
+  return ["deploy", "--config", "wrangler.jsonc", "--domain", url.hostname];
 }
 
 /** Whether the build in `directory` was made for `origin`, according to its sitemap. */
