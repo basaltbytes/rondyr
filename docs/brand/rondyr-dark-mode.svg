@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 230 64" role="img" aria-label="Rondyr">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 184 64" role="img" aria-label="Rondyr">
   <title>Rondyr</title>
   <g color="#f2f0e9">
-    <g transform="translate(4 4) scale(0.0322)" fill="currentColor" stroke="currentColor" stroke-linejoin="round">
+    <g transform="translate(4 7) scale(0.028)" fill="currentColor" stroke="currentColor" stroke-linejoin="round">
       <path d="M2191.425 1371.998C2191.425 1053.144 1925.833 794.276 1598.698 794.276C1271.563 794.276 1005.971 1053.144 1005.971 1371.998C1005.971 1690.851 1271.563 1949.72 1598.698 1949.72" fill="none" stroke-width="72.61" transform="matrix(1.335207 0 0 1.418007 -1293.178592 -1076.288047)"/>
       <g stroke-linecap="round">
         <path d="m1247.945 1163.067c318.947-171.483 724.734-108.058 806.567 55.662 52.935 105.905 65.766 327.221-170.791 429.362 129.87 35.254 187.588 81.268 217.636 271.787 35.493 225.034-34.089 192.238 80.46 249.934-230.988 27.546-387.327-26.484-394.3-32.185-50.997-41.694-30.354-378.576-148.19-312.303-48.535 27.297-65.905 262.097-87.18 301.272-29.697 54.682-355.7-135.127-349.81-186.651 4.567-39.949 131.158-132.326 147.749-385.919 14.837-226.778-102.141-390.959-102.141-390.959z" stroke-width="64.09" transform="matrix(1.113218 -.099623 .092168 1.029913 -1164.525053 -573.433949)"/>
@@ -9,8 +9,7 @@
         <path d="m1645.082 1278.008c106.689 1.199-90.006-303.124-140.615-21.146-7.708 42.947 140.615 21.146 140.615 21.146z" fill="none" stroke-width="75.82" transform="matrix(.852618 -.458727 .401698 .74662 -952.023007 502.275813)"/>
       </g>
     </g>
-    <g transform="translate(-4 0)" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linejoin="round">
-      <path d="M80 47V18h11.5a8 8 0 0 1 0 16H80m10 0 12 13"/>
+    <g transform="translate(-48 1)" fill="none" stroke="currentColor" stroke-width="5.5" stroke-linejoin="round">
       <path d="M127.5 35.5c0 5.4-4.2 9.2-9.9 9.2s-9.9-3.8-9.9-9.2 4.2-9.2 9.9-9.2 9.9 3.8 9.9 9.2Z"/>
       <path d="M137.5 47V24.5m0 10.5c0-5.3 3.2-8.7 8.2-8.7 4.8 0 7.3 2.9 7.3 7.7v13"/>
       <path d="M182 15v32m0-11.5c0 5.4-3.8 9.2-9.5 9.2s-9.6-3.8-9.6-9.2 3.9-9.2 9.6-9.2 9.5 3.8 9.5 9.2Z"/>

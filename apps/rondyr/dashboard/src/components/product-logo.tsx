@@ -9,7 +9,7 @@ export function ProductLogo({ compact }: { readonly compact?: boolean }) {
     <img
       src={isCompact ? mark : wordmark}
       alt={productName}
-      width={isCompact ? 64 : 230}
+      width={isCompact ? 64 : 184}
       height={64}
       className="h-8 w-auto"
     />
