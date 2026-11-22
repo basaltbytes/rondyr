@@ -16,6 +16,7 @@
   "dependencies": {
     "@astrojs/markdown-remark": "catalog:",
     "@astrojs/starlight": "catalog:",
+    "@lobehub/icons-static-svg": "catalog:",
     "astro": "catalog:",
     "github-slugger": "catalog:",
     "hast-util-from-html": "catalog:",

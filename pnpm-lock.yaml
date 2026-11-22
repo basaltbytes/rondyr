@@ -45,6 +45,9 @@ catalogs:
     '@emdash-cms/plugin-forms':
       specifier: 0.2.13
       version: 0.2.13
+    '@lobehub/icons-static-svg':
+      specifier: 1.104.0
+      version: 1.104.0
     '@oxlint/plugins':
       specifier: 1.94.0
       version: 1.94.0
@@ -212,6 +215,9 @@ importers:
       '@astrojs/starlight':
         specifier: 'catalog:'
         version: 0.42.11(@astrojs/markdown-remark@7.3.10(supports-color@10.2.2))(astro@7.4.13(@astrojs/markdown-remark@7.3.10(supports-color@10.2.2))(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(supports-color@10.2.2)(typescript@7.0.2)
+      '@lobehub/icons-static-svg':
+        specifier: 'catalog:'
+        version: 1.104.0
       astro:
         specifier: 'catalog:'
         version: 7.4.13(@astrojs/markdown-remark@7.3.10(supports-color@10.2.2))(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
@@ -2004,6 +2010,9 @@ packages:
         optional: true
       babel-plugin-macros:
         optional: true
+
+  '@lobehub/icons-static-svg@1.104.0':
+    resolution: {integrity: sha512-iIZ7qd77hIx9fsbLysXmFYHYKT+cLgSuQVb8/hOfGH06clDpcSo+u7RWcyiBeq9MAcUai+4qvCQXqVDdVe8g3Q==}
 
   '@marijn/find-cluster-break@1.0.4':
     resolution: {integrity: sha512-Wy0V7+SGUjnF9/TkiM1hKVDPj7jKXduPNboMVtHTA8dySMURWqfg/JZ9E2Sq8JgSJmkl7k7Qe9FLeMSrSraWmQ==}
@@ -8513,6 +8522,8 @@ snapshots:
       '@babel/runtime': 7.29.14
       '@lingui/core': 5.9.5
       react: 19.3.1
+
+  '@lobehub/icons-static-svg@1.104.0': {}
 
   '@marijn/find-cluster-break@1.0.4': {}
 

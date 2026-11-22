@@ -25,6 +25,14 @@ export const firstRun: readonly FirstRunStep[] = [
   },
 ];
 
+/** The prompt on the landing page for a coding agent to deploy and wire Rondyr. */
+export const agentPrompt = `Deploy Rondyr for me and connect my site's form to it.
+
+1. Read https://rondyr.com/deployment/ and ask whether I want the Deploy to Cloudflare button (fastest) or Alchemy with GitHub Actions.
+2. Guide me through deploying on my Cloudflare Workers Paid account, generating a 32+ character \`RONDYR_SETUP_TOKEN\`, and creating my owner account, organization, and first form.
+3. Ask how I want accepted messages forwarded (Resend email, Cloudflare Email Sending, webhook, or the EmDash plugin) and follow the matching guide on https://rondyr.com/.
+4. Wire the form URL into my site (plain HTML, JSON fetch, or EmDash), add a honeypot field, and help me send a test message to verify it arrives.`;
+
 /** The form of the landing page, as a site would write it. */
 export const formSnippet = `<form action="https://rondyr.example.com/f/YOUR_PUBLIC_ID" method="post">
   <input type="email" name="email" required />
