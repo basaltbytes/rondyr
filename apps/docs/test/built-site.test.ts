@@ -219,8 +219,8 @@ test("the landing page has the Deploy to Cloudflare button, the plan and the fir
   assert.match(text, /TypeSafe AI/u);
   assert.match(text, /OpenAI/u);
   assert.match(text, /action="https:\/\/rondyr\.example\.com\/f\/YOUR_PUBLIC_ID"/u);
-  assert.ok(hrefs(tree).includes("https://github.com/PhilDL"));
-  assert.ok(hrefs(tree).includes("https://github.com/basaltbytes"));
+  assert.ok(hrefs(tree).includes("https://x.com/_philDL"));
+  assert.ok(hrefs(tree).includes("https://basaltbytes.com"));
   const steps = elements(
     tree,
     (node) =>
