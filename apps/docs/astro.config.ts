@@ -1,5 +1,6 @@
 import { unified } from "@astrojs/markdown-remark";
 import starlight from "@astrojs/starlight";
+import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "astro/config";
 import lucode from "lucode-starlight";
 
@@ -20,6 +21,9 @@ const logo = writeLogoVariants(new URL("./.astro/brand/", import.meta.url));
 export default defineConfig({
   site: siteUrl(process.env["RONDYR_DOCS_URL"]),
   trailingSlash: "always",
+  vite: {
+    plugins: [tailwindcss()],
+  },
   markdown: {
     processor: unified({
       remarkPlugins: [remarkRepositoryLinks(), remarkDropProductionLine],
