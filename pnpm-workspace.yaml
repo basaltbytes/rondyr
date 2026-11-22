@@ -20,6 +20,7 @@ catalog:
   "@effect/tsgo": 0.70.0
   "@effect/vitest": 4.1.4
   "@emdash-cms/plugin-forms": 0.2.13
+  "@lobehub/icons-static-svg": 1.104.0
   "@oxlint/plugins": 1.94.0
   "@playwright/test": 1.65.1
   "@rolldown/plugin-babel": 0.3.1

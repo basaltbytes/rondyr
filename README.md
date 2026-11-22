@@ -102,4 +102,4 @@ These parts are under other licenses, each with its license file in the same dir
 
 ## Author
 
-Rondyr is built by [Basaltbytes](https://basaltbytes.com).
+Rondyr is built by [PhilDL](https://github.com/PhilDL) at [Basaltbytes](https://github.com/basaltbytes).

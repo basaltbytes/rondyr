@@ -50,7 +50,7 @@ export default defineConfig({
             { label: "HTTP API", link: "/api/" },
             { label: "GitHub", link: githubRepository },
           ],
-          footerText: `Rondyr is licensed under AGPL-3.0. The source is on [GitHub](${githubRepository}).`,
+          footerText: `Rondyr is built by [PhilDL](https://github.com/PhilDL) at [Basaltbytes](https://github.com/basaltbytes), licensed under AGPL-3.0. The source is on [GitHub](${githubRepository}).`,
         }),
       ],
       sidebar: sidebar.map(({ label, items }) => ({ label, items: [...items] })),
