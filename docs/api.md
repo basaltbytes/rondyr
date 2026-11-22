@@ -1,43 +1,60 @@
-# API tokens
+# HTTP API
 
-An admin of the organization can create or revoke tokens in **Settings → API tokens**; a reviewer gets `403`. A token has the rights of a reviewer of its organization, never more, and only on the routes below. Enter a name that identifies the client, then copy the token: Rondyr shows it once, right after creation, and never again. The list shows each token's name, creation date and last four characters. Each organization can have up to ten active tokens. Revoking a token frees a slot, and the next request with that token gets `401`; a revoked token can't be reactivated. Removing a member from the organization revokes the tokens that this member created, in the same transaction; the removal dialog says how many before the admin confirms.
+Use the HTTP API to submit forms from browsers or backend servers, read your organization's inbox, and accept or archive quarantined messages from another application.
 
-## Authentication
+## Public form submission
 
-Send the token in the `Authorization` header as a Bearer credential. Tokens start with `rdr_`, followed by 32 random bytes encoded as unpadded base64url. Rondyr uses the token whenever the request includes it, even if the request also has a dashboard session cookie. An `Origin` header is optional.
+Send form data to `POST https://<your-rondyr-host>/f/{publicId}` with no authentication header.
+
+```sh
+curl --json '{"email":"visitor@example.com","message":"Is there room in the Saturday class?"}' \
+  https://forms.example.com/f/YOUR_PUBLIC_ID
+```
+
+```json
+{ "submission-id": "73123ee4-40bf-4c5f-b8ff-1d56cdaa7640", "status": "received" }
+```
+
+### Request rules
+
+- **Content types:** `application/json`, `application/x-www-form-urlencoded`, or `multipart/form-data` (text fields only; any file part returns `400`).
+- **Limits:** body up to 16 KiB; 1 to 32 message fields; field names 1 to 100 characters with no control characters or line breaks (`__proto__`, `constructor`, and `prototype` are refused); field values up to 4,000 characters. JSON values must be strings; repeated form field names are joined with `, `.
+- **Turnstile:** if Turnstile is enabled on the form, send the token in `cf-turnstile-response` (excluded from the 32-field count and removed before saving).
+- **CORS:** `OPTIONS /f/{publicId}` answers preflight requests (`POST`, `Content-Type`, `Access-Control-Max-Age: 7200`). Cookies aren't allowed. A form with no allowed origins sends `Access-Control-Allow-Origin: *`; with a list, unlisted origins receive `403`.
+
+### Responses
+
+| Status | Meaning |
+| --- | --- |
+| `202` | Saved. JSON clients get `{"submission-id", "status": "received"}`; HTML form posts with `Accept: text/html` get the confirmation page |
+| `303` | Saved, HTML form post on a form with a redirect URL (`Location` header points to that URL) |
+| `400` | Invalid body or fields, a file part in multipart data, or no message fields left after stripping the Turnstile token and empty honeypot |
+| `403` | Form is suspended, or `Origin` isn't in the form's allowed origins list |
+| `404` | Unknown form |
+| `413` | Body exceeds 16 KiB |
+| `415` | Unsupported `Content-Type` |
+| `429` | Visitor limit (5/min), form limit (30/min), or daily organization quota reached. Check `Retry-After` (seconds) |
+| `503` | Storage temporarily unavailable; safe to retry |
+
+## API tokens
+
+Create an organization API token in **Settings → API tokens** (admins only) to call server intake and inbox review routes. Each organization can have up to 10 active tokens. Copy the token right after creation; Rondyr displays it once and never again.
+
+![Settings API tokens screen showing the Token name field, Create token button, and two active tokens with their last four characters and Revoke buttons](./screenshots/api-tokens.webp)
+
+Pass the token in the `Authorization` header as a Bearer credential:
 
 ```sh
 curl --fail-with-body \
   -H "Authorization: Bearer ${RONDYR_API_TOKEN}" \
-  https://rondyr.example.com/api/organizations
+  https://forms.example.com/api/organizations
 ```
 
-The response is an array with one entry, the token's organization: `id`, `name`, `role` (always `reviewer` for a token), and `forms`, each form with `name`, `publicId`, `status`, `businessContext`, `successUrl`, `honeypotField` and `turnstileSiteKey`. Use the organization's `id` in the review routes below.
-
-## Routes
-
-Paths beginning with `/{organizationId}` in this table are relative to `/api/organizations`.
-
-| Method | Path | Result |
-| --- | --- | --- |
-| `GET` | `/api/organizations` | An array with the token's organization and its forms |
-| `GET` | `/{organizationId}/submissions` | Up to 25 submissions, newest first, and a cursor for the next page. Optional filters are `status`, `form` (the form's public ID), `q` (text to find in the field values, 3 to 100 characters, ignoring the case of ASCII letters; `%` and `_` are ordinary characters), and `after` (the cursor) |
-| `GET` | `/{organizationId}/submission-counts` | Submission counts by status for the organization and each form with submissions |
-| `GET` | `/{organizationId}/submissions/{submissionId}` | Submission detail |
-| `POST` | `/{organizationId}/submissions/{submissionId}/approve` | Accepts a quarantined submission and returns its updated detail |
-| `POST` | `/{organizationId}/submissions/{submissionId}/dismiss` | Archives a quarantined submission and returns its updated detail |
-
-Both decision routes take an empty body, and the decision event stores the token ID. An accepted submission goes to the form's destinations, as when a reviewer accepts it in the dashboard. Every other `/api` route answers `403` to a token, including `POST /{organizationId}/submissions/{submissionId}/reclassify` and the stuck submission routes, which the dashboard uses.
-
-```sh
-curl --fail-with-body -X POST \
-  -H "Authorization: Bearer ${RONDYR_API_TOKEN}" \
-  "https://rondyr.example.com/api/organizations/${ORGANIZATION_ID}/submissions/${SUBMISSION_ID}/approve"
-```
+Tokens start with `rdr_`, have **Reviewer** permissions on their own organization only, and work with or without an `Origin` header. Revoking a token (or removing the admin who created it) makes subsequent requests return `401` immediately.
 
 ## Server intake
 
-A server that validates its own form can send each message to Rondyr with a token of the form's organization. Send the same `POST /f/{publicId}` as a browser, with the token in `Authorization`:
+When your own server validates a form and forwards submissions to Rondyr, send `POST /f/{publicId}` with an `Authorization: Bearer` API token and a JSON body:
 
 ```sh
 curl --fail-with-body -X POST \
@@ -45,77 +62,83 @@ curl --fail-with-body -X POST \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: 01JD8Z3K9QX5M4V7T2N6B8C1RA" \
   --data '{"name":"Ada Lovelace","email":"ada@example.com","message":"Hello"}' \
-  "https://rondyr.example.com/f/${FORM_PUBLIC_ID}"
+  "https://forms.example.com/f/${FORM_PUBLIC_ID}"
 ```
 
-A request with an `Authorization` header on this route is a server intake, whatever its scheme or value:
+Differences from public browser submissions:
 
-- A header that isn't `Bearer` followed by an active token gets `401`: another scheme, a malformed or unknown token, a revoked token. A token of another organization gets `404`, as an unknown form does. Nothing is stored in either case, and the request never falls back to the browser path.
-- The form's allowed origins and the limit of 5 submissions per minute per client don't apply: every request from your server comes from the same address. The form's cap of 30 submissions per minute and the organization's daily quotas still apply, with `429` and `Retry-After`.
-- The form's honeypot field applies as for a browser. Turnstile doesn't: your server has checked the visitor itself, and the message goes through classification as usual.
-- The body is a flat JSON object of 1 to 32 string fields, at most 16 KiB. Another content type gets `415`.
-- The response is always JSON, `202` with `{"submission-id": "…", "status": "received"}`, never a redirect or the confirmation page.
+- **Skipped checks:** allowed origins, per-visitor rate limit (5/min), and Turnstile don't apply.
+- **Kept checks:** the form's 30/min cap, daily organization quotas, suspended status, and honeypot field still apply.
+- **Format:** body must be `application/json` (flat object of strings), and the response is always `202` JSON with `{"submission-id", "status": "received"}`, never HTML or a redirect.
+- **Auth errors:** any request to `/f/{publicId}` with an `Authorization` header is treated as server intake and never falls back to public intake. An invalid or revoked token returns `401`; a token from another organization returns `404`.
 
-### Idempotency key
+### Idempotency keys
 
-Send an `Idempotency-Key` header to make retries safe. The key has 1 to 128 printable ASCII characters; another value gets `400`. Its scope is the form, and it never expires: it lives as long as the submission it names. Deleting that submission, by hand or through the organization's retention period, frees the key: a later request with the same key stores a new submission. An export never contains the key.
+Include an `Idempotency-Key` header (1 to 128 printable ASCII characters) on server intake requests so retries never create duplicate messages.
 
-The first request with a key stores the message and answers `202`. A later request with the same key on the same form answers `202` with the ID of the first submission: Rondyr stores nothing, publishes nothing, and doesn't compare the bodies. Two requests with the same key at the same moment store a single submission, and both get its ID. The same key on another form is a different key.
+- A repeated request with the same key on the same form returns `202` with the original `submission-id` without creating a second submission or sending duplicate notifications (regardless of later form status or quota changes).
+- Keys are scoped per form and last until that submission is deleted.
+- Malformed keys return `400`. Public browser requests without `Authorization` ignore `Idempotency-Key`.
 
-So a client that times out after Rondyr stored the message can send the same request again with the same key and get the original ID, without a second message or a second notification. The key is read only with a token: on a browser request, Rondyr ignores it.
-
-### Intake errors
-
-| Status | Meaning |
-| --- | --- |
-| `400` | A malformed idempotency key, an invalid body, or no field left once the empty honeypot field is removed |
-| `401` | An `Authorization` header that isn't `Bearer` with an active token |
-| `403` | The form is suspended |
-| `404` | The form doesn't exist or belongs to another organization |
-| `413` | A body larger than 16 KiB |
-| `415` | A body that isn't `application/json` |
-| `429` | The form's minute cap (`Retry-After: 60`) or a daily quota of the organization (`Retry-After` in seconds until midnight UTC) |
-| `503` | Authentication or storage is temporarily unavailable |
-
-## Responses
-
-A submission in a list or a detail has these fields:
-
-| Field | Value |
-| --- | --- |
-| `submissionId` | The submission's UUID |
-| `organizationId`, `formId` | Internal IDs |
-| `formPublicId`, `formName` | The form's public ID, as in its submission URL, and its name |
-| `receivedAt` | Unix milliseconds |
-| `status` | `received`, `classifying`, `quarantined`, `accepted` or `archived` |
-| `reason` | Why the submission is quarantined, or `null`: `probable-spam`, `ambiguous`, `solicitation`, `low-relevance`, `classification-error`, `honeypot`, `repetition`, `turnstile-failed` or `quota` |
-| `label` | `off-topic` for a submission that the classifier accepted but found off-topic, or `null` |
-
-A list entry also has `preview`, the fields with each value cut to 240 characters. A detail has `fields`, the full values. The list response is `{"entries": […], "cursor": …}`; pass `cursor` as `after` to read the next page, until it is `null`.
-
-The counts response has one number per status (`received`, `classifying`, `accepted`, `quarantined`, `archived`) and `forms`, an array of `{"publicId", "counts"}` with the same numbers for each form that has a submission.
-
-## HTTP errors
+### Server intake errors
 
 | Status | Meaning |
 | --- | --- |
-| `400` | An invalid route parameter, filter, or cursor |
-| `401` | A missing, malformed, unknown, or revoked credential |
-| `403` | The token is valid, but the route requires a dashboard session |
-| `404` | The organization or submission doesn't exist or belongs to another organization |
-| `409` | The submission is no longer quarantined |
-| `503` | Authentication or the inbox is temporarily unavailable |
+| `400` | Malformed `Idempotency-Key`, invalid JSON/fields, or no fields left after removing an empty honeypot |
+| `401` | Invalid, malformed, or revoked Bearer token |
+| `403` | Form is suspended |
+| `404` | Form doesn't exist or belongs to another organization |
+| `413` | Body exceeds 16 KiB |
+| `415` | `Content-Type` isn't `application/json` |
+| `429` | Form minute cap (`Retry-After: 60`) or daily organization quota (`Retry-After` in seconds until midnight UTC) |
+| `503` | Service temporarily unavailable; retry with the same `Idempotency-Key` |
 
-Error responses have an empty body.
+## Inbox and review routes
 
-## Manage tokens with a session
+Start by calling `GET /api/organizations` to look up your organization's `id` and its `forms` list. Then use that `organizationId` in the routes below (paths starting with `/{organizationId}` are relative to `/api/organizations`):
 
-These routes take the dashboard's Better Auth session from the same origin, and answer `403` to a token. The base path is `/api/organizations/{organizationId}/api-tokens`.
-
-| Method | Request | Result |
+| Method | Path | Description |
 | --- | --- | --- |
-| `GET` | Base path | `200` with the active tokens, newest first. Each entry contains `id`, `name`, `suffix`, and `createdAt` (Unix milliseconds) |
-| `POST` | Base path with JSON `{"name":"Site inbox"}` | `201` with the metadata and a `token` field. This is the only response that contains the token, and it has `Cache-Control: no-store` |
-| `DELETE` | Base path with `?id={tokenId}` | `204` after revocation |
+| `GET` | `/api/organizations` | Array containing the token's organization (`id`, `name`, `role: "reviewer"`) and its forms |
+| `GET` | `/{organizationId}/submissions` | Up to 25 submissions, newest first, with `cursor` for pagination. Query params: `status`, `form` (public ID), `q` (search text, 3 to 100 chars), `after` (cursor) |
+| `GET` | `/{organizationId}/submission-counts` | Counts by status for the organization and per form (`forms: [{ publicId, counts }]`) |
+| `GET` | `/{organizationId}/submissions/{submissionId}` | Full detail of one submission |
+| `POST` | `/{organizationId}/submissions/{submissionId}/approve` | Accepts a quarantined submission (empty body) and forwards it to active destinations |
+| `POST` | `/{organizationId}/submissions/{submissionId}/dismiss` | Archives a quarantined submission (empty body) |
 
-Creation returns `400` for an invalid name and `409` when the organization already has ten active tokens. Names have 1 to 100 characters after trimming. A reviewer of the organization gets `403`. An account that isn't a member of the organization gets `404`, and so does a revocation of a token that doesn't exist or is already revoked.
+Example: accept a quarantined submission:
+
+```sh
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer ${RONDYR_API_TOKEN}" \
+  "https://forms.example.com/api/organizations/${ORGANIZATION_ID}/submissions/${SUBMISSION_ID}/approve"
+```
+
+Every other `/api/*` endpoint (such as admin settings, exports, deletion, or reclassify) returns `403` to an API token.
+
+### Submission object
+
+List responses return `{"entries": [...], "cursor": "..."}` (`cursor` is `null` on the last page). Each list entry has `preview` (values trimmed to 240 characters); detail responses have `fields` (full values). Both share these fields:
+
+| Field | Type / Values |
+| --- | --- |
+| `submissionId` | Submission UUID |
+| `organizationId`, `formId` | Internal IDs |
+| `formPublicId`, `formName` | Form public ID and dashboard name |
+| `receivedAt` | Unix timestamp in milliseconds |
+| `status` | `received`, `classifying`, `quarantined`, `accepted`, or `archived` |
+| `reason` | `probable-spam`, `ambiguous`, `solicitation`, `low-relevance`, `classification-error`, `honeypot`, `repetition`, `turnstile-failed`, `quota`, or `null` |
+| `label` | `off-topic` (for accepted off-topic messages) or `null` |
+
+### Review route errors
+
+| Status | Meaning |
+| --- | --- |
+| `400` | Invalid path parameter, query filter, or pagination cursor |
+| `401` | Missing, invalid, or revoked Bearer token |
+| `403` | Valid token, but the route isn't available to API tokens |
+| `404` | Organization or submission doesn't exist or belongs to another organization |
+| `409` | Submission is no longer quarantined (already accepted or archived) |
+| `503` | Service temporarily unavailable |
+
+Error responses on review routes have an empty body.

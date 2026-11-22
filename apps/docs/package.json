@@ -2,7 +2,7 @@
   "name": "@rondyr/docs",
   "version": "0.0.0",
   "private": true,
-  "description": "The Rondyr documentation site, built with Astro Starlight from the Markdown files in docs/ and architecture.md.",
+  "description": "The Rondyr documentation site, built with Astro Starlight from the user-facing Markdown files in docs/.",
   "license": "AGPL-3.0-only",
   "type": "module",
   "scripts": {

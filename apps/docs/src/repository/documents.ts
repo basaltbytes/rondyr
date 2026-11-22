@@ -1,6 +1,6 @@
-// The pages of the site are Markdown files of the repository, read where they are: every
-// `.md` file under `docs/`, and `architecture.md` at the root. They have no frontmatter;
-// the title is the first-level heading and the description is the first paragraph.
+// The pages of the site are Markdown files under `docs/`, read where they are, excluding
+// contributor-only material that stays on GitHub. They have no frontmatter; the title is
+// the first-level heading and the description is the first paragraph.
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -33,15 +33,22 @@ export interface ParsedDocument {
   readonly body: string;
 }
 
-/** Root files that are pages besides `docs/`. */
-const rootDocuments = ["architecture.md"];
+/**
+ * Contributor-only Markdown files under `docs/` that stay in the repository on GitHub
+ * rather than becoming pages on the documentation site.
+ */
+export const contributorDocuments: ReadonlySet<string> = new Set([
+  "docs/evaluation.md",
+  "docs/local-development.md",
+  "docs/operations.md",
+]);
 
 /** The longest meta description kept whole; a longer paragraph is cut after a sentence. */
 const descriptionLength = 200;
 
 /** The page ID of a repository path, or null when the file is not a page. */
 export function documentId(path: string): string | null {
-  if (rootDocuments.includes(path)) return path.slice(0, -".md".length);
+  if (contributorDocuments.has(path)) return null;
   const match = /^docs\/(.+)\.md$/u.exec(path);
   return match?.[1] ?? null;
 }
@@ -56,7 +63,7 @@ export function listDocuments(root: URL = repositoryRoot): DocumentSource[] {
   const docs = readdirSync(new URL("docs/", root), { recursive: true, encoding: "utf8" })
     .map((entry) => `docs/${entry.split("\\").join("/")}`)
     .filter((path) => path.endsWith(".md"));
-  const sources = [...rootDocuments, ...docs].toSorted().flatMap((path) => {
+  const sources = docs.toSorted().flatMap((path) => {
     const id = documentId(path);
     return id === null ? [] : [{ path, id }];
   });

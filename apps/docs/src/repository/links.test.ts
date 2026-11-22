@@ -37,25 +37,16 @@ test("sends a link to another page to its route, with the anchor", () => {
     url: "/webhooks/",
     title: "Webhooks",
   });
+});
+
+test("sends a link to another file of the repository to GitHub", () => {
   assert.deepEqual(
     resolveLink("../architecture.md#5-intelligent-classification", "docs/webhooks.md", false, root),
     {
       kind: "rewritten",
-      url: "/architecture/#5-intelligent-classification",
-      title: "Rondyr: technical architecture",
+      url: `${github}/blob/main/architecture.md#5-intelligent-classification`,
     },
   );
-  assert.deepEqual(
-    resolveLink("docs/deployment.md#fresh-account-checklist", "architecture.md", false, root),
-    {
-      kind: "rewritten",
-      url: "/deployment/#fresh-account-checklist",
-      title: "Deployment",
-    },
-  );
-});
-
-test("sends a link to another file of the repository to GitHub", () => {
   assert.deepEqual(resolveLink("./examples/verify-webhook.ts", "docs/webhooks.md", false, root), {
     kind: "rewritten",
     url: `${github}/blob/main/docs/examples/verify-webhook.ts`,

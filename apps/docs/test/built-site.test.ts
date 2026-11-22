@@ -136,16 +136,47 @@ test("links pages to each other by route, with the page title for a file name", 
     (node) => node.tagName === "a" && node.properties["href"] === "/deployment/#encryption-key",
   );
   assert.ok(links.length > 0);
-  for (const link of links) assert.equal(toString(link), "Deployment");
+  for (const link of links) assert.equal(toString(link), "Deploy Rondyr");
 });
 
-test("renders the Mermaid diagram of architecture.md as an SVG", () => {
-  const [diagram] = elements(builtPage("/architecture/"), (node) => hasClass(node, "diagram"));
-  assert.ok(diagram !== undefined);
-  assert.equal(
-    elements({ type: "root", children: [diagram] }, (node) => node.tagName === "svg").length,
-    1,
+test("links contributor material to GitHub from the contributing page", () => {
+  const links = hrefs(builtPage("/contributing/"));
+  assert.ok(links.includes("https://github.com/basaltbytes/rondyr/blob/main/architecture.md"));
+  assert.ok(links.includes("https://github.com/basaltbytes/rondyr/blob/main/CONTRIBUTING.md"));
+  assert.ok(links.includes("https://github.com/basaltbytes/rondyr/blob/main/AGENTS.md"));
+  assert.ok(
+    links.includes("https://github.com/basaltbytes/rondyr/blob/main/docs/local-development.md"),
   );
+  assert.ok(links.includes("https://github.com/basaltbytes/rondyr/blob/main/docs/evaluation.md"));
+});
+
+test("contains no Worker internals on any page of the site", () => {
+  const forbidden = [
+    /\bworkerd\b/iu,
+    /\bD1\b/u,
+    /\boutbox_events\b/u,
+    /\bd1_migrations\b/u,
+    /\bSubmissionAggregate\b/u,
+    /\bDurable Objects?\b/iu,
+    /\bdead-letter\b/iu,
+    /\bqueues?\b/iu,
+    /\bconsumers?\b/iu,
+    /\bclassification-queue\b/u,
+    /\bdelivery-queue\b/u,
+    /\bsubmission_inbox\b/u,
+    /\bnotification_targets\b/u,
+  ];
+  const pages = ["/", ...documents.map(({ id }) => pageRoute(id))];
+  const hits: string[] = [];
+  for (const route of pages) {
+    const [main] = elements(builtPage(route), (node) => node.tagName === "main");
+    const text = main === undefined ? "" : toString(main);
+    for (const pattern of forbidden) {
+      const match = pattern.exec(text);
+      if (match !== null) hits.push(`${route}: ${match[0]}`);
+    }
+  }
+  assert.deepEqual(hits, [], "Move Worker internals to contributor material on GitHub.");
 });
 
 test("serves the Rondyr mark from docs/brand/ as the favicon", () => {
