@@ -1,5 +1,7 @@
 import { expect } from "@playwright/test";
 
+import { discord } from "../../src/domain/deliveries/connectors/discord.ts";
+import { slack } from "../../src/domain/deliveries/connectors/slack.ts";
 import { confirmationPages } from "../../src/domain/submissions/confirmation-page.ts";
 import { externalSite, frenchT, owner, t, test } from "./fixtures.mjs";
 
@@ -583,6 +585,72 @@ test("add destinations, confirm a recipient, send a test and retry a failed webh
   await openSection(page, t("inbox.sections.destinations"));
   await webhook.getByRole("button", { name: sendTest }).click();
   await expect(webhook.getByRole("status")).toContainText(testDelivered);
+});
+
+test("add a Discord connector, correct a refused setting, test it and see its delivery", async ({
+  dashboard: page,
+  context,
+  externalOrigin,
+}) => {
+  await createOrganization(page);
+  await openSection(page, t("inbox.sections.forms"));
+  const endpoint = await publicFormUrl(page, formName);
+  await openSection(page, t("inbox.sections.destinations"));
+  const connectors = page.getByRole("region", {
+    name: t("inbox.connectors.label", { name: formName }),
+  });
+  await expect(connectors.getByText(t("inbox.connectors.empty"))).toBeVisible();
+  const channel = "Sales channel";
+  // The fake Discord answers by the last part of the path, which is the token of the webhook.
+  const webhookId = "3000000001";
+  const urlLabel = t("inbox.connectors.types.discord.fields.webhookUrl.label");
+  const name = connectors.getByRole("textbox", { name: t("inbox.connectors.name"), exact: true });
+  const url = connectors.getByLabel(urlLabel, { exact: true });
+  const add = connectors.getByRole("button", { name: t("inbox.connectors.add") });
+  await name.fill(channel);
+  // The name stays as typed when the service changes.
+  const service = connectors.getByRole("combobox", { name: t("inbox.connectors.service") });
+  await service.selectOption(slack.type);
+  await service.selectOption(discord.type);
+  await expect(name).toHaveValue(channel);
+  await url.fill("https://webhooks.example.test/not-discord");
+  await add.click();
+  await expect(connectors.getByRole("alert")).toHaveText(
+    t("inbox.connectors.refusals.invalid", { field: urlLabel }),
+  );
+  // A refused form keeps what was typed.
+  await expect(name).toHaveValue(channel);
+  await url.fill(`https://discord.com/api/webhooks/${webhookId}/ok`);
+  await add.click();
+  const destination = connectors.getByRole("listitem").filter({ hasText: channel });
+  await expect(destination).toBeVisible();
+  await expect(
+    destination.getByText(t("inbox.connectors.secretSaved", { label: urlLabel })),
+  ).toBeVisible();
+  // The form is empty again, and the page shows the webhook URL nowhere.
+  await expect(name).toHaveValue("");
+  await expect(page.getByText(webhookId)).toHaveCount(0);
+  await destination.getByRole("button", { name: t("inbox.destinations.test.send") }).click();
+  await expect(destination.getByRole("status")).toContainText(
+    t("inbox.destinations.test.delivered"),
+  );
+
+  const site = await context.newPage();
+  await openContact(site, externalOrigin, endpoint);
+  const message = "Request sent to a Discord channel";
+  expect((await submitContact(site, endpoint, message)).status()).toBe(202);
+  const reader = await openSubmission(page, t("inbox.folders.accepted"), message);
+  const history = reader.getByRole("region", { name: t("inbox.deliveries.label") });
+  const delivery = history.getByRole("listitem").filter({
+    hasText: t("inbox.deliveries.connector", { service: discord.label, name: channel }),
+  });
+  const refresh = history.getByRole("button", { name: t("inbox.deliveries.refresh") });
+  await expect(async () => {
+    await refresh.click();
+    await expect(delivery.getByText(t("status.deliveries.delivered"), { exact: true })).toBeVisible(
+      { timeout: 500 },
+    );
+  }).toPass({ timeout: 10_000 });
 });
 
 test("see a new message in the processing status after refreshing it", async ({

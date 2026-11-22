@@ -7,6 +7,8 @@ import {
   type Notification,
   type TestNotification,
 } from "../../ports/notification-provider.ts";
+import { connectors } from "../../domain/deliveries/connectors/catalog.ts";
+import { connectorProvider } from "./connector-provider.ts";
 import { emailProvider } from "./email-provider.ts";
 import { webhookProvider } from "./webhook-provider.ts";
 
@@ -39,15 +41,20 @@ export function notificationProviders(providers: ReadonlyMap<string, Provider>) 
   return Layer.succeed(NotificationProvider, dispatch(providers));
 }
 
-/** Webhooks over `fetch`, and email through the `EmailSender` of the stage. */
+/**
+ * Webhooks and the connectors of the catalog over `fetch`, and email through
+ * the `EmailSender` of the stage.
+ */
 export const notificationProvidersLive = Layer.effect(
   NotificationProvider,
-  Effect.map(Effect.all([webhookProvider, emailProvider]), ([webhook, email]) =>
-    dispatch(
-      new Map([
-        ["webhook", webhook],
-        ["email", email],
-      ]),
-    ),
-  ),
+  Effect.gen(function* () {
+    const webhook = yield* webhookProvider;
+    const email = yield* emailProvider;
+    const services = yield* Effect.forEach(connectors, (connector) =>
+      Effect.map(connectorProvider(connector), (provider) => [connector.type, provider] as const),
+    );
+    return dispatch(
+      new Map<string, Provider>([["webhook", webhook], ["email", email], ...services]),
+    );
+  }),
 ).pipe(Layer.provide(FetchHttpClient.layer));

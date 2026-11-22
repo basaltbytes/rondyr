@@ -4,6 +4,8 @@ import { RefreshCw } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
+import { connectorOf } from "@rondyr/deliveries/connectors/catalog";
+
 import { Button } from "~/components/ui/button";
 import { listDeliveries, retryDelivery } from "~/lib/deliveries-client";
 import type { Delivery } from "~/lib/deliveries-client";
@@ -27,14 +29,25 @@ const statusTones = {
 function Destination({ delivery }: { readonly delivery: Delivery }) {
   const { t } = useTranslation();
   const { destination } = delivery;
-  return destination.type === "webhook" ? (
-    <Trans
-      i18nKey="inbox.deliveries.webhook"
-      values={{ url: destination.url }}
-      components={{ code: <code className="font-mono text-xs" /> }}
-    />
-  ) : (
-    <>{t("inbox.deliveries.email", { recipients: destination.recipients.join(", ") })}</>
+  if (destination.type === "webhook") {
+    return (
+      <Trans
+        i18nKey="inbox.deliveries.webhook"
+        values={{ url: destination.url }}
+        components={{ code: <code className="font-mono text-xs" /> }}
+      />
+    );
+  }
+  if (destination.type === "email") {
+    return <>{t("inbox.deliveries.email", { recipients: destination.recipients.join(", ") })}</>;
+  }
+  return (
+    <>
+      {t("inbox.deliveries.connector", {
+        service: connectorOf(destination.type).label,
+        name: destination.name,
+      })}
+    </>
   );
 }
 

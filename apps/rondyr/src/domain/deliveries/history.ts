@@ -1,5 +1,6 @@
 import { Schema } from "effect";
 
+import { ConnectorType } from "./connectors/catalog.ts";
 import { DeliveryId, DeliveryStatus, TargetId } from "./delivery.ts";
 
 /** What a recorded attempt produced. */
@@ -30,6 +31,8 @@ export const DeliveryDestination = Schema.Union([
     type: Schema.Literal("email"),
     recipients: Schema.Array(Schema.String),
   }),
+  // A destination of a connector, with the name its admin gave it.
+  Schema.Struct({ targetId: TargetId, type: ConnectorType, name: Schema.String }),
 ]);
 
 /** A delivery of a submission and its attempts, oldest first. */

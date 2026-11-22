@@ -58,6 +58,7 @@ For custom domains, updates, and deploying from a fork with Alchemy and GitHub A
 - **Spam and sales-pitch filtering:** classifies every message for spam, unsolicited outreach, and business relevance with Jev (default) or OpenAI Decisions, with optional second-model escalation for uncertain messages.
 - **Bot defenses before AI:** per-visitor and per-form rate limits, honeypot fields, Cloudflare Turnstile, allowed origins, repeat detection, and per-organization daily quotas.
 - **Email and webhook forwarding:** sends accepted messages via Resend or Cloudflare Email Sending (to confirmed recipients only) and to HMAC-SHA-256 signed webhooks, with automatic retries and delivery history.
+- **Connectors:** posts accepted messages to a Discord or Slack channel and adds them as rows of an Airtable table, with the same retries. A new connector is one file.
 - **Team inbox:** **Admin** and **Reviewer** roles, invitation links, inbox search, CSV and JSON Lines export, message deletion, and automatic retention.
 - **Integrations:** plain HTML forms, cross-origin JSON `fetch`, server intake with idempotency keys and API tokens, and an [EmDash plugin](./docs/emdash.md) in [`packages/emdash-plugin/`](./packages/emdash-plugin/).
 
@@ -73,6 +74,7 @@ For custom domains, updates, and deploying from a fork with Alchemy and GitHub A
 | Review quarantined messages, search, check deliveries, export, delete | [Read and sort messages](./docs/inbox.md) |
 | Set up Resend or Cloudflare Email Sending and confirm recipients | [Send messages by email](./docs/email.md) |
 | Forward messages to webhooks and verify signatures | [Send messages to a webhook](./docs/webhooks.md) |
+| Post messages to Discord or Slack, add them to an Airtable table | [Send messages to Discord, Slack or Airtable](./docs/connectors.md) |
 | Connect an EmDash site | [Connect an EmDash site](./docs/emdash.md) |
 | Submit forms or review messages over HTTP with API tokens | [HTTP API](./docs/api.md) |
 

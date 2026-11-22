@@ -41,6 +41,7 @@ export const contributorDocuments: ReadonlySet<string> = new Set([
   "docs/evaluation.md",
   "docs/local-development.md",
   "docs/operations.md",
+  "docs/writing-a-connector.md",
 ]);
 
 /** The longest meta description kept whole; a longer paragraph is cut after a sentence. */

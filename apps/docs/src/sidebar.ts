@@ -24,7 +24,7 @@ export const sidebar: readonly SidebarGroup[] = [
   },
   {
     label: "Forward messages",
-    items: [{ slug: "email" }, { slug: "webhooks" }],
+    items: [{ slug: "email" }, { slug: "webhooks" }, { slug: "connectors" }],
   },
   {
     label: "Plugins",

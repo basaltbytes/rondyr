@@ -1,6 +1,16 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
+const folder = (path: string) => fileURLToPath(new URL(path, import.meta.url));
+
 export default defineConfig({
+  // The aliases of vite.config.ts that the tests of the dashboard import through.
+  resolve: {
+    alias: {
+      "~": folder("./src"),
+      "@rondyr/deliveries": folder("../src/domain/deliveries"),
+    },
+  },
   test: {
     name: "dashboard",
     include: ["**/*.test.ts"],

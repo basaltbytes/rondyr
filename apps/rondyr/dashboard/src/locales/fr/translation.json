@@ -289,6 +289,7 @@
       "empty": "Aucune livraison pour ce message.",
       "webhook": "Webhook <code>{{url}}</code>",
       "email": "E-mail à {{recipients}}",
+      "connector": "{{service}} : {{name}}",
       "nextAttempt": "Prochaine tentative après le {{date}}",
       "attempts_one": "{{count}} tentative",
       "attempts_many": "{{count}} tentatives",
@@ -556,7 +557,7 @@
       "placeholder": "https://",
       "add": "Ajouter le webhook",
       "notAdded": "Le webhook n’a pas pu être ajouté. Réessayez.",
-      "missingSecretsKey": "Le Worker n’a pas de clé RONDYR_SECRETS_KEY : impossible de créer un webhook ou de renouveler son secret.",
+      "missingSecretsKey": "Le Worker n’a pas de clé RONDYR_SECRETS_KEY : impossible d’enregistrer le secret d’un webhook ou d’un connecteur.",
       "refusals": {
         "invalid-url": "Cette adresse n’est pas une URL valide.",
         "not-https": "L’adresse doit commencer par https://.",
@@ -603,6 +604,73 @@
         "limit": "{{address}} a déjà reçu 3 e-mails de confirmation aujourd’hui. Réessayez demain.",
         "noProvider": "Ce serveur n’envoie pas d’e-mails : la confirmation ne peut pas partir.",
         "failed": "L’e-mail de confirmation à {{address}} n’a pas pu être envoyé. Réessayez."
+      }
+    },
+    "connectors": {
+      "label": "Connecteurs du formulaire {{name}}",
+      "title": "Connecteurs",
+      "description": "Chaque message accepté est aussi envoyé à ces services. Un envoi qui échoue est retenté, et les livraisons d’un message montrent chaque tentative.",
+      "loading": "Chargement des connecteurs…",
+      "loadFailed": "Impossible de charger les connecteurs.",
+      "empty": "Aucun connecteur pour ce formulaire.",
+      "active": "Actif",
+      "inactive": "Désactivé",
+      "service": "Service",
+      "name": "Nom",
+      "nameHint": "Affiché dans cette liste et dans les livraisons d’un message. Le nom du salon ou de la table convient bien.",
+      "optional": "{{label}} (facultatif)",
+      "setting": "{{label}} : {{value}}",
+      "secretSaved": "{{label}} : enregistré, et plus jamais affiché",
+      "secretAgain": "Saisissez de nouveau chaque secret. Rondyr n’affiche jamais un secret enregistré.",
+      "edit": "Modifier les réglages",
+      "add": "Ajouter le connecteur",
+      "notAdded": "Le connecteur n’a pas pu être ajouté. Réessayez.",
+      "refusals": {
+        "name": "Donnez à la destination un nom de 1 à {{max}} caractères.",
+        "missing": "Remplissez le champ « {{field}} ».",
+        "invalid": "Le champ « {{field}} » n’est pas valide. Vérifiez-le avec l’aide affichée dessous.",
+        "unknown": "Ce connecteur n’a pas de réglage nommé « {{field}} »."
+      },
+      "types": {
+        "discord": {
+          "about": "Publie chaque message dans un salon Discord, par un webhook du salon. Un essai y publie un message d’essai.",
+          "fields": {
+            "webhookUrl": {
+              "label": "URL du webhook",
+              "hint": "Dans Discord, ouvrez les paramètres du salon, puis Intégrations et Webhooks. Créez un webhook et copiez son URL."
+            }
+          }
+        },
+        "slack": {
+          "about": "Publie chaque message dans un canal Slack, par un webhook entrant d’une application Slack. Un essai y publie un message d’essai.",
+          "fields": {
+            "webhookUrl": {
+              "label": "URL du webhook",
+              "hint": "Dans les réglages de votre application Slack, activez Incoming Webhooks, ajoutez un webhook au canal et copiez son URL. Elle commence par https://hooks.slack.com/services/."
+            }
+          }
+        },
+        "airtable": {
+          "about": "Ajoute chaque message comme une ligne d’une table Airtable. La table doit avoir une colonne par champ du formulaire, du même nom. Un essai ajoute une ligne vide.",
+          "fields": {
+            "token": {
+              "label": "Jeton d’accès personnel",
+              "hint": "Créez-le dans le Builder Hub d’Airtable, avec le scope data.records:write et l’accès à la base."
+            },
+            "baseId": {
+              "label": "Identifiant de la base",
+              "hint": "Il commence par app et figure dans l’URL de la base : airtable.com/appXXXXXXXXXXXXXX/…"
+            },
+            "table": {
+              "label": "Table",
+              "hint": "Le nom de la table, ou son identifiant, qui commence par tbl."
+            },
+            "idColumn": {
+              "label": "Colonne d’identifiant",
+              "hint": "Le nom d’une colonne de texte qui reçoit l’identifiant de chaque message. Avec elle, une nouvelle tentative met à jour la ligne déjà ajoutée et n’en ajoute jamais une seconde. Choisissez un nom qu’aucun champ du formulaire ne porte : l’identifiant remplace la valeur d’un champ de ce nom."
+            }
+          }
+        }
       }
     },
     "members": {

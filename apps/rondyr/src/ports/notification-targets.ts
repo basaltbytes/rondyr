@@ -1,5 +1,9 @@
 import { Context, Effect, Schema } from "effect";
 
+import type {
+  ConnectorDestination,
+  ConnectorTarget,
+} from "../domain/deliveries/connectors/connector-target.ts";
 import type { NotificationTarget, TargetId } from "../domain/deliveries/delivery.ts";
 import type { EmailLanguage, EmailRecipients, EmailTarget } from "../domain/deliveries/email.ts";
 import type { DestinationTarget } from "../domain/deliveries/targets.ts";
@@ -46,7 +50,7 @@ export interface TestableTarget {
 export class NotificationTargets extends Context.Service<
   NotificationTargets,
   {
-    /** The webhook and email targets of a form. */
+    /** The targets of a form: webhooks, emails and the destinations of connectors. */
     readonly list: (
       form: FormScope,
     ) => Effect.Effect<
@@ -83,7 +87,26 @@ export class NotificationTargets extends Context.Service<
       recipients: EmailRecipients,
       language: EmailLanguage | undefined,
     ) => Effect.Effect<typeof EmailTarget.Type, TargetNotFound | StorageUnavailable>;
-    /** A webhook or email target, active or not, to send a test message to. */
+    /** Create an active destination of a connector. Its secret settings are sealed. */
+    readonly createConnector: (
+      form: FormScope,
+      destination: ConnectorDestination,
+    ) => Effect.Effect<
+      typeof ConnectorTarget.Type,
+      TargetNotFound | SecretsKeyMissing | StorageUnavailable
+    >;
+    /**
+     * Replace the name and every setting of a destination of a connector. A
+     * target of another type than the destination's is not found.
+     */
+    readonly replaceConnector: (
+      target: TargetScope,
+      destination: ConnectorDestination,
+    ) => Effect.Effect<
+      typeof ConnectorTarget.Type,
+      TargetNotFound | SecretsKeyMissing | StorageUnavailable
+    >;
+    /** A target, active or not, to send a test message to. */
     readonly testable: (
       target: TargetScope,
     ) => Effect.Effect<TestableTarget, TargetNotFound | StorageUnavailable>;

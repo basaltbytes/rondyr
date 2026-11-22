@@ -262,10 +262,11 @@ const testResult = Effect.fnUntraced(function* (
   return yield* readTestResult(body);
 });
 
-const labelOf = (record: typeof DeliveryRecord.Type) =>
-  record.destination.type === "webhook"
-    ? record.destination.url
-    : record.destination.recipients.join(", ");
+const labelOf = ({ destination }: typeof DeliveryRecord.Type) => {
+  if (destination.type === "webhook") return destination.url;
+  if (destination.type === "email") return destination.recipients.join(", ");
+  return destination.name;
+};
 
 const recordFor = (records: ReadonlyArray<typeof DeliveryRecord.Type>, label: string) => {
   const record = records.find((item) => labelOf(item) === label);

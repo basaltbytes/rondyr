@@ -1,5 +1,8 @@
 import { Schema } from "effect";
 
+import { ConnectorType } from "@rondyr/deliveries/connectors/catalog";
+import { ConnectorTarget } from "@rondyr/deliveries/connectors/connector-target";
+import type { CreateConnectorTarget } from "@rondyr/deliveries/connectors/connector-target";
 import { EmailLanguage, EmailTarget } from "@rondyr/deliveries/email";
 import { TargetTestResult } from "@rondyr/deliveries/history";
 import { DestinationTarget, TargetRequestError } from "@rondyr/deliveries/targets";
@@ -10,6 +13,10 @@ import type { Inbox } from "./inbox-client.ts";
 export type Target = typeof DestinationTarget.Type;
 export type Webhook = typeof WebhookTarget.Type;
 export type EmailDestination = typeof EmailTarget.Type;
+/** A destination that a connector sends to, such as a Discord channel. */
+export type ConnectorDestination = typeof ConnectorTarget.Type;
+/** The type, the name and every setting of a destination of a connector. */
+export type ConnectorDraft = typeof CreateConnectorTarget.Type;
 /** A language in which Rondyr writes the emails of a destination. */
 export type DestinationLanguage = EmailLanguage;
 export type IssuedSecret = typeof IssuedWebhookSecret.Type;
@@ -20,6 +27,10 @@ type Form = Inbox["forms"][number];
 export const isWebhook = Schema.is(WebhookTarget);
 
 export const isEmailDestination = Schema.is(EmailTarget);
+
+export const isConnectorDestination = Schema.is(ConnectorTarget);
+
+export const isConnectorType = Schema.is(ConnectorType);
 
 export const destinationLanguages = EmailLanguage.literals;
 
@@ -37,6 +48,7 @@ export class TargetRequestFailed extends Schema.TaggedError<
 const decodeTargets = Schema.decodeUnknownPromise(Schema.Array(DestinationTarget));
 const decodeTarget = Schema.decodeUnknownPromise(DestinationTarget);
 const decodeEmailTarget = Schema.decodeUnknownPromise(EmailTarget);
+const decodeConnectorTarget = Schema.decodeUnknownPromise(ConnectorTarget);
 const decodeIssued = Schema.decodeUnknownPromise(IssuedWebhookSecret);
 const decodeProblem = Schema.decodeUnknownOption(TargetRequestError);
 const decodeTestResult = Schema.decodeUnknownPromise(TargetTestResult);
@@ -55,7 +67,7 @@ const target = (id: Inbox["id"], targetId: Target["id"]) =>
   `${organization(id)}/targets/${encodeURIComponent(targetId)}`;
 const json = { "content-type": "application/json" };
 
-/** The webhook and email targets of a form. */
+/** The targets of a form: webhooks, emails and the destinations of connectors. */
 export async function listTargets(id: Inbox["id"], form: Form["publicId"], signal: AbortSignal) {
   const response = await send(formTargets(id, form), { signal });
   return decodeTargets(await response.json());
@@ -98,6 +110,34 @@ export async function replaceRecipients(
     body: JSON.stringify({ recipients, language }),
   });
   return decodeEmailTarget(await response.json());
+}
+
+/** Add a destination of a connector. The API seals its secret settings and never returns them. */
+export async function createConnectorTarget(
+  id: Inbox["id"],
+  form: Form["publicId"],
+  draft: ConnectorDraft,
+) {
+  const response = await send(formTargets(id, form), {
+    method: "POST",
+    headers: json,
+    body: JSON.stringify(draft),
+  });
+  return decodeConnectorTarget(await response.json());
+}
+
+/** Replace the name and every setting of a destination of a connector, secrets included. */
+export async function replaceConnectorSettings(
+  id: Inbox["id"],
+  targetId: Target["id"],
+  draft: ConnectorDraft,
+) {
+  const response = await send(`${target(id, targetId)}/settings`, {
+    method: "PUT",
+    headers: json,
+    body: JSON.stringify(draft),
+  });
+  return decodeConnectorTarget(await response.json());
 }
 
 export async function rotateSecret(id: Inbox["id"], targetId: Target["id"]) {

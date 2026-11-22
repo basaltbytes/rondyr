@@ -2,6 +2,11 @@ import { Clock, Effect, Layer, Redacted, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 import { Base64Url } from "effect/encoding";
 
+import { connectorOf, type ConnectorType } from "../../domain/deliveries/connectors/catalog.ts";
+import {
+  ConnectorTarget,
+  type ConnectorDestination,
+} from "../../domain/deliveries/connectors/connector-target.ts";
 import { TargetId } from "../../domain/deliveries/delivery.ts";
 import {
   EmailTarget,
@@ -24,15 +29,18 @@ import {
 } from "../../ports/notification-targets.ts";
 import { SecretCipher } from "../../ports/secret-cipher.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
+import { ConnectorConfiguration } from "../notifications/connector-configuration.ts";
 import { EmailConfiguration } from "../notifications/email-configuration.ts";
 import { WebhookConfiguration } from "../notifications/webhook-configuration.ts";
 import { d1, database } from "./d1.ts";
+import { listedTypes, StoredTargetType } from "./target-types.ts";
 
+const StoredConnectorConfiguration = Schema.fromJsonString(ConnectorConfiguration);
 const StoredConfiguration = Schema.fromJsonString(WebhookConfiguration);
 const StoredEmailConfiguration = Schema.fromJsonString(EmailConfiguration);
 const TargetRow = Schema.Struct({
   id: TargetId,
-  type: Schema.Literals(["webhook", "email"]),
+  type: StoredTargetType,
   configuration: Schema.String,
   active: Schema.Literals([0, 1]),
   created_at: Schema.Int,
@@ -45,6 +53,8 @@ const decodeConfiguration = Schema.decodeUnknownEffect(StoredConfiguration);
 const encodeConfiguration = Schema.encodeEffect(StoredConfiguration);
 const decodeEmailConfiguration = Schema.decodeUnknownEffect(StoredEmailConfiguration);
 const encodeEmailConfiguration = Schema.encodeEffect(StoredEmailConfiguration);
+const decodeConnectorConfiguration = Schema.decodeUnknownEffect(StoredConnectorConfiguration);
+const encodeConnectorConfiguration = Schema.encodeEffect(StoredConnectorConfiguration);
 
 const unreadable = () => StorageUnavailable.make();
 
@@ -106,16 +116,35 @@ const emailSummary = Effect.fnUntraced(function* (
   });
 });
 
+/** The name and the settings that are not secrets. The sealed secrets stay in D1. */
+const connectorSummary = Effect.fnUntraced(function* (
+  row: typeof TargetRow.Type,
+  type: ConnectorType,
+) {
+  const configuration = yield* decodeConnectorConfiguration(row.configuration).pipe(
+    Effect.mapError(unreadable),
+  );
+  return ConnectorTarget.make({
+    id: row.id,
+    type,
+    name: configuration.name,
+    settings: configuration.settings,
+    active: row.active === 1,
+    createdAt: row.created_at,
+  });
+});
+
 function summary(
   row: typeof TargetRow.Type,
   confirmed: Confirmed,
 ): Effect.Effect<typeof DestinationTarget.Type, StorageUnavailable> {
-  return row.type === "webhook" ? webhookSummary(row) : emailSummary(row, confirmed);
+  if (row.type === "webhook") return webhookSummary(row);
+  if (row.type === "email") return emailSummary(row, confirmed);
+  return connectorSummary(row, row.type);
 }
 
 const targetColumns = "t.id, t.type, t.configuration, t.active, t.created_at";
 const returnedColumns = "id, type, configuration, active, created_at";
-const listedTypes = "t.type IN ('webhook', 'email')";
 
 const list = Effect.fn("NotificationTargets.list")(function* (form: FormScope) {
   const db = yield* database;
@@ -285,6 +314,88 @@ const replaceRecipients = Effect.fn("NotificationTargets.replaceRecipients")(fun
   return yield* emailSummary(row, addresses);
 });
 
+/**
+ * The stored configuration of a destination of a connector: its secret settings
+ * sealed for the target, the others as typed.
+ */
+const sealed = Effect.fnUntraced(function* (
+  owner: typeof TargetId.Type,
+  destination: ConnectorDestination,
+) {
+  const cipher = yield* SecretCipher;
+  const secretNames = new Set(
+    connectorOf(destination.type)
+      .fields.filter(({ secret }) => secret)
+      .map(({ name }) => name),
+  );
+  const settings = Object.entries(destination.settings);
+  const secrets = yield* Effect.forEach(
+    settings.filter(([name]) => secretNames.has(name)),
+    ([name, value]) =>
+      Effect.map(cipher.seal(Redacted.make(value), owner), (secret) => [name, secret] as const),
+  );
+  return yield* encodeConnectorConfiguration({
+    name: destination.name,
+    settings: Object.fromEntries(settings.filter(([name]) => !secretNames.has(name))),
+    secrets: Object.fromEntries(secrets),
+  }).pipe(Effect.orDie);
+});
+
+const createConnector = Effect.fn("NotificationTargets.createConnector")(function* (
+  form: FormScope,
+  destination: ConnectorDestination,
+) {
+  const db = yield* database;
+  const id = TargetId.make(SecureRandom.uuidV4Unsafe());
+  const configuration = yield* sealed(id, destination);
+  const now = yield* Clock.currentTimeMillis;
+  const inserted = yield* d1(() =>
+    db
+      .prepare(`
+    INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, active, created_at)
+    SELECT ?1, f.organization_id, f.id, ?7, ?2, 1, ?3
+    FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
+    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6
+    RETURNING ${returnedColumns}
+  `)
+      .bind(
+        id,
+        configuration,
+        now,
+        form.userId,
+        form.organizationId,
+        form.formPublicId,
+        destination.type,
+      )
+      .all(),
+  );
+  const [row] = yield* decodeTargets(inserted.results).pipe(Effect.mapError(unreadable));
+  if (row === undefined) return yield* TargetNotFound.make();
+  return yield* connectorSummary(row, destination.type);
+});
+
+const replaceConnector = Effect.fn("NotificationTargets.replaceConnector")(function* (
+  target: TargetScope,
+  destination: ConnectorDestination,
+) {
+  const db = yield* database;
+  const configuration = yield* sealed(target.targetId, destination);
+  // The type never changes: a target of another type is not found.
+  const updated = yield* d1(() =>
+    db
+      .prepare(`
+    UPDATE notification_targets AS t SET configuration = ?4
+    WHERE ${scopedTarget} AND t.type = ?5
+    RETURNING ${returnedColumns}
+  `)
+      .bind(target.targetId, target.organizationId, target.userId, configuration, destination.type)
+      .all(),
+  );
+  const [row] = yield* decodeTargets(updated.results).pipe(Effect.mapError(unreadable));
+  if (row === undefined) return yield* TargetNotFound.make();
+  return yield* connectorSummary(row, destination.type);
+});
+
 const setStatus = Effect.fn("NotificationTargets.setStatus")(function* (
   target: TargetScope,
   status: typeof TargetStatus.Type,
@@ -310,7 +421,7 @@ const setStatus = Effect.fn("NotificationTargets.setStatus")(function* (
 const TestableRow = Schema.Struct({
   id: TargetId,
   organization_id: OrganizationId,
-  type: Schema.Literals(["webhook", "email"]),
+  type: StoredTargetType,
   configuration: Schema.fromJsonString(Schema.Json),
   public_id: Schema.String,
   name: Schema.String,
@@ -355,6 +466,10 @@ export const notificationTargetsLive = Layer.effect(
       createEmail: (form: FormScope, recipients: EmailRecipients, language: EmailLanguage) =>
         createEmail(form, recipients, language).pipe(Effect.provideService(EmailSender, email)),
       replaceRecipients,
+      createConnector: (form: FormScope, destination: ConnectorDestination) =>
+        provideCipher(createConnector(form, destination)),
+      replaceConnector: (target: TargetScope, destination: ConnectorDestination) =>
+        provideCipher(replaceConnector(target, destination)),
       testable,
       setStatus,
     };

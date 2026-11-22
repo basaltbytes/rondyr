@@ -1,6 +1,6 @@
 # Read and sort messages
 
-Every organization has its own inbox split into four folders: **To review**, **Accepted**, **Archived**, and **All messages**. Accepted messages are forwarded automatically to your email and webhook destinations; anything suspicious waits in **To review** until someone decides.
+Every organization has its own inbox split into four folders: **To review**, **Accepted**, **Archived**, and **All messages**. Accepted messages are forwarded automatically to your email, webhook and connector destinations; anything suspicious waits in **To review** until someone decides.
 
 ![Accepted folder showing five messages to Claywork Studio, with an open quote request for 40 stoneware cups and its Delivered webhook status](./screenshots/inbox.webp)
 
@@ -24,7 +24,7 @@ Open **To review** to check messages the spam filter or intake checks set aside.
 
 Open a message and choose an action:
 
-- **Accept and send** (or **Accept** if the form has no active destination): moves the message to **Accepted** and sends it to all active email and webhook destinations of that form.
+- **Accept and send** (or **Accept** if the form has no active destination): moves the message to **Accepted** and sends it to all active destinations of that form: emails, webhooks and connectors.
 - **Archive**: moves the message to **Archived** without sending any notification.
 - **Reclassify** (shown only on **Analysis unavailable** messages): sends the message back to the AI classifier once service is back. Each reclassification uses one slot of your organization's daily classification quota; if the quota is full for the day, try again after midnight UTC or raise the limit in **Settings → Daily quotas**.
 

@@ -34,7 +34,7 @@ Paste the copied URL into the `action` attribute of any standard HTML form:
 
 You can choose any field names you like. Naming the visitor's address field `email` has two handy effects: Rondyr uses it as the `Reply-To` address on notification emails, and uses it to detect repeated spam from the same sender.
 
-Send a test message from your page. Within a few seconds, it shows up in **Accepted** or **To review** in the dashboard. Next, set up [email](./email.md) or [webhooks](./webhooks.md) so accepted messages reach your team automatically, and add basic [spam protection](./spam-protection.md).
+Send a test message from your page. Within a few seconds, it shows up in **Accepted** or **To review** in the dashboard. Next, set up [email](./email.md), [webhooks](./webhooks.md) or a [connector](./connectors.md) to Discord, Slack or Airtable, so accepted messages reach your team automatically, and add basic [spam protection](./spam-protection.md).
 
 ## Redirect visitors after submission
 
