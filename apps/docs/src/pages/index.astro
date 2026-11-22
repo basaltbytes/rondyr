@@ -28,14 +28,14 @@ const groups = sidebar.map(({ label, items }) => ({
     hero: {
       title: "The gatekeeper for your forms.",
       tagline:
-        "Rondyr is a form backend with spam filtering that runs in your own Cloudflare account. Point your site's <code>&lt;form&gt;</code> at it, and Rondyr saves every message before screening it with a classifier model (Jev or OpenAI Decisions) for spam, sales pitches, and relevance to your business. Anything doubtful waits in quarantine until you accept or archive it.",
+        "Rondyr is a form backend with classifier-model powered spam filtering that runs in your own Cloudflare account. Describe your business and let strong decision models do the gatekeeping.",
       actions: [],
     },
   }}
 >
   <ContainerSection width="xl">
     <div class="not-content grid gap-16 pb-16 [&_a]:font-medium [&_a]:text-foreground [&_a]:underline [&_a]:decoration-brand [&_a]:underline-offset-[0.2em] [&_a:hover]:text-brand [&_code]:rounded-[0.3em] [&_code]:bg-surface [&_code]:px-[0.3em] [&_code]:py-[0.1em] [&_code]:text-[0.9em]">
-      <section class="border-t border-border pt-12" aria-labelledby="first-run-heading">
+      <section class="pt-12" aria-labelledby="first-run-heading">
         <h2
           id="first-run-heading"
           class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
@@ -63,7 +63,7 @@ const groups = sidebar.map(({ label, items }) => ({
       </section>
 
       <section
-        class="grid gap-x-12 gap-y-6 border-t border-border pt-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start"
+        class="grid gap-x-12 gap-y-6 border-t border-border pt-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center"
         aria-labelledby="form-on-your-site"
       >
         <div class="space-y-4">
@@ -74,7 +74,11 @@ const groups = sidebar.map(({ label, items }) => ({
             The form on your site
           </h2>
           <p class="leading-[1.65] text-muted">
-            Replace the address with your Rondyr host, and the ID with the one shown in <strong>Forms</strong>.
+            Point your site's{" "}
+            <code class="rounded-[0.3em] bg-surface px-[0.3em] py-[0.1em] text-[0.95em]">&lt;form&gt;</code>{" "}
+            at it, and Rondyr saves every message before screening it for spam, sales pitches, and
+            relevance to your business.
+            <br/>
             A regular HTML form shows a confirmation page or redirects visitors to your own thank-you page.
             The same URL accepts JSON from <code>fetch</code> when you want to submit without leaving the page.
           </p>

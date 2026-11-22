@@ -5,6 +5,7 @@
 import { Code } from "@astrojs/starlight/components";
 import antigravityIcon from "@lobehub/icons-static-svg/icons/antigravity-color.svg?raw";
 import claudeCodeIcon from "@lobehub/icons-static-svg/icons/claudecode-color.svg?raw";
+import cloudflareIcon from "@lobehub/icons-static-svg/icons/cloudflare-color.svg?raw";
 import codexIcon from "@lobehub/icons-static-svg/icons/codex-color.svg?raw";
 import cursorIcon from "@lobehub/icons-static-svg/icons/cursor.svg?raw";
 import openaiIcon from "@lobehub/icons-static-svg/icons/openai.svg?raw";
@@ -57,11 +58,14 @@ const harnesses = [
           </span>
           <span>OpenAI Decisions</span>
         </span>{" "}
-        that runs in your own Cloudflare account. Point your site's{" "}
-        <code class="rounded-[0.3em] bg-surface px-[0.3em] py-[0.1em] text-[0.95em]">&lt;form&gt;</code>{" "}
-        at it, and Rondyr saves every message before screening it for spam, sales pitches, and
-        relevance to your business. Anything doubtful waits in quarantine until you accept or
-        archive it.
+        that runs in your own{" "}
+        <span class="inline-flex items-center gap-[0.3em] align-bottom text-lg leading-[1.65] font-medium whitespace-nowrap text-foreground">
+          <span class="inline-flex items-center [&>svg]:size-[1em]" aria-hidden="true">
+            <Fragment set:html={cloudflareIcon} />
+          </span>
+          <span>Cloudflare</span>
+        </span>{" "}
+        account.
       </p>
       <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
         <a
@@ -83,15 +87,6 @@ const harnesses = [
           Read the deployment guide
         </a>
       </div>
-      <p class="mt-6 max-w-[38rem] border-l-[3px] border-brand pl-4 text-[0.9375rem] leading-[1.6] text-subtle [&_a]:font-medium [&_a]:text-foreground [&_a]:underline [&_a]:decoration-brand [&_a]:underline-offset-[0.2em] [&_strong]:text-foreground">
-        Rondyr needs <strong>Workers Paid</strong>, at least $5 a month per Cloudflare account. On
-        Workers Free, sign-in can fail and free daily limits run out quickly.{" "}
-        <a href="/costs/">Costs and limits</a>
-      </p>
-      <p class="mt-6 max-w-[38rem] border-l-[3px] border-brand pl-4 text-[0.9375rem] leading-[1.6] text-subtle [&_a]:font-medium [&_a]:text-foreground [&_a]:underline [&_a]:decoration-brand [&_a]:underline-offset-[0.2em] [&_strong]:text-foreground">
-        Prefer to deploy from a fork with Alchemy and GitHub Actions, on your own domain?{" "}
-        <a href="/deployment/#deploy-with-alchemy-and-github-actions">Deploy with Alchemy</a>
-      </p>
     </div>
 
     <div class="min-w-0 p-5 sm:p-6">
