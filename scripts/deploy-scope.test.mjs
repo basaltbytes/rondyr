@@ -24,6 +24,8 @@ test("skips the deployment when only the documentation changed", () => {
     "AGENTS.md",
     "CONTRIBUTING.md",
     "docs/deployment.md",
+    "docs/brand/rondyr-light-mode.svg",
+    "docs/brand/rondyr-dark-mode.svg",
     "docs/examples/verify-webhook.ts",
     ".agents/skills/effect-ts/SKILL.md",
   ]) {
@@ -56,9 +58,11 @@ test("deploys when a package the Worker depends on changed", () => {
   });
 });
 
-test("counts the app, the Wrangler configuration, the lockfile, the workspace file, the root manifest, the Node version, the patches and .github as a Worker change", () => {
+test("counts shared branding and Worker build inputs as changes to the Worker", () => {
   for (const path of [
     "apps/rondyr/src/worker.ts",
+    "docs/brand/rondyr.svg",
+    "docs/brand/rondyr-mark.svg",
     "wrangler.json",
     "pnpm-lock.yaml",
     "pnpm-workspace.yaml",
