@@ -289,6 +289,7 @@
       "empty": "No deliveries for this message.",
       "webhook": "Webhook <code>{{url}}</code>",
       "email": "Email to {{recipients}}",
+      "connector": "{{service}}: {{name}}",
       "nextAttempt": "Next attempt after {{date}}",
       "attempts_one": "{{count}} attempt",
       "attempts_many": "{{count}} attempts",
@@ -556,7 +557,7 @@
       "placeholder": "https://",
       "add": "Add webhook",
       "notAdded": "The webhook could not be added. Try again.",
-      "missingSecretsKey": "The Worker has no RONDYR_SECRETS_KEY, so it cannot create a webhook or rotate a secret.",
+      "missingSecretsKey": "The Worker has no RONDYR_SECRETS_KEY, so it cannot store the secret of a webhook or of a connector.",
       "refusals": {
         "invalid-url": "This is not a valid URL.",
         "not-https": "The URL must start with https://.",
@@ -603,6 +604,73 @@
         "limit": "{{address}} already got 3 confirmation emails today. Try again tomorrow.",
         "noProvider": "This server does not send email, so the confirmation cannot be sent.",
         "failed": "The confirmation email to {{address}} could not be sent. Try again."
+      }
+    },
+    "connectors": {
+      "label": "Connectors of the form {{name}}",
+      "title": "Connectors",
+      "description": "Each accepted message is also sent to these services. A send that fails is retried, and the deliveries of a message show every attempt.",
+      "loading": "Loading the connectors…",
+      "loadFailed": "Could not load the connectors.",
+      "empty": "No connectors for this form.",
+      "active": "Active",
+      "inactive": "Inactive",
+      "service": "Service",
+      "name": "Name",
+      "nameHint": "Shown in this list and in the deliveries of a message. The name of the channel or of the table works well.",
+      "optional": "{{label}} (optional)",
+      "setting": "{{label}}: {{value}}",
+      "secretSaved": "{{label}}: saved, and never shown again",
+      "secretAgain": "Type each secret again. Rondyr never shows a saved one.",
+      "edit": "Edit settings",
+      "add": "Add connector",
+      "notAdded": "The connector could not be added. Try again.",
+      "refusals": {
+        "name": "Give the destination a name of 1 to {{max}} characters.",
+        "missing": "Fill in the field “{{field}}”.",
+        "invalid": "The field “{{field}}” is not valid. Check it against the help under it.",
+        "unknown": "This connector has no setting named “{{field}}”."
+      },
+      "types": {
+        "discord": {
+          "about": "Posts each message to a Discord channel, through a webhook of the channel. A test posts a test message there.",
+          "fields": {
+            "webhookUrl": {
+              "label": "Webhook URL",
+              "hint": "In Discord, open the settings of the channel, then Integrations and Webhooks. Create a webhook and copy its URL."
+            }
+          }
+        },
+        "slack": {
+          "about": "Posts each message to a Slack channel, through an incoming webhook of a Slack app. A test posts a test message there.",
+          "fields": {
+            "webhookUrl": {
+              "label": "Webhook URL",
+              "hint": "In the settings of your Slack app, turn on Incoming Webhooks, add a webhook to the channel and copy its URL. It starts with https://hooks.slack.com/services/."
+            }
+          }
+        },
+        "airtable": {
+          "about": "Adds each message as a row of an Airtable table. The table needs a column for each field of the form, with the same name. A test adds an empty row.",
+          "fields": {
+            "token": {
+              "label": "Personal access token",
+              "hint": "Create it in the Airtable Builder Hub, with the data.records:write scope and access to the base."
+            },
+            "baseId": {
+              "label": "Base ID",
+              "hint": "It starts with app and is in the URL of the base: airtable.com/appXXXXXXXXXXXXXX/…"
+            },
+            "table": {
+              "label": "Table",
+              "hint": "The name of the table, or its ID, which starts with tbl."
+            },
+            "idColumn": {
+              "label": "ID column",
+              "hint": "The name of a text column that gets the ID of each message. With it, a retry updates the row it already added and never adds a second one. Choose a name that no field of the form has: the ID replaces the value of a field of that name."
+            }
+          }
+        }
       }
     },
     "members": {

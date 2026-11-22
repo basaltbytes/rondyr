@@ -1,6 +1,7 @@
 import { Option, Schema } from "effect";
 import { useTranslation } from "react-i18next";
 
+import { maxDestinationNameLength } from "@rondyr/deliveries/connectors/connector-target";
 import { maxRecipients } from "@rondyr/deliveries/email";
 
 import { FormProblem } from "~/components/text-field";
@@ -30,10 +31,12 @@ interface TargetFailureNoteProps {
   readonly failure: TargetFailure | null;
   /** The message for a failure that the API does not explain. */
   readonly fallback: string;
+  /** The label of a setting of a connector, for a refusal that names one. */
+  readonly settingLabel?: (name: string) => string;
 }
 
 /** The message of a failed request to the targets API, next to the fields it is about. */
-export function TargetFailureNote({ failure, fallback }: TargetFailureNoteProps) {
+export function TargetFailureNote({ failure, fallback, settingLabel }: TargetFailureNoteProps) {
   const { t } = useTranslation();
 
   function explain(problem: TargetProblem) {
@@ -42,6 +45,12 @@ export function TargetFailureNote({ failure, fallback }: TargetFailureNoteProps)
         return t(`inbox.webhooks.refusals.${problem.reason}`);
       case "recipients-refused":
         return t(`inbox.emails.refusals.${problem.reason}`, { max: maxRecipients });
+      case "name-refused":
+        return t("inbox.connectors.refusals.name", { max: maxDestinationNameLength });
+      case "settings-refused":
+        return t(`inbox.connectors.refusals.${problem.reason}`, {
+          field: settingLabel?.(problem.field) ?? problem.field,
+        });
       case "secrets-key-missing":
         return t("inbox.webhooks.missingSecretsKey");
       case "email-provider-missing":

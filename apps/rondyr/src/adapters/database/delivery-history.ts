@@ -11,6 +11,7 @@ import { DeliveryHistory } from "../../ports/delivery-history.ts";
 import { DeliveryNotFound, type SubmissionScope } from "../../ports/delivery-store.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
+import { listedTypes, StoredTargetType } from "./target-types.ts";
 
 const SubmissionRow = Schema.Struct({ id: Schema.String });
 const DeliveryRow = Schema.Struct({
@@ -20,7 +21,7 @@ const DeliveryRow = Schema.Struct({
   last_error: Schema.NullOr(Schema.String),
   created_at: Schema.Int,
   target_id: TargetId,
-  type: Schema.Literals(["webhook", "email"]),
+  type: StoredTargetType,
   configuration: Schema.String,
 });
 const AttemptRow = Schema.Struct({
@@ -42,29 +43,38 @@ const decodeDeliveries = Schema.decodeUnknownEffect(Schema.Array(DeliveryRow));
 const decodeAttempts = Schema.decodeUnknownEffect(Schema.Array(AttemptRow));
 const decodeWebhookLabel = Schema.decodeUnknownEffect(WebhookLabel);
 const decodeEmailLabel = Schema.decodeUnknownEffect(EmailLabel);
+const decodeConnectorLabel = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Struct({ name: Schema.String })),
+);
 
 const unreadable = () => StorageUnavailable.make();
 
 function destinationOf(
   row: typeof DeliveryRow.Type,
 ): Effect.Effect<typeof DeliveryDestination.Type, StorageUnavailable> {
-  return row.type === "webhook"
-    ? decodeWebhookLabel(row.configuration).pipe(
-        Effect.mapBoth({
-          onSuccess: ({ url }) => ({ targetId: row.target_id, type: "webhook" as const, url }),
-          onFailure: unreadable,
-        }),
-      )
-    : decodeEmailLabel(row.configuration).pipe(
-        Effect.mapBoth({
-          onSuccess: ({ recipients }) => ({
-            targetId: row.target_id,
-            type: "email" as const,
-            recipients,
-          }),
-          onFailure: unreadable,
-        }),
-      );
+  const { type } = row;
+  if (type === "webhook") {
+    return decodeWebhookLabel(row.configuration).pipe(
+      Effect.mapBoth({
+        onSuccess: ({ url }) => ({ targetId: row.target_id, type, url }),
+        onFailure: unreadable,
+      }),
+    );
+  }
+  if (type === "email") {
+    return decodeEmailLabel(row.configuration).pipe(
+      Effect.mapBoth({
+        onSuccess: ({ recipients }) => ({ targetId: row.target_id, type, recipients }),
+        onFailure: unreadable,
+      }),
+    );
+  }
+  return decodeConnectorLabel(row.configuration).pipe(
+    Effect.mapBoth({
+      onSuccess: ({ name }) => ({ targetId: row.target_id, type, name }),
+      onFailure: unreadable,
+    }),
+  );
 }
 
 // The submission is in an organization of the account. Every query of this file uses it.
@@ -74,7 +84,6 @@ const scopedSubmission = `
     SELECT 1 FROM organization_members m WHERE m.organization_id = s.organization_id AND m.user_id = ?3
   )
 `;
-const listedTypes = "t.type IN ('webhook', 'email')";
 
 const list = Effect.fn("DeliveryHistory.list")(function* (submission: SubmissionScope) {
   const db = yield* database;

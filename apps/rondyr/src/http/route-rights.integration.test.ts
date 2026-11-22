@@ -142,6 +142,7 @@ const rights: ReadonlyArray<RouteRights> = [
   { route: "POST /api/organizations/:organizationId/forms/:publicId/targets", ...admin },
   { route: "POST /api/organizations/:organizationId/targets/:targetId/rotate-secret", ...admin },
   { route: "PUT /api/organizations/:organizationId/targets/:targetId/recipients", ...admin },
+  { route: "PUT /api/organizations/:organizationId/targets/:targetId/settings", ...admin },
   { route: "POST /api/organizations/:organizationId/targets/:targetId/confirmations", ...admin },
   { route: "POST /api/organizations/:organizationId/targets/:targetId/test", ...admin },
   { route: "POST /api/organizations/:organizationId/targets/:targetId/:action", ...admin },

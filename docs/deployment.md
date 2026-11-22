@@ -63,9 +63,9 @@ You can also offer a second opinion for uncertain messages by setting `RONDYR_ES
 
 ### Encryption key
 
-`RONDYR_SECRETS_KEY` encrypts webhook signing secrets and Turnstile secret keys before saving them. The button deployment generates a random 32-byte base64 key on first deploy and never overwrites it on later deployments.
+`RONDYR_SECRETS_KEY` encrypts webhook signing secrets, Turnstile secret keys and the secret settings of [connectors](./connectors.md) (a webhook URL or a token) before saving them. The button deployment generates a random 32-byte base64 key on first deploy and never overwrites it on later deployments.
 
-If you want your own key (for instance, to migrate an instance later), generate one with `openssl rand -base64 32` and set it before creating your first webhook or Turnstile widget. Changing or removing `RONDYR_SECRETS_KEY` later makes existing webhook secrets and Turnstile keys unreadable: webhook deliveries fail until you rotate each webhook's secret, and Turnstile stops verifying tokens (with a warning on each form's Turnstile card) until you save both Turnstile keys again.
+If you want your own key (for instance, to migrate an instance later), generate one with `openssl rand -base64 32` and set it before creating your first webhook, connector or Turnstile widget. Changing or removing `RONDYR_SECRETS_KEY` later makes existing webhook secrets, connector secrets and Turnstile keys unreadable: webhook deliveries fail until you rotate each webhook's secret, connector deliveries fail until you save the settings of each connector again, and Turnstile stops verifying tokens (with a warning on each form's Turnstile card) until you save both Turnstile keys again.
 
 ## Updates
 
@@ -116,7 +116,7 @@ If you prefer deploying from a GitHub fork with infrastructure managed in CI, on
    | `BETTER_AUTH_URL_PROD` | Variable | Your HTTPS origin, such as `https://forms.example.com` (no path or port) |
    | `BETTER_AUTH_SECRET_PROD` | Secret | At least 32 random characters (`openssl rand -hex 32`) |
    | `RONDYR_SETUP_TOKEN_PROD` | Secret, optional | At least 32 random characters, only until you create the owner account |
-   | `RONDYR_SECRETS_KEY_PROD` | Secret, optional | 32 random bytes in base64 (`openssl rand -base64 32`), required for webhooks and Turnstile |
+   | `RONDYR_SECRETS_KEY_PROD` | Secret, optional | 32 random bytes in base64 (`openssl rand -base64 32`), required for webhooks, connectors and Turnstile |
    | `RONDYR_CLASSIFIER_PROD` | Variable, optional | `jev` (default) or `openai` |
    | `RONDYR_ESCALATION_CLASSIFIER_PROD` | Variable, optional | `openai` or `jev` |
    | `RONDYR_EMAIL_PROVIDER_PROD` | Variable, optional | `resend` (default) or `cloudflare` |

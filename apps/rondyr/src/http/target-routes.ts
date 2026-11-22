@@ -6,6 +6,11 @@ import {
   HttpServerResponse,
 } from "effect/http";
 
+import {
+  ConnectorTarget,
+  CreateConnectorTarget,
+  parseConnectorDestination,
+} from "../domain/deliveries/connectors/connector-target.ts";
 import { TargetId } from "../domain/deliveries/delivery.ts";
 import {
   defaultEmailLanguage,
@@ -50,6 +55,7 @@ const StatusPath = TargetPath.mapFields((fields) => ({
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const targetJson = HttpServerResponse.schemaJson(DestinationTarget);
 const emailTargetJson = HttpServerResponse.schemaJson(EmailTarget);
+const connectorTargetJson = HttpServerResponse.schemaJson(ConnectorTarget);
 const issuedJson = HttpServerResponse.schemaJson(IssuedWebhookSecret);
 const errorJson = HttpServerResponse.schemaJson(TargetRequestError);
 const confirmationErrorJson = HttpServerResponse.schemaJson(ConfirmationRequestError);
@@ -168,12 +174,44 @@ const createEmail = Effect.fnUntraced(function* (
   return yield* emailTargetJson(created, { status: 201, ...jsonOptions });
 });
 
+const createConnector = Effect.fnUntraced(function* (
+  form: FormScope,
+  input: typeof CreateConnectorTarget.Type,
+) {
+  const destination = parseConnectorDestination(input);
+  if (Result.isFailure(destination)) {
+    return yield* errorJson(destination.failure, { status: 400, ...jsonOptions });
+  }
+  const targets = yield* NotificationTargets;
+  const created = yield* targets.createConnector(form, destination.success);
+  return yield* connectorTargetJson(created, { status: 201, ...jsonOptions });
+});
+
 const create = Effect.gen(function* () {
   const { organizationId, publicId } = yield* HttpRouter.schemaPathParams(FormPath);
   const userId = yield* account(organizationId);
   const input = yield* HttpServerRequest.schemaBodyJson(CreateTarget);
   const form: FormScope = { userId, organizationId, formPublicId: publicId };
-  return yield* input.type === "webhook" ? createWebhook(form, input) : createEmail(form, input);
+  if (input.type === "webhook") return yield* createWebhook(form, input);
+  if (input.type === "email") return yield* createEmail(form, input);
+  return yield* createConnector(form, input);
+}).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
+
+/** Replace the name and every setting of a destination of a connector, secrets included. */
+const replaceSettings = Effect.gen(function* () {
+  const { organizationId, targetId } = yield* HttpRouter.schemaPathParams(TargetPath);
+  const userId = yield* account(organizationId);
+  const input = yield* HttpServerRequest.schemaBodyJson(CreateConnectorTarget);
+  const destination = parseConnectorDestination(input);
+  if (Result.isFailure(destination)) {
+    return yield* errorJson(destination.failure, { status: 400, ...jsonOptions });
+  }
+  const targets = yield* NotificationTargets;
+  const replaced = yield* targets.replaceConnector(
+    { userId, organizationId, targetId },
+    destination.success,
+  );
+  return yield* connectorTargetJson(replaced, jsonOptions);
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
 
 const replaceRecipients = Effect.gen(function* () {
@@ -230,6 +268,7 @@ export const targetRoutes = Layer.mergeAll(
   HttpRouter.add("POST", formTargets, withErrors(create)),
   HttpRouter.add("POST", `${target}/rotate-secret`, withErrors(rotate)),
   HttpRouter.add("PUT", `${target}/recipients`, withErrors(replaceRecipients)),
+  HttpRouter.add("PUT", `${target}/settings`, withErrors(replaceSettings)),
   HttpRouter.add("POST", `${target}/confirmations`, withErrors(resend)),
   HttpRouter.add("POST", `${target}/:action`, withErrors(setStatus)),
 );

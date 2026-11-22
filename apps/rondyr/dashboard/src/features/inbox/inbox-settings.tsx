@@ -10,6 +10,7 @@ import { useIsMobile } from "~/hooks/use-mobile";
 import type { Inbox } from "~/lib/inbox-client";
 
 import { AllowedOrigins } from "./allowed-origins.tsx";
+import { ConnectorTargets } from "./connector-targets.tsx";
 import { EmailTargets } from "./email-targets.tsx";
 import { FormSettings, NewForm } from "./form-management.tsx";
 import { InboxSetup } from "./inbox-setup.tsx";
@@ -183,6 +184,11 @@ export function InboxSettings({
             <>
               <WebhookTargets key={`webhooks-${shown.publicId}`} inboxId={inbox.id} form={shown} />
               <EmailTargets key={`emails-${shown.publicId}`} inboxId={inbox.id} form={shown} />
+              <ConnectorTargets
+                key={`connectors-${shown.publicId}`}
+                inboxId={inbox.id}
+                form={shown}
+              />
             </>
           )}
           {shown !== undefined && section === "origins" && (
