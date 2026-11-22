@@ -1,6 +1,6 @@
 # Fight spam
 
-Rondyr filters every message automatically with an AI classifier, never deleting a real inquiry on a model's guess. To block bots before they even reach the classifier, layer three quick settings on your form: a business description, a honeypot field, and Cloudflare Turnstile.
+Rondyr filters every message automatically with a classifier model (Jev or OpenAI Decisions), never deleting a real inquiry on a model's guess. To block bots before they even reach the classifier, layer three quick settings on your form: a business description, a honeypot field, and Cloudflare Turnstile.
 
 ## 1. Describe your business
 

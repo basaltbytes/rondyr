@@ -28,7 +28,7 @@ const groups = sidebar.map(({ label, items }) => ({
     hero: {
       title: "The gatekeeper for your forms.",
       tagline:
-        "Rondyr is a form backend with spam filtering that runs in your own Cloudflare account. Point your site's <code>&lt;form&gt;</code> at it, and Rondyr saves every message before screening it for spam, sales pitches, and relevance to your business. Anything doubtful waits in quarantine until you accept or archive it.",
+        "Rondyr is a form backend with spam filtering that runs in your own Cloudflare account. Point your site's <code>&lt;form&gt;</code> at it, and Rondyr saves every message before screening it with a classifier model (Jev or OpenAI Decisions) for spam, sales pitches, and relevance to your business. Anything doubtful waits in quarantine until you accept or archive it.",
       actions: [],
     },
   }}
@@ -63,8 +63,10 @@ const groups = sidebar.map(({ label, items }) => ({
           <div>
             <dt>Screened for spam</dt>
             <dd>
-              A classifier checks each message for spam, unsolicited sales pitches, and (if you describe
-              your business) whether it relates to what you do.
+              Jev on Workers AI or the OpenAI Decisions API scores each message for spam, unsolicited
+              sales pitches, and (if you describe your business) whether it relates to what you do. You
+              pick the model for your instance and can optionally use the second one for uncertain
+              messages.
             </dd>
           </div>
           <div>

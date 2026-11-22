@@ -24,7 +24,7 @@
 > [!WARNING]
 > Rondyr is pre-alpha software. The data model and HTTP API can change between commits.
 
-Point your website's `<form>` at Rondyr and it saves every message in your own Cloudflare account, checks it for spam, sales pitches, and relevance to your business, and forwards accepted messages by email or webhook. Rondyr never deletes a message on an AI model's guess: anything doubtful waits in **To review** with a plain reason until a person accepts or archives it.
+Point your website's `<form>` at Rondyr and it saves every message in your own Cloudflare account, screens it with a classifier model (Jev or OpenAI Decisions) for spam, sales pitches, and relevance to your business, and forwards accepted messages by email or webhook. Rondyr never deletes a message on a model's guess: anything doubtful waits in **To review** with a plain reason until a person accepts or archives it.
 
 ## Deploy in a few minutes
 
