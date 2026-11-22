@@ -1,8 +1,7 @@
 /*
- * Rondyr colors, from docs/brand/rondyr.svg: ink #202626, paper #f2f0e9, and the
- * checkpoint dot, #a74830 on light backgrounds and #f3a082 on dark ones. Light grays take
- * the warm hue of the paper, dark grays the cool hue of the ink. These rules are outside
- * Lucode's cascade layer, so they replace its neutral grays.
+ * The site uses the logo's ink (#202626) and paper (#f2f0e9), with a rust accent.
+ * Light grays take the warm hue of the paper, dark grays the cool hue of the ink.
+ * These rules are outside Lucode's cascade layer, so they replace its neutral grays.
  */
 :root,
 :root[data-theme="light"] {
@@ -48,7 +47,7 @@
   --sl-color-text-accent: var(--rondyr-accent);
 }
 
-/* Links in the pages: ink text with an underline in the checkpoint color. */
+/* Page links use ink text and an accent underline. */
 .sl-markdown-content a:not([class]) {
   text-decoration-color: var(--rondyr-accent);
   text-decoration-thickness: 1px;
@@ -64,11 +63,7 @@
  * copies follow the theme that the reader picked in the header instead.
  */
 .brand-ink .rondyr-ink {
-  stroke: var(--foreground);
-}
-
-.brand-ink .rondyr-checkpoint {
-  fill: var(--rondyr-accent);
+  color: var(--foreground);
 }
 
 ::selection {

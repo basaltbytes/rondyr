@@ -86,6 +86,7 @@ export default defineConfig(({ command }) => ({
   resolve: {
     tsconfigPaths: true,
     alias: {
+      "@rondyr/brand": fileURLToPath(new URL("../../docs/brand", import.meta.url)),
       "@rondyr/contracts": fileURLToPath(new URL("./src/domain/submissions", import.meta.url)),
       "@rondyr/deliveries": fileURLToPath(new URL("./src/domain/deliveries", import.meta.url)),
       "@rondyr/forms": fileURLToPath(new URL("./src/domain/forms", import.meta.url)),

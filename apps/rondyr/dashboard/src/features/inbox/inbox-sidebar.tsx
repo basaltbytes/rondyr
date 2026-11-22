@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 
 import { allows } from "@rondyr/organizations/member-role";
 
+import { ProductLogo } from "~/components/product-logo";
 import {
   Sidebar,
   SidebarContent,
@@ -126,6 +127,9 @@ export function InboxSidebar({
   return (
     <Sidebar label={t("inbox.navigation.label")}>
       <SidebarHeader>
+        <div className={cn("flex", collapsed ? "justify-center" : "px-1")}>
+          <ProductLogo compact={collapsed} />
+        </div>
         <OrganizationSwitcher
           inboxes={inboxes}
           inbox={inbox}
