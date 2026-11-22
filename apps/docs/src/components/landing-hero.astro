@@ -1,16 +1,31 @@
 ---
 // Starlight renders this component instead of the page title on a page with `hero` in its
 // frontmatter. Only the landing page has one: its first screen is the pitch, the Deploy to
-// Cloudflare button and the three steps of a first run.
+// Cloudflare button, and the agent prompt card with overlapping harness logos.
+import { Code } from "@astrojs/starlight/components";
+import antigravityIcon from "@lobehub/icons-static-svg/icons/antigravity-color.svg?raw";
+import claudeCodeIcon from "@lobehub/icons-static-svg/icons/claudecode-color.svg?raw";
+import codexIcon from "@lobehub/icons-static-svg/icons/codex-color.svg?raw";
+import cursorIcon from "@lobehub/icons-static-svg/icons/cursor.svg?raw";
+import openaiIcon from "@lobehub/icons-static-svg/icons/openai.svg?raw";
+import opencodeIcon from "@lobehub/icons-static-svg/icons/opencode.svg?raw";
+import typesafeAiIcon from "@lobehub/icons-static-svg/icons/typesafeai.svg?raw";
 import { ContainerSection } from "lucode-starlight/components";
 
 import mark from "../../../../docs/brand/rondyr-mark.svg?raw";
 
-import { deployUrl, firstRun } from "../landing.ts";
+import { agentPrompt, deployUrl } from "../landing.ts";
 
 const { hero } = Astro.locals.starlightRoute.entry.data;
 const title = hero?.title ?? "";
-const tagline = hero?.tagline ?? "";
+
+const harnesses = [
+  { name: "Claude Code", svg: claudeCodeIcon },
+  { name: "OpenAI Codex", svg: codexIcon },
+  { name: "Cursor", svg: cursorIcon },
+  { name: "OpenCode", svg: opencodeIcon },
+  { name: "Antigravity", svg: antigravityIcon },
+];
 ---
 
 <ContainerSection width="xl">
@@ -18,7 +33,22 @@ const tagline = hero?.tagline ?? "";
     <div class="pitch">
       <div class="mark brand-ink" aria-hidden="true"><Fragment set:html={mark} /></div>
       <h1 id="_top" data-page-title>{title}</h1>
-      <p class="tagline" set:html={tagline} />
+      <p class="tagline">
+        Rondyr is a form backend with spam filtering that runs in your own Cloudflare account. Point
+        your site's <code>&lt;form&gt;</code> at it, and Rondyr saves every message before screening
+        it with{" "}
+        <span class="inline-brand">
+          <span class="brand-icon brand-icon-jev" aria-hidden="true"><Fragment set:html={typesafeAiIcon} /></span>
+          <span>Jev</span>
+        </span>{" "}
+        or{" "}
+        <span class="inline-brand">
+          <span class="brand-icon" aria-hidden="true"><Fragment set:html={openaiIcon} /></span>
+          <span>OpenAI Decisions</span>
+        </span>{" "}
+        for spam, sales pitches, and relevance to your business. Anything doubtful waits in
+        quarantine until you accept or archive it.
+      </p>
       <div class="actions">
         <a class="deploy" href={deployUrl}>
           <img
@@ -41,18 +71,22 @@ const tagline = hero?.tagline ?? "";
       </p>
     </div>
 
-    <div class="first-run">
-      <h2>First run</h2>
-      <ol>
-        {
-          firstRun.map((step) => (
-            <li>
-              <h3>{step.title}</h3>
-              <p set:html={step.html} />
-            </li>
-          ))
-        }
-      </ol>
+    <div class="agent-card">
+      <div class="agent-header">
+        <div class="harness-stack" aria-label="Works with Claude Code, OpenAI Codex, Cursor, OpenCode, and Antigravity">
+          {
+            harnesses.map((harness) => (
+              <span class="harness-badge" title={harness.name} aria-hidden="true">
+                <Fragment set:html={harness.svg} />
+              </span>
+            ))
+          }
+        </div>
+        <h2>Copy this prompt for your agent</h2>
+      </div>
+      <div class="agent-code">
+        <Code code={agentPrompt} lang="markdown" title="prompt.md" />
+      </div>
     </div>
   </section>
 </ContainerSection>
@@ -66,9 +100,9 @@ const tagline = hero?.tagline ?? "";
 
   @media (min-width: 64rem) {
     .landing-hero {
-      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-      gap: calc(var(--spacing) * 16);
-      align-items: start;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr);
+      gap: calc(var(--spacing) * 14);
+      align-items: baseline;
       padding-block-start: calc(var(--spacing) * 16);
     }
   }
@@ -103,6 +137,42 @@ const tagline = hero?.tagline ?? "";
     padding: 0.1em 0.3em;
     border-radius: 0.3em;
     background: var(--gray-7);
+  }
+
+  .inline-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--foreground);
+    vertical-align: bottom;
+    font-size: 1.125rem;
+    line-height: 1.65;
+  }
+
+  .brand-icon {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .brand-icon :global(svg) {
+    width: 1em;
+    height: 1em;
+  }
+
+  .brand-icon-jev {
+    justify-content: center;
+    width: 1.15em;
+    height: 1.15em;
+    border-radius: 0.25em;
+    background: #e551ba;
+    color: #1e1e1e;
+  }
+
+  .brand-icon-jev :global(svg) {
+    width: 0.8em;
+    height: 0.8em;
   }
 
   .actions {
@@ -166,77 +236,79 @@ const tagline = hero?.tagline ?? "";
     text-underline-offset: 0.2em;
   }
 
-  .first-run {
-    padding: calc(var(--spacing) * 6);
+  .agent-card {
+    min-width: 0;
+    padding: calc(var(--spacing) * 5);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     background: var(--gray-7);
   }
 
   @media (min-width: 40rem) {
-    .first-run {
-      padding: calc(var(--spacing) * 8);
+    .agent-card {
+      padding: calc(var(--spacing) * 6);
     }
   }
 
-  .first-run h2 {
-    margin: 0;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--gray-3);
+  .agent-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--spacing) * 3);
+    margin-block-end: calc(var(--spacing) * 4);
   }
 
-  ol {
-    counter-reset: step;
-    list-style: none;
-    margin: calc(var(--spacing) * 6) 0 0;
-    padding: 0;
-    display: grid;
-    gap: calc(var(--spacing) * 6);
+  .harness-stack {
+    display: inline-flex;
+    align-items: center;
+    padding-inline-end: 0.45rem;
   }
 
-  li {
-    counter-increment: step;
-    display: grid;
-    grid-template-columns: 2.25rem minmax(0, 1fr);
-    column-gap: calc(var(--spacing) * 3);
-  }
-
-  li::before {
-    content: counter(step);
-    grid-row: span 2;
-    display: grid;
-    place-items: center;
-    width: 2.25rem;
-    height: 2.25rem;
+  .harness-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    margin-inline-end: -0.45rem;
     border-radius: 999px;
-    border: 1.5px solid var(--rondyr-accent);
-    color: var(--rondyr-accent);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
+    border: 2px solid var(--gray-7);
+    background: var(--background);
+    color: var(--foreground);
   }
 
-  h3 {
+  .harness-badge :global(svg) {
+    width: 1.05rem;
+    height: 1.05rem;
+    display: block;
+  }
+
+  .agent-header h2 {
     margin: 0;
-    align-self: center;
-    font-size: 1.0625rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     color: var(--foreground);
   }
 
-  li p {
-    margin: calc(var(--spacing) * 1.5) 0 0;
-    line-height: 1.6;
-    color: var(--gray-2);
+  .agent-code {
+    min-width: 0;
   }
 
-  li p :global(code) {
-    font-size: 0.9em;
-    padding: 0.1em 0.3em;
-    border-radius: 0.3em;
-    background: var(--background);
-    white-space: nowrap;
+  .agent-code :global(.expressive-code pre) {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .agent-code :global(.expressive-code .ec-line .code) {
+    white-space: pre-wrap;
+  }
+
+  .agent-code :global(.expressive-code .copy button) {
+    opacity: 0.85;
+  }
+
+  .agent-code :global(.expressive-code .copy button:hover),
+  .agent-code :global(.expressive-code .copy button:focus-visible) {
+    opacity: 1;
   }
 </style>

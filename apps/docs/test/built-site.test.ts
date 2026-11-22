@@ -215,7 +215,12 @@ test("the landing page has the Deploy to Cloudflare button, the plan and the fir
   assert.equal(image?.properties["alt"], "Deploy to Cloudflare");
   const text = toString(tree);
   assert.match(text, /Workers Paid/u);
+  assert.match(text, /Copy this prompt for your agent/u);
+  assert.match(text, /TypeSafe AI/u);
+  assert.match(text, /OpenAI/u);
   assert.match(text, /action="https:\/\/rondyr\.example\.com\/f\/YOUR_PUBLIC_ID"/u);
+  assert.ok(hrefs(tree).includes("https://x.com/_philDL"));
+  assert.ok(hrefs(tree).includes("https://basaltbytes.com"));
   const steps = elements(
     tree,
     (node) =>
