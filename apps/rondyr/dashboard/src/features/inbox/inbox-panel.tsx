@@ -7,6 +7,7 @@ import type { ApiTokenList } from "@rondyr/organizations/api-token";
 import { allows } from "@rondyr/organizations/member-role";
 import type { OrganizationDomainList } from "@rondyr/organizations/organization-domain";
 
+import { ProductLogo } from "~/components/product-logo";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { listApiTokens } from "~/lib/api-tokens-client";
 import { getClassificationSettings } from "~/lib/classification-policy-client";
@@ -17,7 +18,6 @@ import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-cli
 import { listDomains } from "~/lib/organization-domains-client";
 import { getDailyUsage } from "~/lib/organization-quotas-client";
 import { getRetention } from "~/lib/retention-client";
-import { productName } from "~/lib/product";
 
 import { InboxSetup } from "./inbox-setup.tsx";
 import { countsAfterMove, countsAfterRemoval, countsOfForm, totalOf } from "./folder-counts.ts";
@@ -520,7 +520,9 @@ export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
 
   return (
     <main className="mx-auto grid max-w-xl gap-5 px-5 py-12">
-      <h1 className="text-lg font-semibold">{productName}</h1>
+      <h1>
+        <ProductLogo />
+      </h1>
       {failed && (
         <p role="alert" className="text-sm text-destructive">
           {t("inbox.organizations.loadFailed")}
