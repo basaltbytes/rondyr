@@ -21,6 +21,16 @@ test("reads the description as plain text and keeps whole sentences of a long pa
   assert.equal(description, "An admin opens Settings and gets 403.");
 });
 
+test("keeps version numbers and filenames whole when splitting sentences", () => {
+  const long = "word ".repeat(40).trim();
+  const source = `# Contributing\n\nRondyr is open source under AGPL v3.0 (and wrangler.json stays minimal). ${long}.\n`;
+  const { description } = parseDocument("docs/contributing.md", source);
+  assert.equal(
+    description,
+    "Rondyr is open source under AGPL v3.0 (and wrangler.json stays minimal).",
+  );
+});
+
 test("takes the first paragraph after a block quote or a heading", () => {
   const source = "# Operations\n\n> Status block\n\n## Queue backlog\n\nOpen **Status**.\n";
   assert.equal(parseDocument("docs/operations.md", source).description, "Open Status.");

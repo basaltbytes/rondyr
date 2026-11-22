@@ -18,6 +18,12 @@ The label is the page title unless the line sets `label`. The build fails while 
 
 The landing page is `src/pages/index.astro`, with its first screen in `src/components/landing-hero.astro` and its text in `src/landing.ts`. Its list of pages comes from `src/sidebar.ts`.
 
+## Search, social, and AI agent metadata
+
+`src/components/seo-head.astro` and `src/seo/metadata.ts` enrich Starlight's `<head>` on every route with OpenGraph and Twitter cards (`public/og-image.png`), search-focused `<title>` tags for documentation pages, JSON-LD structured data (`SoftwareApplication`, `SoftwareSourceCode`, and `FAQPage` on the landing page; `TechArticle` and `BreadcrumbList` on documentation pages), `theme-color` tags, per-page `<link rel="alternate" type="text/markdown">` tags, and `noindex, follow` on `404.html`.
+
+Static endpoints generate `/robots.txt` (with `Content-Signal` and explicit allow rules for search and AI crawlers), `/llms.txt`, `/llms-full.txt`, `/index.md`, and `/<slug>.md` for every documentation page from the configured `RONDYR_DOCS_URL` origin and the repository Markdown files. `public/_headers` configures Cloudflare static asset caching, `Content-Signal` and `Link` discovery headers, `X-Robots-Tag: noindex` on `.md` mirrors and `404.html`, and baseline security headers.
+
 ## Links
 
 Links in the Markdown files are written for GitHub, and the build rewrites them for the site:

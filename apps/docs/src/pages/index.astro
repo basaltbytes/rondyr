@@ -1,10 +1,19 @@
 ---
 import { Code } from "@astrojs/starlight/components";
 import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
+import { Image } from "astro:assets";
 import { getCollection } from "astro:content";
 import { ContainerSection } from "lucode-starlight/components";
 
-import { firstRun, formSnippet } from "../landing.ts";
+import reviewScreenshot from "../../../../docs/screenshots/review.webp";
+import {
+  comparisonRows,
+  comparisonTradeoff,
+  faqItems,
+  firstRun,
+  formSnippet,
+  landingMeta,
+} from "../landing.ts";
 import { pageRoute } from "../repository/documents.ts";
 import { sidebar } from "../sidebar.ts";
 
@@ -21,14 +30,13 @@ const groups = sidebar.map(({ label, items }) => ({
 <StarlightPage
   frontmatter={{
     title: "Rondyr",
-    head: [{ tag: "title", content: "Rondyr: a form backend with spam filtering for Cloudflare" }],
-    description:
-      "Rondyr is a form backend with spam filtering that you deploy to your own Cloudflare account. Doubtful messages wait in quarantine for a person to decide.",
+    head: [{ tag: "title", content: landingMeta.title }],
+    description: landingMeta.description,
     template: "splash",
     hero: {
       title: "The gatekeeper for your forms.",
       tagline:
-        "Rondyr is a form backend with classifier-model powered spam filtering that runs in your own Cloudflare account. Describe your business and let strong decision models do the gatekeeping.",
+        "Rondyr is an open-source, self-hosted form backend with classifier-model spam filtering that runs in your own Cloudflare account. Describe your business and let decision models do the gatekeeping.",
       actions: [],
     },
   }}
@@ -74,13 +82,12 @@ const groups = sidebar.map(({ label, items }) => ({
             The form on your site
           </h2>
           <p class="leading-[1.65] text-muted">
-            Point your site's{" "}
+            Point any HTML{" "}
             <code class="rounded-[0.3em] bg-surface px-[0.3em] py-[0.1em] text-[0.95em]">&lt;form&gt;</code>{" "}
-            at it, and Rondyr saves every message before screening it for spam, sales pitches, and
-            relevance to your business.
-            <br/>
-            A regular HTML form shows a confirmation page or redirects visitors to your own thank-you page.
-            The same URL accepts JSON from <code>fetch</code> when you want to submit without leaving the page.
+            at Rondyr from a static site (Astro, Next.js, Hugo, Eleventy, or plain HTML), and it saves every message before screening it for spam, unsolicited sales pitches, and business relevance.
+          </p>
+          <p class="leading-[1.65] text-muted">
+            A regular HTML form shows a confirmation page or redirects visitors to your own thank-you page. The same URL accepts cross-origin JSON from <code>fetch</code>, or server-side submissions through the <a href="/api/">HTTP API</a>.
           </p>
           <p class="leading-[1.65] text-muted">
             <a href="/forms/">Put a form on your site</a>
@@ -91,7 +98,7 @@ const groups = sidebar.map(({ label, items }) => ({
         </div>
       </section>
 
-      <section aria-labelledby="message-path">
+      <section class="border-t border-border pt-12" aria-labelledby="message-path">
         <h2
           id="message-path"
           class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
@@ -102,45 +109,120 @@ const groups = sidebar.map(({ label, items }) => ({
           <div class="border-t-2 border-foreground pt-4">
             <dt class="font-semibold text-foreground">Saved first</dt>
             <dd class="mt-2 leading-[1.65] text-muted">
-              Every submission is saved in your Cloudflare account before Rondyr answers your site, so a
-              temporary outage doesn't drop messages.
+              Every submission is saved in your Cloudflare account before Rondyr answers your site, so a temporary outage doesn't drop messages.
             </dd>
           </div>
           <div class="border-t-2 border-foreground pt-4">
-            <dt class="font-semibold text-foreground">Screened for spam</dt>
+            <dt class="font-semibold text-foreground">Classifier-model spam filtering</dt>
             <dd class="mt-2 leading-[1.65] text-muted">
-              Jev on Workers AI or the OpenAI Decisions API scores each message for spam, unsolicited
-              sales pitches, and (if you describe your business) whether it relates to what you do. You
-              pick the model for your instance and can optionally use the second one for uncertain
-              messages.
+              Jev on Workers AI or the OpenAI Decisions API scores each message for spam, unsolicited sales pitches, and (when you describe your business) relevance. Layer <a href="/spam-protection/">honeypot fields, Cloudflare Turnstile, and rate limits</a> in front of the model.
             </dd>
           </div>
           <div class="border-t-2 border-foreground pt-4">
             <dt class="font-semibold text-foreground">Quarantined, not deleted</dt>
             <dd class="mt-2 leading-[1.65] text-muted">
-              Probable spam, uncertain messages, sales pitches, off-topic notes, and analysis errors wait
-              in <strong>To review</strong> with a plain reason until a person decides.
+              Probable spam, uncertain messages, sales pitches, off-topic notes, and analysis errors wait in <a href="/inbox/"><strong>To review</strong></a> with a plain reason until a person accepts or archives them.
             </dd>
           </div>
           <div class="border-t-2 border-foreground pt-4">
             <dt class="font-semibold text-foreground">Forwarded automatically</dt>
             <dd class="mt-2 leading-[1.65] text-muted">
-              Accepted messages go out by <a href="/email/">email</a> (through Resend or Cloudflare Email
-              Sending) or to <a href="/webhooks/">signed webhooks</a>. With the <a href="/emdash/">EmDash plugin</a>,
-              editors review messages right inside EmDash.
+              Accepted messages go out by <a href="/email/">email</a> (Resend or Cloudflare Email Sending), <a href="/webhooks/">HMAC-signed webhooks</a>, or <a href="/connectors/">Discord, Slack, and Airtable connectors</a>. With the <a href="/emdash/">EmDash plugin</a>, editors review messages right inside EmDash.
             </dd>
           </div>
           <div class="border-t-2 border-foreground pt-4">
-            <dt class="font-semibold text-foreground">Owned by you</dt>
+            <dt class="font-semibold text-foreground">Self-hosted and owned by you</dt>
             <dd class="mt-2 leading-[1.65] text-muted">
-              Your messages stay in your Cloudflare account. They leave only in the emails, webhooks, and
-              exports you configure.
+              Messages stay in your own Cloudflare account with configurable retention and CSV or JSON Lines exports. You pay Cloudflare directly with no per-submission SaaS markup; see <a href="/costs/">Costs and limits</a>.
             </dd>
           </div>
         </dl>
       </section>
 
-      <section aria-labelledby="documentation">
+      <section class="border-t border-border pt-12" aria-labelledby="quarantine-preview">
+        <div class="mb-6 max-w-2xl space-y-2">
+          <h2
+            id="quarantine-preview"
+            class="m-0 text-2xl font-[650] tracking-[-0.015em] text-foreground"
+          >
+            Quarantine inbox
+          </h2>
+          <p class="m-0 leading-[1.65] text-muted">
+            Every flagged message shows why the classifier or bot check set it aside, with one-click <strong>Accept and send</strong> or <strong>Archive</strong> actions.
+          </p>
+        </div>
+        <figure class="m-0 overflow-hidden rounded-lg border border-border bg-surface">
+          <Image
+            src={reviewScreenshot}
+            alt="Rondyr dashboard To review folder showing quarantined messages labeled Probable spam, Unsolicited sales outreach, Honeypot field filled, Uncertain classification, and Unrelated to your business, with Archive and Accept and send actions"
+            class="block h-auto w-full"
+            loading="lazy"
+            decoding="async"
+          />
+        </figure>
+      </section>
+
+      <section class="border-t border-border pt-12" aria-labelledby="comparison">
+        <div class="mb-6 max-w-2xl space-y-2">
+          <h2
+            id="comparison"
+            class="m-0 text-2xl font-[650] tracking-[-0.015em] text-foreground"
+          >
+            Rondyr vs. hosted form backends
+          </h2>
+          <p class="m-0 leading-[1.65] text-muted">
+            How self-hosting Rondyr compares with hosted form services like Formspree, Basin, or Web3Forms.
+          </p>
+        </div>
+        <div class="overflow-x-auto rounded-lg border border-border">
+          <table class="m-0 w-full border-collapse text-left text-[0.9375rem] leading-[1.6]">
+            <thead>
+              <tr class="border-b border-border bg-surface text-foreground">
+                <th scope="col" class="px-4 py-3 font-semibold">Aspect</th>
+                <th scope="col" class="px-4 py-3 font-semibold">Rondyr (self-hosted)</th>
+                <th scope="col" class="px-4 py-3 font-semibold">Hosted form SaaS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                comparisonRows.map((row) => (
+                  <tr class="border-t border-border align-top">
+                    <th scope="row" class="px-4 py-3 font-medium text-foreground">
+                      {row.aspect}
+                    </th>
+                    <td class="px-4 py-3 text-foreground">{row.rondyr}</td>
+                    <td class="px-4 py-3 text-muted">{row.hosted}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="mt-4 text-sm leading-[1.6] text-subtle">{comparisonTradeoff}</p>
+      </section>
+
+      <section class="border-t border-border pt-12" aria-labelledby="faq">
+        <h2
+          id="faq"
+          class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
+        >
+          Frequently asked questions
+        </h2>
+        <div class="grid gap-x-10 gap-y-8 md:grid-cols-2">
+          {
+            faqItems.map((item) => (
+              <div class="space-y-2 border-t border-border pt-4">
+                <h3 class="m-0 text-[1.0625rem] font-semibold text-foreground">
+                  {item.question}
+                </h3>
+                <p class="m-0 leading-[1.65] text-muted" set:html={item.html} />
+              </div>
+            ))
+          }
+        </div>
+      </section>
+
+      <section class="border-t border-border pt-12" aria-labelledby="documentation">
         <h2
           id="documentation"
           class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"

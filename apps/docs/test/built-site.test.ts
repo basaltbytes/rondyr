@@ -107,7 +107,7 @@ test("contains no address of the maintainers' instance", () => {
   const address = /\*\*Production:\*\*\s*`([^`]+)`/u.exec(source)?.[1];
   if (address !== undefined) maintainerHosts.add(new URL(address).host);
   const files = readdirSync(dist, { recursive: true, encoding: "utf8" }).filter((file) =>
-    /\.(html|xml|json|js|css|txt)$/u.test(file),
+    /\.(html|xml|json|js|css|txt|md)$/u.test(file),
   );
   const found = files.flatMap((file) =>
     [...maintainerHosts]
@@ -230,4 +230,103 @@ test("the landing page has the Deploy to Cloudflare button, brand marks, prompt,
   assert.equal(steps.length, 3);
   for (const document of documents)
     assert.ok(hrefs(tree).includes(pageRoute(document.id)), document.path);
+});
+
+test("ships robots.txt, llms.txt, llms-full.txt, per-page .md mirrors, og-image.png, and _headers", () => {
+  const robots = built("robots.txt");
+  assert.match(
+    robots,
+    /^User-agent: \*\nContent-Signal: search=yes, ai-input=yes, ai-train=yes\nAllow: \/\n/u,
+  );
+  assert.ok(robots.includes("User-agent: OAI-SearchBot\nAllow: /\n"));
+  assert.ok(robots.includes("User-agent: Claude-SearchBot\nAllow: /\n"));
+  assert.ok(robots.includes("User-agent: Google-Extended\nAllow: /\n"));
+  assert.ok(robots.includes("User-agent: PerplexityBot\nAllow: /\n"));
+  assert.match(robots, /Sitemap: https?:\/\/[^\s]+\/sitemap-index\.xml\n$/u);
+
+  const llms = built("llms.txt");
+  const llmsFull = built("llms-full.txt");
+  const indexMd = built("index.md");
+  assert.ok(indexMd.includes("## Rondyr vs. hosted form backends"));
+  for (const document of documents) {
+    const mdPath = `${document.id}.md`;
+    assert.ok(llms.includes(`/${mdPath}`), document.path);
+    assert.ok(llmsFull.includes(`Canonical URL:`), document.path);
+    assert.ok(built(mdPath).startsWith(`# ${readDocument(document).title}\n`), document.path);
+  }
+
+  assert.ok(readFileSync(new URL("og-image.png", dist)).byteLength > 10_000);
+  const headers = built("_headers");
+  assert.match(headers, /\/_astro\/\*/u);
+  assert.match(headers, /Content-Signal: search=yes, ai-input=yes, ai-train=yes/u);
+  assert.match(headers, /Link: <\/llms\.txt>; rel="alternate"; type="text\/markdown"/u);
+  assert.match(headers, /\/\*\.md\n[\s\S]*X-Robots-Tag: noindex/u);
+  assert.match(headers, /\/404\.html\n\s+X-Robots-Tag: noindex/u);
+});
+
+test("adds OpenGraph images, Twitter cards, markdown alternates, and JSON-LD to every page and marks 404 noindex", () => {
+  const home = builtPage("/");
+  const homeOgType = elements(
+    home,
+    (node) => node.tagName === "meta" && node.properties["property"] === "og:type",
+  );
+  assert.equal(homeOgType[0]?.properties["content"], "website");
+
+  const homeScripts = elements(
+    home,
+    (node) => node.tagName === "script" && node.properties["type"] === "application/ld+json",
+  );
+  assert.equal(homeScripts.length, 1);
+  const homeGraph: { "@graph": { "@type": string | string[] }[] } = JSON.parse(
+    toString(homeScripts[0]!),
+  );
+  assert.deepEqual(
+    homeGraph["@graph"].map((node) => node["@type"]),
+    ["Organization", "WebSite", ["SoftwareApplication", "SoftwareSourceCode"], "FAQPage"],
+  );
+
+  for (const route of ["/", ...documents.map(({ id }) => pageRoute(id))]) {
+    const tree = builtPage(route);
+    const ogImage = elements(
+      tree,
+      (node) => node.tagName === "meta" && node.properties["property"] === "og:image",
+    );
+    const twitterImage = elements(
+      tree,
+      (node) => node.tagName === "meta" && node.properties["name"] === "twitter:image",
+    );
+    assert.match(String(ogImage[0]?.properties["content"]), /\/og-image\.png$/u, route);
+    assert.match(String(twitterImage[0]?.properties["content"]), /\/og-image\.png$/u, route);
+    const alternates = elements(
+      tree,
+      (node) =>
+        node.tagName === "link" &&
+        Array.isArray(node.properties["rel"]) &&
+        node.properties["rel"].includes("alternate") &&
+        node.properties["type"] === "text/markdown",
+    ).map((node) => String(node.properties["href"]));
+    assert.ok(alternates.includes("/llms.txt"), route);
+    assert.ok(alternates.includes(route === "/" ? "/index.md" : `${route.slice(0, -1)}.md`), route);
+    const jsonLd = elements(
+      tree,
+      (node) => node.tagName === "script" && node.properties["type"] === "application/ld+json",
+    );
+    assert.equal(jsonLd.length, 1, route);
+    assert.doesNotThrow(() => JSON.parse(toString(jsonLd[0]!)), route);
+  }
+
+  const notFound = fromHtml(built("404.html"));
+  const robots = elements(
+    notFound,
+    (node) => node.tagName === "meta" && node.properties["name"] === "robots",
+  );
+  assert.equal(robots[0]?.properties["content"], "noindex, follow");
+  const canonical = elements(
+    notFound,
+    (node) =>
+      node.tagName === "link" &&
+      Array.isArray(node.properties["rel"]) &&
+      node.properties["rel"].includes("canonical"),
+  );
+  assert.equal(canonical.length, 0);
 });

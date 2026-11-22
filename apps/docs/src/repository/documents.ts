@@ -87,7 +87,7 @@ export function repositoryPath(path: string, root: URL = repositoryRoot): string
 /** Keeps the first sentences of a paragraph, up to `descriptionLength` characters. */
 function shorten(text: string): string {
   if (text.length <= descriptionLength) return text;
-  const sentences = text.match(/[^.!?]+[.!?]+(?:\s+|$)/gu) ?? [text];
+  const sentences = text.match(/[\s\S]+?[.!?]+(?=\s+|$)/gu) ?? [text];
   let kept = "";
   for (const sentence of sentences) {
     if (kept !== "" && kept.length + sentence.length > descriptionLength) break;
