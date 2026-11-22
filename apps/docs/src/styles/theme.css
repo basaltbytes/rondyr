@@ -1,7 +1,27 @@
+@layer base, starlight, lucode, theme, components, utilities;
+
+@import "@astrojs/starlight-tailwind";
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-surface: var(--gray-7);
+  --color-muted: var(--gray-2);
+  --color-subtle: var(--gray-3);
+  --color-brand: var(--rondyr-accent);
+  --color-brand-soft: var(--rondyr-accent-soft);
+  --radius-card: var(--radius);
+}
+
 /*
  * The site uses the logo's ink (#202626) and paper (#f2f0e9), with a rust accent.
  * Light grays take the warm hue of the paper, dark grays the cool hue of the ink.
- * These rules are outside Lucode's cascade layer, so they replace its neutral grays.
+ * These rules are outside Lucode's and Tailwind's cascade layers, so they keep the
+ * Rondyr palette on Starlight and Lucode components while Tailwind utilities remain
+ * available on every page.
  */
 :root,
 :root[data-theme="light"] {
@@ -44,7 +64,21 @@
 }
 
 :root {
+  --sl-color-bg: var(--background);
+  --sl-color-text: var(--foreground);
+  --sl-color-white: var(--foreground);
+  --sl-color-black: var(--background);
   --sl-color-text-accent: var(--rondyr-accent);
+  --sl-color-accent-low: var(--muted);
+  --sl-color-accent: var(--border);
+  --sl-color-accent-high: var(--foreground);
+  --sl-color-gray-1: var(--gray-1);
+  --sl-color-gray-2: var(--gray-2);
+  --sl-color-gray-3: var(--gray-3);
+  --sl-color-gray-4: var(--gray-4);
+  --sl-color-gray-5: var(--gray-5);
+  --sl-color-gray-6: var(--gray-6);
+  --sl-color-gray-7: var(--gray-7);
 }
 
 /* Page links use ink text and an accent underline. */
