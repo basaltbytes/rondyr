@@ -1,6 +1,7 @@
 import { z } from "astro/zod";
 import type { PluginContext, PluginStorageConfig, StorageCollection } from "emdash";
 
+import { AutoReply } from "./core/auto-reply.ts";
 import { FormLayout } from "./core/fields.ts";
 import { QueueEntry, type QueueState } from "./core/queue.ts";
 
@@ -18,22 +19,27 @@ export type FormLink = z.infer<typeof FormLink>;
  * done, and until when a request that is sending its emails holds it. `sent`
  * has the lowercase address of each recipient emailed; records written before
  * several EmDash forms could share a Rondyr form have `<slug>:<address>`.
+ * `autoReplied` is set once the mailer took the visitor's auto-reply.
  */
 export const DeliveryRecord = z.object({
   receivedAt: z.number().int(),
   sent: z.array(z.string()),
   done: z.boolean(),
   heldUntil: z.number().int().default(0),
+  autoReplied: z.literal(true).optional(),
 });
 export type DeliveryRecord = z.infer<typeof DeliveryRecord>;
 
 /**
  * The EmDash form a message came from, stored under the submission ID that
- * Rondyr returned with its `202`, which is the webhook's `submission.id`.
+ * Rondyr returned with its `202`, which is the webhook's `submission.id`, and
+ * the auto-reply that the forms plugin wrote for it, which waits until Rondyr
+ * accepts the message. No field of the message is kept here.
  */
 export const OriginRecord = z.object({
   formSlug: z.string().min(1).max(200),
   recordedAt: z.number().int(),
+  autoReply: AutoReply.optional(),
 });
 export type OriginRecord = z.infer<typeof OriginRecord>;
 
@@ -47,6 +53,16 @@ export const UnqueuedRecord = z.object({
   lastAt: z.number().int(),
 });
 export type UnqueuedRecord = z.infer<typeof UnqueuedRecord>;
+
+/**
+ * Whether the forms plugin held its own emails for the last submission of a
+ * form, stored with the form's layout. `sent` means that the site loads a
+ * forms plugin that sends them at once, such as `formsPlugin()`.
+ */
+export const FormsEmails = z.enum(["held", "sent"]);
+export type FormsEmails = z.infer<typeof FormsEmails>;
+
+const StoredFormsEmails = z.object({ formsEmails: FormsEmails.optional() });
 
 /** Storage collections and indexes, for the descriptor and for the plugin. */
 export const storageConfig = {
@@ -200,6 +216,15 @@ export class Store {
     return false;
   }
 
+  /** Whether one of these EmDash forms has a pending entry with an auto-reply to send. */
+  async hasPendingAutoReply(formSlugs: readonly string[]): Promise<boolean> {
+    for (const formSlug of formSlugs) {
+      const entries = await this.queueEntries("pending", 100, null, formSlug);
+      if (entries.some(({ entry }) => entry.autoReply !== undefined)) return true;
+    }
+    return false;
+  }
+
   queueCount(state: QueueState) {
     return this.#collection("queue").count({ state });
   }
@@ -208,8 +233,19 @@ export class Store {
     return this.#get("layouts", FormLayout, slug);
   }
 
-  putLayout(layout: FormLayout) {
-    return this.#collection("layouts").put(layout.slug, layout);
+  /** Store the layout of a form's last submission, and whether the forms plugin held its emails. */
+  putLayout(layout: FormLayout, formsEmails?: FormsEmails) {
+    const stored = formsEmails === undefined ? layout : { ...layout, formsEmails };
+    return this.#collection("layouts").put(layout.slug, stored);
+  }
+
+  /** The forms whose last submission's emails the forms plugin sent at once, by slug. */
+  async formsEmailsSent(): Promise<string[]> {
+    const page = await this.#collection("layouts").query({ limit: 100 });
+    return page.items.flatMap(({ id, data }) => {
+      const parsed = StoredFormsEmails.safeParse(data);
+      return parsed.success && parsed.data.formsEmails === "sent" ? [id] : [];
+    });
   }
 
   link(slug: string) {

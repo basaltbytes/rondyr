@@ -7,12 +7,11 @@ import {
   type RouteContext,
 } from "emdash";
 
-import { FlatFields, FormLayout } from "./core/fields.ts";
 import { matchesCredential, enqueueCredential } from "./core/hop.ts";
-import { newEntry } from "./core/queue.ts";
 import { RondyrError, SubmissionStatus, type Organization } from "./core/rondyr-client.ts";
 import { pluginId, pluginVersion } from "./constants.ts";
 import { attempt, requeue, sendDue } from "./delivery.ts";
+import { enqueue, EnqueueInput } from "./enqueue.ts";
 import { rondyrClient, withRondyr } from "./inbox.ts";
 import { RondyrOptions, rondyrHost } from "./options.ts";
 import { rondyrSecrets } from "./secrets.ts";
@@ -20,12 +19,6 @@ import { FormLink, Store, storageConfig } from "./store.ts";
 import { receiveWebhook } from "./webhook.ts";
 
 const deliverTask = "deliver";
-
-const EnqueueInput = z.object({
-  submissionId: z.uuid(),
-  form: FormLayout,
-  fields: FlatFields,
-});
 
 /** Why the site route could not queue a submission: the slug and an error code, no content. */
 const UnqueuedInput = z.object({
@@ -89,12 +82,10 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
         public: true,
         methods: ["POST"],
         input: EnqueueInput,
-        handler: async (ctx: RouteContext<z.infer<typeof EnqueueInput>>) => {
+        handler: async (ctx: RouteContext<EnqueueInput>) => {
           requireCredential(ctx);
-          const { submissionId, form, fields } = ctx.input;
-          const store = new Store(ctx);
-          await store.putLayout(form);
-          await store.createQueueEntry(submissionId, newEntry(form.slug, fields, Date.now()));
+          const { submissionId } = ctx.input;
+          const { linked } = await enqueue(ctx, ctx.input, Date.now());
           after(async () => {
             try {
               await attempt(ctx, options, rondyrSecrets().token, submissionId);
@@ -106,7 +97,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
               });
             }
           });
-          return { queued: true };
+          return { queued: true, linked };
         },
       },
       // The site route calls this when `enqueue` failed twice: the forms plugin
@@ -207,7 +198,11 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
       "settings/get": {
         handler: async (ctx) => {
           const store = new Store(ctx);
-          const [links, unqueued] = await Promise.all([store.links(), store.unqueued()]);
+          const [links, unqueued, formsEmailsSent] = await Promise.all([
+            store.links(),
+            store.unqueued(),
+            store.formsEmailsSent(),
+          ]);
           const secrets = rondyrSecrets();
           let organization: Organization | null = null;
           let error: string | null = null;
@@ -221,6 +216,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
           return {
             links,
             unqueued,
+            formsEmailsSent,
             tokenProblem: secrets.tokenProblem,
             webhookSecret: secrets.webhookSecrets.length > 0,
             webhookUrl: ctx.url(`/_emdash/api/plugins/${pluginId}/webhook`),

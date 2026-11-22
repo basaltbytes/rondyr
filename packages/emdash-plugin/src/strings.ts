@@ -86,8 +86,14 @@ const en = {
     tooManyRecipients: "A form can have at most {max} recipients.",
     webhookUrl: "Webhook URL to add as a destination of each linked Rondyr form",
     unavailable: "The list of Rondyr forms can't be read:",
-    formsEmails:
-      "This form still sends its own notification emails or an auto-reply from the Forms plugin, before Rondyr classifies the message. Remove them in Forms, in the settings of {name}.",
+    formsEmailsHeld:
+      "The Forms plugin doesn't send its own notification or daily digest for this form: the recipients below get each message once Rondyr accepts it. A post that doesn't go through /api/form still gets the Forms plugin's emails.",
+    autoReplyHeld:
+      "The auto-reply set in Forms goes to the visitor when Rondyr accepts the message, not before. A message in quarantine gets it only if someone accepts it.",
+    formsEmailsNotHeld:
+      "The Forms plugin emailed the last message of this form as soon as it arrived, before Rondyr classified it, because the site loads formsPlugin(). In astro.config.mjs, replace it with formsWithoutSubmissions() or formsWithRondyr() from @basaltbytes/emdash-plugin-rondyr.",
+    bypassed:
+      "{count} submissions of this form, from {first} to {last}, were posted straight to the Forms plugin, so Rondyr doesn't have them. The Forms plugin sent its own emails for them. The Forms plugin's Form block posts this way: render the form with a block that posts to /api/form instead.",
     unqueued:
       "{count} submissions of this form, from {first} to {last}, could not be put in the queue for Rondyr, so Rondyr doesn't have them and sent no email for them. The Forms plugin kept them: download its submissions since then to read them.",
     download: "Download from the Forms plugin",
@@ -182,8 +188,14 @@ const fr: Strings = {
     tooManyRecipients: "Un formulaire a au plus {max} destinataires.",
     webhookUrl: "URL du webhook à ajouter comme destination de chaque formulaire Rondyr relié",
     unavailable: "La liste des formulaires Rondyr est illisible :",
-    formsEmails:
-      "Ce formulaire envoie encore ses propres e-mails de notification ou une réponse automatique depuis le plugin Forms, avant que Rondyr classe le message. Supprimez-les dans Forms, dans les réglages de {name}.",
+    formsEmailsHeld:
+      "Le plugin Forms n’envoie ni sa propre notification ni son résumé quotidien pour ce formulaire : les destinataires ci-dessous reçoivent chaque message une fois que Rondyr l’accepte. Un envoi qui ne passe pas par /api/form reçoit toujours les e-mails du plugin Forms.",
+    autoReplyHeld:
+      "La réponse automatique réglée dans Forms part vers le visiteur quand Rondyr accepte le message, pas avant. Un message en quarantaine ne la reçoit que si quelqu’un l’accepte.",
+    formsEmailsNotHeld:
+      "Le plugin Forms a envoyé par e-mail le dernier message de ce formulaire dès son arrivée, avant que Rondyr le classe, parce que le site charge formsPlugin(). Dans astro.config.mjs, remplacez-le par formsWithoutSubmissions() ou formsWithRondyr() de @basaltbytes/emdash-plugin-rondyr.",
+    bypassed:
+      "{count} soumissions de ce formulaire, du {first} au {last}, ont été envoyées directement au plugin Forms : Rondyr ne les a pas. Le plugin Forms a envoyé ses propres e-mails pour elles. Le bloc Form du plugin Forms envoie de cette façon : affichez le formulaire avec un bloc qui envoie vers /api/form.",
     unqueued:
       "{count} soumissions de ce formulaire, du {first} au {last}, n’ont pas pu entrer dans la file pour Rondyr : Rondyr ne les a pas et n’a envoyé aucun e-mail pour elles. Le plugin Forms les a gardées : téléchargez ses soumissions depuis cette date pour les lire.",
     download: "Télécharger depuis le plugin Forms",

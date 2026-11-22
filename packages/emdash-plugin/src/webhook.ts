@@ -1,6 +1,7 @@
 import { z } from "astro/zod";
 import type { EmailMessage, PluginContext } from "emdash";
 
+import { autoReplyMessage, type AutoReply } from "./core/auto-reply.ts";
 import { FlatFields, formatNotification, replyToAddress, type FormLayout } from "./core/fields.ts";
 import { verifyWebhook } from "./core/signature.ts";
 import { Store, type DeliveryRecord, type StorageHost } from "./store.ts";
@@ -51,12 +52,15 @@ interface Recipient {
 
 /**
  * Who gets the emails of an accepted message, and the layout they use.
- * `originPending` means the origin is unknown while a pending queue entry of
- * a linked form may be this message: its `202` is not recorded yet.
+ * `autoReply` is the auto-reply that the forms plugin held for the message,
+ * known only with its origin. `originPending` means the origin is unknown
+ * while a pending queue entry of a linked form may be this message: its `202`
+ * is not recorded yet.
  */
 interface Audience {
   readonly layout: FormLayout | null;
   readonly recipients: readonly Recipient[];
+  readonly autoReply: AutoReply | null;
   readonly originPending: boolean;
 }
 
@@ -86,34 +90,44 @@ function sentAddress(key: string): string {
 /**
  * The EmDash form a message came from is the one the queue recorded with
  * Rondyr's submission ID, when it is still linked to the message's Rondyr
- * form: its recipients and its layout. Otherwise the origin is unknown: every
- * recipient of the linked forms, and the layout of the first linked form by
- * slug that has one. With a single linked form, both give that form.
+ * form: its recipients, its layout and the auto-reply held for the message.
+ * Otherwise the origin is unknown: every recipient of the linked forms, the
+ * layout of the first linked form by slug that has one, and no auto-reply.
+ * With a single linked form, both give that form's recipients and layout.
+ *
+ * While the origin may still be recorded, the route waits: with several linked
+ * forms, for any pending entry, since the recipients depend on the form; with
+ * one, for a pending entry with an auto-reply, which needs the origin.
  */
 async function audienceOf(store: Store, payload: Payload, now: number): Promise<Audience> {
   const links = (await store.linksTo(payload.form.id)).toSorted((left, right) =>
     left.slug < right.slug ? -1 : 1,
   );
-  const originLink = async () => {
+  const originOf = async () => {
     const origin = await store.origin(payload.submission.id);
-    return links.find(({ slug }) => slug === origin?.formSlug) ?? null;
+    const linked = links.find(({ slug }) => slug === origin?.formSlug);
+    return origin === null || linked === undefined ? null : { origin, linked };
   };
-  const fromOrigin = async (linked: Linked): Promise<Audience> => ({
+  const fromOrigin = async ({
+    origin,
+    linked,
+  }: NonNullable<Awaited<ReturnType<typeof originOf>>>): Promise<Audience> => ({
     layout: await store.layout(linked.slug),
     recipients: uniqueRecipients([linked]),
+    autoReply: origin.autoReply ?? null,
     originPending: false,
   });
 
-  const origin = await originLink();
-  if (origin !== null) return fromOrigin(origin);
+  const known = await originOf();
+  if (known !== null) return fromOrigin(known);
   let originPending = false;
+  const slugs = links.map(({ slug }) => slug);
   if (
-    links.length > 1 &&
     now - Date.parse(payload.submission.receivedAt) < originWaitMs &&
-    (await store.hasPendingEntry(links.map(({ slug }) => slug)))
+    (links.length > 1 ? await store.hasPendingEntry(slugs) : await store.hasPendingAutoReply(slugs))
   ) {
     // Read again: an attempt records the origin before it deletes its entry.
-    const recorded = await originLink();
+    const recorded = await originOf();
     if (recorded !== null) return fromOrigin(recorded);
     originPending = true;
   }
@@ -122,7 +136,7 @@ async function audienceOf(store: Store, payload: Payload, now: number): Promise<
     layout = await store.layout(slug);
     if (layout !== null) break;
   }
-  return { layout, recipients: uniqueRecipients(links), originPending };
+  return { layout, recipients: uniqueRecipients(links), autoReply: null, originPending };
 }
 
 /** What the webhook needs from the route context. */
@@ -149,12 +163,13 @@ export type WebhookOutcome =
  *
  * `submission.accepted` sends one email per recipient address of the EmDash
  * form the message came from, or of every EmDash form linked to the Rondyr
- * form when its origin is unknown (see `audienceOf`). The request first holds
- * the delivery with a conditional write, so two requests for one delivery
- * never email at the same time, and records each address as soon as the
- * mailer took its email. The route answers `2xx` only once the mailer took
- * every email: otherwise Rondyr retries, and the addresses already emailed are
- * skipped.
+ * form when its origin is unknown (see `audienceOf`), then the auto-reply
+ * that the forms plugin held for the message, to the visitor. The request
+ * first holds the delivery with a conditional write, so two requests for one
+ * delivery never email at the same time, and records each address, and the
+ * auto-reply, as soon as the mailer took its email. The route answers `2xx`
+ * only once the mailer took every email: otherwise Rondyr retries, and what
+ * was already sent is skipped.
  */
 export async function receiveWebhook(
   ctx: WebhookHost,
@@ -175,8 +190,12 @@ export async function receiveWebhook(
 
   const store = new Store(ctx);
   const audience = await audienceOf(store, payload, now);
+  const autoReply =
+    audience.autoReply === null
+      ? null
+      : autoReplyMessage(audience.autoReply, audience.layout, payload.submission.fields);
   const email = ctx.email;
-  if (email === undefined && audience.recipients.length > 0) {
+  if (email === undefined && (audience.recipients.length > 0 || autoReply !== null)) {
     return { status: 503, code: "EMAIL_NOT_CONFIGURED" };
   }
 
@@ -225,6 +244,23 @@ export async function receiveWebhook(
     revision = await store.writeDelivery(payload.deliveryId, revision, record);
     // Another request took the delivery over after the hold ended: it sends the rest.
     if (revision === null) return { status: 503, code: "DELIVERY_IN_PROGRESS" };
+  }
+  // The visitor's auto-reply, once per delivery as each recipient's email.
+  if (autoReply !== null && record.autoReplied !== true && email !== undefined) {
+    let replied = true;
+    try {
+      await email.send({ ...autoReply });
+    } catch {
+      replied = false;
+      failed = true;
+      ctx.log.error("Failed to send a held auto-reply", { deliveryId: payload.deliveryId });
+    }
+    if (replied) {
+      emailed += 1;
+      record = { ...record, autoReplied: true };
+      revision = await store.writeDelivery(payload.deliveryId, revision, record);
+      if (revision === null) return { status: 503, code: "DELIVERY_IN_PROGRESS" };
+    }
   }
   record = { ...record, done: !failed, heldUntil: 0 };
   revision = await store.writeDelivery(payload.deliveryId, revision, record);

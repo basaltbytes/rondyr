@@ -103,8 +103,37 @@ describe("the site route", () => {
         submissionId: expect.stringMatching(/^[0-9a-f-]{36}$/u),
         form: { slug: "contact", name: "Contact", fields: definition.pages[0]?.fields },
         fields: { name: "Ada", topics: "Pottery, Glazing" },
+        // No forms plugin of this package answered: its emails went out at once.
+        formsEmails: "sent",
+        autoReply: null,
       },
     });
+  });
+
+  it("names a handoff on the call to the forms plugin, never the visitor's value, and closes it", async () => {
+    const seen: (string | null)[] = [];
+    const { locals } = emdash({
+      "emdash-forms/submit": accepted,
+      "emdash-forms/definition": defined,
+      "rondyr/enqueue": queued,
+    });
+    const handle = locals.emdash.handlePublicPluginApiRoute;
+    const spied: typeof handle = async (plugin, method, path, request) => {
+      if (path === "/submit") seen.push(request.headers.get("x-rondyr-handoff"));
+      return handle(plugin, method, path, request);
+    };
+    const request = jsonPost({ formId: "contact", data: { name: "Ada" } });
+    request.headers.set("x-rondyr-handoff", "chosen-by-the-visitor");
+    await handleSubmission(
+      {
+        request,
+        url: new URL(request.url),
+        locals: { emdash: { handlePublicPluginApiRoute: spied } },
+      },
+      token,
+    );
+    expect(seen).toEqual([expect.stringMatching(/^[0-9a-f-]{36}$/u)]);
+    expect(globalThis.rondyrEmdashPluginHandoffs?.has(seen[0] ?? "")).toBe(false);
   });
 
   it("uses the isolate's key without a token", async () => {

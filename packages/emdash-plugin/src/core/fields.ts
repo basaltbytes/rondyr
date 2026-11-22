@@ -96,21 +96,32 @@ export function flattenFields(layout: FormLayout, data: SubmittedData): FlatFiel
 const Email = z.email();
 
 /**
+ * The submitter's address as the forms plugin finds it: the value of the first
+ * filled email field of the form, a required one before an optional one. Null
+ * for a form without a filled email field, or an unknown layout.
+ */
+export function submitterAddress(layout: FormLayout | null, fields: FlatFields): string | null {
+  const emailFields = layout?.fields.filter(({ type }) => type === "email") ?? [];
+  const value = [
+    ...emailFields.filter(({ required }) => required === true),
+    ...emailFields.filter(({ required }) => required !== true),
+  ]
+    .map(({ name }) => fields[name])
+    .find((candidate) => candidate !== undefined && candidate !== "");
+  return value ?? null;
+}
+
+/**
  * The submitter's address for `replyTo`, chosen as the forms plugin chooses it:
  * the first filled email field of the form, a required one before an optional
  * one, and only when it is a plain address. A form without a filled email
  * field, or an unknown layout, falls back to a field named `email`.
  */
 export function replyToAddress(layout: FormLayout | null, fields: FlatFields): string | null {
-  const emailFields = layout?.fields.filter(({ type }) => type === "email") ?? [];
-  const candidates = [
-    ...emailFields.filter(({ required }) => required === true),
-    ...emailFields.filter(({ required }) => required !== true),
-  ].map(({ name }) => fields[name]);
-  const value = [...candidates, fields["email"]].find(
-    (candidate) => candidate !== undefined && candidate !== "",
-  );
-  return value !== undefined && Email.safeParse(value).success ? value : null;
+  const email = fields["email"];
+  const value =
+    submitterAddress(layout, fields) ?? (email !== undefined && email !== "" ? email : null);
+  return value !== null && Email.safeParse(value).success ? value : null;
 }
 
 export interface Notification {

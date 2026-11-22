@@ -485,6 +485,7 @@ const EmDashForm = z.object({
   slug: z.string(),
   settings: z.object({
     notifyEmails: z.array(z.string()).default([]),
+    digestEnabled: z.boolean().default(false),
     autoresponder: z.object({ subject: z.string() }).nullable().optional(),
   }),
 });
@@ -498,9 +499,13 @@ type Link = z.infer<typeof Link>;
 const Unqueued = z.object({ count: z.number(), firstAt: z.number(), lastAt: z.number() });
 type Unqueued = z.infer<typeof Unqueued>;
 
+/** Submissions of a form posted straight to the forms plugin, by the form's ID. */
+const Bypassed = z.object({ items: z.array(Unqueued.extend({ formId: z.string() })) });
+
 const Settings = z.object({
   links: z.array(z.object({ slug: z.string(), link: Link })),
   unqueued: z.array(z.object({ slug: z.string(), record: Unqueued })),
+  formsEmailsSent: z.array(z.string()).default([]),
   tokenProblem: TokenProblem,
   webhookSecret: z.boolean(),
   webhookUrl: z.string(),
@@ -514,16 +519,20 @@ const Cleared = z.object({ cleared: z.boolean() });
 const Exported = z.object({ data: z.string(), filename: z.string().optional() });
 
 /**
- * The submissions that could not be queued: the forms plugin kept them. With
+ * Submissions that Rondyr doesn't have: the forms plugin kept them. With
  * `formsWithoutSubmissions()` its Submissions page is gone, so this downloads
- * its CSV export of the form since a little before the first failure.
+ * its CSV export of the form since a little before the first one. `kind` says
+ * why Rondyr doesn't have them: they could not be queued, or they were posted
+ * straight to the forms plugin.
  */
-function UnqueuedNotice({
+function MissingNotice({
   form,
   record,
+  kind,
 }: {
   readonly form: EmDashForm;
   readonly record: Unqueued;
+  readonly kind: "unqueued" | "bypassed";
 }) {
   const text = useStrings();
   const [cleared, setCleared] = React.useState(false);
@@ -553,12 +562,16 @@ function UnqueuedNotice({
     setWorking(true);
     setError(null);
     try {
-      await call(
-        pluginApi,
-        "settings/unqueued/clear",
-        JSON.stringify({ slug: form.slug }),
-        Cleared,
-      );
+      if (kind === "unqueued") {
+        await call(
+          pluginApi,
+          "settings/unqueued/clear",
+          JSON.stringify({ slug: form.slug }),
+          Cleared,
+        );
+      } else {
+        await call(formsApi, "rondyr/bypassed/clear", JSON.stringify({ formId: form.id }), Cleared);
+      }
       setCleared(true);
     } catch (failure) {
       setError(failure instanceof Error ? failureOf(failure) : "failed");
@@ -574,7 +587,7 @@ function UnqueuedNotice({
       description={
         <div className="space-y-2">
           <p>
-            {fill(text.settings.unqueued, {
+            {fill(text.settings[kind], {
               count: record.count,
               first: formatDate(record.firstAt),
               last: formatDate(record.lastAt),
@@ -605,11 +618,13 @@ function FormLinkEditor({
   form,
   link,
   unqueued,
+  bypassed,
   settings,
 }: {
   readonly form: EmDashForm;
   readonly link: Link | null;
   readonly unqueued: Unqueued | null;
+  readonly bypassed: Unqueued | null;
   readonly settings: Settings;
 }) {
   const text = useStrings();
@@ -625,10 +640,12 @@ function FormLinkEditor({
       value: publicId,
     })) ?? []),
   ];
-  const sendsOwnEmails =
-    rondyrFormId !== "" &&
-    (form.settings.notifyEmails.length > 0 ||
-      (form.settings.autoresponder !== null && form.settings.autoresponder !== undefined));
+  // What the saved link says, not the unsaved choice: the emails follow the saved link.
+  const linked = link !== null && link.rondyrFormId !== null;
+  const notHeld = linked && settings.formsEmailsSent.includes(form.slug);
+  const hasAutoReply =
+    form.settings.autoresponder !== null && form.settings.autoresponder !== undefined;
+  const notifies = form.settings.notifyEmails.length > 0;
 
   const save = async () => {
     const addresses = parseRecipients(recipients);
@@ -662,11 +679,19 @@ function FormLinkEditor({
   return (
     <section className="space-y-3 rounded-lg border border-kumo-line p-4">
       <h2 className="font-semibold">{form.name}</h2>
-      {unqueued !== null && <UnqueuedNotice form={form} record={unqueued} />}
-      {sendsOwnEmails && (
+      {unqueued !== null && <MissingNotice form={form} record={unqueued} kind="unqueued" />}
+      {linked && bypassed !== null && (
+        <MissingNotice form={form} record={bypassed} kind="bypassed" />
+      )}
+      {notHeld && <Banner variant="alert" description={text.settings.formsEmailsNotHeld} />}
+      {linked && !notHeld && (notifies || hasAutoReply) && (
         <Banner
-          variant="alert"
-          description={fill(text.settings.formsEmails, { name: form.name })}
+          description={[
+            notifies ? text.settings.formsEmailsHeld : null,
+            hasAutoReply ? text.settings.autoReplyHeld : null,
+          ]
+            .filter((part) => part !== null)
+            .join(" ")}
         />
       )}
       <Select
@@ -698,6 +723,7 @@ function FormLinkEditor({
 interface SettingsData {
   readonly settings: Settings;
   readonly forms: readonly EmDashForm[];
+  readonly bypassed: z.infer<typeof Bypassed>["items"];
 }
 
 /** Per EmDash form: its Rondyr form and its notification recipients. Administrators only. */
@@ -710,11 +736,18 @@ function SettingsPage() {
     let current = true;
     void (async () => {
       try {
-        const [settings, forms] = await Promise.all([
+        const [settings, forms, bypassed] = await Promise.all([
           call(pluginApi, "settings/get", "{}", Settings),
           call(formsApi, "forms/list", "{}", EmDashForms),
+          // `formsPlugin()` has no such route: the page then says the emails aren't held.
+          call(formsApi, "rondyr/bypassed", "{}", Bypassed).catch(() => ({ items: [] })),
         ]);
-        if (current) setLoaded({ key: "settings", value: { settings, forms: forms.items } });
+        if (current) {
+          setLoaded({
+            key: "settings",
+            value: { settings, forms: forms.items, bypassed: bypassed.items },
+          });
+        }
       } catch (error) {
         if (!current) return;
         // Editors read the messages; only administrators open the settings.
@@ -755,6 +788,7 @@ function SettingsPage() {
   const { settings, forms } = loaded.value;
   const links = new Map(settings.links.map(({ slug, link }) => [slug, link]));
   const unqueued = new Map(settings.unqueued.map(({ slug, record }) => [slug, record]));
+  const bypassed = new Map(loaded.value.bypassed.map(({ formId, ...record }) => [formId, record]));
   return (
     <div className="space-y-6 p-6">
       <h1 className="text-2xl font-semibold">{text.settings.title}</h1>
@@ -782,6 +816,7 @@ function SettingsPage() {
           form={form}
           link={links.get(form.slug) ?? null}
           unqueued={unqueued.get(form.slug) ?? null}
+          bypassed={bypassed.get(form.id) ?? null}
           settings={settings}
         />
       ))}

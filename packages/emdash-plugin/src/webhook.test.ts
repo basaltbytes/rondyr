@@ -491,3 +491,98 @@ describe("receiveWebhook with several EmDash forms on one Rondyr form", () => {
     expect(shared.sent.map(({ to }) => to)).toEqual(["team@example.com", "equipe@example.com"]);
   });
 });
+
+const autoReply = { subject: "We got your message", text: "Thanks, we'll answer soon." };
+
+/** The auto-reply that the French form's visitor gets, at the first filled email field. */
+const frenchAutoReply = { to: "ada@example.com", ...autoReply };
+
+describe("receiveWebhook with an auto-reply held for the message", () => {
+  it("sends it to the visitor after the team's emails, once even when Rondyr retries", async () => {
+    const shared = await bilingualSite({ en: ["team@example.com"], fr: ["equipe@example.com"] });
+    await shared.store.putOrigin(submissionId, {
+      formSlug: "contact-fr",
+      recordedAt: now,
+      autoReply,
+    });
+    shared.failing.add("equipe@example.com");
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 503, code: "EMAIL_FAILED" });
+    expect(shared.sent).toEqual([frenchAutoReply]);
+    shared.failing.clear();
+    const later = now + 60_000;
+    expect(await shared.deliver(frenchMessage(), later)).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to }) => to)).toEqual(["ada@example.com", "equipe@example.com"]);
+    expect(await shared.deliver(frenchMessage(), later)).toEqual({ status: 200, emailed: 0 });
+    expect(shared.sent).toHaveLength(2);
+  });
+
+  it("sends it on Rondyr's retry when the mailer refused it, and nothing else twice", async () => {
+    const shared = await bilingualSite({ en: ["team@example.com"], fr: ["equipe@example.com"] });
+    await shared.store.putOrigin(submissionId, {
+      formSlug: "contact-fr",
+      recordedAt: now,
+      autoReply,
+    });
+    shared.failing.add("ada@example.com");
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 503, code: "EMAIL_FAILED" });
+    // The log names the delivery, never the visitor's address.
+    expect(shared.lines).toEqual([
+      { level: "error", message: "Failed to send a held auto-reply", data: { deliveryId } },
+    ]);
+    shared.failing.clear();
+    expect(await shared.deliver(frenchMessage(), now + 60_000)).toEqual({
+      status: 200,
+      emailed: 1,
+    });
+    expect(shared.sent.map(({ to }) => to)).toEqual(["equipe@example.com", "ada@example.com"]);
+    expect(shared.sent[1]).toEqual(frenchAutoReply);
+  });
+
+  it("sends none without a plain address in the message, or when the origin is unknown", async () => {
+    const shared = await bilingualSite({ en: ["team@example.com"], fr: ["equipe@example.com"] });
+    await shared.store.putOrigin(submissionId, {
+      formSlug: "contact-fr",
+      recordedAt: now,
+      autoReply,
+    });
+    const named = new TextDecoder()
+      .decode(frenchMessage())
+      .replace('"ada@example.com"', String.raw`"\"Ada\" <ada@example.com>"`);
+    expect(await shared.deliver(encoder.encode(named))).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to }) => to)).toEqual(["equipe@example.com"]);
+
+    const unknown = await bilingualSite({ en: ["team@example.com"], fr: [] });
+    expect(await unknown.deliver(frenchMessage())).toEqual({ status: 200, emailed: 1 });
+    expect(unknown.sent.map(({ to }) => to)).toEqual(["team@example.com"]);
+  });
+
+  it("waits for the origin of a single form's message while a pending entry holds an auto-reply", async () => {
+    const single = await bilingualSite({ en: [], fr: ["equipe@example.com"] });
+    await single.store.putLink("contact-en", { rondyrFormId: null, recipients: [] });
+    // A pending entry without an auto-reply doesn't hold up a single form's emails;
+    // one with an auto-reply does, until its `202` records the origin.
+    await single.store.createQueueEntry(
+      crypto.randomUUID(),
+      newEntry("contact-fr", { nom: "Grace" }, now),
+    );
+    const held = crypto.randomUUID();
+    await single.store.createQueueEntry(
+      held,
+      newEntry("contact-fr", { nom: "Ada" }, now, autoReply),
+    );
+    expect(await single.deliver(frenchMessage())).toEqual({
+      status: 503,
+      code: "ORIGIN_PENDING",
+    });
+    expect(single.sent).toEqual([]);
+
+    const http = {
+      fetch: async () =>
+        Response.json({ "submission-id": submissionId, status: "received" }, { status: 202 }),
+    };
+    const later = now + 60_000;
+    expect(await attempt({ ...single.host, http }, options, token, held, () => later)).toBe("sent");
+    expect(await single.deliver(frenchMessage(), later)).toEqual({ status: 200, emailed: 2 });
+    expect(single.sent.map(({ to }) => to)).toEqual(["equipe@example.com", "ada@example.com"]);
+  });
+});
