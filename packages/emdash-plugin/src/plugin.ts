@@ -8,8 +8,9 @@ import {
 } from "emdash";
 
 import { matchesCredential, enqueueCredential } from "./core/hop.ts";
-import { DeclaredPost, prepareDeclaredSubmission } from "./declared-submission.ts";
+import { DeclaredPost, receiveDeclaredPost } from "./declared-submission.ts";
 import { RondyrError, SubmissionStatus, type Organization } from "./core/rondyr-client.ts";
+import { siteKeyReader, siteKeyTimeoutMs } from "./core/site-keys.ts";
 import { pluginId, pluginVersion } from "./constants.ts";
 import { attempt, requeue, sendDue } from "./delivery.ts";
 import { enqueue, EnqueueInput } from "./enqueue.ts";
@@ -60,23 +61,22 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
   const forms = options.forms?.map((form) => [form.slug, form] as const);
   const declared = forms === undefined ? undefined : new Map(forms);
 
-  // One lookup covers all forms of this organization. Keep successful reads for
-  // three minutes, coalesce concurrent reads, and retry a failed lookup.
-  let cache: { token: string; until: number; organization: Promise<Organization> } | undefined;
-  const organizationForWidget = (ctx: RouteContext): Promise<Organization> => {
-    const client = rondyrClient(ctx, options);
-    const token = rondyrSecrets().token;
-    if (cache !== undefined && cache.token === token && cache.until > Date.now()) {
-      return cache.organization;
-    }
-    const organization = client.organization();
-    if (token !== null) {
-      cache = { token, until: Date.now() + 180_000, organization };
-      void organization.catch(() => {
-        if (cache?.organization === organization) cache = undefined;
+  // One read covers every form of the organization, and serves page renders for three minutes.
+  const siteKeyOf = siteKeyReader();
+  /** The organization's forms for a page render: a short wait, and the reason of a failure in the log. */
+  const formsForWidget = async (ctx: RouteContext, formSlug: string): Promise<Organization> => {
+    try {
+      return await rondyrClient(ctx, options).organization(siteKeyTimeoutMs);
+    } catch (error) {
+      let reason = "unknown";
+      if (error instanceof RondyrError) reason = error.failure;
+      else if (error instanceof PluginRouteError) reason = error.code;
+      ctx.log.warn("The Turnstile site key could not be read from Rondyr", {
+        form: formSlug,
+        reason,
       });
+      throw error;
     }
-    return organization;
   };
 
   const queueSubmission = async (ctx: RouteContext, submission: EnqueueInput) => {
@@ -131,17 +131,20 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
           public: true,
           methods: ["POST"],
           input: DeclaredPost,
-          handler: async (ctx: RouteContext<z.infer<typeof DeclaredPost>>) => {
+          handler: (ctx: RouteContext<z.infer<typeof DeclaredPost>>) => {
             requireCredential(ctx);
-            const result = prepareDeclaredSubmission(
+            return receiveDeclaredPost(
               declared.get(ctx.input.formId),
               ctx.input,
               ctx.request.headers.get("cf-connecting-ip"),
+              async (entry) => {
+                await queueSubmission(ctx, entry);
+              },
             );
-            if (result.entry !== undefined) await queueSubmission(ctx, result.entry);
-            return result.answer;
           },
         },
+        // A page render reads this. Without the site key, the page renders the
+        // form without the widget: Rondyr then keeps its messages in To review.
         "declared/definition": {
           public: true,
           methods: ["POST"],
@@ -153,10 +156,9 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
             if (form.spamProtection === "turnstile") {
               const link = await new Store(ctx).link(form.slug);
               if (link?.rondyrFormId != null) {
-                const organization = await organizationForWidget(ctx);
-                turnstileSiteKey =
-                  organization.forms.find(({ publicId }) => publicId === link.rondyrFormId)
-                    ?.turnstileSiteKey ?? null;
+                turnstileSiteKey = await siteKeyOf(rondyrSecrets().token, link.rondyrFormId, () =>
+                  formsForWidget(ctx, form.slug),
+                );
               }
             }
             const { autoReply: _autoReply, ...definition } = form;

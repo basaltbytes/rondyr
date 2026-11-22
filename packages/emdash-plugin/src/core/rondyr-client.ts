@@ -160,22 +160,27 @@ export class RondyrClient {
     this.#token = token;
   }
 
-  async #request(path: string, init: RequestInit): Promise<Response> {
+  async #request(path: string, init: RequestInit, timeoutMs = attemptTimeoutMs): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${this.#token}`);
     try {
       return await this.#fetch(new URL(path, this.#origin).href, {
         ...init,
         headers,
-        signal: AbortSignal.timeout(attemptTimeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
       throw new RondyrError("unreachable");
     }
   }
 
-  async #json<T>(path: string, schema: z.ZodType<T>, method = "GET"): Promise<T> {
-    const response = await this.#request(path, { method });
+  async #json<T>(
+    path: string,
+    schema: z.ZodType<T>,
+    method = "GET",
+    timeoutMs = attemptTimeoutMs,
+  ): Promise<T> {
+    const response = await this.#request(path, { method }, timeoutMs);
     if (!response.ok) throw new RondyrError(failureOf(response.status));
     const parsed = schema.safeParse(await response.json().catch(() => null));
     if (!parsed.success) throw new RondyrError("unexpected");
@@ -224,9 +229,9 @@ export class RondyrClient {
     }
   }
 
-  /** The token's organization and its forms. */
-  async organization(): Promise<Organization> {
-    const [organization] = await this.#json("/api/organizations", Organizations);
+  /** The token's organization and its forms. A page render passes a shorter wait than 30 seconds. */
+  async organization(timeoutMs = attemptTimeoutMs): Promise<Organization> {
+    const [organization] = await this.#json("/api/organizations", Organizations, "GET", timeoutMs);
     if (organization === undefined) throw new RondyrError("unauthorized");
     return organization;
   }

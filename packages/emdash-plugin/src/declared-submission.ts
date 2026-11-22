@@ -102,3 +102,20 @@ export function prepareDeclaredSubmission(
     },
   };
 }
+
+/**
+ * Validate a declared post and queue it before the visitor gets the answer.
+ * The queue write is idempotent on the submission ID, so a failed write is
+ * made once more, as the site route does in forms plugin mode. A second
+ * failure is thrown: the visitor is told the message was not sent.
+ */
+export async function receiveDeclaredPost(
+  form: DeclaredForm | undefined,
+  post: z.infer<typeof DeclaredPost>,
+  visitorIp: string | null,
+  queue: (entry: EnqueueInput) => Promise<void>,
+): Promise<DeclaredAnswer> {
+  const { answer, entry } = prepareDeclaredSubmission(form, post, visitorIp);
+  if (entry !== undefined) await queue(entry).catch(() => queue(entry));
+  return answer;
+}

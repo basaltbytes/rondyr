@@ -4,7 +4,11 @@ import type { PublicPluginApiRouteHandler } from "emdash/plugin-utils";
 import { pluginId } from "./constants.ts";
 import { DeclaredForm } from "./core/declared-forms.ts";
 import { attempt } from "./delivery.ts";
-import { DeclaredPost, prepareDeclaredSubmission } from "./declared-submission.ts";
+import {
+  DeclaredPost,
+  prepareDeclaredSubmission,
+  receiveDeclaredPost,
+} from "./declared-submission.ts";
 import { enqueue } from "./enqueue.ts";
 import { handleSubmission, submitSiteForm } from "./site-route.ts";
 import { Store } from "./store.ts";
@@ -125,10 +129,14 @@ describe("declared field rules", () => {
   });
 });
 
-/** The site route's in-process hop with real validation and queue storage. */
-function site() {
+/**
+ * The site route's in-process hop with real validation and queue storage.
+ * `queueFailures` is how many queue writes fail before one succeeds.
+ */
+function site(queueFailures = 0) {
   const { host, collections } = memoryHost();
   const store = new Store(host);
+  let failuresLeft = queueFailures;
   const handlePublicPluginApiRoute: PublicPluginApiRouteHandler = async (
     plugin,
     method,
@@ -142,9 +150,19 @@ function site() {
     });
     const post = DeclaredPost.parse(await request.json());
     const form = post.formId === contact.slug ? contact : undefined;
-    const result = prepareDeclaredSubmission(form, post, request.headers.get("cf-connecting-ip"));
-    if (result.entry !== undefined) await enqueue(host, result.entry, now);
-    return { success: true, data: result.answer };
+    const answer = await receiveDeclaredPost(
+      form,
+      post,
+      request.headers.get("cf-connecting-ip"),
+      async (entry) => {
+        if (failuresLeft > 0) {
+          failuresLeft -= 1;
+          throw new Error("The queue is unavailable");
+        }
+        await enqueue(host, entry, now);
+      },
+    );
+    return { success: true, data: answer };
   };
   const locals = {
     emdash: {
@@ -267,6 +285,41 @@ it("answers a filled honeypot as a success without queuing it", async () => {
     data: { success: true, message: "Submitted successfully." },
   });
   expect(await form.store.queueCount("pending")).toBe(0);
+});
+
+it("queues the message once when the first queue write fails", async () => {
+  const form = site(1);
+
+  const response = await form.post(
+    JSON.stringify({ formId: "contact", data: { message: "Hello" } }),
+    jsonHeaders,
+  );
+
+  expect(response.status).toBe(200);
+  expect(await form.store.queueCount("pending")).toBe(1);
+});
+
+it("tells the visitor to try again when the queue refuses the message twice", async () => {
+  const form = site(2);
+  const post = { formId: "contact", data: { message: "Hello" } };
+
+  const response = await form.post(JSON.stringify(post), jsonHeaders);
+
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({
+    success: false,
+    error: {
+      code: "QUEUE_UNAVAILABLE",
+      message: "Your message could not be submitted. Please try again.",
+    },
+  });
+  expect(await form.store.queueCount("pending")).toBe(0);
+
+  const plain = await site(2).post(
+    new URLSearchParams({ formId: "contact", message: "Hello", _return: "/contact" }),
+  );
+  expect(plain.status).toBe(303);
+  expect(plain.headers.get("location")).toBe("/contact?status=error");
 });
 
 it("keeps the visitor token, IP and idempotency key from the first delivery attempt on a retry", async () => {

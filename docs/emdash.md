@@ -116,7 +116,7 @@ const form = await getDeclaredForm(Astro, "contact");
 ---
 ```
 
-`getDeclaredForm` returns `null` for an unknown slug. A form configured with `spamProtection: "honeypot"` can render a hidden-from-visitors `_hp` input. If this field is filled, the site answers with a silent success. For `spamProtection: "turnstile"`, render the [Turnstile widget](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/) with `form.turnstileSiteKey` and include its `cf-turnstile-response` in the post. The linked Rondyr form supplies the site key. It is `null` until the link and keys are configured. The plugin caches the Rondyr form list for three minutes. Rondyr puts messages whose token is missing, refused, or expired in **To review**.
+`getDeclaredForm` returns `null` for an unknown slug. A form configured with `spamProtection: "honeypot"` can render a hidden-from-visitors `_hp` input. If this field is filled, the site answers with a silent success. For `spamProtection: "turnstile"`, render the [Turnstile widget](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/) with `form.turnstileSiteKey` and include its `cf-turnstile-response` in the post. The linked Rondyr form supplies the site key. It is `null` until the link and keys are configured. The plugin caches the Rondyr form list for three minutes. If Rondyr can't be reached or `RONDYR_API_TOKEN` is missing, the page still renders: `form.turnstileSiteKey` is the last key the plugin read, or `null` before a first read, and the plugin asks Rondyr again 30 seconds later. Render the form without the widget when the key is `null`. Rondyr puts messages whose token is missing, refused, or expired in **To review**.
 
 In forms plugin mode, the forms plugin keeps file uploads in its own storage and forwards the text fields through Rondyr.
 
@@ -163,7 +163,6 @@ After deploying, open **Rondyr settings** in the EmDash admin (administrators on
 - **Rotating webhook secrets.** When you select **Rotate secret** in Rondyr, both secrets remain valid for 24 hours; replace the old secret in `RONDYR_WEBHOOK_SECRET` and redeploy your EmDash site within that window.
 - **Handling outages.** If Rondyr is temporarily unreachable, your site still accepts the visitor's form and retries sending to Rondyr automatically for up to 7 days, using an idempotency key so messages are never duplicated. **Messages** displays a banner with counts of pending or failed items and a **Retry failed submissions** button. A declared form confirms the post after the site saves it and removes its local copy once Rondyr returns `202`. In forms plugin mode, if a message could not be saved for forwarding, **Rondyr settings** offers a **Download from the Forms plugin** CSV button.
 - **Missing secrets.** Your site still builds and accepts form submissions if either secret is missing; **Messages** and **Rondyr settings** show a clear warning until you add them.
-
 
 ## Move from the forms plugin to declared forms
 
