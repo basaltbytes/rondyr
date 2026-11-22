@@ -1,4 +1,5 @@
 import { z } from "astro/zod";
+import type { StorageCollection } from "emdash";
 
 import type { Collection, StorageHost } from "../store.ts";
 
@@ -7,13 +8,25 @@ type Query = NonNullable<Parameters<Collection["query"]>[0]>;
 type Where = NonNullable<Query["where"]>;
 
 const Document = z.record(z.string(), z.unknown());
+const Bound = z.union([z.number(), z.string()]);
 const Range = z.object({
-  lt: z.number().optional(),
-  lte: z.number().optional(),
-  gt: z.number().optional(),
-  gte: z.number().optional(),
+  lt: Bound.optional(),
+  lte: Bound.optional(),
+  gt: Bound.optional(),
+  gte: Bound.optional(),
 });
 const Scalar = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+/** A numeric or text range, compared as the database compares a number or an ISO date. */
+function inRange(value: number | string, range: z.infer<typeof Range>): boolean {
+  const { lt, lte, gt, gte } = range;
+  return (
+    (lt === undefined || value < lt) &&
+    (lte === undefined || value <= lte) &&
+    (gt === undefined || value > gt) &&
+    (gte === undefined || value >= gte)
+  );
+}
 
 function matches(document: Value, where: Where | undefined): boolean {
   const fields = Document.safeParse(document);
@@ -23,16 +36,8 @@ function matches(document: Value, where: Where | undefined): boolean {
     const scalar = Scalar.safeParse(condition);
     if (scalar.success) return value === scalar.data;
     const range = Range.safeParse(condition);
-    const number = z.number().safeParse(value);
-    if (!range.success || !number.success) return false;
-    const { lt, lte, gt, gte } = range.data;
-    const n = number.data;
-    return (
-      (lt === undefined || n < lt) &&
-      (lte === undefined || n <= lte) &&
-      (gt === undefined || n > gt) &&
-      (gte === undefined || n >= gte)
-    );
+    const bound = Bound.safeParse(value);
+    return range.success && bound.success && inRange(bound.data, range.data);
   });
 }
 
@@ -48,11 +53,12 @@ interface Row {
 }
 
 /**
- * An in-memory storage collection for unit tests: equality and numeric range
- * filters, one sort key, a limit, and conditional writes on a revision that
- * changes with every write. No cursor, so every page is the only page.
+ * An in-memory storage collection for unit tests: equality filters, numeric
+ * and text range filters, one numeric sort key, a limit, and conditional
+ * writes on a revision that changes with every write. No cursor, so every page
+ * is the only page. `updateIf` is not used by the plugins under test.
  */
-class MemoryCollection implements Collection {
+export class MemoryCollection implements StorageCollection {
   readonly rows = new Map<string, Row>();
   #writes = 0;
 
@@ -74,6 +80,27 @@ class MemoryCollection implements Collection {
 
   async put(id: string, data: Value) {
     this.#write(id, data);
+  }
+
+  async exists(id: string) {
+    return this.rows.has(id);
+  }
+
+  async getMany(ids: string[]) {
+    const found = new Map<string, Value>();
+    for (const id of ids) {
+      const row = this.rows.get(id);
+      if (row !== undefined) found.set(id, row.data);
+    }
+    return found;
+  }
+
+  async putMany(items: { id: string; data: Value }[]) {
+    for (const { id, data } of items) this.#write(id, data);
+  }
+
+  async updateIf(): Promise<never> {
+    throw new Error("updateIf is not supported by the memory collection");
   }
 
   async compareAndSet(id: string, expectedRevision: string | null, data: Value) {

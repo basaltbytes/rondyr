@@ -4,7 +4,7 @@ import { afterAttempt, claimed, isDue, retried, unlinked } from "./core/queue.ts
 import { sendOutcome } from "./core/retry.ts";
 import { RondyrClient } from "./core/rondyr-client.ts";
 import type { ResolvedOptions } from "./options.ts";
-import { Store, type StorageHost } from "./store.ts";
+import { Store, type OriginRecord, type StorageHost } from "./store.ts";
 
 /**
  * How many due entries one cron run sends. Rondyr takes 30 submissions a
@@ -80,7 +80,9 @@ export async function attempt(
         submissionId: id,
       });
     } else {
-      await store.putOrigin(submissionId, { formSlug: entry.formSlug, recordedAt: clock() });
+      const origin: OriginRecord = { formSlug: entry.formSlug, recordedAt: clock() };
+      if (entry.autoReply !== undefined) origin.autoReply = entry.autoReply;
+      await store.putOrigin(submissionId, origin);
     }
     await store.deleteQueueEntry(id, claim);
     return "sent";

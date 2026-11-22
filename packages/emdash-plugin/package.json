@@ -31,6 +31,7 @@
     ".": "./src/index.ts",
     "./plugin": "./src/plugin.ts",
     "./forms": "./src/forms-plugin.ts",
+    "./forms-with-submissions": "./src/forms-with-submissions.ts",
     "./admin": "./src/admin.tsx",
     "./route": "./src/route.ts"
   },

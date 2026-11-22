@@ -1,5 +1,6 @@
 import { z } from "astro/zod";
 
+import { AutoReply } from "./auto-reply.ts";
 import { FlatFields } from "./fields.ts";
 import { attemptLeaseMs, retryDelayMs, retryWindowMs, type SendOutcome } from "./retry.ts";
 
@@ -25,6 +26,8 @@ export const QueueEntry = z.object({
   nextAttemptAt: z.number().int(),
   /** The last HTTP status from Rondyr, or null before any answer or after a network error. */
   lastStatus: z.number().int().nullable(),
+  /** The auto-reply that the forms plugin held for a form linked to a Rondyr form, if any. */
+  autoReply: AutoReply.optional(),
 });
 export type QueueEntry = z.infer<typeof QueueEntry>;
 
@@ -32,8 +35,13 @@ export type QueueEntry = z.infer<typeof QueueEntry>;
  * A new entry is due at once: the attempt that runs right after the visitor's
  * response claims it. If that attempt never runs, the cron finds it due.
  */
-export function newEntry(formSlug: string, fields: FlatFields, now: number): QueueEntry {
-  return {
+export function newEntry(
+  formSlug: string,
+  fields: FlatFields,
+  now: number,
+  autoReply: AutoReply | null = null,
+): QueueEntry {
+  const entry: QueueEntry = {
     formSlug,
     fields,
     state: "pending",
@@ -42,6 +50,8 @@ export function newEntry(formSlug: string, fields: FlatFields, now: number): Que
     nextAttemptAt: now,
     lastStatus: null,
   };
+  if (autoReply !== null) entry.autoReply = autoReply;
+  return entry;
 }
 
 /** Whether an attempt may start now. */

@@ -7,6 +7,7 @@ import {
 import { formsPluginId, pluginId } from "./constants.ts";
 import { flattenFields, formLayout, SubmittedData, type FormLayout } from "./core/fields.ts";
 import { enqueueCredential } from "./core/hop.ts";
+import { handoffHeader, openHandoff, type Handoff } from "./handoff.ts";
 
 /** The forms plugin's honeypot field, which the contact block names `_hp`. */
 const honeypotField = "_hp";
@@ -218,12 +219,19 @@ function layoutOf(definition: Definition): FormLayout {
   );
 }
 
+/** The Rondyr plugin's answer to `enqueue`: whether the form has a Rondyr form. */
+const Queued = z.object({ linked: z.boolean() });
+
 /**
  * Put an accepted submission in the Rondyr plugin's queue, in this Worker,
- * before the visitor gets the answer. `enqueue` is idempotent, so a failed call
- * is made once more. When both fail, the plugin records it: the admin pages
- * then say how many submissions of the form were not queued, and its log says
- * why. The forms plugin keeps its copy, and the visitor gets its answer anyway.
+ * before the visitor gets the answer, with what the forms plugin held. `enqueue`
+ * is idempotent, so a failed call is made once more. When both fail, the
+ * plugin records it: the admin pages then say how many submissions of the form
+ * were not queued, and its log says why. The forms plugin keeps its copy, and
+ * the visitor gets its answer anyway.
+ *
+ * Returns true when the submission is queued for a form linked to a Rondyr
+ * form, whose held emails Rondyr replaces.
  */
 async function forward(
   handle: Handle,
@@ -231,7 +239,8 @@ async function forward(
   submission: FormSubmission,
   definition: Definition | null,
   token: string | null,
-): Promise<void> {
+  handoff: Handoff,
+): Promise<boolean> {
   const headers = new Headers({
     "content-type": "application/json",
     authorization: `Bearer ${enqueueCredential(token)}`,
@@ -244,16 +253,22 @@ async function forward(
       submissionId: crypto.randomUUID(),
       form: layout,
       fields: flattenFields(layout, submission.data),
+      formsEmails: handoff.held ? "held" : "sent",
+      autoReply: handoff.autoReply,
     });
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = await callPlugin(handle, url, target, body, headers);
-      if ("data" in result) return;
+      if ("data" in result) {
+        const queued = Queued.safeParse(result.data);
+        return queued.success && queued.data.linked;
+      }
       failure = result.failure;
     }
   }
   const form = definition === null ? submission.formId : definition.slug;
   const report = JSON.stringify({ form: form.slice(0, 200), code: failure });
   await callPlugin(handle, url, { plugin: pluginId, route: "enqueue/failed" }, report, headers);
+  return false;
 }
 
 /** What the site route reads from Astro's context. */
@@ -274,6 +289,11 @@ const invalid: FormsAnswer = {
  * `site.request` is the visitor's request: the forms plugin reads the
  * visitor's IP and country from its headers, and its body is not read.
  * `token` is `RONDYR_API_TOKEN`, or null.
+ *
+ * The call to `submit` names a handoff (see `handoff.ts`): the forms plugin of
+ * this package holds the emails it would send at once. Once the submission is
+ * queued for a form linked to a Rondyr form, they are dropped; in any other
+ * case, a failure included, they go out before this returns.
  *
  * A post from another site is refused without calling the forms plugin, as
  * the forms plugin's own route would refuse it.
@@ -299,28 +319,43 @@ export async function submitToForms(
   const headers = new Headers(request.headers);
   headers.set("content-type", "application/json");
   headers.delete("content-length");
+  const ticket = openHandoff();
+  // Set, not appended: a value the visitor sent never names a handoff.
+  headers.set(handoffHeader, ticket.id);
   const body: z.input<typeof JsonBody> = { formId: submission.formId, data: submission.data };
   const files = submission.files ?? {};
   if (Object.keys(files).length > 0) body.files = files;
-  // Built from the incoming request, so the forms plugin still sees the visitor's IP and country.
-  const answer = await handle(
-    formsPluginId,
-    "POST",
-    "/submit",
-    new Request(request, { method: "POST", headers, body: JSON.stringify(body) }),
-  );
-  const envelope = Envelope.safeParse(answer);
-  const accepted =
-    envelope.success && envelope.data.success && Accepted.safeParse(envelope.data.data).success;
-  if (accepted) {
-    const definition = await definitionOf(handle, url, submission.formId);
-    // The forms plugin answers a filled honeypot like a success and stores nothing; so does Rondyr.
-    const trap =
-      definition?.settings?.spamProtection === "honeypot" &&
-      Boolean(submission.data[honeypotField]);
-    if (!trap) await forward(handle, url, submission, definition, token);
+  let handled = false;
+  try {
+    // Built from the incoming request, so the forms plugin still sees the visitor's IP and country.
+    const answer = await handle(
+      formsPluginId,
+      "POST",
+      "/submit",
+      new Request(request, { method: "POST", headers, body: JSON.stringify(body) }),
+    );
+    const envelope = Envelope.safeParse(answer);
+    const accepted =
+      envelope.success && envelope.data.success && Accepted.safeParse(envelope.data.data).success;
+    if (accepted) {
+      const definition = await definitionOf(handle, url, submission.formId);
+      // The forms plugin answers a filled honeypot like a success and stores nothing; so does Rondyr.
+      const trap =
+        definition?.settings?.spamProtection === "honeypot" &&
+        Boolean(submission.data[honeypotField]);
+      if (!trap) {
+        handled = await forward(handle, url, submission, definition, token, ticket.handoff);
+      }
+    }
+    return { accepted, answer: formsAnswer(answer) };
+  } finally {
+    // The forms plugin's held emails go out unless Rondyr has the submission of a linked form.
+    try {
+      await ticket.handoff.settle(handled);
+    } finally {
+      ticket.close();
+    }
   }
-  return { accepted, answer: formsAnswer(answer) };
 }
 
 /**
