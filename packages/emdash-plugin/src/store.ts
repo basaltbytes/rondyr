@@ -35,11 +35,18 @@ export type DeliveryRecord = z.infer<typeof DeliveryRecord>;
  * Rondyr returned with its `202`, which is the webhook's `submission.id`, and
  * the auto-reply that the forms plugin wrote for it, which waits until Rondyr
  * accepts the message. No field of the message is kept here.
+ *
+ * The auto-reply goes out once per message, whatever the number of webhook
+ * deliveries: `autoRepliedAt` is set once the mailer took it, and while one
+ * request sends it, `autoReplyHeldUntil` keeps every other request from
+ * sending it too.
  */
 export const OriginRecord = z.object({
   formSlug: z.string().min(1).max(200),
   recordedAt: z.number().int(),
   autoReply: AutoReply.optional(),
+  autoReplyHeldUntil: z.number().int().optional(),
+  autoRepliedAt: z.number().int().optional(),
 });
 export type OriginRecord = z.infer<typeof OriginRecord>;
 
@@ -291,9 +298,24 @@ export class Store {
     return this.#get("origins", OriginRecord, submissionId);
   }
 
-  /** Record where a Rondyr submission came from. A replay of the same submission writes the same form. */
-  putOrigin(submissionId: string, origin: OriginRecord) {
-    return this.#collection("origins").put(submissionId, origin);
+  /** The origin of a Rondyr submission and the revision it was read at, for a conditional write. */
+  versionedOrigin(submissionId: string) {
+    return this.#getVersioned("origins", OriginRecord, submissionId);
+  }
+
+  /**
+   * Record where a Rondyr submission came from, unless it is recorded already.
+   * A replay of the same submission names the same form, and keeps what the
+   * webhook wrote since, such as a sent auto-reply.
+   */
+  async putOrigin(submissionId: string, origin: OriginRecord): Promise<void> {
+    await this.#collection("origins").compareAndSet(submissionId, null, origin);
+  }
+
+  /** Replace an origin read at `revision`. Returns the new revision, or null after a concurrent write. */
+  async writeOrigin(submissionId: string, revision: string, origin: OriginRecord) {
+    const result = await this.#collection("origins").compareAndSet(submissionId, revision, origin);
+    return result.applied ? result.revision : null;
   }
 
   /** Forget the origins recorded before `before`. */

@@ -586,3 +586,99 @@ describe("receiveWebhook with an auto-reply held for the message", () => {
     expect(single.sent.map(({ to }) => to)).toEqual(["equipe@example.com", "ada@example.com"]);
   });
 });
+
+/** The French form's message in another delivery, as from a second Rondyr webhook to this site. */
+function secondDelivery(receivedAt = sentAt) {
+  return encoder.encode(
+    new TextDecoder()
+      .decode(frenchMessage(receivedAt))
+      .replace(deliveryId, "9d3c1a2b-4e5f-4a6b-8c7d-0e1f2a3b4c5d"),
+  );
+}
+
+/** A site whose French form's message has an auto-reply waiting in its origin. */
+async function siteWithAutoReply() {
+  const shared = await bilingualSite({ en: ["team@example.com"], fr: ["equipe@example.com"] });
+  await shared.store.putOrigin(submissionId, {
+    formSlug: "contact-fr",
+    recordedAt: now,
+    autoReply,
+  });
+  const autoReplies = () => shared.sent.filter(({ to }) => to === "ada@example.com");
+  return { ...shared, autoReplies };
+}
+
+describe("receiveWebhook with several deliveries of one message", () => {
+  it("sends the auto-reply once, and the recipients' email once per delivery", async () => {
+    const shared = await siteWithAutoReply();
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 200, emailed: 2 });
+    // A replay of the queue's `202` keeps what the first delivery recorded.
+    await shared.store.putOrigin(submissionId, {
+      formSlug: "contact-fr",
+      recordedAt: now + 1,
+      autoReply,
+    });
+    expect(await shared.deliver(secondDelivery())).toEqual({ status: 200, emailed: 1 });
+    expect(shared.sent.map(({ to }) => to)).toEqual([
+      "equipe@example.com",
+      "ada@example.com",
+      "equipe@example.com",
+    ]);
+    expect(shared.autoReplies()).toHaveLength(1);
+  });
+
+  it("sends the auto-reply once when two deliveries arrive at the same time", async () => {
+    const shared = await siteWithAutoReply();
+    const slow = Promise.withResolvers<void>();
+    const sending = Promise.withResolvers<void>();
+    const held = {
+      send: async (message: Sent) => {
+        if (message.to === "ada@example.com") {
+          sending.resolve();
+          await slow.promise;
+        }
+        shared.sent.push(message);
+      },
+    };
+    const body = frenchMessage();
+    const first = receiveWebhook(
+      { ...shared.host, email: held, input: body, request: { headers: await signed(body) } },
+      [secret],
+      now,
+    );
+    await sending.promise;
+    const other = secondDelivery();
+    const email = {
+      send: async (message: Sent) => {
+        shared.sent.push(message);
+      },
+    };
+    const concurrent = await receiveWebhook(
+      { ...shared.host, email, input: other, request: { headers: await signed(other) } },
+      [secret],
+      now,
+    );
+    expect(concurrent).toEqual({ status: 503, code: "AUTO_REPLY_IN_PROGRESS" });
+    slow.resolve();
+    expect(await first).toEqual({ status: 200, emailed: 2 });
+    // Rondyr retries the second delivery a minute later: its recipients' email only.
+    const later = now + 60_000;
+    expect(await shared.deliver(other, later)).toEqual({ status: 200, emailed: 0 });
+    expect(shared.autoReplies()).toHaveLength(1);
+  });
+
+  it("sends the auto-reply once after a failed send, whichever delivery retries first", async () => {
+    const shared = await siteWithAutoReply();
+    shared.failing.add("ada@example.com");
+    expect(await shared.deliver(frenchMessage())).toEqual({ status: 503, code: "EMAIL_FAILED" });
+    expect(shared.autoReplies()).toEqual([]);
+    shared.failing.clear();
+    const later = now + 60_000;
+    expect(await shared.deliver(secondDelivery(), later)).toEqual({ status: 200, emailed: 2 });
+    expect(await shared.deliver(frenchMessage(), later + 60_000)).toEqual({
+      status: 200,
+      emailed: 0,
+    });
+    expect(shared.autoReplies()).toEqual([frenchAutoReply]);
+  });
+});

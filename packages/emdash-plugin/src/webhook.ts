@@ -1,7 +1,7 @@
 import { z } from "astro/zod";
 import type { EmailMessage, PluginContext } from "emdash";
 
-import { autoReplyMessage, type AutoReply } from "./core/auto-reply.ts";
+import { autoReplyMessage, type AutoReply, type AutoReplyMessage } from "./core/auto-reply.ts";
 import { FlatFields, formatNotification, replyToAddress, type FormLayout } from "./core/fields.ts";
 import { verifyWebhook } from "./core/signature.ts";
 import { Store, type DeliveryRecord, type StorageHost } from "./store.ts";
@@ -114,7 +114,8 @@ async function audienceOf(store: Store, payload: Payload, now: number): Promise<
   }: NonNullable<Awaited<ReturnType<typeof originOf>>>): Promise<Audience> => ({
     layout: await store.layout(linked.slug),
     recipients: uniqueRecipients([linked]),
-    autoReply: origin.autoReply ?? null,
+    // Sent already, by another delivery of the message: nothing left to send.
+    autoReply: origin.autoRepliedAt === undefined ? (origin.autoReply ?? null) : null,
     originPending: false,
   });
 
@@ -137,6 +138,48 @@ async function audienceOf(store: Store, payload: Payload, now: number): Promise<
     if (layout !== null) break;
   }
   return { layout, recipients: uniqueRecipients(links), autoReply: null, originPending };
+}
+
+/**
+ * What became of a message's auto-reply in one request: `skipped` when it went
+ * out already, or the message has none any more; `in-progress` while another
+ * request holds it.
+ */
+type AutoReplyOutcome = "sent" | "skipped" | "in-progress" | "failed";
+
+/**
+ * Send a message's auto-reply unless it went out already, whatever delivery
+ * asks. The request first holds it on the message's origin with a conditional
+ * write, so two deliveries of one message never send it at the same time; a
+ * failed send releases the hold for the next retry.
+ */
+async function autoReplyOnce(
+  store: Store,
+  submissionId: string,
+  message: AutoReplyMessage,
+  email: Pick<NonNullable<PluginContext["email"]>, "send">,
+  now: number,
+): Promise<AutoReplyOutcome> {
+  const current = await store.versionedOrigin(submissionId);
+  if (current === null || current.value.autoRepliedAt !== undefined) return "skipped";
+  if ((current.value.autoReplyHeldUntil ?? 0) > now) return "in-progress";
+  const held = await store.writeOrigin(submissionId, current.revision, {
+    ...current.value,
+    autoReplyHeldUntil: now + holdMs,
+  });
+  if (held === null) return "in-progress";
+  try {
+    await email.send({ ...message });
+  } catch {
+    await store.writeOrigin(submissionId, held, { ...current.value, autoReplyHeldUntil: 0 });
+    return "failed";
+  }
+  await store.writeOrigin(submissionId, held, {
+    ...current.value,
+    autoReplyHeldUntil: 0,
+    autoRepliedAt: now,
+  });
+  return "sent";
 }
 
 /** What the webhook needs from the route context. */
@@ -245,18 +288,19 @@ export async function receiveWebhook(
     // Another request took the delivery over after the hold ended: it sends the rest.
     if (revision === null) return { status: 503, code: "DELIVERY_IN_PROGRESS" };
   }
-  // The visitor's auto-reply, once per delivery as each recipient's email.
+  // The visitor's auto-reply, once per message: two deliveries of one message,
+  // such as from two Rondyr webhooks to this site, send it once between them.
   if (autoReply !== null && record.autoReplied !== true && email !== undefined) {
-    let replied = true;
-    try {
-      await email.send({ ...autoReply });
-    } catch {
-      replied = false;
+    const outcome = await autoReplyOnce(store, payload.submission.id, autoReply, email, now);
+    if (outcome === "failed") {
       failed = true;
       ctx.log.error("Failed to send a held auto-reply", { deliveryId: payload.deliveryId });
-    }
-    if (replied) {
-      emailed += 1;
+    } else if (outcome === "in-progress") {
+      // Another request sends it now: Rondyr retries this delivery, which then skips it.
+      await store.writeDelivery(payload.deliveryId, revision, { ...record, heldUntil: 0 });
+      return { status: 503, code: "AUTO_REPLY_IN_PROGRESS" };
+    } else {
+      if (outcome === "sent") emailed += 1;
       record = { ...record, autoReplied: true };
       revision = await store.writeDelivery(payload.deliveryId, revision, record);
       if (revision === null) return { status: 503, code: "DELIVERY_IN_PROGRESS" };
