@@ -17,13 +17,13 @@ import { pathToFileURL } from "node:url";
 export const workerPackage = "rondyr";
 
 /**
- * Files that change the Worker's build or deployment: the app itself, its Wrangler
- * configuration, the lockfile, the workspace file with the catalog of versions, the root
- * manifest whose scripts run the deployment, the Node version, the dependency patches and
- * the workflows.
+ * Changes to the app, shared dashboard artwork, Wrangler configuration, lockfile,
+ * workspace catalog, root manifest, Node version, dependency patches or workflows
+ * affect the Worker's build or deployment.
  */
 const workerFiles = [
   /^apps\/rondyr\//u,
+  /^docs\/brand\/rondyr(?:-mark)?\.svg$/u,
   /^wrangler\.json$/u,
   /^pnpm-lock\.yaml$/u,
   /^pnpm-workspace\.yaml$/u,
@@ -33,7 +33,7 @@ const workerFiles = [
   /^\.github\//u,
 ];
 
-/** Files outside the packages that never reach the Worker: documentation and agent instructions. */
+/** Documentation and agent instructions that do not require a Worker deploy. */
 const documentationFiles = [
   /^README\.md$/u,
   /^architecture\.md$/u,
