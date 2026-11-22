@@ -1,0 +1,26 @@
+---
+// Enriches Starlight's default `<head>` with OpenGraph images, Twitter cards, search-focused
+// titles, theme colors, llms.txt discovery, 404 noindex, and JSON-LD structured data.
+import Default from "@astrojs/starlight/components/Head.astro";
+
+import { applySeoHead } from "../seo/metadata.ts";
+import { defaultSiteUrl } from "../site-url.ts";
+
+const { starlightRoute } = Astro.locals;
+const origin = Astro.site?.origin ?? defaultSiteUrl;
+const pathname = Astro.url.pathname;
+const pageId = starlightRoute.id;
+const is404 = pageId === "404" || pathname === "/404" || pathname === "/404.html";
+const isHome = !is404 && (pathname === "/" || pathname === "");
+
+applySeoHead(starlightRoute.head, {
+  origin,
+  pathname,
+  pageId,
+  pageTitle: starlightRoute.entry.data.title,
+  is404,
+  isHome,
+});
+---
+
+<Default />

@@ -33,6 +33,18 @@ const harnesses = [
     aria-labelledby="_top"
   >
     <div>
+      <p class="mb-4 text-sm font-medium tracking-[0.02em] text-subtle">
+        <a
+          href="https://github.com/basaltbytes/rondyr"
+          class="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-foreground no-underline transition-colors hover:border-brand hover:text-brand focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
+        >
+          <span>Open-source</span>
+          <span aria-hidden="true" class="text-subtle">·</span>
+          <span>Self-hosted</span>
+          <span aria-hidden="true" class="text-subtle">·</span>
+          <span>AGPL-3.0</span>
+        </a>
+      </p>
       <h1
         id="_top"
         data-page-title
@@ -41,7 +53,8 @@ const harnesses = [
         {title}
       </h1>
       <p class="mt-6 max-w-[38rem] text-lg leading-[1.65] text-muted">
-        Rondyr is a form backend with spam filtering powered by <strong>classifier models</strong> like{" "}
+        Rondyr is an <strong>open-source, self-hosted form backend</strong> with spam filtering
+        powered by <strong>classifier models</strong> like{" "}
         <span class="inline-flex items-center gap-[0.3em] align-bottom text-lg leading-[1.65] font-medium whitespace-nowrap text-foreground">
           <span
             class="inline-flex size-[1.15em] items-center justify-center rounded-[0.25em] bg-[#e551ba] text-[#1e1e1e] [&>svg]:size-[0.8em]"
@@ -57,8 +70,8 @@ const harnesses = [
             <Fragment set:html={openaiIcon} />
           </span>
           <span>OpenAI Decisions</span>
-        </span>{" "}
-        that runs in your own{" "}
+        </span>
+        . Deploy in one click to your own{" "}
         <span class="inline-flex items-center gap-[0.3em] align-bottom text-lg leading-[1.65] font-medium whitespace-nowrap text-foreground">
           <span class="inline-flex items-center [&>svg]:size-[1em]" aria-hidden="true">
             <Fragment set:html={cloudflareIcon} />

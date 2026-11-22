@@ -35,7 +35,7 @@ export default defineConfig({
     starlight({
       title: "Rondyr",
       description:
-        "Rondyr is a form backend with spam filtering that you deploy to your own Cloudflare account.",
+        "Open-source, self-hosted form backend with classifier-model spam filtering (Jev and OpenAI Decisions). Deploy in one click to your own Cloudflare account.",
       favicon: "/favicon.svg",
       editLink: { baseUrl: `${githubRepository}/edit/${githubBranch}/` },
       customCss: [
@@ -44,7 +44,10 @@ export default defineConfig({
         "./src/styles/sidebar.css",
       ],
       logo: { light: logo.light, dark: logo.dark, alt: "Rondyr", replacesTitle: true },
-      components: { Hero: "./src/components/landing-hero.astro" },
+      components: {
+        Head: "./src/components/seo-head.astro",
+        Hero: "./src/components/landing-hero.astro",
+      },
       plugins: [
         lucode({
           warnOverrides: false,
