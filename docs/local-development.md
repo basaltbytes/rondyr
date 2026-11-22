@@ -24,7 +24,7 @@ Vite prints the local URL, usually `http://localhost:5173`. Public sign-up is cl
 ./apps/rondyr/scripts/setup-owner.sh http://localhost:5173
 ```
 
-It asks for the same values and prints `First account created (HTTP 201).`. Rondyr refuses to create a second account even while the token is set, so you can leave it in `apps/rondyr/.env` or remove it. Other people join an organization through an invitation link from **Settings → Members**; see [Members and invitations](./deployment.md#members-and-invitations).
+It asks for the same values and prints `First account created (HTTP 201).`. Rondyr refuses to create a second account even while the token is set, so you can leave it in `apps/rondyr/.env` or remove it. Other people join an organization through an invitation link from **Settings → Members**; see [Team and accounts](./team.md).
 
 ## First submission
 

@@ -4,7 +4,7 @@ The documentation site of Rondyr: a landing page and one page per Markdown file 
 
 ## Pages
 
-The pages are the Markdown files of the repository, read where they are: every `.md` file under `docs/`, and `architecture.md`. Nothing is copied into this package. `docs/email.md` becomes `/email/`, and `architecture.md` becomes `/architecture/`.
+The pages are the user-facing Markdown files under `docs/`, read where they are. Nothing is copied into this package. `docs/email.md` becomes `/email/`. Contributor-only files (`architecture.md`, `docs/evaluation.md`, `docs/local-development.md`, `docs/operations.md`) stay in the repository on GitHub and are linked from `docs/contributing.md` instead of becoming site pages.
 
 The files keep no frontmatter. A page takes its title from the file's first `#` heading, and its meta description from the file's first paragraph. A file without a first-level heading fails the build.
 
@@ -22,8 +22,8 @@ The landing page is `src/pages/index.astro`, with its first screen in `src/compo
 
 Links in the Markdown files are written for GitHub, and the build rewrites them for the site:
 
-- A link to another page, such as `./webhooks.md#signature` or `../architecture.md`, goes to that page: `/webhooks/#signature`. When the link text is the file name, such as `deployment.md`, the site shows the page title instead.
-- A link to any other file or folder of the repository, such as `./examples/verify-webhook.ts` or `../LICENSE`, goes to that file on GitHub, on the `main` branch.
+- A link to another page, such as `./webhooks.md#rotate-a-signing-secret` or `./email.md`, goes to that page: `/webhooks/#rotate-a-signing-secret`. When the link text is the file name, such as `deployment.md`, the site shows the page title instead.
+- A link to any other file or folder of the repository, such as `../architecture.md`, `./examples/verify-webhook.ts`, or `../LICENSE`, goes to that file on GitHub, on the `main` branch.
 - An image with a relative path is copied into the site with the page.
 
 The build fails on a link to a file that does not exist, to a path outside the repository, or to a heading that a Markdown file outside the site doesn't have. After the build, `src/integrations/built-links.ts` reads every built page and fails the build when a link, image, stylesheet or script inside the site has no target, or when an anchor has no matching heading. That covers the Markdown pages, the landing page and the navigation.

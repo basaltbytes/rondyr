@@ -15,32 +15,28 @@ export interface SidebarGroup {
 
 export const sidebar: readonly SidebarGroup[] = [
   {
-    label: "Get started",
-    items: [{ slug: "deployment" }, { slug: "concepts" }, { slug: "local-development" }],
+    label: "Run an instance",
+    items: [{ slug: "deployment" }, { slug: "team" }, { slug: "costs" }],
   },
   {
-    label: "Forms and the HTTP API",
-    items: [{ slug: "forms" }, { slug: "api" }],
+    label: "Forms and messages",
+    items: [{ slug: "forms" }, { slug: "spam-protection" }, { slug: "inbox" }],
   },
   {
-    label: "Spam classification",
-    items: [{ slug: "evaluation" }],
+    label: "Forward messages",
+    items: [{ slug: "email" }, { slug: "webhooks" }],
   },
   {
-    label: "Destinations",
-    items: [{ slug: "webhooks" }, { slug: "email" }],
+    label: "Plugins",
+    items: [{ slug: "emdash", label: "EmDash" }],
   },
   {
-    label: "Integrations",
-    items: [{ slug: "emdash" }],
+    label: "Reference",
+    items: [{ slug: "api" }],
   },
   {
-    label: "Operations",
-    items: [{ slug: "operations" }, { slug: "inbox" }],
-  },
-  {
-    label: "Architecture",
-    items: [{ slug: "architecture", label: "Technical architecture" }],
+    label: "Project",
+    items: [{ slug: "contributing" }],
   },
 ];
 

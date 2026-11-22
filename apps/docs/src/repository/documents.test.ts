@@ -33,40 +33,34 @@ test("refuses a page without a first-level heading", () => {
   );
 });
 
-test("serves docs/*.md and architecture.md at their name, and no other file", () => {
+test("serves user-facing docs/*.md at their name, and excludes contributor files", () => {
   assert.equal(documentId("docs/email.md"), "email");
   assert.equal(documentId("docs/guides/forms.md"), "guides/forms");
-  assert.equal(documentId("architecture.md"), "architecture");
+  assert.equal(documentId("architecture.md"), null);
+  assert.equal(documentId("docs/evaluation.md"), null);
+  assert.equal(documentId("docs/local-development.md"), null);
+  assert.equal(documentId("docs/operations.md"), null);
   assert.equal(documentId("README.md"), null);
   assert.equal(documentId("docs/examples/verify-webhook.ts"), null);
   assert.equal(pageRoute("email"), "/email/");
 });
 
-test("lists every Markdown file under docs/ with architecture.md", (t) => {
+test("lists every site Markdown file under docs/ and skips contributor files", (t) => {
   const repository = fixtureRepository(
     new Map([
       ["architecture.md", "# Architecture\n"],
       ["README.md", "# Readme\n"],
       ["docs/api.md", "# API\n"],
+      ["docs/evaluation.md", "# Evaluation\n"],
+      ["docs/local-development.md", "# Local development\n"],
+      ["docs/operations.md", "# Operations\n"],
       ["docs/guides/forms.md", "# Forms\n"],
       ["docs/examples/verify.ts", "export {};\n"],
     ]),
   );
   t.after(repository.remove);
   assert.deepEqual(listDocuments(repository.root), [
-    { path: "architecture.md", id: "architecture" },
     { path: "docs/api.md", id: "api" },
     { path: "docs/guides/forms.md", id: "guides/forms" },
   ]);
-});
-
-test("refuses two files served at the same address", (t) => {
-  const repository = fixtureRepository(
-    new Map([
-      ["architecture.md", "# Architecture\n"],
-      ["docs/architecture.md", "# Another architecture\n"],
-    ]),
-  );
-  t.after(repository.remove);
-  assert.throws(() => listDocuments(repository.root), /would both be served at \/architecture\//u);
 });

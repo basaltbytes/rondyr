@@ -63,7 +63,7 @@ async function loadAll(context: LoaderContext): Promise<void> {
   for (const document of documents) await loadDocument(context, document);
 }
 
-/** Loads `architecture.md` and every Markdown file under `docs/` as pages. */
+/** Loads every site Markdown file under `docs/` as a page. */
 export function repositoryDocsLoader(): Loader {
   return {
     name: "rondyr-repository-docs",
@@ -72,10 +72,9 @@ export function repositoryDocsLoader(): Loader {
       const watcher = context.watcher;
       if (watcher === undefined) return;
       const docs = repositoryPath("docs");
-      const architecture = repositoryPath("architecture.md");
-      watcher.add([docs, architecture]);
+      watcher.add([docs]);
       const reload = (path: string): void => {
-        if (path !== architecture && !path.startsWith(docs)) return;
+        if (!path.startsWith(docs)) return;
         if (!path.endsWith(".md")) return;
         loadAll(context).catch((error: Error) => context.logger.error(error.message));
       };

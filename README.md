@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-<p align="center">A form backend for your website's contact forms that filters spam and runs in your own Cloudflare account.</p>
+<p align="center">A self-hosted form backend for your website that filters spam and runs in your own Cloudflare account.</p>
 
 <p align="center">
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-red">
@@ -22,30 +22,19 @@
 </p>
 
 > [!WARNING]
-> Rondyr is pre-alpha software. The data model and the HTTP API can change in any commit.
+> Rondyr is pre-alpha software. The data model and HTTP API can change between commits.
 
-Point your site's `<form>` at Rondyr and it stores each message in your D1 database, asks a classifier whether it is spam, a sales pitch, or unrelated to your business, and sends the clear ones to your webhooks and mailboxes. Rondyr never deletes a message on a model's opinion: anything doubtful waits in **To review** with its reason until a person accepts or archives it, and a classifier outage sends messages there too instead of losing them. Everything runs as one Worker in your Cloudflare account, and the messages are stored in your own D1 database, not on a service run by someone else.
+Point your website's `<form>` at Rondyr and it saves every message in your own Cloudflare account, checks it for spam, sales pitches, and relevance to your business, and forwards accepted messages by email or webhook. Rondyr never deletes a message on an AI model's guess: anything doubtful waits in **To review** with a plain reason until a person accepts or archives it.
 
-## Deploy your instance
+## Deploy in a few minutes
 
-You need a Cloudflare account on the Workers Paid plan ([Running costs](#running-costs) says why) and a GitHub or GitLab account. A domain is optional.
+You need a Cloudflare account on **Workers Paid** ($5/month per account; [Costs and limits](./docs/costs.md) explains why) and a GitHub or GitLab account. A custom domain is optional.
 
-1. Click **Deploy to Cloudflare** above, sign in to Cloudflare, and connect your GitHub or GitLab account when Cloudflare asks.
-2. Keep the default names on the form, which come from the root `wrangler.json`: the Worker `rondyr`, its D1 database, its queues, and the new repository. Cloudflare copies the repository to your GitHub or GitLab account.
-3. When Cloudflare asks for the setup token, `RONDYR_SETUP_TOKEN`, enter a long random value of at least 32 characters, such as the output of `openssl rand -hex 32`, and keep it for step 5.
-4. Deploy. Cloudflare creates the resources that `wrangler.json` declares, then Workers Builds runs the repository's `build` and `deploy` scripts. The deploy script applies the D1 migrations, generates `BETTER_AUTH_SECRET` and `RONDYR_SECRETS_KEY` if the Worker doesn't have them, and deploys the Worker with its queues, Durable Objects, Cron trigger and Workers AI binding.
-5. Open the address of the new Worker, `https://rondyr.<your-subdomain>.workers.dev`, shown in **Workers & Pages → rondyr**, and create the owner account with the setup token. The page **Create the owner account** asks for the token, then a name, an email address and a password of 12 to 128 characters; after 5 attempts in a minute, it asks you to wait. Public sign-up stays closed: other people join your organization through an invitation link.
-6. In the dashboard, create an organization and a form. Describe your business on the form if you want the classifier to set aside messages unrelated to it.
-
-Nobody has run these steps on a new Cloudflare account yet: the [fresh account checklist](./docs/deployment.md#fresh-account-checklist) lists what to check, and an issue with what differed helps the next person.
-
-To use your own domain, add it later in **Workers & Pages → rondyr → Settings → Domains & Routes** ([Address](./docs/deployment.md#address)). Each push to the `main` branch of your repository deploys it again. To bring a copy on GitHub up to date with this repository, run the **Update Rondyr** workflow in its **Actions** tab: it pushes the new version to a branch named `update-rondyr/<version>`, and the run's summary gives a link that opens the pull request. Open it and merge it ([Updates](./docs/deployment.md#updates)). If you prefer a fork that follows this repository, fork it and import the fork in **Workers & Pages → Create → Import a repository**, then update it with GitHub's **Sync fork**.
-
-The other supported way to deploy is [Alchemy and GitHub Actions](./docs/deployment.md#deploy-with-alchemy-and-github-actions), which the project uses for its own instance: your fork's CI deploys Rondyr on your domain after its checks, with every setting in the fork's secrets and variables. [Choose a path](./docs/deployment.md#choose-a-path) compares the two, and [docs/deployment.md](./docs/deployment.md) covers the optional settings: email, the classifier, a single address.
-
-## Receive your first submission
-
-In the dashboard, open **Forms** and copy the form's URL into the `action` of a `<form>` on your site:
+1. Select **Deploy to Cloudflare** above, sign in to Cloudflare, and connect your GitHub or GitLab account.
+2. Keep the default names (`rondyr`), and enter a random passphrase of at least 32 characters for `RONDYR_SETUP_TOKEN` (for example from your password manager or `openssl rand -hex 32`). Keep it for step 4.
+3. Select **Deploy**. Cloudflare copies the repository to your account, sets up the resources, and deploys Rondyr.
+4. Open your new Rondyr URL from **Workers & Pages → rondyr**, paste your setup token, and create the owner account.
+5. Create an organization and a form, then paste the form's URL into your site:
 
 ```html
 <form action="https://YOUR_RONDYR_HOST/f/YOUR_PUBLIC_ID" method="post">
@@ -56,18 +45,9 @@ In the dashboard, open **Forms** and copy the form's URL into the `action` of a 
 </form>
 ```
 
-The visitor gets a confirmation page in English or French, or goes to a page of your site if you set a success URL for the form. To try it from a terminal:
+The visitor gets a confirmation page (or redirects to your own thank-you page), and the message shows up in **Accepted** or **To review** seconds later. Add an [email destination](./docs/email.md) or [webhook](./docs/webhooks.md) so accepted messages reach your team automatically.
 
-```sh
-curl --json '{"email":"visitor@example.com","message":"Is there room in the Saturday class?"}' \
-  https://YOUR_RONDYR_HOST/f/YOUR_PUBLIC_ID
-```
-
-```json
-{ "submission-id": "73123ee4-40bf-4c5f-b8ff-1d56cdaa7640", "status": "received" }
-```
-
-The message shows up in **Accepted** or **To review** once the classifier has scored it. To have accepted messages sent on, add a webhook or an email destination to the form in **Destinations**. [docs/forms.md](./docs/forms.md) covers `fetch` from another origin, the responses, the honeypot field, Turnstile, allowed origins, and the rate limits.
+For custom domains, updates, and deploying from a fork with Alchemy and GitHub Actions, see [Deploy Rondyr](./docs/deployment.md).
 
 <p align="center">
   <img src="./docs/screenshots/review.webp" alt="The To review folder: six quarantined messages labeled Probable spam, Unsolicited sales outreach, Honeypot field filled, Uncertain classification and Unrelated to your business, with a sales pitch open and the Archive and Accept and send buttons" width="900">
@@ -75,70 +55,38 @@ The message shows up in **Accepted** or **To review** once the classifier has sc
 
 ## Features
 
-- Stores each submission in D1 before it answers, and publishes it to the classifier through an outbox that a cron job retries every minute, so a queue or model outage delays a message instead of losing it.
-- Scores spam, unsolicited sales outreach, and relevance to your business with Jev or OpenAI Decisions on Workers AI. Clear messages are accepted; the others wait in **To review** with their reason.
-- Stops bots before the classifier with a per-client rate limit, a honeypot field, Cloudflare Turnstile, allowed origins, and daily quotas per organization, without storing IP addresses.
-- Sends accepted messages to webhooks signed with HMAC-SHA-256, and by email through Resend or Cloudflare Email Sending to confirmed recipients, with retries and a delivery history.
-- Lets the admins of an organization invite members as `admin` or `reviewer`, create API tokens, export messages to CSV or JSON Lines, delete them, and set retention periods. Every member can search the inbox.
-- Takes JSON, URL-encoded, and multipart posts from an HTML form, a page script, or a server that sends an idempotency key.
-
-The [open issues](https://github.com/basaltbytes/rondyr/issues) are the roadmap.
-
-## How it works
-
-1. Your site posts to `/f/<public-id>`. The Worker checks the limits, writes the message and an outbox event to D1 in one transaction, and answers `202`.
-2. The classification queue hands the message to a Durable Object, which asks the classifier for its scores, up to three times.
-3. The decision rules accept the message or quarantine it with a reason. Quarantined messages wait for a person in the dashboard.
-4. Each accepted message creates one delivery per webhook or email destination, sent through a second queue with retries over about nine hours.
-5. A cron job every minute republishes what a queue missed and lists anything stuck on the **Status** page.
-
-[docs/concepts.md](./docs/concepts.md) has the terms and the thresholds, and [architecture.md](./architecture.md) the full design.
-
-## Running costs
-
-Rondyr bills nothing itself; Cloudflare bills your account for what the Worker uses. Rondyr needs the [Workers Paid](https://developers.cloudflare.com/workers/platform/pricing/) plan, at least $5 a month per account. On Workers Free, the button still deploys every resource, but an invocation gets 10 ms of CPU time, which creating the owner account and signing in are expected to exceed because of the password hash, and the 10,000 queue operations a day run out after a few thousand messages. Beyond the amounts the plan includes, Cloudflare bills Workers requests, D1 rows, queue operations, Durable Object requests, and Workers AI usage for the classifier, and the daily quotas of each organization cap the classifier's share. [Costs and plan limits](./docs/deployment.md#costs-and-plan-limits) lists each product with its November 2026 price.
+- **Spam and sales-pitch filtering:** classifies every message for spam, unsolicited outreach, and business relevance with Jev (default) or OpenAI Decisions, with optional second-model escalation for uncertain messages.
+- **Bot defenses before AI:** per-visitor and per-form rate limits, honeypot fields, Cloudflare Turnstile, allowed origins, repeat detection, and per-organization daily quotas.
+- **Email and webhook forwarding:** sends accepted messages via Resend or Cloudflare Email Sending (to confirmed recipients only) and to HMAC-SHA-256 signed webhooks, with automatic retries and delivery history.
+- **Team inbox:** **Admin** and **Reviewer** roles, invitation links, inbox search, CSV and JSON Lines export, message deletion, and automatic retention.
+- **Integrations:** plain HTML forms, cross-origin JSON `fetch`, server intake with idempotency keys and API tokens, and an [EmDash plugin](./docs/emdash.md) in [`packages/emdash-plugin/`](./packages/emdash-plugin/).
 
 ## Documentation
 
-| Task | Page |
+| Task | Guide |
 | --- | --- |
-| Deploy with the button or with Alchemy, add a domain, update, configure email and the classifier, invite members | [docs/deployment.md](./docs/deployment.md) |
-| Connect a form: responses, HTML forms, honeypot, Turnstile, allowed origins, limits | [docs/forms.md](./docs/forms.md) |
-| Review messages: folders, search, export, deletion, retention | [docs/inbox.md](./docs/inbox.md) |
-| Understand the scores, the reasons, and the processing | [docs/concepts.md](./docs/concepts.md) |
-| Receive messages by webhook and verify the signature | [docs/webhooks.md](./docs/webhooks.md) |
-| Receive messages by email with Resend or Cloudflare | [docs/email.md](./docs/email.md) |
-| Read the inbox or send submissions from a server with an API token | [docs/api.md](./docs/api.md) |
-| Connect an EmDash site | [docs/emdash.md](./docs/emdash.md) |
-| Check health, recover stuck processing, restore D1, rotate secrets | [docs/operations.md](./docs/operations.md) |
-| Measure the classifiers on a labeled corpus | [docs/evaluation.md](./docs/evaluation.md) |
-| Run Rondyr on your machine | [docs/local-development.md](./docs/local-development.md) |
-| Read what is built and why | [architecture.md](./architecture.md) |
-
-## EmDash plugin
-
-`@basaltbytes/emdash-plugin-rondyr`, in [`packages/emdash-plugin/`](./packages/emdash-plugin/), sends the submissions of an EmDash site's forms to Rondyr and shows the **Inbox**, **To review** and **Archived** folders in the EmDash admin, where editors decide without a Rondyr account. [docs/emdash.md](./docs/emdash.md) covers its installation.
-
-## Local development
-
-You need Node.js 24.22 or later and pnpm 11. Wrangler emulates D1, the queues, and the Durable Objects, so no Cloudflare account is needed.
-
-```sh
-pnpm install --frozen-lockfile
-cp apps/rondyr/.env.example apps/rondyr/.env   # then set BETTER_AUTH_SECRET and RONDYR_SETUP_TOKEN
-pnpm db:migrate
-pnpm dev
-```
-
-[docs/local-development.md](./docs/local-development.md) covers the first account, a first message, and the checks (`pnpm check`, `pnpm deploy:dry`) that CI runs.
+| Deploy with the button or Alchemy, add a custom domain, update | [Deploy Rondyr](./docs/deployment.md) |
+| Invite teammates, manage roles, reset passwords | [Team and accounts](./docs/team.md) |
+| Understand Cloudflare plan requirements, email costs, and daily quotas | [Costs and limits](./docs/costs.md) |
+| Add an HTML or JavaScript form, set redirects and allowed origins | [Put a form on your site](./docs/forms.md) |
+| Configure honeypot, Turnstile, business context, and spam thresholds | [Fight spam](./docs/spam-protection.md) |
+| Review quarantined messages, search, check deliveries, export, delete | [Read and sort messages](./docs/inbox.md) |
+| Set up Resend or Cloudflare Email Sending and confirm recipients | [Send messages by email](./docs/email.md) |
+| Forward messages to webhooks and verify signatures | [Send messages to a webhook](./docs/webhooks.md) |
+| Connect an EmDash site | [Connect an EmDash site](./docs/emdash.md) |
+| Submit forms or review messages over HTTP with API tokens | [HTTP API](./docs/api.md) |
 
 ## Contributing
 
-Issues and pull requests are welcome. [CONTRIBUTING.md](./CONTRIBUTING.md) describes the workflow, and [AGENTS.md](./AGENTS.md) the coding and writing rules, for people and coding agents alike.
+Contributor documentation stays in this repository:
 
-## Security
+- [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/local-development.md](./docs/local-development.md) for local setup, tests, and pull requests
+- [architecture.md](./architecture.md) for the technical design
+- [docs/evaluation.md](./docs/evaluation.md) for classifier evaluation on labeled corpora
+- [docs/operations.md](./docs/operations.md) for the operations runbook
+- [AGENTS.md](./AGENTS.md) for coding and writing rules
 
-Report a vulnerability privately through [GitHub's security advisories](https://github.com/basaltbytes/rondyr/security/advisories/new), not in an issue. [SECURITY.md](./SECURITY.md) lists what is in scope.
+Report security vulnerabilities privately through [GitHub security advisories](https://github.com/basaltbytes/rondyr/security/advisories/new); see [SECURITY.md](./SECURITY.md).
 
 ## License
 
@@ -148,7 +96,7 @@ These parts are under other licenses, each with its license file in the same dir
 
 - [`packages/emdash-plugin/`](./packages/emdash-plugin/): MIT, so that sites can compile the plugin into their own Worker.
 - [`tooling/oxlint/`](./tooling/oxlint/): the 16 rules and 3 shared modules from [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop) listed in its README are under MIT, in `LICENSE-ANTI-SLOP`. The rest of the directory comes from usine and is under AGPL-3.0.
-- [`apps/rondyr/dashboard/src/components/ui/`](./apps/rondyr/dashboard/src/components/ui/): the components derive from [shadcn/ui](https://github.com/shadcn-ui/ui), whose MIT notice is in `LICENSE-SHADCN`.
+- [`apps/rondyr/dashboard/src/components/ui/`](./apps/rondyr/dashboard/src/components/ui/): the components derive from [shadcn/ui](https://github.com/shadcn/ui), whose MIT notice is in `LICENSE-SHADCN`.
 - [`.agents/skills/alchemy-domain/`](./.agents/skills/alchemy-domain/): copied from [Alchemy](https://github.com/alchemy-run/alchemy) under Apache-2.0, with its `LICENSE` and `NOTICE`.
 - [`.agents/skills/effect-ts/references/schema-decisions.md`](./.agents/skills/effect-ts/references/schema-decisions.md): adapted from [artimath/effect-skills](https://github.com/artimath/effect-skills), whose MIT notice is in `LICENSE-EFFECT-SKILLS` next to it.
 

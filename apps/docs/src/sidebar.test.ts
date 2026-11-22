@@ -22,8 +22,8 @@ test("reports a navigation line without a page", () => {
   ]);
 });
 
-test("starts with deployment and ends with the architecture", () => {
+test("starts with deployment and ends with contributing", () => {
   const slugs = sidebar.flatMap(({ items }) => items.map(({ slug }) => slug));
   assert.equal(slugs[0], "deployment");
-  assert.equal(slugs.at(-1), "architecture");
+  assert.equal(slugs.at(-1), "contributing");
 });

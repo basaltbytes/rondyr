@@ -46,8 +46,8 @@ export default defineConfig({
           warnOverrides: false,
           navLinks: [
             { label: "Deploy", link: "/deployment/" },
+            { label: "Forms", link: "/forms/" },
             { label: "HTTP API", link: "/api/" },
-            { label: "Architecture", link: "/architecture/" },
             { label: "GitHub", link: githubRepository },
           ],
           footerText: `Rondyr is licensed under AGPL-3.0. The source is on [GitHub](${githubRepository}).`,

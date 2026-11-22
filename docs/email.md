@@ -1,126 +1,80 @@
-# Email
+# Send messages by email
 
-When a message is accepted, automatically or in review, Rondyr sends it as one plain text email to the recipients of each active email destination of its form. Each instance uses Resend by default or can opt in to Cloudflare Email Sending.
+Configure an email provider once for your Rondyr instance, add recipients to a form under **Destinations**, and confirm each address. From then on, Rondyr emails every accepted message (and any quarantined message you accept later) to those recipients as plain text.
 
-As with webhooks, a quarantined message is sent only once someone accepts it, and a destination created or reactivated after a message was accepted doesn't receive that message.
+## 1. Set up an email provider
 
-## Setup with Resend
+Rondyr supports **Resend** (the default) and **Cloudflare Email Sending**. Pick one for your instance.
 
-You need a Resend account, a domain you control, and access to its DNS records.
+### Option A: Resend (default)
 
-1. In Resend, add the domain you will send from. Resend recommends a subdomain such as `notifications.example.com` rather than the root domain, so that the reputation of these emails stays apart from your other mail. See [Domains](https://resend.com/docs/dashboard/domains/introduction).
-2. Add the DNS records that Resend shows for the domain: SPF and DKIM, as `TXT`, `MX` or `CNAME` records. Copy them exactly. If the zone is on Cloudflare, don't proxy them. Verification often completes within 15 minutes, and DNS changes can take up to 72 hours. See [Add a domain](https://resend.com/docs/add-a-domain).
-3. Create an API key with **Sending access**, restricted to that domain. Resend shows the value only once. See [API keys](https://resend.com/docs/dashboard/api-keys/introduction).
-4. Set both values in the Worker's settings, **Workers & Pages → rondyr → Settings → Variables and Secrets**. Saving them deploys:
+You need a [Resend](https://resend.com) account and a domain whose DNS records you can edit.
 
-| Variable | Kind | Value |
-| --- | --- | --- |
-| `RESEND_API_KEY` | Secret | The API key, `re_…` |
-| `RONDYR_EMAIL_FROM` | Setting | A bare address on the verified domain, such as `forms@notifications.example.com` |
-| `RONDYR_EMAIL_PROVIDER` | Setting, optional | `resend`, the default |
+1. In Resend, add a sending domain (a subdomain such as `notifications.example.com` keeps form mail separate from your main domain's reputation).
+2. Add the SPF and DKIM DNS records Resend gives you, unproxied if your DNS is on Cloudflare, and wait for verification.
+3. Create an API key in Resend with **Sending access** restricted to that domain, and copy it right away.
+4. In your Cloudflare dashboard, open **Workers & Pages → rondyr → Settings → Variables and Secrets** and add:
 
-Rondyr refuses a `RONDYR_EMAIL_FROM` that isn't a bare address: `Rondyr <forms@example.com>` is refused, and email destinations stay unavailable. See [deployment.md](./deployment.md#settings) for the other settings.
+   | Name | Kind | Value |
+   | --- | --- | --- |
+   | `RESEND_API_KEY` | Secret | Your Resend API key (`re_…`) |
+   | `RONDYR_EMAIL_FROM` | Variable | A bare sender address on the verified domain, such as `forms@notifications.example.com` |
 
-### Resend limits and cost
+5. Save to deploy the settings.
 
-Resend's prices and limits change; check [Pricing](https://resend.com/pricing) and [Account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits) before you rely on them. In November 2026 they were:
+On an Alchemy deployment, set `RESEND_API_KEY_PROD` and `RONDYR_EMAIL_FROM_PROD` in your fork's GitHub secrets and variables, then run the **Deploy** workflow.
 
-- The free plan sends 3,000 emails a month and 100 a day, from up to 3 domains. The daily quota resets at midnight UTC.
-- Paid plans start at $20 a month for 50,000 emails, with no daily limit, and bill extra emails in blocks of 1,000.
-- Each recipient counts as one email. A destination with 4 recipients uses 4 emails per accepted message.
-- The API accepts 10 requests per second per team. See [Rate limit](https://resend.com/docs/api-reference/rate-limit).
-- Resend expects a bounce rate under 4% and a spam complaint rate under 0.08%.
+Use a bare email address for `RONDYR_EMAIL_FROM` without a display name; values like `Rondyr <forms@example.com>` are rejected.
 
-A message over quota or over the rate limit gets `429`, which Rondyr retries. A daily quota reached in the afternoon resets at midnight UTC, which can be after the last retry (about 8 and a half hours after the first attempt), so these messages can end up failed. They stay in the inbox either way.
+### Option B: Cloudflare Email Sending
 
-## Setup with Cloudflare Email Sending
+Requires **Workers Paid** and a sender domain whose DNS is on Cloudflare in the same account.
 
-1. Use Workers Paid and a sender domain on Cloudflare DNS in the same account as the Worker. In the Cloudflare dashboard, open **Compute → Email Service → Email Sending**, choose **Onboard Domain**, and complete domain setup. Check the domain's sending status after the DNS records propagate. [Domain configuration](https://developers.cloudflare.com/email-service/configuration/domains/)
-2. Add the `CLOUDFLARE_EMAIL` binding to `wrangler.json` in your repository and push it, as [deployment.md](./deployment.md#email) shows, then set the variables `RONDYR_EMAIL_PROVIDER` to `cloudflare` and `RONDYR_EMAIL_FROM` to a bare address on that domain, for example `forms@notifications.example.com`. The binding has no recipient allowlist. The binding uses the Worker's account and needs no email API key. After onboarding, the binding can send to any recipient without adding them to Cloudflare's verified destination list. [Send bindings](https://developers.cloudflare.com/email-service/configuration/send-bindings/)
-3. Create an email destination and use **Send a test**. Keep Cloudflare's **Drop suppressed recipients** setting off if Rondyr should record a suppressed address as a failed delivery. [Workers API](https://developers.cloudflare.com/email-service/api/send-emails/workers-api/#error-codes)
+1. In the Cloudflare dashboard, open **Compute → Email Service → Email Sending**, select **Onboard Domain**, and finish domain verification.
+2. In your Rondyr repository's root `wrangler.json`, add this top-level field and push to `main`:
 
-### Cloudflare limits and cost
+   ```json
+   "send_email": [{ "name": "CLOUDFLARE_EMAIL" }],
+   ```
 
-Workers Paid includes 3,000 outbound emails per account per billing month, then charges $0.35 per 1,000 emails. Emails accepted for sending count toward the quota, including hard bounces. Sends to destination addresses already verified in the Cloudflare account are free. [Pricing](https://developers.cloudflare.com/email-service/platform/pricing/)
+   The **Update Rondyr** workflow preserves this entry when you update later. (If you deploy with Alchemy, skip editing `wrangler.json`; Alchemy adds this automatically when you set the variables below.)
+3. Under **Settings → Variables and Secrets** (or `*_PROD` in GitHub for Alchemy), set `RONDYR_EMAIL_PROVIDER` to `cloudflare` and `RONDYR_EMAIL_FROM` to a bare address on your onboarded domain, such as `forms@notifications.example.com`.
+4. Keep Cloudflare's **Drop suppressed recipients** option off if you want Rondyr to mark suppressed addresses as failed deliveries.
 
-Cloudflare sets a daily sending limit per account and adjusts it based on sending history and reputation. It allows up to 50 recipients and 25 MiB per message. Rondyr allows up to 10 recipients per destination. [Limits](https://developers.cloudflare.com/email-service/platform/limits/)
+## 2. Add an email destination to a form
 
-## Missing configuration
+1. Open **Settings → Destinations** in the Rondyr dashboard (admins only) and select your form.
+2. Under **Emails**, enter 1 to 10 bare email addresses (one per line, no display names or angle brackets), pick the **Email language** (**English** or **French**), and select **Add destination**.
 
-The instance can deploy with email settings omitted. With no sender address or with the selected provider's key or binding missing, creating a destination answers `503` with `{"error":"email-provider-missing"}`. Listing and editing existing destinations still work. Deliveries to them fail without a retry.
+![Settings Destinations screen focused on Emails, showing studio@claywork.example as Confirmed, bookings@claywork.example as Waiting for confirmation with Send again, Send a test, and Edit recipients](./screenshots/destinations-email.webp)
 
-## Destinations
+Messages accepted before you create (or reactivate) an email destination aren't sent to it retroactively.
 
-In the dashboard, an admin of the organization opens **Destinations**, picks the form, enters the recipients under **Emails**, one per line, chooses the language of the emails, and clicks **Add destination**. **Edit recipients** replaces the list and the language, **Deactivate** stops deliveries for messages accepted from then on, and **Send a test** sends a [test email](#test-email) and shows the answer. A reviewer can't change destinations.
+## 3. Confirm each recipient
 
-A destination has a language, English or French, in which Rondyr writes its emails. A destination created before this setting has no language and keeps getting its emails in French. A destination also has 1 to 10 recipients. Each one is a bare ASCII address such as `team@example.com`. Rondyr refuses a display name (`Team <team@example.com>`), several addresses in one entry, spaces, line breaks, an internationalized address, and the same address twice, ignoring case.
+Rondyr only sends form messages to addresses whose owners have opted in. When you add an address for the first time in an organization, Rondyr emails it a single-use confirmation link valid for 7 days.
 
-The dashboard calls these routes, which need a session cookie and the `Origin` of the Worker:
+1. The recipient opens the link and selects **Confirm my address**.
+2. Once confirmed, their badge in **Destinations** switches from **Waiting for confirmation** to **Confirmed**.
+3. If an email was missed or expired, select **Send again** next to the address (up to 3 confirmation emails per address per UTC day).
 
-| Route | Effect |
-| --- | --- |
-| `GET /api/organizations/:organizationId/forms/:publicId/targets` | Lists the form's webhooks and email destinations, each with its `type` |
-| `POST /api/organizations/:organizationId/forms/:publicId/targets` | Creates an email destination from `{"type":"email","recipients":["team@example.com"],"language":"en"}` (`201`). `language` is `en` or `fr`, and `en` when absent |
-| `PUT /api/organizations/:organizationId/targets/:targetId/recipients` | Replaces the recipients from `{"recipients":[…]}`, and the language when the body also has `"language"` |
-| `POST /api/organizations/:organizationId/targets/:targetId/deactivate` or `/activate` | Returns the destination with its new state |
-| `POST /api/organizations/:organizationId/targets/:targetId/test` | Sends a test email and returns its result |
-| `POST /api/organizations/:organizationId/targets/:targetId/confirmations` | Sends the confirmation email of a pending recipient again (`{"address":…}`), with a new link: `202`. `409` with `{"error":"recipient-confirmed"}`, `429` with `{"error":"confirmation-limit"}` and `Retry-After`, `404` for an address that isn't a recipient of the destination |
-| `POST /api/recipient-confirmations` | Confirms the address of a link (`{"token":…}`): `204`, or `404` with `{"error":"confirmation-invalid"}`. No session is needed |
+An address is confirmed once per organization and then works across all forms in that organization. Deliveries and test emails go only to confirmed recipients; if no recipient on a destination has confirmed yet, the delivery fails with a note explaining that nobody has confirmed.
 
-Each email destination in these responses has `recipientStatuses`: each recipient with the status `pending` or `confirmed`.
+## 4. Send a test email
 
-A refused list answers `400` with `{"error":"recipients-refused","reason":…}`, where the reason is `no-recipients`, `too-many-recipients`, `invalid-address` or `duplicate-address`. A form or destination of an organization the account isn't a member of answers `404`, and a reviewer of the organization gets `403`.
+Select **Send a test** on the email destination to send a clearly labeled test message to its confirmed recipients. Rondyr waits up to 30 seconds and displays whether the provider accepted it or returned an error. Test sends don't create an inbox message or a delivery record, and each destination allows up to 3 test sends per minute.
 
-## Confirmed recipients
+## Email format and `Reply-To`
 
-Rondyr sends email only to addresses whose owners agreed to get it. When a destination lists an address that the organization hasn't confirmed, Rondyr emails that address a plain text message with a single-use link, valid for 7 days:
+Every message goes out as plain text with no HTML, formatted in the destination's chosen language:
 
 ```text
 From: forms@notifications.example.com
-To: team@example.com
-Subject: Confirm your email address for Rondyr
-
-Someone added this address as a recipient of the messages of a website form handled by Rondyr. You will get them only after you confirm.
-
-To confirm, open this link and press the button. It works once, until 27 November 2026 at 15:42 UTC:
-https://rondyr.example.com/confirm-recipient#…
-
-If you do not want these messages, ignore this email: nothing will be sent to you.
-```
-
-The text is fixed, in the language of the destination, and names neither the organization nor the form, so nobody can use it to carry their own words. The page that the link opens, in English or in French following the browser, doesn't name them either, and confirms only when the person presses its button: a mail scanner that opens the link confirms nothing. The secret of the link sits in the URL fragment, which no request carries; D1 keeps its SHA-256 hash only.
-
-An address is confirmed once per organization: it then gets the messages of every destination of every form of that organization. The dashboard shows **Waiting for confirmation** or **Confirmed** next to each recipient, and **Send again** emails a new link to a pending one; the new link replaces the previous one.
-
-- A delivery goes to the recipients that were confirmed when it was created, and only to them. Every attempt of a delivery, retries included, has the same recipients and the same idempotency key; an address confirmed later gets the messages accepted from then on. When none is confirmed, the delivery fails without a retry with the summary `No recipient of this destination has confirmed their address yet.`, and the message stays accepted in the inbox.
-- A [test email](#test-email) goes to the confirmed recipients only, and fails the same way when there is none.
-- An address gets at most 3 confirmation emails per UTC day, counted across every organization of the stage. Beyond that, adding it to a destination sends nothing, and **Send again** answers `429` until midnight UTC.
-- Without an email provider, no confirmation is sent and no email is counted; the recipients stay pending.
-
-The migration that introduced confirmations marked every recipient of the email destinations that existed then as confirmed for its organization, from before any delivery, so these destinations kept their deliveries, including the ones being retried.
-
-The owner of an address who no longer wants the messages asks an admin of the organization to remove it from the destinations.
-
-## Account emails
-
-The stage's provider also sends two emails about accounts. Both are plain text with fixed wording in English or French and one link, whose secret sits in the URL fragment and whose SHA-256 hash is all that D1 keeps:
-
-- An invitation to an organization, in the language of the inviting admin's dashboard, valid once for 7 days. It names neither the organization nor the person who invited. An address gets at most 3 in 24 hours, across organizations; see [Members and invitations](./deployment.md#members-and-invitations).
-- A password reset, asked for from the sign-in screen and written in its language, valid once for one hour. An account gets at most 3 in 24 hours, and the screen answers the same whether an account has the address or not; see [Forgotten passwords](./deployment.md#forgotten-passwords).
-
-Without an email provider, an admin copies the invitation link from the dashboard, and the sign-in screen says that this server can't reset a password.
-
-## Message
-
-The email is plain text, with no HTML, in the language of its destination. In English, for a form named `Classes`:
-
-```text
-From: forms@notifications.example.com
-To: team@example.com
+To: studio@claywork.example
 Reply-To: customer@example.com
-Subject: New message: Classes
+Subject: New message: Contact
 
-New message received through the form “Classes”.
+New message received through the form “Contact”.
 
 email:
 customer@example.com
@@ -129,79 +83,19 @@ message:
 Is there room in the pottery class?
 
 -- 
-Form: Classes
+Form: Contact
 Received: 20 November 2026 at 14:03:00 UTC
 Delivery ID: 0f6c1a62-6b8e-4c43-9f5e-2d3a9b7c4e11
 
 Rondyr may send the same delivery twice. Two messages with the same delivery ID are duplicates.
 ```
 
-The body lists every field, then the form name, the time of reception in UTC, and the delivery ID. Field names that are JavaScript array indices, such as `"1"` and `"2"`, appear first in numeric order. The other fields follow in the order received.
+When a submission includes a field named `email` with a single valid address, Rondyr sets it as `Reply-To` so replying in your mail client writes straight back to the visitor.
 
-Field names and values come from visitors, so none of them goes into a header, with one exception. When the submission has a field named exactly `email` whose value is a single valid address, with no display name, no space and no line break, it becomes the `Reply-To` address, and answering the email writes to the visitor. Any other value, such as `visitor@example.com` followed by a line break, leaves the email without `Reply-To`. The subject is built from the form name only. In the body, line breaks inside a field name become spaces, and line breaks inside a value become plain `\n`.
+## Retries, limits, and privacy
 
-## Test email
-
-**Send a test** in the dashboard, or the `test` route, sends one email to the recipients of the destination, through the same provider and with the same checks as a delivery. For a form named `Classes`:
-
-```text
-From: forms@notifications.example.com
-To: team@example.com
-Subject: Test message: Classes
-
-Test message sent from the Rondyr dashboard for the form “Classes”.
-
-No visitor sent this message. It checks that the emails of this form reach these recipients.
-
--- 
-Form: Classes
-Sent: 20 November 2026 at 15:42:07 UTC
-Test ID: 4f0c8a52-91d3-4b6e-a8f7-2c5d1e9b3a60
-```
-
-**Send a test** goes to the confirmed recipients of the destination only, and only an admin of the organization can send one. Each test has a new ID, which Resend uses as its idempotency key. Each test sends an email that is subject to the provider's quota. Rondyr waits up to 30 seconds, makes one attempt, and stores no submission, delivery, or attempt record. The route returns `testId` and an `outcome` of `delivered`, `retryable-failure` or `permanent-failure`. Failed tests include a `summary` with the available status or error code. A destination gets at most 3 tests per minute, counted by the Rate Limiting binding `TARGET_TEST_RATE_LIMIT`: a fourth one answers `429` with `Retry-After: 60`, and if the binding doesn't answer, the test is refused with `503` and `{"error":"test-limit-unavailable"}`, which the dashboard explains, and nothing is sent. While a test of a destination runs, a second test of the same destination answers `409` on that Worker instance.
-
-## Responses and retries
-
-Retries follow the same schedule for both providers. Rondyr waits 1 minute, 5 minutes, 30 minutes, 2 hours, then 6 hours, for 6 attempts in all. A stored list of recipients that no longer passes the rules ends the delivery at once.
-
-### Resend responses
-
-Rondyr sends each attempt with the delivery ID as Resend's [idempotency key](https://resend.com/docs/dashboard/emails/idempotency-keys). Resend keeps a key for 24 hours and answers a repeated request with the same response, without sending the email again. All six attempts of a delivery fall within that window.
-
-From the response, Rondyr keeps the status code and the error code, such as `validation_error`. It never stores Resend's error message, which can repeat a field of the request. The codes are those of [Resend's error reference](https://resend.com/docs/api-reference/errors).
-
-| Response | Result |
-| --- | --- |
-| `2xx` | Delivered |
-| `429`: rate limit, daily or monthly quota | Retried |
-| `5xx` | Retried |
-| `409 concurrent_idempotent_requests`: an earlier attempt is still running at Resend | Retried |
-| No response, a network error, or no answer within 30 seconds | Retried |
-| Any other status: `400`, `401`, `403` (including a sender domain that isn't verified), `409 invalid_idempotent_request`, `422` | Failed |
-
-Resend compares the request with the first one that used the same key. If you change the recipients or `RONDYR_EMAIL_FROM` while a delivery is waiting for a retry, the next attempt gets `409 invalid_idempotent_request` and the delivery fails.
-
-### Cloudflare responses
-
-The binding returns a message ID on success and throws an error with a code on a service failure. Rondyr records only known error codes, without Cloudflare's error text. The binding does not return an HTTP status. [Workers API error codes](https://developers.cloudflare.com/email-service/api/send-emails/workers-api/#error-codes)
-
-| Result | Rondyr behavior |
-| --- | --- |
-| `E_EMAIL_SENDING_NOT_READY`, `E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED`, `E_INTERNAL_SERVER_ERROR` | Retried |
-| Unknown error, or no answer within 30 seconds | Retried |
-| Other documented errors, including suppressed recipients, sender configuration and SMTP rejection, or an invalid binding argument | Failed |
-
-A manual retry from the dashboard keeps the delivery ID and starts a new series of 6 attempts. Resend still checks its original request during the 24-hour idempotency window. [Delivery history and manual retry](./webhooks.md#delivery-history-and-manual-retry)
-
-## Delivery guarantee
-
-Delivery is at least once, as for webhooks. Resend deduplicates retries within 24 hours, including after the Worker stops between sending and recording the result. The Cloudflare binding has no documented idempotency key. If it accepts an email and Rondyr times out or stops before recording the result, a retry can send the email again. Mail servers can also deliver duplicates. Two emails that end with the same delivery ID are the same delivery.
-
-## Privacy
-
-The selected provider processes the contents of sent emails. Resend keeps sent emails for the retention period of your plan, 30 days on the free plan. The delivery records in D1 contain IDs, states and error summaries. If you send personal data, list the stage's provider, Resend or Cloudflare, as a subprocessor and sign its data processing addendum if you need one. [Resend data processing addendum](https://resend.com/legal/dpa) · [Cloudflare data processing addendum](https://www.cloudflare.com/cloudflare-customer-dpa/)
-
-## Not built yet
-
-- The message text can't be changed. It exists in English and in French.
+- **Automatic retries.** If Resend or Cloudflare returns a temporary error, hits a rate limit, or times out, Rondyr retries automatically over several hours. Permanent rejections (such as an unverified sender domain or an invalid API key) fail right away. Once you fix the problem, retry any failed delivery from the message's **Deliveries** section in **Accepted**.
+- **Duplicates.** Resend deduplicates retries for 24 hours using the delivery ID; note that changing a destination's recipients or `RONDYR_EMAIL_FROM` while a retry is waiting causes Resend to reject that retry. Cloudflare Email Sending can occasionally send a duplicate if a request is interrupted; two emails with the same **Delivery ID** at the bottom are the same message.
+- **Provider limits and cost.** See [Costs and limits](./costs.md#email-provider-costs) for Resend and Cloudflare quotas and pricing. Keep in mind that each recipient counts as one email toward Resend's 100/day free limit.
+- **Account emails.** Once an email provider is configured, Rondyr also uses it to send team invitation links and password reset emails.
+- **Privacy.** Your chosen email provider processes the contents of sent emails (Resend retains sent mail for 30 days on its free plan). If your forms collect personal data, list Resend or Cloudflare as a subprocessor ([Resend DPA](https://resend.com/legal/dpa), [Cloudflare DPA](https://www.cloudflare.com/cloudflare-customer-dpa/)).

@@ -13,15 +13,15 @@ export interface FirstRunStep {
 export const firstRun: readonly FirstRunStep[] = [
   {
     title: "Deploy",
-    html: "Select <strong>Deploy to Cloudflare</strong>. Cloudflare copies the repository to your GitHub or GitLab account and deploys the Worker to your Cloudflare account. When it asks for the setup token, enter a long random value of at least 32 characters, such as the output of <code>openssl rand -hex 32</code>, and keep it for the next step.",
+    html: "Select <strong>Deploy to Cloudflare</strong>. Cloudflare copies the repository to your GitHub or GitLab account and deploys Rondyr to your Cloudflare account. When it asks for the setup token, enter a long random passphrase of at least 32 characters (for example from your password manager or <code>openssl rand -hex 32</code>) and keep it for the next step.",
   },
   {
     title: "Create the owner account",
-    html: "Open the address of the new Worker and create the first account with the setup token. Public sign-up stays closed: other people join your organization through an invitation link.",
+    html: "Open your new Rondyr address and create the first account with that setup token. Public sign-up stays closed; other people join your organization through an invitation link.",
   },
   {
     title: "Connect a form",
-    html: "In the dashboard, create an organization and a form, then copy the form's URL into the <code>action</code> of a <code>&lt;form&gt;</code> on your site.",
+    html: "Create an organization and a form in the dashboard, then paste the form's URL into the <code>action</code> attribute of a <code>&lt;form&gt;</code> on your site.",
   },
 ];
 
