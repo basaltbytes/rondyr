@@ -200,7 +200,7 @@ test("shows a light and a dark wordmark in the header", () => {
   for (const logo of logos) assert.equal(logo.properties["alt"], "Rondyr");
 });
 
-test("the landing page has the Deploy to Cloudflare button, the plan and the first run", () => {
+test("the landing page has the Deploy to Cloudflare button, brand marks, prompt, and first run", () => {
   const tree = builtPage("/");
   const [button] = elements(
     tree,
@@ -214,10 +214,10 @@ test("the landing page has the Deploy to Cloudflare button, the plan and the fir
   assert.equal(image?.properties["src"], "https://deploy.workers.cloudflare.com/button");
   assert.equal(image?.properties["alt"], "Deploy to Cloudflare");
   const text = toString(tree);
-  assert.match(text, /Workers Paid/u);
   assert.match(text, /copy this prompt for your agent/iu);
   assert.match(text, /TypeSafe AI/u);
   assert.match(text, /OpenAI/u);
+  assert.match(text, /Cloudflare/u);
   assert.match(text, /action="https:\/\/rondyr\.example\.com\/f\/YOUR_PUBLIC_ID"/u);
   assert.ok(hrefs(tree).includes("https://x.com/_philDL"));
   assert.ok(hrefs(tree).includes("https://basaltbytes.com"));
