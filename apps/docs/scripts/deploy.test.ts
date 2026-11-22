@@ -7,13 +7,19 @@ import { builtFor, deployArguments } from "./deploy.ts";
 test("deploys to the custom domain of the address", () => {
   assert.deepEqual(deployArguments("https://docs.example.com"), [
     "deploy",
+    "--config",
+    "wrangler.jsonc",
     "--domain",
     "docs.example.com",
   ]);
 });
 
 test("deploys to the workers.dev address of the Worker without a custom domain", () => {
-  assert.deepEqual(deployArguments("https://rondyr-docs.team.workers.dev/"), ["deploy"]);
+  assert.deepEqual(deployArguments("https://rondyr-docs.team.workers.dev/"), [
+    "deploy",
+    "--config",
+    "wrangler.jsonc",
+  ]);
   assert.throws(
     () => deployArguments("https://other.team.workers.dev"),
     /starts with rondyr-docs\./u,
