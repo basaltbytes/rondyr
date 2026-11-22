@@ -5,10 +5,13 @@ import { z } from "astro/zod";
 import { beforeAll, expect, it, vi } from "vitest";
 
 import { testOrigin, testSetupToken } from "../../../apps/rondyr/tests/integration/auth-fixture.ts";
+import { DeclaredForm } from "../src/core/declared-forms.ts";
 import { flattenFields, type FormLayout } from "../src/core/fields.ts";
 import { newEntry, QueueEntry } from "../src/core/queue.ts";
 import { RondyrClient } from "../src/core/rondyr-client.ts";
 import { verifyWebhook } from "../src/core/signature.ts";
+import { prepareDeclaredSubmission } from "../src/declared-submission.ts";
+import { enqueue } from "../src/enqueue.ts";
 import { attempt, sendDue } from "../src/delivery.ts";
 import { Store } from "../src/store.ts";
 import { memoryHost } from "../src/testing/memory-storage.ts";
@@ -50,23 +53,27 @@ const owner = {
   email: "contract@example.test",
   password: "contract-test-password",
 };
-let ownerCreated = false;
+let ownerSession: Promise<string> | undefined;
 
-async function siteOrganization(organizationName = "EmDash site") {
-  if (!ownerCreated) {
-    const setup = await api("POST", "/api/setup", JSON.stringify(owner), {
-      authorization: `Bearer ${testSetupToken}`,
-    });
-    expect(setup.status).toBe(201);
-    ownerCreated = true;
-  }
+async function signIn() {
+  const setup = await api("POST", "/api/setup", JSON.stringify(owner), {
+    authorization: `Bearer ${testSetupToken}`,
+  });
+  expect(setup.status).toBe(201);
   const credentials = JSON.stringify({ email: owner.email, password: owner.password });
   const signedIn = await api("POST", "/api/auth/sign-in/email", credentials, {});
   expect(signedIn.status).toBe(200);
-  const cookie = signedIn.headers
+  return signedIn.headers
     .getSetCookie()
     .map((value: string) => value.split(";", 1)[0])
     .join("; ");
+}
+
+async function siteOrganization(organizationName = "EmDash site") {
+  // Each test gets a fresh organization. Reuse the owner's session so setup
+  // does not depend on the email sign-in rate limit.
+  ownerSession ??= signIn();
+  const cookie = await ownerSession;
   const inbox = JSON.stringify({
     organizationName,
     formName: "Contact",
@@ -302,4 +309,74 @@ it("loses and duplicates nothing when Rondyr is unreachable for an hour", async 
   const total =
     counts.received + counts.classifying + counts.accepted + counts.quarantined + counts.archived;
   expect(total).toBe(3);
+});
+
+it("sends a declared form's widget token to the built Worker and strips it from storage", async () => {
+  const { cookie, organizationId, publicId, token } = await siteOrganization("Declared forms site");
+  const siteKey = "contract_site_key";
+  const secretKey = "contract-declared-turnstile";
+  const configured = await api(
+    "PUT",
+    `/api/organizations/${organizationId}/forms/${publicId}/turnstile`,
+    JSON.stringify({ siteKey, secretKey }),
+    { cookie },
+  );
+  expect(configured.status).toBe(200);
+  const client = new RondyrClient(worker, testOrigin, token);
+  expect((await client.organization()).forms).toContainEqual(
+    expect.objectContaining({ publicId, turnstileSiteKey: siteKey }),
+  );
+  const form = DeclaredForm.parse({
+    slug: "contact",
+    name: "Contact",
+    spamProtection: "turnstile",
+    fields: [{ name: "message", type: "textarea", required: true, labels: { en: "Message" } }],
+  });
+  const visitorToken = `valid-${secretKey}`;
+  const visitorIp = "192.0.2.20";
+  const submission = prepareDeclaredSubmission(
+    form,
+    {
+      formId: "contact",
+      locale: "en",
+      fileFields: [],
+      data: {
+        message: "Is there room in the pottery class?",
+        "cf-turnstile-response": visitorToken,
+      },
+    },
+    visitorIp,
+  );
+  if (submission.entry === undefined) throw new Error("Expected a valid submission");
+  const { host } = memoryHost();
+  const store = new Store(host);
+  await store.putLink(form.slug, { rondyrFormId: publicId, recipients: [] });
+  await enqueue(host, submission.entry, 0);
+
+  const result = await attempt(
+    { ...host, http: { fetch: worker } },
+    { url: testOrigin },
+    token,
+    submission.entry.submissionId,
+    () => 0,
+  );
+
+  expect(result).toBe("sent");
+  expect(await store.queueEntry(submission.entry.submissionId)).toBeNull();
+  const row = await env.DB.prepare(
+    "SELECT s.fields, s.intake_reason FROM submissions s JOIN forms f ON f.id = s.form_id WHERE f.public_id = ?",
+  )
+    .bind(publicId)
+    .first();
+  expect(row).toEqual({
+    fields: JSON.stringify({ message: "Is there room in the pottery class?" }),
+    intake_reason: null,
+  });
+  const checks = await env.SITEVERIFY_FIXTURE.fetch(
+    `https://siteverify.test/__calls?secret=${secretKey}`,
+  );
+  expect(await checks.json()).toEqual([
+    { secret: secretKey, token: "XXXX.DUMMY.TOKEN.XXXX" },
+    { secret: secretKey, token: visitorToken, remoteip: visitorIp },
+  ]);
 });

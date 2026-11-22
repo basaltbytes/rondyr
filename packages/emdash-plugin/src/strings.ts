@@ -73,6 +73,7 @@ const en = {
     title: "Rondyr",
     adminOnly: "Only administrators can change these settings.",
     noForms: "No forms yet. Create one under Forms first.",
+    noDeclaredForms: "Declare a form in astro.config.mjs first.",
     rondyrForm: "Rondyr form",
     rondyrFormHelp:
       "Several forms can share a Rondyr form, such as the language versions of one form. A message goes to the recipients of the form it was sent from.",
@@ -175,6 +176,7 @@ const fr: Strings = {
     title: "Rondyr",
     adminOnly: "Seuls les administrateurs peuvent modifier ces réglages.",
     noForms: "Aucun formulaire pour le moment. Créez-en un dans Formulaires.",
+    noDeclaredForms: "Déclarez d’abord un formulaire dans astro.config.mjs.",
     rondyrForm: "Formulaire Rondyr",
     rondyrFormHelp:
       "Plusieurs formulaires peuvent partager un formulaire Rondyr, comme les versions d’un même formulaire dans plusieurs langues. Un message part vers les destinataires du formulaire depuis lequel il a été envoyé.",

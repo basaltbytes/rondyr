@@ -1,5 +1,7 @@
 import { z } from "astro/zod";
 
+import { DeclaredForms } from "./core/declared-forms.ts";
+
 /**
  * The options of `rondyr({ url })` in astro.config.mjs: the HTTPS origin of the
  * Rondyr Worker. EmDash lets a plugin call public hosts only, so a local
@@ -7,6 +9,7 @@ import { z } from "astro/zod";
  */
 export const RondyrOptions = z.object({
   url: z.url({ protocol: /^https$/u }).transform((url) => new URL(url).origin),
+  forms: DeclaredForms.optional(),
 });
 export type RondyrOptions = z.input<typeof RondyrOptions>;
 export type ResolvedOptions = z.output<typeof RondyrOptions>;

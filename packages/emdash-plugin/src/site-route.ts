@@ -7,6 +7,7 @@ import {
 import { formsPluginId, pluginId } from "./constants.ts";
 import { flattenFields, formLayout, SubmittedData, type FormLayout } from "./core/fields.ts";
 import { enqueueCredential } from "./core/hop.ts";
+import { DeclaredAnswer, DeclaredPost, RenderableForm } from "./declared-submission.ts";
 import { handoffHeader, openHandoff, type Handoff } from "./handoff.ts";
 
 /** The forms plugin's honeypot field, which the contact block names `_hp`. */
@@ -27,6 +28,7 @@ const JsonBody = z.object({
   formId: z.string().min(1).max(200),
   data: SubmittedData,
   files: z.record(z.string(), SubmittedFile).optional(),
+  locale: z.string().optional(),
 });
 
 /** The parts of the forms plugin's public definition that the notification needs. */
@@ -71,6 +73,10 @@ export type FormsAnswer =
   | {
       readonly success: false;
       readonly error: { readonly code: string; readonly message: string };
+      readonly data?: {
+        readonly success: false;
+        readonly errors: readonly { readonly field: string; readonly message: string }[];
+      };
     };
 
 function formsAnswer(answer: PluginAnswer): FormsAnswer {
@@ -90,6 +96,7 @@ const noStore = { "cache-control": "private, no-store" };
 export interface FormSubmission {
   readonly formId: string;
   readonly data: SubmittedData;
+  readonly locale?: string;
   readonly files?: Readonly<Record<string, SubmittedFile>>;
 }
 
@@ -116,30 +123,30 @@ function base64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-async function readSubmission(request: Request): Promise<Submission | null> {
+async function readSubmission(request: Request, declared: boolean): Promise<Submission | null> {
   const type = request.headers.get("content-type") ?? "";
   if (type.toLowerCase().startsWith("application/json")) {
     const parsed = JsonBody.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return null;
-    const { formId, data, files } = parsed.data;
-    return { formId, data, files: files ?? {}, back: null, block: null };
+    const { formId, data, files, locale } = parsed.data;
+    return { formId, data, files: files ?? {}, locale, back: null, block: null };
   }
   const form = await request.formData().catch(() => null);
   if (form === null) return null;
-  const data: Record<string, string | string[]> = {};
-  const files: Record<string, SubmittedFile> = {};
+  const data = new Map<string, string | string[]>();
+  const files = new Map<string, SubmittedFile>();
   let formId = "";
   let back: string | null = null;
   let block: string | null = null;
   for (const [key, value] of form.entries()) {
     if (value instanceof File) {
       // An empty file input still posts a nameless, empty file.
-      if (value.size > 0) {
-        files[key] = {
+      if (declared || value.size > 0) {
+        files.set(key, {
           filename: value.name,
           contentType: value.type === "" ? "application/octet-stream" : value.type,
-          bytes: base64(new Uint8Array(await value.arrayBuffer())),
-        };
+          bytes: declared ? "" : base64(new Uint8Array(await value.arrayBuffer())),
+        });
       }
       continue;
     }
@@ -148,16 +155,20 @@ async function readSubmission(request: Request): Promise<Submission | null> {
     else if (key === "_block") block = value;
     else {
       // A repeated name, such as a checkbox group, becomes a list, as with JavaScript.
-      const previous = data[key];
-      data[key] =
+      const previous = data.get(key);
+      data.set(
+        key,
         previous === undefined
           ? value
           : Array.isArray(previous)
             ? [...previous, value]
-            : [previous, value];
+            : [previous, value],
+      );
     }
   }
-  return formId === "" ? null : { formId, data, files, back, block };
+  return formId === ""
+    ? null
+    : { formId, data: Object.fromEntries(data), files: Object.fromEntries(files), back, block };
 }
 
 function pluginRequest(url: URL, path: string, body: string, headers: Headers): Request {
@@ -275,7 +286,11 @@ async function forward(
 export interface SiteRequest {
   readonly request: Request;
   readonly url: URL;
-  readonly locals: PublicPluginRuntimeLocals;
+  readonly locals: PublicPluginRuntimeLocals & {
+    readonly emdash?: {
+      readonly getPublicPluginRouteMeta?: (plugin: string, path: string) => object | null;
+    };
+  };
 }
 
 const invalid: FormsAnswer = {
@@ -358,6 +373,99 @@ export async function submitToForms(
   }
 }
 
+function hasDeclaredForms(locals: SiteRequest["locals"]): boolean {
+  return locals.emdash?.getPublicPluginRouteMeta?.(pluginId, "/declared/submit") != null;
+}
+
+const queueUnavailable: FormsAnswer = {
+  success: false,
+  error: {
+    code: "QUEUE_UNAVAILABLE",
+    message: "Your message could not be submitted. Please try again.",
+  },
+};
+
+async function submitToDeclared(
+  site: SiteRequest,
+  submission: FormSubmission,
+  token: string | null,
+): Promise<SubmitResult> {
+  if (crossSite(site.request, site.url)) {
+    return {
+      accepted: false,
+      answer: {
+        success: false,
+        error: { code: "CROSS_SITE", message: "Cross-site form submission" },
+      },
+    };
+  }
+  const handle = getPublicPluginApiRouteHandler(site.locals);
+  if (handle === undefined) return { accepted: false, answer: queueUnavailable };
+  const headers = new Headers({
+    "content-type": "application/json",
+    authorization: `Bearer ${enqueueCredential(token)}`,
+  });
+  const ip = site.request.headers.get("cf-connecting-ip");
+  if (ip !== null) headers.set("cf-connecting-ip", ip);
+  const { formId, data, locale } = submission;
+  const post = DeclaredPost.safeParse({
+    formId,
+    data,
+    locale,
+    fileFields: Object.keys(submission.files ?? {}),
+  });
+  if (!post.success) return { accepted: false, answer: invalid };
+  const body = JSON.stringify(post.data);
+  const reply = await callPlugin(
+    handle,
+    site.url,
+    { plugin: pluginId, route: "declared/submit" },
+    body,
+    headers,
+  );
+  const parsed = DeclaredAnswer.safeParse("data" in reply ? reply.data : null);
+  if (!parsed.success) return { accepted: false, answer: queueUnavailable };
+  const value = parsed.data;
+  if (value.success) return { accepted: true, answer: { success: true, data: value } };
+  return {
+    accepted: false,
+    answer: {
+      success: false,
+      error: { code: value.code, message: value.message },
+      ...(value.errors !== undefined && { data: { success: false, errors: value.errors } }),
+    },
+  };
+}
+
+/** The configured form and its public widget key, read in the same Worker. */
+export async function getDeclaredForm(
+  site: Pick<SiteRequest, "url" | "locals">,
+  slug: string,
+): Promise<RenderableForm | null> {
+  if (!hasDeclaredForms(site.locals)) return null;
+  const handle = getPublicPluginApiRouteHandler(site.locals);
+  if (handle === undefined) return null;
+  const result = await callPlugin(
+    handle,
+    site.url,
+    { plugin: pluginId, route: "declared/definition" },
+    JSON.stringify({ slug }),
+    new Headers({ "content-type": "application/json" }),
+  );
+  if ("failure" in result) throw new Error("Could not read the Rondyr form definition");
+  return RenderableForm.nullable().parse(result.data);
+}
+
+export function submitSiteForm(
+  site: SiteRequest,
+  submission: FormSubmission,
+  token: string | null,
+) {
+  return hasDeclaredForms(site.locals)
+    ? submitToDeclared(site, submission, token)
+    : submitToForms(site, submission, token);
+}
+
 /**
  * The site's submission route, mounted by `route.ts` in place of the
  * template's `src/pages/api/form.ts`. `token` is `RONDYR_API_TOKEN`, or null.
@@ -365,25 +473,28 @@ export async function submitToForms(
  * The contact block posts here with JavaScript (JSON `{ formId, data, files }`,
  * answered with the forms plugin's JSON) and without it (a form post, answered
  * with a redirect to the page with `?form=<block>&status=sent|error`). The forms
- * plugin validates and stores the submission, files included; once it accepts,
- * the submission goes to the Rondyr plugin's queue before the response, without
- * its files.
+ * plugin validates and stores the submission in forms plugin mode. Declared
+ * mode validates against the declaration and queues its text fields before
+ * answering.
  */
 export async function handleSubmission(site: SiteRequest, token: string | null) {
   const { request, url } = site;
   if (crossSite(request, url)) {
     return new Response("Cross-site form submission", { status: 403, headers: noStore });
   }
-  const submission = await readSubmission(request);
+  const submission = await readSubmission(request, hasDeclaredForms(site.locals));
   const json = (request.headers.get("content-type") ?? "")
     .toLowerCase()
     .startsWith("application/json");
   const { accepted, answer } =
     submission === null
       ? { accepted: false, answer: invalid }
-      : await submitToForms(site, submission, token);
+      : await submitSiteForm(site, submission, token);
 
-  if (json) return Response.json(answer, { status: accepted ? 200 : 400, headers: noStore });
+  if (json) {
+    const status = accepted ? 200 : answer === queueUnavailable ? 503 : 400;
+    return Response.json(answer, { status, headers: noStore });
+  }
   const target = new URL(
     submission?.back !== null &&
       submission?.back !== undefined &&

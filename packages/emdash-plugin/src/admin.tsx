@@ -506,6 +506,7 @@ const Settings = z.object({
   links: z.array(z.object({ slug: z.string(), link: Link })),
   unqueued: z.array(z.object({ slug: z.string(), record: Unqueued })),
   formsEmailsSent: z.array(z.string()).default([]),
+  declaredForms: z.array(z.object({ slug: z.string(), name: z.string() })).optional(),
   tokenProblem: TokenProblem,
   webhookSecret: z.boolean(),
   webhookUrl: z.string(),
@@ -642,7 +643,8 @@ function FormLinkEditor({
   ];
   // What the saved link says, not the unsaved choice: the emails follow the saved link.
   const linked = link !== null && link.rondyrFormId !== null;
-  const notHeld = linked && settings.formsEmailsSent.includes(form.slug);
+  const notHeld =
+    linked && settings.declaredForms === undefined && settings.formsEmailsSent.includes(form.slug);
   const hasAutoReply =
     form.settings.autoresponder !== null && form.settings.autoresponder !== undefined;
   const notifies = form.settings.notifyEmails.length > 0;
@@ -736,12 +738,26 @@ function SettingsPage() {
     let current = true;
     void (async () => {
       try {
-        const [settings, forms, bypassed] = await Promise.all([
-          call(pluginApi, "settings/get", "{}", Settings),
-          call(formsApi, "forms/list", "{}", EmDashForms),
-          // `formsPlugin()` has no such route: the page then says the emails aren't held.
-          call(formsApi, "rondyr/bypassed", "{}", Bypassed).catch(() => ({ items: [] })),
-        ]);
+        const settings = await call(pluginApi, "settings/get", "{}", Settings);
+        const [forms, bypassed] =
+          settings.declaredForms === undefined
+            ? await Promise.all([
+                call(formsApi, "forms/list", "{}", EmDashForms),
+                // `formsPlugin()` has no such route: the page then says the emails aren't held.
+                call(formsApi, "rondyr/bypassed", "{}", Bypassed).catch(() => ({ items: [] })),
+              ])
+            : [
+                {
+                  items: settings.declaredForms.map((form) =>
+                    EmDashForm.parse({
+                      id: form.slug,
+                      ...form,
+                      settings: {},
+                    }),
+                  ),
+                },
+                { items: [] },
+              ];
         if (current) {
           setLoaded({
             key: "settings",
@@ -809,13 +825,19 @@ function SettingsPage() {
         <p className="text-sm font-medium">{text.settings.webhookUrl}</p>
         <code className="text-sm">{settings.webhookUrl}</code>
       </div>
-      {forms.length === 0 && <p className="text-sm">{text.settings.noForms}</p>}
+      {forms.length === 0 && (
+        <p className="text-sm">
+          {settings.declaredForms === undefined
+            ? text.settings.noForms
+            : text.settings.noDeclaredForms}
+        </p>
+      )}
       {forms.map((form) => (
         <FormLinkEditor
           key={form.id}
           form={form}
           link={links.get(form.slug) ?? null}
-          unqueued={unqueued.get(form.slug) ?? null}
+          unqueued={settings.declaredForms === undefined ? (unqueued.get(form.slug) ?? null) : null}
           bypassed={bypassed.get(form.id) ?? null}
           settings={settings}
         />

@@ -2,7 +2,7 @@ import { z } from "astro/zod";
 
 import { AutoReply } from "./core/auto-reply.ts";
 import { FlatFields, FormLayout } from "./core/fields.ts";
-import { newEntry } from "./core/queue.ts";
+import { DeclaredSubmission, newEntry } from "./core/queue.ts";
 import { FormsEmails, Store, type StorageHost } from "./store.ts";
 
 /**
@@ -17,6 +17,7 @@ export const EnqueueInput = z.object({
   fields: FlatFields,
   formsEmails: FormsEmails.default("sent"),
   autoReply: AutoReply.nullable().default(null),
+  declared: DeclaredSubmission.optional(),
 });
 export type EnqueueInput = z.infer<typeof EnqueueInput>;
 
@@ -33,12 +34,15 @@ export async function enqueue(
   input: EnqueueInput,
   now: number,
 ): Promise<{ readonly linked: boolean }> {
-  const { submissionId, form, fields, formsEmails, autoReply } = input;
+  const { submissionId, form, fields, formsEmails, autoReply, declared } = input;
   const store = new Store(host);
   const link = await store.link(form.slug);
   const linked = link !== null && link.rondyrFormId !== null;
-  await store.putLayout(form, formsEmails);
-  const heldAutoReply = linked && formsEmails === "held" ? autoReply : null;
-  await store.createQueueEntry(submissionId, newEntry(form.slug, fields, now, heldAutoReply));
+  if (declared === undefined) await store.putLayout(form, formsEmails);
+  const heldAutoReply =
+    declared !== undefined || (linked && formsEmails === "held") ? autoReply : null;
+  const entry = newEntry(form.slug, fields, now, heldAutoReply);
+  if (declared !== undefined) entry.declared = declared;
+  await store.createQueueEntry(submissionId, entry);
   return { linked };
 }

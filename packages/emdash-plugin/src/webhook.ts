@@ -2,6 +2,7 @@ import { z } from "astro/zod";
 import type { EmailMessage, PluginContext } from "emdash";
 
 import { autoReplyMessage, type AutoReply, type AutoReplyMessage } from "./core/auto-reply.ts";
+import { declaredLayout, type DeclaredForm } from "./core/declared-forms.ts";
 import { FlatFields, formatNotification, replyToAddress, type FormLayout } from "./core/fields.ts";
 import { verifyWebhook } from "./core/signature.ts";
 import { Store, type DeliveryRecord, type StorageHost } from "./store.ts";
@@ -97,9 +98,14 @@ function sentAddress(key: string): string {
  *
  * While the origin may still be recorded, the route waits: with several linked
  * forms, for any pending entry, since the recipients depend on the form; with
- * one, for a pending entry with an auto-reply, which needs the origin.
+ * one, for a pending entry whose locale or auto-reply requires the origin.
  */
-async function audienceOf(store: Store, payload: Payload, now: number): Promise<Audience> {
+async function audienceOf(
+  store: Store,
+  payload: Payload,
+  now: number,
+  declared: readonly DeclaredForm[],
+): Promise<Audience> {
   const links = (await store.linksTo(payload.form.id)).toSorted((left, right) =>
     left.slug < right.slug ? -1 : 1,
   );
@@ -108,11 +114,16 @@ async function audienceOf(store: Store, payload: Payload, now: number): Promise<
     const linked = links.find(({ slug }) => slug === origin?.formSlug);
     return origin === null || linked === undefined ? null : { origin, linked };
   };
+  const layoutFor = async (slug: string, locale?: string) => {
+    const form = declared.find((entry) => entry.slug === slug);
+    if (form !== undefined && locale !== undefined) return declaredLayout(form, locale);
+    return (await store.layout(slug)) ?? (form === undefined ? null : declaredLayout(form, "en"));
+  };
   const fromOrigin = async ({
     origin,
     linked,
   }: NonNullable<Awaited<ReturnType<typeof originOf>>>): Promise<Audience> => ({
-    layout: await store.layout(linked.slug),
+    layout: await layoutFor(linked.slug, origin.locale),
     recipients: uniqueRecipients([linked]),
     // Sent already, by another delivery of the message: nothing left to send.
     autoReply: origin.autoRepliedAt === undefined ? (origin.autoReply ?? null) : null,
@@ -125,7 +136,9 @@ async function audienceOf(store: Store, payload: Payload, now: number): Promise<
   const slugs = links.map(({ slug }) => slug);
   if (
     now - Date.parse(payload.submission.receivedAt) < originWaitMs &&
-    (links.length > 1 ? await store.hasPendingEntry(slugs) : await store.hasPendingAutoReply(slugs))
+    (links.length > 1
+      ? await store.hasPendingEntry(slugs)
+      : await store.hasPendingOriginDetails(slugs))
   ) {
     // Read again: an attempt records the origin before it deletes its entry.
     const recorded = await originOf();
@@ -134,7 +147,7 @@ async function audienceOf(store: Store, payload: Payload, now: number): Promise<
   }
   let layout: FormLayout | null = null;
   for (const { slug } of links) {
-    layout = await store.layout(slug);
+    layout = await layoutFor(slug);
     if (layout !== null) break;
   }
   return { layout, recipients: uniqueRecipients(links), autoReply: null, originPending };
@@ -218,6 +231,7 @@ export async function receiveWebhook(
   ctx: WebhookHost,
   webhookSecrets: readonly string[],
   now: number,
+  declared: readonly DeclaredForm[] = [],
 ): Promise<WebhookOutcome> {
   if (webhookSecrets.length === 0) return { status: 503, code: "NOT_CONFIGURED" };
   const verdicts = await Promise.all(
@@ -232,7 +246,7 @@ export async function receiveWebhook(
   if (payload.type === "test") return { status: 200, emailed: 0 };
 
   const store = new Store(ctx);
-  const audience = await audienceOf(store, payload, now);
+  const audience = await audienceOf(store, payload, now, declared);
   const autoReply =
     audience.autoReply === null
       ? null

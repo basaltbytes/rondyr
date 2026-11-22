@@ -67,8 +67,8 @@ const junkReasons = junkIntakeReasons.map((reason) => `'${reason}'`).join(", ");
 // fingerprints, ?7 the repetition window, ?8 and ?9 the repetition thresholds, ?10
 // the secret that Siteverify checked the token with or NULL, and ?11 whether it
 // accepted the token. ?12 is the organization of a server intake's API token, or
-// NULL for a public request: a server intake finds only its organization's forms,
-// and Turnstile does not apply to it. ?13 is its idempotency key, or NULL. The organization ID is the leading column of each fingerprint
+// NULL for a public request. ?13 is the idempotency key or NULL, and ?14 says
+// whether to screen for Turnstile. The organization ID is the leading column of each fingerprint
 // index and comes from the form. D1 sets the reception time so concurrent batches
 // count in transaction order, and the budget is the one of that time's UTC day.
 const screening = `
@@ -96,7 +96,7 @@ const screening = `
       CASE
         WHEN EXISTS (SELECT 1 FROM json_each(?2) WHERE key = c.honeypot_field AND value <> '')
         THEN 'honeypot'
-        WHEN ?12 IS NULL AND c.turnstile_secret IS NOT NULL
+        WHEN ?14 = 1 AND c.turnstile_secret IS NOT NULL
           AND (?10 IS NOT c.turnstile_secret OR ?11 = 0)
         THEN 'turnstile-failed'
         WHEN c.prior_same_sender >= ?8 OR c.prior_same_content >= ?9
@@ -230,32 +230,57 @@ const onlyEmptyHoneypot = (fields: typeof SubmissionFields.Type, honeypot: Optio
   });
 
 const decodeTurnstileRow = Schema.decodeUnknownEffect(
-  Schema.NullOr(Schema.Struct({ turnstile_secret: SealedSecret })),
+  Schema.NullOr(
+    Schema.Struct({
+      turnstile_secret: Schema.NullOr(SealedSecret),
+      replay_id: Schema.NullOr(SubmissionId),
+    }),
+  ),
 );
 
-const verifyTurnstile = Effect.fnUntraced(function* (
-  verifier: TurnstileVerifier["Service"],
+const readTurnstile = Effect.fnUntraced(function* (
   publicId: string,
   requestOrigin: string | null,
-  token: TurnstileToken,
+  server?: ServerIntake,
 ) {
   const db = yield* database;
   const row = yield* d1(() =>
     db
       .prepare(`
-      SELECT f.turnstile_secret FROM forms f
-      WHERE f.public_id = ?1 AND f.status = 'active' AND f.turnstile_secret IS NOT NULL
-        AND ${originAllowed("?2")}
+      SELECT CASE WHEN f.status = 'active' THEN f.turnstile_secret END AS turnstile_secret,
+        (SELECT s.id FROM submissions s WHERE s.form_id = f.id AND s.idempotency_key = ?4)
+          AS replay_id
+      FROM forms f
+      WHERE f.public_id = ?1 AND ${originAllowed("?2")}
+        AND (?3 IS NULL OR f.organization_id = ?3)
     `)
-      .bind(publicId, requestOrigin)
+      .bind(
+        publicId,
+        requestOrigin,
+        server?.organizationId ?? null,
+        server === undefined ? null : Option.getOrNull(server.idempotencyKey),
+      )
       .first(),
   );
-  const config = yield* decodeTurnstileRow(row).pipe(
-    Effect.mapError(() => StorageUnavailable.make()),
-  );
-  if (config === null) return { secret: null, passed: false };
-  const { turnstile_secret: secret } = config;
-  const passed = yield* verifier.verify(publicId, secret, token).pipe(
+  return yield* decodeTurnstileRow(row).pipe(Effect.mapError(() => StorageUnavailable.make()));
+});
+
+interface TurnstileOutcome {
+  readonly secret: SealedSecret | null;
+  readonly passed: boolean;
+}
+
+const unchecked: TurnstileOutcome = { secret: null, passed: false };
+
+const verifyTurnstile = Effect.fnUntraced(function* (
+  verifier: TurnstileVerifier["Service"],
+  publicId: string,
+  secret: SealedSecret | null,
+  token: TurnstileToken,
+  visitorIp = Option.none<string>(),
+) {
+  if (secret === null) return unchecked;
+  const passed = yield* verifier.verify(publicId, secret, token, visitorIp).pipe(
     Effect.catch((error) =>
       Effect.logWarning("Turnstile verification unavailable", {
         publicId,
@@ -270,15 +295,12 @@ interface IntakeRequest {
   readonly publicId: string;
   readonly fields: typeof SubmissionFields.Type;
   readonly origin: Option.Option<string>;
-  readonly turnstile: Option.Option<TurnstileToken>;
-  readonly server: Option.Option<ServerIntake>;
+  readonly turnstile: TurnstileOutcome;
+  readonly server?: ServerIntake;
 }
 
 /** Run the intake batch: one D1 round trip, after a Turnstile verification if any. */
-const runBatch = Effect.fnUntraced(function* (
-  verifier: TurnstileVerifier["Service"],
-  request: IntakeRequest,
-) {
+const runBatch = Effect.fnUntraced(function* (request: IntakeRequest) {
   const { publicId, fields } = request;
   const db = yield* database;
   const id = SubmissionId.make(SecureRandom.uuidV4Unsafe());
@@ -291,11 +313,8 @@ const runBatch = Effect.fnUntraced(function* (
   const requestOrigin = Option.getOrNull(request.origin);
   // The batch compares the verified ciphertext with the current configuration.
   // A key changed during verification cannot authorize admission to classification.
-  const { secret, passed } =
-    Option.isSome(request.turnstile) && Option.isNone(request.server)
-      ? yield* verifyTurnstile(verifier, publicId, requestOrigin, request.turnstile.value)
-      : { secret: null, passed: false };
-  const server = Option.getOrNull(request.server);
+  const { secret, passed } = request.turnstile;
+  const { server } = request;
   const parameters = [
     id,
     encoded,
@@ -308,8 +327,9 @@ const runBatch = Effect.fnUntraced(function* (
     repetitionThresholds.content,
     secret,
     passed ? 1 : 0,
-    server === null ? null : server.organizationId,
-    server === null ? null : Option.getOrNull(server.idempotencyKey),
+    server?.organizationId ?? null,
+    server === undefined ? null : Option.getOrNull(server.idempotencyKey),
+    server === undefined || server.turnstile !== undefined ? 1 : 0,
   ] as const;
   // The batch is one transaction, so the access row describes the state that the insert checked.
   const accessCheck = db.prepare(accessQuery).bind(...parameters);
@@ -357,12 +377,17 @@ const receive = Effect.fn("Intake.receive")(function* (
   origin: Option.Option<string>,
   token: Option.Option<TurnstileToken> = Option.none(),
 ) {
-  const { id, stored, access } = yield* runBatch(verifier, {
+  const config = Option.isSome(token)
+    ? yield* readTurnstile(publicId, Option.getOrNull(origin))
+    : null;
+  const turnstile = Option.isSome(token)
+    ? yield* verifyTurnstile(verifier, publicId, config?.turnstile_secret ?? null, token.value)
+    : unchecked;
+  const { id, stored, access } = yield* runBatch({
     publicId,
     fields,
     origin,
-    turnstile: token,
-    server: Option.none(),
+    turnstile,
   });
   if (stored) {
     const metadata = Option.flatten(Result.getSuccess(access));
@@ -396,12 +421,25 @@ const receiveFromServer = Effect.fn("Intake.receiveFromServer")(function* (
   fields: typeof SubmissionFields.Type,
   intake: ServerIntake,
 ) {
-  const { id, stored, access } = yield* runBatch(verifier, {
+  const check = intake.turnstile;
+  let turnstile = unchecked;
+  if (check !== undefined && Option.isSome(check.token)) {
+    const config = yield* readTurnstile(publicId, null, intake);
+    if (config?.replay_id != null) return { submissionId: config.replay_id, replayed: true };
+    turnstile = yield* verifyTurnstile(
+      verifier,
+      publicId,
+      config?.turnstile_secret ?? null,
+      check.token.value,
+      check.visitorIp,
+    );
+  }
+  const { id, stored, access } = yield* runBatch({
     publicId,
     fields,
     origin: Option.none(),
-    turnstile: Option.none(),
-    server: Option.some(intake),
+    turnstile,
+    server: intake,
   });
   if (stored) return { submissionId: id, replayed: false };
   if (Result.isFailure(access)) return yield* access.failure;

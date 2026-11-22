@@ -71,6 +71,8 @@ Don't pass `credentials: "include"` in `fetch`; Rondyr doesn't use cookies on fo
 
 A `202` response confirms that Rondyr saved the message and started spam screening. If your server validates the form first and forwards it on the visitor's behalf, use [server intake](./api.md#server-intake) with an API token instead.
 
+For a server that forwards the visitor's Turnstile token, send `Rondyr-Turnstile: verify` and put the token in `cf-turnstile-response`. You can include `Rondyr-Visitor-IP` so Siteverify checks the token with the visitor's address. Configure the keys on the Rondyr form. Messages with missing, refused, or expired tokens go to **To review**.
+
 ## Restrict which websites can submit
 
 By default, a form accepts browser submissions from any origin. To make sure only pages on your own website can submit to it:

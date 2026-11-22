@@ -2,6 +2,7 @@ import { z } from "astro/zod";
 import type { PluginContext, PluginStorageConfig, StorageCollection } from "emdash";
 
 import { AutoReply } from "./core/auto-reply.ts";
+import { VisitorLocale } from "./core/declared-forms.ts";
 import { FormLayout } from "./core/fields.ts";
 import { QueueEntry, type QueueState } from "./core/queue.ts";
 
@@ -44,6 +45,7 @@ export type DeliveryRecord = z.infer<typeof DeliveryRecord>;
 export const OriginRecord = z.object({
   formSlug: z.string().min(1).max(200),
   recordedAt: z.number().int(),
+  locale: VisitorLocale.optional(),
   autoReply: AutoReply.optional(),
   autoReplyHeldUntil: z.number().int().optional(),
   autoRepliedAt: z.number().int().optional(),
@@ -223,11 +225,14 @@ export class Store {
     return false;
   }
 
-  /** Whether one of these EmDash forms has a pending entry with an auto-reply to send. */
-  async hasPendingAutoReply(formSlugs: readonly string[]): Promise<boolean> {
+  /** Whether one of these EmDash forms has a pending entry whose notification needs its origin. */
+  async hasPendingOriginDetails(formSlugs: readonly string[]): Promise<boolean> {
     for (const formSlug of formSlugs) {
       const entries = await this.queueEntries("pending", 100, null, formSlug);
-      if (entries.some(({ entry }) => entry.autoReply !== undefined)) return true;
+      if (
+        entries.some(({ entry }) => entry.autoReply !== undefined || entry.declared !== undefined)
+      )
+        return true;
     }
     return false;
   }
