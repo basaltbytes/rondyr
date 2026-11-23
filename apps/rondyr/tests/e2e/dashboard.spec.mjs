@@ -1398,6 +1398,65 @@ test.describe("addresses", () => {
     ).toBeVisible();
   });
 
+  test("go back to the list, not to a message that a decision took out of the folder", async ({
+    dashboard: page,
+  }) => {
+    await createOrganization(page);
+    await openForm(page, formName);
+    const endpoint = await publicFormUrl(page, formName);
+    const decided = "First request set aside by the filter";
+    const next = "Second request set aside by the filter";
+    // The fake model gives answers that the classifier cannot read: both messages wait for review.
+    await postMessage(page, endpoint, decided, "unreadable");
+    await postMessage(page, endpoint, next, "unreadable");
+    await folderLink(page, t("inbox.folders.quarantined")).click();
+    const list = page.getByRole("region", { name: t("inbox.list.label") });
+    await expect(async () => {
+      await list.getByRole("button", { name: t("common.refresh"), exact: true }).click();
+      await expect(list.getByRole("link").filter({ hasText: decided })).toBeVisible({
+        timeout: 500,
+      });
+      await expect(list.getByRole("link").filter({ hasText: next })).toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 10_000 });
+    const listAddress = page.url();
+    await list.getByRole("link").filter({ hasText: decided }).click();
+    const reader = page.getByRole("region", { name: t("inbox.reader.label") });
+    await expect(reader.getByText(decided, { exact: true })).toBeVisible();
+    const decidedAddress = page.url();
+    await reader.getByRole("button", { name: t("inbox.reader.acceptAndSend") }).click();
+    await expect(reader.getByText(next, { exact: true })).toBeVisible();
+
+    await page.goBack();
+
+    await expect(page).toHaveURL(listAddress);
+    expect(page.url()).not.toBe(decidedAddress);
+    await expect(reader.getByText(decided, { exact: true })).toHaveCount(0);
+  });
+
+  test("show a message opened by its address when the list beside it does not have it", async ({
+    dashboard: page,
+  }) => {
+    await createOrganization(page);
+    await openForm(page, formName);
+    const endpoint = await publicFormUrl(page, formName);
+    const message = "Accepted request opened from another folder";
+    await postMessage(page, endpoint, message);
+    await openSubmission(page, t("inbox.folders.accepted"), message);
+    const submissionId = new URL(page.url()).pathname.split("/").at(-1);
+    const address = new URL(`/o/${organizationIdOf(page)}/messages/${submissionId}`, page.url());
+    address.searchParams.set("folder", "quarantined");
+
+    await page.goto(address.href);
+
+    const list = page.getByRole("region", { name: t("inbox.list.label") });
+    const reader = page.getByRole("region", { name: t("inbox.reader.label") });
+    await expect(folderHeading(page, t("inbox.folders.quarantined"))).toBeVisible();
+    await expect(list.getByText(t("inbox.list.empty.quarantined.title"))).toBeVisible();
+    await expect(list.getByRole("link").filter({ hasText: message })).toHaveCount(0);
+    await expect(reader.getByText(message, { exact: true })).toBeVisible();
+    await expect(reader.getByText(t("inbox.statuses.accepted"), { exact: true })).toBeVisible();
+  });
+
   test("ignore a return address of another origin", async ({
     dashboard: page,
     dashboardOrigin,
