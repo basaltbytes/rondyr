@@ -11,6 +11,7 @@ import {
 import { TurnstileKeyCheck } from "@rondyr/forms/turnstile";
 
 import { organizationsQuery } from "./organizations.ts";
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, refusalOf, requestJson } from "./request.ts";
 
 export type ManagedForm = typeof ManagedForm.Type;
@@ -112,22 +113,48 @@ export function turnstileKeyQuery(organizationId: string, publicId: string) {
   });
 }
 
-/** The organizations hold the forms, so a change of a form reads them again. */
-function readFormsAgain(client: QueryClient) {
-  return client.invalidateQueries({ queryKey: organizationsQuery.queryKey });
+/** By name, as the API orders the forms of an organization. */
+function byName(left: ManagedForm, right: ManagedForm) {
+  if (left.name === right.name) return 0;
+  return left.name < right.name ? -1 : 1;
+}
+
+/**
+ * The organizations hold the forms: the form that the API answered with takes its
+ * place in the cache at once, then the organizations are read again. A failed read
+ * then leaves the cache right.
+ */
+async function keepForm(client: QueryClient, organizationId: string, saved: ManagedForm) {
+  client.setQueryData(
+    organizationsQuery.queryKey,
+    (organizations) =>
+      organizations?.map((organization) =>
+        organization.id === organizationId
+          ? {
+              ...organization,
+              forms: [
+                ...organization.forms.filter(({ publicId }) => publicId !== saved.publicId),
+                saved,
+              ].toSorted(byName),
+            }
+          : organization,
+      ),
+    keepReadTime(client, organizationsQuery.queryKey),
+  );
+  await client.invalidateQueries({ queryKey: organizationsQuery.queryKey });
 }
 
 /** Changes a setting of a form, then reads the organizations and their forms again. */
 export function changeFormMutation(organizationId: string, publicId: string) {
   return mutationOptions({
     mutationFn: (change: FormChange) => changeForm(organizationId, publicId, change),
-    onSuccess: async (_form, change, _context, { client }) => {
+    onSuccess: async (saved, change, _context, { client }) => {
       if (change.change === "turnstile") {
         await client.invalidateQueries({
           queryKey: turnstileKeyQuery(organizationId, publicId).queryKey,
         });
       }
-      await readFormsAgain(client);
+      await keepForm(client, organizationId, saved);
     },
   });
 }
@@ -141,6 +168,6 @@ export function createFormMutation(organizationId: string) {
         "POST",
         parseCreate(emoji === null ? { name, businessContext } : { name, emoji, businessContext }),
       ),
-    onSuccess: (_form, _new, _context, { client }) => readFormsAgain(client),
+    onSuccess: (saved, _new, _context, { client }) => keepForm(client, organizationId, saved),
   });
 }

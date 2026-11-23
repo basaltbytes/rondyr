@@ -11,6 +11,7 @@ import { TargetTestResult } from "@rondyr/deliveries/history";
 import { DestinationTarget, TargetRequestError } from "@rondyr/deliveries/targets";
 import { IssuedWebhookSecret, WebhookTarget } from "@rondyr/deliveries/webhook";
 
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, refusalOf, request, requestJson } from "./request.ts";
 
 /** A destination of a form: a webhook, an email destination or one of a connector. */
@@ -168,12 +169,16 @@ async function changeDestination(
 function cache(client: QueryClient, organizationId: string, publicId: string) {
   return {
     add: (target: DestinationTarget) =>
-      client.setQueryData(destinationsQuery(organizationId, publicId).queryKey, (targets) =>
-        targets === undefined ? undefined : [...targets, target],
+      client.setQueryData(
+        destinationsQuery(organizationId, publicId).queryKey,
+        (targets) => (targets === undefined ? undefined : [...targets, target]),
+        keepReadTime(client, destinationsQuery(organizationId, publicId).queryKey),
       ),
     replace: (target: DestinationTarget) =>
-      client.setQueryData(destinationsQuery(organizationId, publicId).queryKey, (targets) =>
-        targets?.map((item) => (item.id === target.id ? target : item)),
+      client.setQueryData(
+        destinationsQuery(organizationId, publicId).queryKey,
+        (targets) => targets?.map((item) => (item.id === target.id ? target : item)),
+        keepReadTime(client, destinationsQuery(organizationId, publicId).queryKey),
       ),
   };
 }

@@ -1,4 +1,4 @@
-import { mutationOptions, queryOptions } from "@tanstack/react-query";
+import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 
 import {
   OperationsStatus,
@@ -6,6 +6,7 @@ import {
   StuckSubmissions,
 } from "@rondyr/contracts/operations-status";
 
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, requestJson, statusOf } from "./request.ts";
 
 export type OperationsStatus = typeof OperationsStatus.Type;
@@ -33,6 +34,14 @@ export function stuckSubmissionsQuery(organizationId: string) {
   });
 }
 
+/** Reads the status again, with the stuck submissions of every organization. */
+export async function refreshOperations(client: QueryClient) {
+  await Promise.all([
+    client.invalidateQueries({ queryKey: operationsQuery.queryKey }),
+    client.invalidateQueries({ predicate: ({ queryKey }) => queryKey[1] === "stuck-submissions" }),
+  ]);
+}
+
 /**
  * Publishes a stuck submission again, then reads the status again. A submission already
  * retried or handed off since answers 409, and the new status shows it.
@@ -54,9 +63,9 @@ export function retryStuckMutation(organizationId: string) {
       }
     },
     onSuccess: async (stuck, _submission, _context, { client }) => {
-      if (stuck !== null) {
-        client.setQueryData(stuckSubmissionsQuery(organizationId).queryKey, stuck);
-      }
+      const stuckKey = stuckSubmissionsQuery(organizationId).queryKey;
+      if (stuck === null) await client.invalidateQueries({ queryKey: stuckKey });
+      else client.setQueryData(stuckKey, stuck, keepReadTime(client, stuckKey));
       await client.invalidateQueries({ queryKey: operationsQuery.queryKey });
     },
   });

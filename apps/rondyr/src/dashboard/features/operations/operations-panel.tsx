@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "cn";
 import { RefreshCw } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
@@ -10,7 +10,7 @@ import { ReadFailure } from "~/components/read-failure";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import { operationsQuery, type OrganizationStatus } from "~/lib/api/operations";
+import { operationsQuery, refreshOperations, type OrganizationStatus } from "~/lib/api/operations";
 import { useFormats } from "~/lib/i18n";
 
 import { StuckSubmissions } from "./stuck-submissions.tsx";
@@ -152,6 +152,7 @@ export function OperationsPanel() {
   const { t } = useTranslation();
   const format = useFormats();
   const status = useQuery(operationsQuery);
+  const queryClient = useQueryClient();
 
   return (
     <main className="flex min-h-0 min-w-0 flex-col lg:col-span-2">
@@ -163,7 +164,7 @@ export function OperationsPanel() {
           size="icon"
           aria-label={t("common.refresh")}
           disabled={status.isFetching}
-          onClick={() => void status.refetch()}
+          onClick={() => void refreshOperations(queryClient)}
         >
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>

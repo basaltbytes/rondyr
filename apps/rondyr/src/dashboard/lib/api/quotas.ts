@@ -2,6 +2,7 @@ import { mutationOptions, queryOptions } from "@tanstack/react-query";
 
 import { DailyUsage, type DailyQuotas } from "@rondyr/organizations/organization-quotas";
 
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, requestJson } from "./request.ts";
 
 export type DailyUsage = typeof DailyUsage.Type;
@@ -22,6 +23,10 @@ export function saveQuotasMutation(organizationId: string) {
     mutationFn: (limits: DailyQuotas) =>
       requestJson(path(organizationId), DailyUsage, { method: "PUT", json: limits }),
     onSuccess: (usage, _limits, _context, { client }) =>
-      client.setQueryData(quotasQuery(organizationId).queryKey, usage),
+      client.setQueryData(
+        quotasQuery(organizationId).queryKey,
+        usage,
+        keepReadTime(client, quotasQuery(organizationId).queryKey),
+      ),
   });
 }

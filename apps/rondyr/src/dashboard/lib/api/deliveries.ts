@@ -4,6 +4,7 @@ import { Schema } from "effect";
 import { DeliveryRecord } from "@rondyr/deliveries/history";
 
 import { messagesKey } from "./messages.ts";
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, requestJson } from "./request.ts";
 
 /** A delivery of a message to one destination, with its attempts. */
@@ -41,6 +42,10 @@ export function retryDeliveryMutation(organizationId: string, submissionId: stri
         { method: "POST" },
       ),
     onSuccess: (deliveries, _delivery, _context, { client }) =>
-      client.setQueryData(deliveriesQuery(organizationId, submissionId).queryKey, deliveries),
+      client.setQueryData(
+        deliveriesQuery(organizationId, submissionId).queryKey,
+        deliveries,
+        keepReadTime(client, deliveriesQuery(organizationId, submissionId).queryKey),
+      ),
   });
 }

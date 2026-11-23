@@ -205,12 +205,7 @@ export function ClassificationSettings({ organizationId }: ClassificationSetting
               <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
             )}
             {settings.isSuccess && (
-              // The form starts from the settings as they were read; other settings start it again.
-              <PolicyForm
-                key={JSON.stringify(settings.data)}
-                organizationId={organizationId}
-                settings={settings.data}
-              />
+              <PolicyForm organizationId={organizationId} settings={settings.data} />
             )}
           </CardContent>
         </Card>

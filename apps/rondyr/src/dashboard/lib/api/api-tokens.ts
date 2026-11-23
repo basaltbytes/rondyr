@@ -2,6 +2,7 @@ import { mutationOptions, queryOptions } from "@tanstack/react-query";
 
 import { ApiTokenList, CreatedApiToken } from "@rondyr/organizations/api-token";
 
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, request, requestJson } from "./request.ts";
 
 export type { ApiTokenList };
@@ -23,8 +24,10 @@ export function createApiTokenMutation(organizationId: string) {
     mutationFn: (name: string) =>
       requestJson(path(organizationId), CreatedApiToken, { method: "POST", json: { name } }),
     onSuccess: ({ token: _secret, ...summary }, _name, _context, { client }) =>
-      client.setQueryData(apiTokensQuery(organizationId).queryKey, (tokens) =>
-        tokens === undefined ? undefined : [summary, ...tokens],
+      client.setQueryData(
+        apiTokensQuery(organizationId).queryKey,
+        (tokens) => (tokens === undefined ? undefined : [summary, ...tokens]),
+        keepReadTime(client, apiTokensQuery(organizationId).queryKey),
       ),
   });
 }
@@ -37,8 +40,10 @@ export function revokeApiTokenMutation(organizationId: string) {
         method: "DELETE",
       }),
     onSuccess: (_response, tokenId, _context, { client }) =>
-      client.setQueryData(apiTokensQuery(organizationId).queryKey, (tokens) =>
-        tokens?.filter(({ id }) => id !== tokenId),
+      client.setQueryData(
+        apiTokensQuery(organizationId).queryKey,
+        (tokens) => tokens?.filter(({ id }) => id !== tokenId),
+        keepReadTime(client, apiTokensQuery(organizationId).queryKey),
       ),
   });
 }

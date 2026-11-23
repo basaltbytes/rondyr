@@ -6,6 +6,7 @@ import {
   OrganizationDomainList,
 } from "@rondyr/organizations/organization-domain";
 
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, refusalOf, request, requestJson } from "./request.ts";
 
 export type { OrganizationDomainList };
@@ -36,10 +37,13 @@ export function addDomainMutation(organizationId: string) {
         refusal: DomainRequestError,
       }),
     onSuccess: ({ domain }, _hostname, _context, { client }) =>
-      client.setQueryData(domainsQuery(organizationId).queryKey, (domains) =>
-        domains === undefined || domains.includes(domain)
-          ? domains
-          : [...domains, domain].toSorted(),
+      client.setQueryData(
+        domainsQuery(organizationId).queryKey,
+        (domains) =>
+          domains === undefined || domains.includes(domain)
+            ? domains
+            : [...domains, domain].toSorted(),
+        keepReadTime(client, domainsQuery(organizationId).queryKey),
       ),
   });
 }
@@ -53,8 +57,10 @@ export function removeDomainMutation(organizationId: string) {
         refusal: DomainRequestError,
       }),
     onSuccess: (_response, domain, _context, { client }) =>
-      client.setQueryData(domainsQuery(organizationId).queryKey, (domains) =>
-        domains?.filter((item) => item !== domain),
+      client.setQueryData(
+        domainsQuery(organizationId).queryKey,
+        (domains) => domains?.filter((item) => item !== domain),
+        keepReadTime(client, domainsQuery(organizationId).queryKey),
       ),
   });
 }

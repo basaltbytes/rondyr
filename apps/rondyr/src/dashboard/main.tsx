@@ -33,6 +33,9 @@ function signInAgain(cause: Error) {
   });
 }
 
+// When the current navigation started: the reads of its loaders are the reads of its pages.
+let navigatedAt = 0;
+
 const queryClient = new QueryClient({
   queryCache: new QueryCache({ onError: signInAgain }),
   mutationCache: new MutationCache({ onError: signInAgain }),
@@ -41,7 +44,9 @@ const queryClient = new QueryClient({
       // A screen shows a failed read at once, with a button to read again.
       retry: false,
       retryOnMount: false,
-      // A screen reads its data again when it opens, never when the window regains focus.
+      // A screen reads its data again when it opens, unless its loader has just read it.
+      refetchOnMount: (query) => query.state.dataUpdatedAt < navigatedAt,
+      // Nothing is read again because the window regains focus.
       refetchOnWindowFocus: false,
     },
   },
@@ -55,6 +60,10 @@ const router = createRouter({
   stringifySearch,
   defaultNotFoundComponent: NotFoundPage,
   defaultPendingComponent: PagePending,
+});
+
+router.subscribe("onBeforeNavigate", () => {
+  navigatedAt = Date.now();
 });
 
 declare module "@tanstack/react-router" {

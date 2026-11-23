@@ -5,6 +5,7 @@ import {
   type OrganizationClassificationPolicy,
 } from "@rondyr/organizations/organization-classification-policy";
 
+import { keepReadTime } from "./cache.ts";
 import { organizationPath, request, requestJson } from "./request.ts";
 
 export type OrganizationClassificationSettings = typeof OrganizationClassificationSettings.Type;
@@ -20,10 +21,7 @@ export function classificationQuery(organizationId: string) {
   });
 }
 
-/**
- * Saves the override of the organization, or removes it with null. The form on screen
- * already shows what it saved, so the settings are read again when the page next opens.
- */
+/** Saves the override of the organization, or removes it with null, then its cached copy. */
 export function saveClassificationMutation(organizationId: string) {
   return mutationOptions({
     mutationFn: (override: OrganizationClassificationPolicy | null) =>
@@ -31,10 +29,11 @@ export function saveClassificationMutation(organizationId: string) {
         path(organizationId),
         override === null ? { method: "DELETE" } : { method: "PUT", json: override },
       ),
-    onSuccess: (_response, _override, _context, { client }) =>
-      client.invalidateQueries({
-        queryKey: classificationQuery(organizationId).queryKey,
-        refetchType: "none",
-      }),
+    onSuccess: (_response, override, _context, { client }) =>
+      client.setQueryData(
+        classificationQuery(organizationId).queryKey,
+        (settings) => (settings === undefined ? undefined : { ...settings, override }),
+        keepReadTime(client, classificationQuery(organizationId).queryKey),
+      ),
   });
 }
