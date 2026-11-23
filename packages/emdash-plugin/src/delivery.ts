@@ -70,7 +70,12 @@ export async function attempt(
     return "unlinked";
   }
   const client = new RondyrClient((url, init) => http.fetch(url, init), options.url, token);
-  const result = await client.submit(link.rondyrFormId, entry.fields, id);
+  const result = await client.submit(
+    link.rondyrFormId,
+    entry.fields,
+    id,
+    entry.declared?.turnstile,
+  );
   const next = afterAttempt(entry, sendOutcome(result.status), clock());
   if (next === null) {
     // Recorded before the entry goes: while the entry is pending, the webhook can wait for it.
@@ -82,6 +87,7 @@ export async function attempt(
     } else {
       const origin: OriginRecord = { formSlug: entry.formSlug, recordedAt: clock() };
       if (entry.autoReply !== undefined) origin.autoReply = entry.autoReply;
+      if (entry.declared !== undefined) origin.locale = entry.declared.locale;
       await store.putOrigin(submissionId, origin);
     }
     await store.deleteQueueEntry(id, claim);

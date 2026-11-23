@@ -1,5 +1,6 @@
 import { z } from "astro/zod";
 
+import { turnstileField, type Turnstile } from "./declared-forms.ts";
 import type { FlatFields } from "./fields.ts";
 import { attemptTimeoutMs } from "./retry.ts";
 
@@ -49,7 +50,12 @@ export const Counts = StatusCounts.extend({
 });
 export type Counts = z.infer<typeof Counts>;
 
-export const RondyrForm = z.object({ publicId: z.string(), name: z.string(), status: z.string() });
+export const RondyrForm = z.object({
+  publicId: z.string(),
+  name: z.string(),
+  status: z.string(),
+  turnstileSiteKey: z.string().nullable().default(null),
+});
 export type RondyrForm = z.infer<typeof RondyrForm>;
 
 export const Organization = z.object({
@@ -135,6 +141,10 @@ function submissionIdOf(body: string): string | null {
 /** A Rondyr folder: the status its messages have. */
 export type Decision = "approve" | "dismiss";
 
+export function submissionBody(fields: FlatFields, token?: string | null): string {
+  return JSON.stringify(token == null ? fields : { ...fields, [turnstileField]: token });
+}
+
 /**
  * The Rondyr API, with an API token of one organization. Every call sends the
  * token as a Bearer credential and gives up after 30 seconds.
@@ -150,22 +160,27 @@ export class RondyrClient {
     this.#token = token;
   }
 
-  async #request(path: string, init: RequestInit): Promise<Response> {
+  async #request(path: string, init: RequestInit, timeoutMs = attemptTimeoutMs): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${this.#token}`);
     try {
       return await this.#fetch(new URL(path, this.#origin).href, {
         ...init,
         headers,
-        signal: AbortSignal.timeout(attemptTimeoutMs),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
       throw new RondyrError("unreachable");
     }
   }
 
-  async #json<T>(path: string, schema: z.ZodType<T>, method = "GET"): Promise<T> {
-    const response = await this.#request(path, { method });
+  async #json<T>(
+    path: string,
+    schema: z.ZodType<T>,
+    method = "GET",
+    timeoutMs = attemptTimeoutMs,
+  ): Promise<T> {
+    const response = await this.#request(path, { method }, timeoutMs);
     if (!response.ok) throw new RondyrError(failureOf(response.status));
     const parsed = schema.safeParse(await response.json().catch(() => null));
     if (!parsed.success) throw new RondyrError("unexpected");
@@ -182,6 +197,7 @@ export class RondyrClient {
     publicId: string,
     fields: FlatFields,
     idempotencyKey: string,
+    turnstile?: Turnstile,
   ): Promise<SubmitResult> {
     try {
       const headers = new Headers({
@@ -189,12 +205,16 @@ export class RondyrClient {
         "content-type": "application/json",
         "idempotency-key": idempotencyKey,
       });
+      if (turnstile !== undefined) {
+        headers.set("rondyr-turnstile", "verify");
+        if (turnstile.visitorIp !== null) headers.set("rondyr-visitor-ip", turnstile.visitorIp);
+      }
       const response = await this.#fetch(
         new URL(`/f/${encodeURIComponent(publicId)}`, this.#origin).href,
         {
           method: "POST",
           headers,
-          body: JSON.stringify(fields),
+          body: submissionBody(fields, turnstile?.token),
           signal: AbortSignal.timeout(attemptTimeoutMs),
         },
       );
@@ -209,9 +229,9 @@ export class RondyrClient {
     }
   }
 
-  /** The token's organization and its forms. */
-  async organization(): Promise<Organization> {
-    const [organization] = await this.#json("/api/organizations", Organizations);
+  /** The token's organization and its forms. A page render passes a shorter wait than 30 seconds. */
+  async organization(timeoutMs = attemptTimeoutMs): Promise<Organization> {
+    const [organization] = await this.#json("/api/organizations", Organizations, "GET", timeoutMs);
     if (organization === undefined) throw new RondyrError("unauthorized");
     return organization;
   }

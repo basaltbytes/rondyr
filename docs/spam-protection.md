@@ -47,7 +47,7 @@ For persistent bots that ignore honeypots, attach a [Cloudflare Turnstile](https
 
 1. In your Cloudflare dashboard, create a Turnstile widget for your website's hostname and copy its **Site key** and **Secret key**.
 2. In Rondyr, open **Settings → Forms**, select your form, paste both keys under **Turnstile**, and select **Save Turnstile keys**. Rondyr checks the secret key with Cloudflare right away so typos are caught before saving.
-3. Select **Copy HTML** and paste the two lines inside your `<form>` (load the Turnstile `<script>` only once per page). If you submit via JavaScript JSON instead of an HTML form, send the widget's token in the `cf-turnstile-response` field.
+3. Select **Copy HTML** and paste the two lines inside your `<form>` (load the Turnstile `<script>` only once per page). If you submit via JavaScript JSON, send the token in the `cf-turnstile-response` field. If your server forwards the post on the visitor’s behalf, [opt in to Turnstile on server intake](./api.md#turnstile-for-forwarded-submissions).
 
 Rondyr removes the Turnstile token before saving the message. Submissions with a missing or invalid token go to **To review** labeled **Turnstile verification failed** without calling the AI classifier, while still returning the usual confirmation response to the visitor.
 

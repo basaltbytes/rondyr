@@ -8,7 +8,9 @@ import {
 } from "emdash";
 
 import { matchesCredential, enqueueCredential } from "./core/hop.ts";
+import { DeclaredPost, receiveDeclaredPost } from "./declared-submission.ts";
 import { RondyrError, SubmissionStatus, type Organization } from "./core/rondyr-client.ts";
+import { siteKeyReader, siteKeyTimeoutMs } from "./core/site-keys.ts";
 import { pluginId, pluginVersion } from "./constants.ts";
 import { attempt, requeue, sendDue } from "./delivery.ts";
 import { enqueue, EnqueueInput } from "./enqueue.ts";
@@ -56,6 +58,43 @@ function requireCredential(ctx: RouteContext<unknown>): void {
 
 export function createPlugin(input: RondyrOptions): ResolvedPlugin {
   const options = RondyrOptions.parse(input);
+  const forms = options.forms?.map((form) => [form.slug, form] as const);
+  const declared = forms === undefined ? undefined : new Map(forms);
+
+  // One read covers every form of the organization, and serves page renders for three minutes.
+  const siteKeyOf = siteKeyReader();
+  /** The organization's forms for a page render: a short wait, and the reason of a failure in the log. */
+  const formsForWidget = async (ctx: RouteContext, formSlug: string): Promise<Organization> => {
+    try {
+      return await rondyrClient(ctx, options).organization(siteKeyTimeoutMs);
+    } catch (error) {
+      let reason = "unknown";
+      if (error instanceof RondyrError) reason = error.failure;
+      else if (error instanceof PluginRouteError) reason = error.code;
+      ctx.log.warn("The Turnstile site key could not be read from Rondyr", {
+        form: formSlug,
+        reason,
+      });
+      throw error;
+    }
+  };
+
+  const queueSubmission = async (ctx: RouteContext, submission: EnqueueInput) => {
+    const { submissionId } = submission;
+    const { linked } = await enqueue(ctx, submission, Date.now());
+    after(async () => {
+      try {
+        await attempt(ctx, options, rondyrSecrets().token, submissionId);
+      } catch (error) {
+        // The entry stays queued for the cron. Keep the error's name only.
+        ctx.log.error("A queued submission could not be sent", {
+          submissionId,
+          error: error instanceof Error ? error.name : "unknown",
+        });
+      }
+    });
+    return { queued: true, linked };
+  };
   return definePlugin({
     id: pluginId,
     version: pluginVersion,
@@ -82,24 +121,51 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
         public: true,
         methods: ["POST"],
         input: EnqueueInput,
-        handler: async (ctx: RouteContext<EnqueueInput>) => {
+        handler: (ctx: RouteContext<EnqueueInput>) => {
           requireCredential(ctx);
-          const { submissionId } = ctx.input;
-          const { linked } = await enqueue(ctx, ctx.input, Date.now());
-          after(async () => {
-            try {
-              await attempt(ctx, options, rondyrSecrets().token, submissionId);
-            } catch (error) {
-              // The entry stays queued; the cron tries again. The error's name only, never its text.
-              ctx.log.error("A queued submission could not be sent", {
-                submissionId,
-                error: error instanceof Error ? error.name : "unknown",
-              });
-            }
-          });
-          return { queued: true, linked };
+          return queueSubmission(ctx, ctx.input);
         },
       },
+      ...(declared !== undefined && {
+        "declared/submit": {
+          public: true,
+          methods: ["POST"],
+          input: DeclaredPost,
+          handler: (ctx: RouteContext<z.infer<typeof DeclaredPost>>) => {
+            requireCredential(ctx);
+            return receiveDeclaredPost(
+              declared.get(ctx.input.formId),
+              ctx.input,
+              ctx.request.headers.get("cf-connecting-ip"),
+              async (entry) => {
+                await queueSubmission(ctx, entry);
+              },
+            );
+          },
+        },
+        // A page render reads this. Without the site key, the page renders the
+        // form without the widget: Rondyr then keeps its messages in To review.
+        "declared/definition": {
+          public: true,
+          methods: ["POST"],
+          input: SlugInput,
+          handler: async (ctx: RouteContext<z.infer<typeof SlugInput>>) => {
+            const form = declared.get(ctx.input.slug);
+            if (form === undefined) return null;
+            let turnstileSiteKey: string | null = null;
+            if (form.spamProtection === "turnstile") {
+              const link = await new Store(ctx).link(form.slug);
+              if (link?.rondyrFormId != null) {
+                turnstileSiteKey = await siteKeyOf(rondyrSecrets().token, link.rondyrFormId, () =>
+                  formsForWidget(ctx, form.slug),
+                );
+              }
+            }
+            const { autoReply: _autoReply, ...definition } = form;
+            return { ...definition, turnstileSiteKey };
+          },
+        },
+      }),
       // The site route calls this when `enqueue` failed twice: the forms plugin
       // kept the submission, and the admin pages show how many were not queued.
       "enqueue/failed": {
@@ -121,7 +187,12 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
         methods: ["POST"],
         request: { body: "bytes", maxBytes: 65_536 },
         handler: async (ctx: RouteContext<Uint8Array>) => {
-          const outcome = await receiveWebhook(ctx, rondyrSecrets().webhookSecrets, Date.now());
+          const outcome = await receiveWebhook(
+            ctx,
+            rondyrSecrets().webhookSecrets,
+            Date.now(),
+            options.forms,
+          );
           if (outcome.status !== 200) {
             throw new PluginRouteError(outcome.code, "Webhook refused", outcome.status);
           }
@@ -215,6 +286,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
           }
           return {
             links,
+            declaredForms: options.forms?.map(({ slug, name }) => ({ slug, name })),
             unqueued,
             formsEmailsSent,
             tokenProblem: secrets.tokenProblem,

@@ -1,4 +1,4 @@
-import { formsPlugin, type FormsPluginOptions } from "@emdash-cms/plugin-forms";
+import type { FormsPluginOptions } from "@emdash-cms/plugin-forms";
 import type { PluginDescriptor } from "emdash";
 
 import { pluginId, pluginVersion } from "./constants.ts";
@@ -7,6 +7,27 @@ import { descriptorStorage } from "./store.ts";
 
 export type { RondyrOptions } from "./options.ts";
 
+// Astro loads this module for its configuration. The forms plugin is optional.
+const formsPlugin = await import("@emdash-cms/plugin-forms").then(
+  (module) => module.formsPlugin,
+  (error) => {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error.code === "ERR_MODULE_NOT_FOUND" || error.code === "MODULE_NOT_FOUND") &&
+      error.message.includes("@emdash-cms/plugin-forms")
+    )
+      return undefined;
+    throw error;
+  },
+);
+
+function formsDescriptor(options: FormsPluginOptions): PluginDescriptor<FormsPluginOptions> {
+  if (formsPlugin === undefined)
+    throw new Error("Install @emdash-cms/plugin-forms to use the forms plugin mode");
+  return formsPlugin(options);
+}
+
 /**
  * The Rondyr plugin, for `plugins` in astro.config.mjs:
  * `rondyr({ url: "https://rondyr.example.com" })`. The URL is the origin of
@@ -14,13 +35,12 @@ export type { RondyrOptions } from "./options.ts";
  */
 export function rondyr(options: RondyrOptions): PluginDescriptor<RondyrOptions> {
   const resolved = RondyrOptions.parse(options);
-  const { url } = resolved;
   return {
     id: pluginId,
     version: pluginVersion,
     entrypoint: "@basaltbytes/emdash-plugin-rondyr/plugin",
     adminEntry: "@basaltbytes/emdash-plugin-rondyr/admin",
-    options: { url },
+    options: resolved,
     capabilities: ["email:send", "network:request"],
     allowedHosts: [rondyrHost(resolved)],
     adminPages: [
@@ -44,7 +64,7 @@ export function rondyr(options: RondyrOptions): PluginDescriptor<RondyrOptions> 
 export function formsWithoutSubmissions(
   options: FormsPluginOptions = {},
 ): PluginDescriptor<FormsPluginOptions> {
-  const descriptor = formsPlugin(options);
+  const descriptor = formsDescriptor(options);
   return {
     ...descriptor,
     entrypoint: "@basaltbytes/emdash-plugin-rondyr/forms",
@@ -62,7 +82,7 @@ export function formsWithRondyr(
   options: FormsPluginOptions = {},
 ): PluginDescriptor<FormsPluginOptions> {
   return {
-    ...formsPlugin(options),
+    ...formsDescriptor(options),
     entrypoint: "@basaltbytes/emdash-plugin-rondyr/forms-with-submissions",
   };
 }

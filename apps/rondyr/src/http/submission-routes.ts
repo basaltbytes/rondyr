@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { ByteSize, Effect, Layer, Match, Option, Result, Schema } from "effect";
 import {
   HttpIncomingMessage,
@@ -46,6 +47,9 @@ const decodeJson = Schema.decodeUnknownEffect(
 const decodeFields = Schema.decodeUnknownEffect(SubmittedFields);
 const decodeToken = Schema.decodeUnknownOption(TurnstileToken);
 const decodeIdempotencyKey = Schema.decodeUnknownOption(IdempotencyKey);
+const decodeIpAddress = Schema.decodeUnknownOption(
+  Schema.String.check(Schema.makeFilter((value) => isIP(value) !== 0 || "Expected an IP address")),
+);
 
 const splitFields = Effect.fnUntraced(function* (fields: Readonly<Record<string, string>>) {
   const { [turnstileField]: value, ...message } = fields;
@@ -275,8 +279,8 @@ function serverRefusal(
 
 /**
  * A server intake: the request carried an active API token, and the middleware
- * put its organization in `CurrentApiToken`. Neither the allowed origins, nor the
- * per-client limit, nor Turnstile apply. The body is JSON and the response is
+ * put its organization in `CurrentApiToken`. Turnstile is opt-in. The per-client
+ * limit and allowed origins are skipped. The body is JSON and the response is
  * always JSON, never a redirect or a page. An `Idempotency-Key` header makes a
  * replay answer with the first submission's ID.
  */
@@ -296,6 +300,12 @@ const receiveFromServer = Effect.fnUntraced(function* (
     intake.receiveFromServer(publicId, read.success.fields, {
       organizationId: token.organizationId,
       idempotencyKey,
+      ...(request.headers["rondyr-turnstile"] === "verify" && {
+        turnstile: {
+          token: read.success.token,
+          visitorIp: decodeIpAddress(request.headers["rondyr-visitor-ip"]),
+        },
+      }),
     }),
   );
   if (Result.isFailure(received)) return serverRefusal(received.failure);

@@ -136,7 +136,8 @@ export default {
     const body = await request.formData();
     const secret = body.get("secret");
     const token = body.get("response");
-    calls.push({ secret, token });
+    const remoteip = body.get("remoteip");
+    calls.push(remoteip === null ? { secret, token } : { secret, token, remoteip });
     const later = calls.filter((call) => call.secret === secret).length > 1;
     if (secret.startsWith("refused-") || (secret.startsWith("revoked-") && later)) {
       return Response.json({ success: false, "error-codes": ["invalid-input-secret"] }, { status: 400 });
@@ -156,6 +157,9 @@ export default {
     }
     if (token === "refused-with-400") {
       return Response.json({ success: false, "error-codes": ["invalid-input-response"] }, { status: 400 });
+    }
+    if (token === "expired") {
+      return Response.json({ success: false, "error-codes": ["timeout-or-duplicate"] });
     }
     if (token === "slow") await scheduler.wait(15_000);
     return token === "valid-" + secret

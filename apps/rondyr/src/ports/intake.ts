@@ -63,6 +63,10 @@ export interface ReceivedSubmission {
 export interface ServerIntake {
   readonly organizationId: OrganizationId;
   readonly idempotencyKey: Option.Option<IdempotencyKey>;
+  readonly turnstile?: {
+    readonly token: Option.Option<TurnstileToken>;
+    readonly visitorIp: Option.Option<string>;
+  };
 }
 
 export interface ReceivedFromServer {
@@ -104,8 +108,8 @@ export class SubmissionIntake extends Context.Service<
     /**
      * Store a submission sent by a server, in the same single D1 batch as
      * `receive`. The form must belong to the intake's organization, otherwise it
-     * is not found. The allowed origins and Turnstile do not apply; the honeypot
-     * field, the form cap and the organization quotas do.
+     * is not found. The honeypot, form cap and organization quotas apply.
+     * A server can opt in to Turnstile screening and provide the visitor's IP.
      *
      * With an idempotency key, the batch looks for a submission of the form with
      * that key before the insert. When one exists, nothing is stored and its ID

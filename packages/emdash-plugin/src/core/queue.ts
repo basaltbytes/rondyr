@@ -1,6 +1,7 @@
 import { z } from "astro/zod";
 
 import { AutoReply } from "./auto-reply.ts";
+import { Turnstile, VisitorLocale } from "./declared-forms.ts";
 import { FlatFields } from "./fields.ts";
 import { attemptLeaseMs, retryDelayMs, retryWindowMs, type SendOutcome } from "./retry.ts";
 
@@ -16,6 +17,12 @@ export type QueueState = z.infer<typeof QueueState>;
  * A submission waiting for Rondyr, stored under its submission ID, which is
  * also the `Idempotency-Key` of every attempt. Times are Unix milliseconds.
  */
+export const DeclaredSubmission = z.object({
+  locale: VisitorLocale,
+  turnstile: Turnstile.optional(),
+});
+export type DeclaredSubmission = z.infer<typeof DeclaredSubmission>;
+
 export const QueueEntry = z.object({
   formSlug: z.string().min(1),
   fields: FlatFields,
@@ -28,6 +35,7 @@ export const QueueEntry = z.object({
   lastStatus: z.number().int().nullable(),
   /** The auto-reply that the forms plugin held for a form linked to a Rondyr form, if any. */
   autoReply: AutoReply.optional(),
+  declared: DeclaredSubmission.optional(),
 });
 export type QueueEntry = z.infer<typeof QueueEntry>;
 

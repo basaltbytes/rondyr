@@ -67,16 +67,22 @@ curl --fail-with-body -X POST \
 
 Differences from public browser submissions:
 
-- **Skipped checks:** allowed origins, per-visitor rate limit (5/min), and Turnstile don't apply.
+- **Skipped checks:** allowed origins and the per-visitor rate limit (5/min).
 - **Kept checks:** the form's 30/min cap, daily organization quotas, suspended status, and honeypot field still apply.
 - **Format:** body must be `application/json` (flat object of strings), and the response is always `202` JSON with `{"submission-id", "status": "received"}`, never HTML or a redirect.
 - **Auth errors:** any request to `/f/{publicId}` with an `Authorization` header is treated as server intake and never falls back to public intake. An invalid or revoked token returns `401`; a token from another organization returns `404`.
+
+### Turnstile for forwarded submissions
+
+Send `Rondyr-Turnstile: verify` with the visitor's token in the `cf-turnstile-response` JSON field. Rondyr verifies against the keys of the destination form. You can also send `Rondyr-Visitor-IP` with the visitor's IPv4 or IPv6 address. Rondyr passes it as `remoteip` to Siteverify. Browser intake ignores both headers.
+
+Missing, refused, and expired tokens send messages to **To review** with `turnstile-failed`. The submission still gets `202` once stored. Without the opt-in header or when the form has no Turnstile keys, server intake skips verification. Rondyr removes the token before storing the message.
 
 ### Idempotency keys
 
 Include an `Idempotency-Key` header (1 to 128 printable ASCII characters) on server intake requests so retries never create duplicate messages.
 
-- A repeated request with the same key on the same form returns `202` with the original `submission-id` without creating a second submission or sending duplicate notifications (regardless of later form status or quota changes).
+- A repeated request with the same key on the same form returns `202` with the original `submission-id` without creating a second submission or sending duplicate notifications (regardless of later form status or quota changes). Rondyr skips Siteverify for a stored key, even if the original token has since expired.
 - Keys are scoped per form and last until that submission is deleted.
 - Malformed keys return `400`. Public browser requests without `Authorization` ignore `Idempotency-Key`.
 

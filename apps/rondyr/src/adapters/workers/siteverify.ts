@@ -1,4 +1,4 @@
-import { Effect, Layer, Redacted, Schema } from "effect";
+import { Effect, Layer, Option, Redacted, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import { SecretCipher } from "../../ports/secret-cipher.ts";
@@ -26,8 +26,14 @@ const tokenErrors: ReadonlySet<string> = new Set([
   "timeout-or-duplicate",
 ]);
 
-const siteverify = (client: HttpClient.HttpClient, secret: string, token: string) => {
+const siteverify = (
+  client: HttpClient.HttpClient,
+  secret: string,
+  token: string,
+  visitorIp = Option.none<string>(),
+) => {
   const params = new URLSearchParams({ secret, response: token });
+  if (Option.isSome(visitorIp)) params.set("remoteip", visitorIp.value);
   const request = HttpClientRequest.post(endpoint).pipe(
     HttpClientRequest.bodyText(params.toString(), "application/x-www-form-urlencoded"),
   );
@@ -50,12 +56,17 @@ export const turnstileVerifierLive = Layer.effect(
     // does not document the status of other refusals, so the decision comes from the body.
     const client = HttpClient.filterStatus(http, (status) => status === 200 || status === 400);
     const verify = Effect.fn("Turnstile.verify")(function* (
-      ...[publicId, sealed, token]: Parameters<TurnstileVerifier["Service"]["verify"]>
+      ...[publicId, sealed, token, visitorIp]: Parameters<TurnstileVerifier["Service"]["verify"]>
     ) {
       const secret = yield* cipher
         .open(sealed, turnstileSecretOwner(publicId))
         .pipe(Effect.mapError(() => TurnstileUnavailable.make({ source: "secret" })));
-      const reply = yield* siteverify(client, Redacted.value(secret), Redacted.value(token));
+      const reply = yield* siteverify(
+        client,
+        Redacted.value(secret),
+        Redacted.value(token),
+        visitorIp,
+      );
       const errors = reply["error-codes"] ?? [];
       if (errors.includes("internal-error") || errors.includes("invalid-input-secret")) {
         return yield* unavailable();

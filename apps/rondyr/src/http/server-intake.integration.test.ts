@@ -487,6 +487,148 @@ it.live("does not apply Turnstile to a server intake", () =>
   }),
 );
 
+const verify = { "rondyr-turnstile": "verify" };
+
+const protectedSite = Effect.fnUntraced(function* (name: string) {
+  const site = yield* siteWithToken(`Server Turnstile ${name}`);
+  const secret = `server-turnstile-${name}`;
+  const result = yield* call(
+    "PUT",
+    `/api/organizations/${site.organization.id}/forms/${site.publicId}/turnstile`,
+    { siteKey: "server_site_key", secretKey: secret },
+    { cookie: site.cookie },
+  );
+  assert.strictEqual(result.status, 200);
+  return { ...site, secret };
+});
+
+const readChecks = Schema.decodeUnknownEffect(
+  Schema.Array(
+    Schema.Struct({
+      secret: Schema.String,
+      token: Schema.String,
+      remoteip: Schema.optionalKey(Schema.String),
+    }),
+  ),
+);
+
+const checksFor = (secret: string) =>
+  Effect.promise(() =>
+    env.SITEVERIFY_FIXTURE.fetch(`https://siteverify.test/__calls?secret=${secret}`),
+  ).pipe(Effect.flatMap(json), Effect.flatMap(readChecks));
+
+it.live("verifies a server token with the forwarded visitor IP", () =>
+  Effect.gen(function* () {
+    const { publicId, token, secret } = yield* protectedSite("valid");
+    const response = `valid-${secret}`;
+
+    const id = yield* accept(
+      serverPost(
+        publicId,
+        token,
+        {
+          message: "Hello",
+          [turnstileField]: response,
+        },
+        { ...verify, "rondyr-visitor-ip": "2001:db8::8" },
+      ),
+    );
+
+    yield* expectReason(id, null);
+    const checks = yield* checksFor(secret);
+    assert.deepEqual(checks, [
+      { secret, token: "XXXX.DUMMY.TOKEN.XXXX" },
+      { secret, token: response, remoteip: "2001:db8::8" },
+    ]);
+  }),
+);
+
+for (const response of ["refused-with-400", "expired", undefined]) {
+  it.live(`stores a server submission for review when its token is ${response ?? "missing"}`, () =>
+    Effect.gen(function* () {
+      const { publicId, token } = yield* protectedSite(response ?? "missing");
+
+      const body =
+        response === undefined
+          ? { message: "Hello" }
+          : { message: "Hello", [turnstileField]: response };
+      const id = yield* accept(serverPost(publicId, token, body, verify));
+
+      yield* expectReason(id, "turnstile-failed");
+      yield* expectStored(publicId, 1);
+    }),
+  );
+}
+
+it.live("returns the stored ID on replay without checking the expired token", () =>
+  Effect.gen(function* () {
+    const { publicId, token, secret } = yield* protectedSite("replay");
+    const headers = { ...verify, "idempotency-key": "server-turnstile-replay" };
+    const first = yield* accept(
+      serverPost(
+        publicId,
+        token,
+        {
+          message: "Hello",
+          [turnstileField]: `valid-${secret}`,
+        },
+        headers,
+      ),
+    );
+
+    const replay = yield* accept(
+      serverPost(
+        publicId,
+        token,
+        {
+          message: "Hello",
+          [turnstileField]: "expired",
+        },
+        headers,
+      ),
+    );
+
+    assert.strictEqual(replay, first);
+    const checks = yield* checksFor(secret);
+    assert.lengthOf(checks, 2);
+    yield* expectStored(publicId, 1);
+  }),
+);
+
+it.live("ignores the forwarded visitor IP on a browser intake", () =>
+  Effect.gen(function* () {
+    const { publicId, secret } = yield* protectedSite("browser");
+
+    const id = yield* accept(
+      post(
+        publicId,
+        {
+          message: "Hello",
+          [turnstileField]: `valid-${secret}`,
+        },
+        { ...verify, "rondyr-visitor-ip": "192.0.2.10" },
+      ),
+    );
+
+    yield* expectReason(id, null);
+    const checks = yield* checksFor(secret);
+    assert.deepEqual(checks, [
+      { secret, token: "XXXX.DUMMY.TOKEN.XXXX" },
+      { secret, token: `valid-${secret}` },
+    ]);
+  }),
+);
+
+it.live("ignores the verification header on a form without keys", () =>
+  Effect.gen(function* () {
+    const { publicId, token } = yield* siteWithToken("Server Turnstile without keys");
+
+    const id = yield* accept(serverPost(publicId, token, undefined, verify));
+
+    yield* expectReason(id, null);
+  }),
+);
+
 it.live("stores a server intake with its key in one D1 call", () =>
   Effect.gen(function* () {
     const publicId = "server-intake-round-trip";

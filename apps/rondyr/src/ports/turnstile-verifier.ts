@@ -1,4 +1,4 @@
-import { Context, Effect, Redacted, Schema } from "effect";
+import { Context, Effect, Option, Redacted, Schema } from "effect";
 
 import type { TurnstileToken } from "../domain/forms/turnstile.ts";
 import type { SealedSecret } from "./secret-cipher.ts";
@@ -21,6 +21,7 @@ export class TurnstileVerifier extends Context.Service<
       publicId: string,
       secret: SealedSecret,
       token: TurnstileToken,
+      visitorIp: Option.Option<string>,
     ) => Effect.Effect<boolean, TurnstileUnavailable>;
     /** Ask Siteverify whether it knows a secret key, before the key is stored. */
     readonly checkSecret: (
