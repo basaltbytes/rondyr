@@ -14,6 +14,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { useFormats } from "~/lib/i18n";
 import { FormProblem } from "~/components/text-field";
 import {
@@ -97,15 +98,22 @@ function Deletion({ inboxId, submissionId, onDeleted }: DeletionProps) {
 
   return (
     <>
-      <Button
-        ref={trigger}
-        variant="ghost"
-        size="icon"
-        aria-label={t("inbox.reader.delete.action")}
-        onClick={() => setConfirming(true)}
-      >
-        <Trash2 aria-hidden="true" className="size-4" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              ref={trigger}
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t("inbox.reader.delete.action")}
+              onClick={() => setConfirming(true)}
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+            </Button>
+          }
+        />
+        <TooltipContent side="bottom">{t("inbox.reader.delete.action")}</TooltipContent>
+      </Tooltip>
       <AlertDialog.Root
         open={confirming}
         onOpenChange={(open) => {
@@ -207,10 +215,10 @@ export function SubmissionReader({
   const { sender, subject, body, details } = readMessage(detail?.fields ?? entry.preview);
   return (
     <>
-      <header className="flex h-14 shrink-0 items-center gap-2 hairline-b pr-5 pl-1">
+      <header className="@container flex h-14 shrink-0 items-center gap-1.5 hairline-b px-3">
         <Button
           variant="ghost"
-          size="icon"
+          size="icon-sm"
           aria-label={t("inbox.reader.back")}
           className="lg:hidden"
           onClick={onClose}
@@ -218,11 +226,11 @@ export function SubmissionReader({
           <ChevronLeft aria-hidden="true" className="size-4" />
         </Button>
         {position !== null && (
-          // A narrow screen keeps its width for the decision.
-          <div className="flex items-center max-sm:hidden">
+          // A narrow pane keeps its width for the decision.
+          <div className="hidden shrink-0 items-center gap-0.5 @sm:flex">
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               aria-label={t("inbox.reader.previous")}
               disabled={onPrevious === null}
               onClick={onPrevious ?? undefined}
@@ -231,14 +239,14 @@ export function SubmissionReader({
             </Button>
             <Button
               variant="ghost"
-              size="icon"
+              size="icon-sm"
               aria-label={t("inbox.reader.next")}
               disabled={onNext === null}
               onClick={onNext ?? undefined}
             >
               <ChevronDown aria-hidden="true" className="size-4" />
             </Button>
-            <p className="px-2 text-xs text-muted-foreground tabular-nums">
+            <p className="hidden px-1.5 text-xs whitespace-nowrap text-muted-foreground tabular-nums @md:block">
               {t("inbox.reader.position", {
                 position: format.count(position),
                 total: format.count(Math.max(position, total)),
@@ -250,29 +258,46 @@ export function SubmissionReader({
         {mayDelete && (
           <Deletion inboxId={inboxId} submissionId={submissionId} onDeleted={onDeleted} />
         )}
+        {mayDelete && entry.status === "quarantined" && (
+          <span aria-hidden="true" className="mx-1 h-4 w-px shrink-0 bg-border" />
+        )}
         {entry.status === "quarantined" && (
-          <form action={decide} className="flex gap-2">
+          <form action={decide} className="flex shrink-0 items-center gap-2">
             {entry.reason === "classification-error" && (
               // Only a message the filter could not analyze can go back to it.
-              <Button type="submit" name="decision" value="reclassify" disabled={pending}>
-                <RotateCw aria-hidden="true" className="size-4" />
-                <span className="max-sm:sr-only">{t("inbox.reader.reclassify")}</span>
-              </Button>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="submit"
+                      size="sm"
+                      name="decision"
+                      value="reclassify"
+                      disabled={pending}
+                    >
+                      <RotateCw aria-hidden="true" className="size-3.5" />
+                      <span className="@max-2xl:sr-only">{t("inbox.reader.reclassify")}</span>
+                    </Button>
+                  }
+                />
+                <TooltipContent side="bottom">{t("inbox.reader.reclassify")}</TooltipContent>
+              </Tooltip>
             )}
-            <Button type="submit" name="decision" value="dismiss" disabled={pending}>
-              <Archive aria-hidden="true" className="size-4" />
+            <Button type="submit" size="sm" name="decision" value="dismiss" disabled={pending}>
+              <Archive aria-hidden="true" className="size-3.5" />
               {t("inbox.reader.archive")}
             </Button>
             <Button
               type="submit"
               variant="default"
+              size="sm"
               name="decision"
               value="approve"
               disabled={pending}
             >
-              <Check aria-hidden="true" className="size-4" />
-              <span className="sm:hidden">{t("inbox.reader.accept")}</span>
-              <span className="max-sm:hidden">{t("inbox.reader.acceptAndSend")}</span>
+              <Check aria-hidden="true" className="size-3.5" />
+              <span className="@lg:hidden">{t("inbox.reader.accept")}</span>
+              <span className="hidden @lg:inline">{t("inbox.reader.acceptAndSend")}</span>
             </Button>
           </form>
         )}

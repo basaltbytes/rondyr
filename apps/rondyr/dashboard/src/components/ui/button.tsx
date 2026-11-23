@@ -19,8 +19,9 @@ const buttonVariants = cva(
         // 40px with a mouse, 44px under a finger.
         default: "h-10 px-4 pointer-coarse:h-11",
         // Looks 32px; the pseudo-element keeps the target at 40px.
-        sm: "relative h-8 px-3 before:absolute before:inset-x-0 before:-inset-y-1 pointer-coarse:h-11",
+        sm: "relative h-8 px-3 text-xs before:absolute before:inset-x-0 before:-inset-y-1 pointer-coarse:h-11",
         icon: "size-10 pointer-coarse:size-11",
+        "icon-sm": "relative size-8 before:absolute before:-inset-1 pointer-coarse:size-11",
       },
     },
     defaultVariants: { variant: "outline", size: "default" },
