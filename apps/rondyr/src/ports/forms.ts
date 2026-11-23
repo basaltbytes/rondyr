@@ -44,7 +44,7 @@ export class Forms extends Context.Service<
       organization: OrganizationScope,
       input: typeof CreateForm.Type,
     ) => Effect.Effect<Managed, Failure>;
-    /** Rename the form, change its business context, or both. */
+    /** Rename the form, change its emoji or its business context, or several of them. */
     readonly update: (
       form: FormScope,
       changes: typeof UpdateForm.Type,

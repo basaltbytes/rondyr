@@ -25,6 +25,7 @@ import {
 } from "~/lib/inbox-client";
 import type { Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
 
+import { FormEmoji } from "./form-emoji.tsx";
 import { DeliveryHistory } from "./delivery-history.tsx";
 import { readMessage } from "./message-preview.ts";
 
@@ -50,6 +51,8 @@ interface SubmissionReaderProps {
   readonly inboxId: Inbox["id"];
   /** The message as the list has it. Its preview is shown until the full fields arrive. */
   readonly entry: SubmissionEntry;
+  /** The form of the message, when its emoji tells it apart from the other forms. */
+  readonly fromForm: Inbox["forms"][number] | undefined;
   readonly revision: number;
   /** The place of the message in the list, from 1, or null when the list does not have it. */
   readonly position: number | null;
@@ -159,6 +162,7 @@ function Deletion({ inboxId, submissionId, onDeleted }: DeletionProps) {
 export function SubmissionReader({
   inboxId,
   entry,
+  fromForm,
   revision,
   position,
   total,
@@ -323,11 +327,14 @@ export function SubmissionReader({
                 <p className="text-sm wrap-anywhere text-muted-foreground">{sender.email}</p>
               )}
             </div>
-            <p className="text-xs wrap-anywhere text-muted-foreground">
-              {entry.formName} ·{" "}
-              <time dateTime={new Date(entry.receivedAt).toISOString()} className="tabular-nums">
-                {format.longDateTime(entry.receivedAt)}
-              </time>
+            <p className="flex flex-wrap items-center gap-x-1.5 text-xs wrap-anywhere text-muted-foreground">
+              {fromForm !== undefined && <FormEmoji form={fromForm} className="text-sm" />}
+              <span>
+                {entry.formName} ·{" "}
+                <time dateTime={new Date(entry.receivedAt).toISOString()} className="tabular-nums">
+                  {format.longDateTime(entry.receivedAt)}
+                </time>
+              </span>
             </p>
           </header>
           {problem !== null && (

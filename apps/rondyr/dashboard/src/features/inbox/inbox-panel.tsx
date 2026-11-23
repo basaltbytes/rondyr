@@ -1,4 +1,5 @@
 import { cn } from "cn";
+import { Schema } from "effect";
 import { lazy, Suspense, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -11,7 +12,13 @@ import { ProductLogo } from "~/components/product-logo";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "~/components/ui/sidebar";
 import { listApiTokens } from "~/lib/api-tokens-client";
 import { getClassificationSettings } from "~/lib/classification-policy-client";
-import { countSubmissions, exportAddress, listInboxes, listSubmissions } from "~/lib/inbox-client";
+import {
+  countSubmissions,
+  exportAddress,
+  InboxRequestError,
+  listInboxes,
+  listSubmissions,
+} from "~/lib/inbox-client";
 import { listMembers } from "~/lib/members-client";
 import type { MemberList } from "~/lib/members-client";
 import type { Counts, Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
@@ -20,17 +27,30 @@ import { getDailyUsage } from "~/lib/organization-quotas-client";
 import { getRetention } from "~/lib/retention-client";
 
 import { InboxSetup } from "./inbox-setup.tsx";
-import { countsAfterMove, countsAfterRemoval, countsOfForm, totalOf } from "./folder-counts.ts";
+import {
+  countsAfterMove,
+  countsAfterRemoval,
+  countsOfForm,
+  formsOfFolder,
+  totalOf,
+} from "./folder-counts.ts";
 import type { Folder } from "./folder-counts.ts";
 import { InboxSidebar } from "./inbox-sidebar.tsx";
-import type { Section } from "./inbox-sidebar.tsx";
+import type { Page, SettingsSection } from "./inbox-sidebar.tsx";
 import { MessageList } from "./message-list.tsx";
+import { OrganizationsUnavailable } from "./organizations-unavailable.tsx";
+import type { LoadFailure } from "./organizations-unavailable.tsx";
 import { SubmissionReader } from "./submission-reader.tsx";
 
-// The settings are not part of the first paint, so their code loads when one of them opens.
-const InboxSettings = lazy(async () => {
-  const { InboxSettings: Settings } = await import("./inbox-settings.tsx");
-  return { default: Settings };
+// The pages of the forms and of the settings are not part of the first paint, so
+// their code loads when one of them opens.
+const FormPage = lazy(async () => {
+  const { FormPage: Loaded } = await import("./form-page.tsx");
+  return { default: Loaded };
+});
+const NewFormPage = lazy(async () => {
+  const { NewFormPage: Loaded } = await import("./form-page.tsx");
+  return { default: Loaded };
 });
 const ApiTokenSettings = lazy(async () => {
   const { ApiTokenSettings: Settings } = await import("./api-token-settings.tsx");
@@ -57,6 +77,15 @@ const QuotaSettings = lazy(async () => {
   return { default: Settings };
 });
 
+const isRequestError = Schema.is(InboxRequestError);
+
+/** Why a read of the organizations failed, from the error that the request threw. */
+function loadFailureOf(error: Error): LoadFailure {
+  if (isRequestError(error)) return { status: error.status };
+  // `fetch` rejects with a TypeError when the server cannot be reached.
+  return error instanceof TypeError ? "unreachable" : "unreadable";
+}
+
 /**
  * Holds the place of a page while its code loads. It has the bar and the menu
  * button that every page starts with, so nothing moves when the page arrives.
@@ -80,6 +109,7 @@ interface Listing {
   readonly readAt: number;
 }
 
+/** A page of the settings, with what it shows, read when the page opens. */
 type SettingsSelection =
   | { readonly section: "apiTokens"; readonly tokens: Promise<ApiTokenList | null> }
   | {
@@ -100,12 +130,59 @@ type SettingsSelection =
       readonly section: "quotas";
       readonly usage: Promise<Awaited<ReturnType<typeof getDailyUsage>> | null>;
     }
-  | {
-      readonly section: Exclude<
-        Section,
-        "domains" | "classification" | "quotas" | "apiTokens" | "members" | "retention"
-      >;
-    };
+  | { readonly section: "operations" };
+
+/** What the dashboard shows in place of the messages. */
+type Selection =
+  | Exclude<Page, { readonly at: "settings" }>
+  | { readonly at: "settings"; readonly settings: SettingsSelection };
+
+interface SettingsPageProps {
+  readonly inboxId: Inbox["id"];
+  readonly settings: SettingsSelection;
+  /** The page of the processing status, which another feature owns. */
+  readonly operations: ReactNode;
+  /** Read a page again after a failure. */
+  readonly onOpen: (section: SettingsSection) => void;
+  readonly onOwnMembershipChanged: () => void;
+}
+
+/** One page of the settings of the organization. */
+function SettingsPage({
+  inboxId,
+  settings,
+  operations,
+  onOpen,
+  onOwnMembershipChanged,
+}: SettingsPageProps) {
+  const retry = () => onOpen(settings.section);
+  switch (settings.section) {
+    case "operations":
+      return operations;
+    case "domains":
+      return <OrganizationDomains inboxId={inboxId} domains={settings.domains} onRetry={retry} />;
+    case "classification":
+      return (
+        <ClassificationSettings inboxId={inboxId} settings={settings.policy} onRetry={retry} />
+      );
+    case "apiTokens":
+      return <ApiTokenSettings inboxId={inboxId} tokens={settings.tokens} onRetry={retry} />;
+    case "members":
+      return (
+        <MemberSettings
+          inboxId={inboxId}
+          members={settings.members}
+          readAt={settings.readAt}
+          onRetry={retry}
+          onOwnMembershipChanged={onOwnMembershipChanged}
+        />
+      );
+    case "retention":
+      return <RetentionSettings inboxId={inboxId} retention={settings.retention} onRetry={retry} />;
+    case "quotas":
+      return <QuotaSettings inboxId={inboxId} usage={settings.usage} onRetry={retry} />;
+  }
+}
 
 interface InboxViewProps {
   readonly inboxes: readonly Inbox[];
@@ -134,10 +211,19 @@ function InboxView({
   const [form, setForm] = useState<string | null>(null);
   // The text that the list is narrowed to.
   const [searchText, setSearch] = useState<string | null>(null);
-  const [selected, setSettings] = useState<SettingsSelection | null>(null);
-  // A reviewer has no settings page, even one that was open before a change of role.
-  const settings =
-    allows(inbox.role, "manage-settings") || selected?.section === "organization" ? selected : null;
+  const [selected, setSelected] = useState<Selection | null>(null);
+  // A reviewer has no page of forms or of settings, even one that was open before a change of role.
+  const selection =
+    allows(inbox.role, "manage-settings") || selected?.at === "organization" ? selected : null;
+  const shownPage: Page | null =
+    selection?.at === "settings"
+      ? { at: "settings", section: selection.settings.section }
+      : selection;
+  // A form's page shows the form as the organization has it now.
+  const shownForm =
+    selection?.at === "form"
+      ? inbox.forms.find(({ publicId }) => publicId === selection.publicId)
+      : undefined;
   const [listing, setListing] = useState<Listing | null>(null);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [opened, setOpened] = useState<SubmissionEntry | null>(null);
@@ -146,7 +232,6 @@ function InboxView({
   const [loadingMore, setLoadingMore] = useState(false);
 
   const status = folder === "all" ? "" : folder;
-  const section = settings?.section ?? null;
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Synchronizes the list of messages with the Rondyr API.
   useEffect(() => {
@@ -187,10 +272,9 @@ function InboxView({
   // The counts know nothing of a search.
   const total = searchText === null ? inForm : null;
   const mayExport = allows(inbox.role, "export-submissions");
-  const formName = inbox.forms.find(({ publicId }) => publicId === form)?.name ?? null;
 
   function openFolder(next: Folder, nextForm: string | null) {
-    setSettings(null);
+    setSelected(null);
     setOpened(null);
     if (next === folder && nextForm === form) return;
     setFolder(next);
@@ -200,26 +284,41 @@ function InboxView({
   }
 
   function openDomains() {
-    setSettings({ section: "domains", domains: listDomains(inbox.id).catch(() => null) });
+    setSelected({
+      at: "settings",
+      settings: { section: "domains", domains: listDomains(inbox.id).catch(() => null) },
+    });
   }
 
   function openClassification() {
-    setSettings({
-      section: "classification",
-      policy: getClassificationSettings(inbox.id).catch(() => null),
+    setSelected({
+      at: "settings",
+      settings: {
+        section: "classification",
+        policy: getClassificationSettings(inbox.id).catch(() => null),
+      },
     });
   }
 
   function openQuotas() {
-    setSettings({ section: "quotas", usage: getDailyUsage(inbox.id).catch(() => null) });
+    setSelected({
+      at: "settings",
+      settings: { section: "quotas", usage: getDailyUsage(inbox.id).catch(() => null) },
+    });
   }
 
   function openApiTokens() {
-    setSettings({ section: "apiTokens", tokens: listApiTokens(inbox.id).catch(() => null) });
+    setSelected({
+      at: "settings",
+      settings: { section: "apiTokens", tokens: listApiTokens(inbox.id).catch(() => null) },
+    });
   }
 
   function openRetention() {
-    setSettings({ section: "retention", retention: getRetention(inbox.id).catch(() => null) });
+    setSelected({
+      at: "settings",
+      settings: { section: "retention", retention: getRetention(inbox.id).catch(() => null) },
+    });
   }
 
   function search(next: string | null) {
@@ -231,23 +330,33 @@ function InboxView({
   }
 
   function openMembers() {
-    setSettings({
-      section: "members",
-      members: listMembers(inbox.id).catch(() => null),
-      readAt: Date.now(),
+    setSelected({
+      at: "settings",
+      settings: {
+        section: "members",
+        members: listMembers(inbox.id).catch(() => null),
+        readAt: Date.now(),
+      },
     });
   }
 
-  function openSection(next: Section) {
-    if (next === section) return;
-    setOpened(null);
+  function openSettings(next: SettingsSection) {
     if (next === "domains") openDomains();
     else if (next === "classification") openClassification();
     else if (next === "quotas") openQuotas();
     else if (next === "apiTokens") openApiTokens();
     else if (next === "members") openMembers();
     else if (next === "retention") openRetention();
-    else setSettings({ section: next });
+    else setSelected({ at: "settings", settings: { section: next } });
+  }
+
+  function openPage(next: Page) {
+    setOpened(null);
+    if (next.at !== "settings") setSelected(next);
+    // A page of the settings that is already open keeps what it has read.
+    else if (shownPage?.at !== "settings" || shownPage.section !== next.section) {
+      openSettings(next.section);
+    }
   }
 
   async function loadMore() {
@@ -320,19 +429,23 @@ function InboxView({
         inbox={inbox}
         counts={counts}
         folder={folder}
-        form={form}
-        section={section}
+        page={shownPage}
         account={account}
         onInbox={onInbox}
-        onFolder={openFolder}
-        onSection={openSection}
+        onFolder={(next) => openFolder(next, null)}
+        onBack={() => openFolder(folder, form)}
+        onPage={openPage}
       />
       <SidebarInset className="lg:grid lg:h-dvh lg:inbox-panes">
-        {settings === null ? (
+        {selection === null || (selection.at === "form" && shownForm === undefined) ? (
           <>
             <MessageList
               folder={folder}
-              formName={formName}
+              forms={inbox.forms}
+              formsOfFolder={
+                counts === null ? [] : formsOfFolder(inbox.forms, counts, folder, form)
+              }
+              form={form}
               entries={listing?.entries ?? null}
               total={total}
               elsewhere={inFolder === null || total === null ? null : inFolder - total}
@@ -345,7 +458,7 @@ function InboxView({
               onOpen={setOpened}
               onMore={() => void loadMore()}
               onRefresh={() => setRevision((value) => value + 1)}
-              onAllForms={() => openFolder(folder, null)}
+              onForm={(next) => openFolder(folder, next)}
               search={searchText}
               onSearch={search}
               exports={
@@ -371,6 +484,11 @@ function InboxView({
                   key={current.submissionId}
                   inboxId={inbox.id}
                   entry={current}
+                  fromForm={
+                    inbox.forms.length > 1
+                      ? inbox.forms.find(({ publicId }) => publicId === current.formPublicId)
+                      : undefined
+                  }
                   revision={revision}
                   position={index < 0 ? null : index + 1}
                   total={total ?? listing?.entries.length ?? 0}
@@ -387,48 +505,44 @@ function InboxView({
           </>
         ) : (
           <Suspense fallback={<PageFallback />}>
-            {settings.section === "operations" ? (
-              operations
-            ) : settings.section === "domains" ? (
-              <OrganizationDomains
+            {selection.at === "form" && shownForm !== undefined && (
+              <FormPage
+                key={shownForm.publicId}
                 inboxId={inbox.id}
-                domains={settings.domains}
-                onRetry={openDomains}
+                form={shownForm}
+                messages={
+                  counts === null ? null : totalOf(countsOfForm(counts, shownForm.publicId), "all")
+                }
+                onChanged={onFormsChanged}
+                onMessages={() => openFolder("all", shownForm.publicId)}
               />
-            ) : settings.section === "classification" ? (
-              <ClassificationSettings
+            )}
+            {selection.at === "newForm" && (
+              <NewFormPage
                 inboxId={inbox.id}
-                settings={settings.policy}
-                onRetry={openClassification}
+                onCreated={async (publicId) => {
+                  await onFormsChanged();
+                  setSelected({ at: "form", publicId });
+                }}
               />
-            ) : settings.section === "apiTokens" ? (
-              <ApiTokenSettings
+            )}
+            {selection.at === "organization" && (
+              <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
+                <header className="flex h-14 items-center px-1">
+                  <SidebarTrigger />
+                </header>
+                <div className="mx-auto max-w-xl px-5 pb-8">
+                  <InboxSetup onCreated={onOrganizationCreated} />
+                </div>
+              </main>
+            )}
+            {selection.at === "settings" && (
+              <SettingsPage
                 inboxId={inbox.id}
-                tokens={settings.tokens}
-                onRetry={openApiTokens}
-              />
-            ) : settings.section === "members" ? (
-              <MemberSettings
-                inboxId={inbox.id}
-                members={settings.members}
-                readAt={settings.readAt}
-                onRetry={openMembers}
+                settings={selection.settings}
+                operations={operations}
+                onOpen={openSettings}
                 onOwnMembershipChanged={() => void onFormsChanged()}
-              />
-            ) : settings.section === "retention" ? (
-              <RetentionSettings
-                inboxId={inbox.id}
-                retention={settings.retention}
-                onRetry={openRetention}
-              />
-            ) : settings.section === "quotas" ? (
-              <QuotaSettings inboxId={inbox.id} usage={settings.usage} onRetry={openQuotas} />
-            ) : (
-              <InboxSettings
-                section={settings.section}
-                inbox={inbox}
-                onFormsChanged={onFormsChanged}
-                onOrganizationCreated={onOrganizationCreated}
               />
             )}
           </Suspense>
@@ -476,30 +590,31 @@ export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
   const { t } = useTranslation();
   const [inboxes, setInboxes] = useState<readonly Inbox[] | null>(null);
   const [active, setActive] = useState("");
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<LoadFailure | null>(null);
   const [revision, setRevision] = useState(0);
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Loads the signed-in user's organizations from the Rondyr API.
   useEffect(() => {
     const request = new AbortController();
-    void listInboxes(request.signal).then(setInboxes, () => {
-      if (!request.signal.aborted) setFailed(true);
+    void listInboxes(request.signal).then(setInboxes, (error: Error) => {
+      if (!request.signal.aborted) setFailure(loadFailureOf(error));
     });
     return () => request.abort();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Creating a new inbox initiates a new API request.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Creating a new inbox and a new try initiate a new API request.
   }, [revision]);
 
   async function reload() {
-    try {
-      setInboxes(await listInboxes());
-    } catch {
-      setFailed(true);
-    }
+    await listInboxes().then(setInboxes, (error: Error) => setFailure(loadFailureOf(error)));
   }
 
-  function created() {
-    setFailed(false);
+  /** Read the organizations again: after one was created, or after a failure. */
+  function readAgain() {
+    setFailure(null);
     setRevision((value) => value + 1);
+  }
+
+  if (failure !== null) {
+    return <OrganizationsUnavailable failure={failure} onRetry={readAgain} signOut={signOut} />;
   }
 
   const inbox = inboxes?.find(({ id }) => id === active) ?? inboxes?.[0];
@@ -513,7 +628,7 @@ export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
         operations={operations}
         onInbox={setActive}
         onFormsChanged={reload}
-        onOrganizationCreated={created}
+        onOrganizationCreated={readAgain}
       />
     );
   }
@@ -523,18 +638,16 @@ export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
       <h1 className="flex justify-center">
         <ProductLogo size="lg" />
       </h1>
-      {failed && (
-        <p role="alert" className="text-sm text-destructive">
-          {t("inbox.organizations.loadFailed")}
-        </p>
-      )}
-      {inboxes === null && !failed && (
-        <output className="text-sm text-muted-foreground">
+      {inboxes === null ? (
+        <output className="text-center text-sm text-muted-foreground">
           {t("inbox.organizations.loading")}
         </output>
+      ) : (
+        <>
+          <InboxSetup onCreated={readAgain} />
+          {signOut}
+        </>
       )}
-      {inboxes !== null && <InboxSetup onCreated={created} />}
-      {signOut}
     </main>
   );
 }

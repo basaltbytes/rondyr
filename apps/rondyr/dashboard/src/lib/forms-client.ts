@@ -44,18 +44,29 @@ const forms = (id: Inbox["id"]) => `/api/organizations/${encodeURIComponent(id)}
 const form = (id: Inbox["id"], publicId: Form["publicId"]) =>
   `${forms(id)}/${encodeURIComponent(publicId)}`;
 
-export async function createForm(id: Inbox["id"], name: string, businessContext: string) {
-  const body = parseCreate({ name, businessContext });
+/** What a new form starts with. An empty business context is stored as none. */
+export interface NewForm {
+  readonly name: string;
+  readonly emoji: string | null;
+  readonly businessContext: string;
+}
+
+export async function createForm(id: Inbox["id"], { name, emoji, businessContext }: NewForm) {
+  const body = parseCreate(
+    emoji === null ? { name, businessContext } : { name, emoji, businessContext },
+  );
   return send(forms(id), { method: "POST", headers: json, body: JSON.stringify(body) });
 }
+
+/** The name, the emoji or the business context of a form, or several of them. */
+export type FormChanges = typeof UpdateForm.Encoded;
 
 export async function updateForm(
   id: Inbox["id"],
   publicId: Form["publicId"],
-  name: string,
-  businessContext: string,
+  changes: FormChanges,
 ) {
-  const body = parseUpdate({ name, businessContext });
+  const body = parseUpdate(changes);
   return send(form(id, publicId), { method: "PATCH", headers: json, body: JSON.stringify(body) });
 }
 

@@ -43,10 +43,10 @@ Requires **Workers Paid** and a sender domain whose DNS is on Cloudflare in the 
 
 ## 2. Add an email destination to a form
 
-1. Open **Settings → Destinations** in the Rondyr dashboard (admins only) and select your form.
-2. Under **Emails**, enter 1 to 10 bare email addresses (one per line, no display names or angle brackets), pick the **Email language** (**English** or **French**), and select **Add destination**.
+1. Open your form from **Forms** in the sidebar of the Rondyr dashboard (admins only) and go to **Destinations**.
+2. Under **New destination**, choose **Email**, enter 1 to 10 bare email addresses (one per line, no display names or angle brackets), pick the **Email language** (**English** or **French**), and select **Add destination**.
 
-![Settings Destinations screen focused on Emails, showing studio@claywork.example as Confirmed, bookings@claywork.example as Waiting for confirmation with Send again, Send a test, and Edit recipients](./screenshots/destinations-email.webp)
+![Destinations of the Contact form with an email destination open, showing studio@claywork.example as Confirmed, bookings@claywork.example as Waiting for confirmation with Send again, Send a test, and Edit recipients](./screenshots/destinations-email.webp)
 
 Messages accepted before you create (or reactivate) an email destination aren't sent to it retroactively.
 
@@ -55,7 +55,7 @@ Messages accepted before you create (or reactivate) an email destination aren't 
 Rondyr only sends form messages to addresses whose owners have opted in. When you add an address for the first time in an organization, Rondyr emails it a single-use confirmation link valid for 7 days.
 
 1. The recipient opens the link and selects **Confirm my address**.
-2. Once confirmed, their badge in **Destinations** switches from **Waiting for confirmation** to **Confirmed**.
+2. Once confirmed, their badge in the open destination switches from **Waiting for confirmation** to **Confirmed**.
 3. If an email was missed or expired, select **Send again** next to the address (up to 3 confirmation emails per address per UTC day).
 
 An address is confirmed once per organization and then works across all forms in that organization. Deliveries and test emails go only to confirmed recipients; if no recipient on a destination has confirmed yet, the delivery fails with a note explaining that nobody has confirmed.

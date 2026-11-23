@@ -100,6 +100,7 @@ describe("Rondyr Worker", () => {
           organizationId: "test-org",
           publicId: "contact",
           name: "Contact",
+          emoji: null,
           businessContext: null,
           status: "active",
           successUrl: null,

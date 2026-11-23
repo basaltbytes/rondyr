@@ -63,7 +63,7 @@ The origin is an HTTPS origin without a path or a port; `http://localhost` also 
 The submission check sends one synthetic enquiry about a pottery workshop to the form, reads it back with the API token, and waits up to three minutes for the classifier to accept it or place it in quarantine. A classifier error or a quarantine at intake fails the check. Set it up once:
 
 1. Create an organization for the test and a form with a business context that fits the enquiry, such as a pottery workshop. Add no honeypot field, Turnstile keys, webhook or email destination, so that the test sends no notification and intake does not quarantine it.
-2. In **Forms**, copy the form's public ID: the last part of its submission URL, after `/f/`.
+2. On the form's page, copy the form's public ID: the last part of its submission address, after `/f/`.
 3. In **Settings → API tokens** of that organization, create a token named `Smoke test` and copy it. Rondyr shows it once. The token can read and review the inbox of the test organization only.
 
 Each run leaves a message in the test organization and uses one of its daily classifications. The script prints one line and no response body or credential. When it fails:

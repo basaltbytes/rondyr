@@ -29,11 +29,30 @@ export const HoneypotField = Schema.Trim.check(
 
 export const SetHoneypotField = Schema.Struct({ field: HoneypotField });
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const pictograph = /\p{Extended_Pictographic}|\p{Regional_Indicator}/u;
+
+/** Whether a text is one emoji as a reader sees it: a single grapheme with a pictograph. */
+function isOneEmoji(text: string) {
+  const [first, second] = graphemes.segment(text);
+  return first !== undefined && second === undefined && pictograph.test(text);
+}
+
+/**
+ * The emoji shown next to the form's name, so a reader tells the forms of an
+ * organization apart at a glance: one emoji, a flag or a joined sequence included.
+ */
+export const FormEmoji = Schema.Trim.check(
+  Schema.isMaxLength(64),
+  Schema.makeFilter((text) => isOneEmoji(text) || "Expected a single emoji"),
+);
+
 /** A form of one of the account's organizations, as the admin API returns it. */
 export const ManagedForm = Schema.Struct({
   name: Schema.String,
   publicId: Schema.String,
   status: FormStatus,
+  emoji: Schema.NullOr(Schema.String),
   businessContext: Schema.NullOr(Schema.String),
   successUrl: Schema.NullOr(Schema.String),
   honeypotField: Schema.NullOr(Schema.String),
@@ -42,19 +61,22 @@ export const ManagedForm = Schema.Struct({
 
 export const CreateForm = Schema.Struct({
   name: FormName,
+  emoji: Schema.optionalKey(FormEmoji),
   businessContext: Schema.optionalKey(BusinessContext),
 });
 
-/** A change of name, of business context, or of both. */
+/** A change of name, of emoji, of business context, or of several of them. */
 export const UpdateForm = Schema.Struct({
   name: Schema.optionalKey(FormName),
+  emoji: Schema.optionalKey(FormEmoji),
   businessContext: Schema.optionalKey(BusinessContext),
 }).check(
   Schema.makeFilter(
     (changes) =>
       changes.name !== undefined ||
+      changes.emoji !== undefined ||
       changes.businessContext !== undefined ||
-      "Expected a name or a business context",
+      "Expected a name, an emoji or a business context",
   ),
 );
 

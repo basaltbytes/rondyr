@@ -3,11 +3,17 @@
     "cancel": "Cancel",
     "loading": "Loading…",
     "refresh": "Refresh",
-    "save": "Save"
+    "save": "Save",
+    "saved": "Saved"
   },
   "languages": {
     "en": "English",
     "fr": "Français"
+  },
+  "themes": {
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
   },
   "session": {
     "checking": "Checking the session…"
@@ -19,7 +25,8 @@
   "authentication": {
     "account": {
       "label": "Account {{email}}",
-      "language": "Language"
+      "language": "Language",
+      "theme": "Theme"
     },
     "signIn": {
       "title": "Sign in",
@@ -137,6 +144,9 @@
       "label": "Navigation",
       "messages": "Messages",
       "settings": "Settings",
+      "back": "Back to the inbox",
+      "organization": "Organization",
+      "filtering": "Filtering",
       "operations": "Operations"
     },
     "folders": {
@@ -146,7 +156,6 @@
       "all": "All messages"
     },
     "folderTotal": "{{folder}} · {{total}}",
-    "folderForms": "Forms in “{{folder}}”",
     "sections": {
       "forms": "Forms",
       "destinations": "Destinations",
@@ -176,7 +185,14 @@
       "forms_many": "{{count}} forms",
       "forms_other": "{{count}} forms",
       "loading": "Loading the organizations…",
-      "loadFailed": "Could not load the organizations."
+      "unavailable": {
+        "title": "Rondyr can’t show your organizations",
+        "unreachable": "The server did not answer. Check your connection, then try again.",
+        "status": "The server answered with an error (HTTP {{status}}). If you run this instance, read the Worker’s logs and check that the database migrations are applied.",
+        "signedOut": "Your session has ended. Sign out, then sign in again.",
+        "unreadable": "The dashboard could not read the server’s answer, which happens when the two are not the same version. Reload the page.",
+        "retry": "Try again"
+      }
     },
     "setup": {
       "description": "An organization has its own inbox, forms and destinations.",
@@ -217,7 +233,6 @@
         }
       },
       "form": {
-        "remove": "Remove the filter on {{name}}",
         "empty": {
           "title": "No messages from {{name}}",
           "others_zero": "The other forms have none here either.",
@@ -226,6 +241,10 @@
           "others_other": "The other forms have {{count}} messages here.",
           "showAll": "Show all forms"
         }
+      },
+      "forms": {
+        "label": "Filter by form",
+        "all": "All forms"
       },
       "search": {
         "label": "Search messages",
@@ -310,23 +329,21 @@
       }
     },
     "forms": {
-      "label": "Forms of the organization",
-      "new": "New",
       "newTitle": "New form",
-      "back": "Back to the forms",
-      "empty": {
-        "title": "No forms",
-        "note": "A form gives you a submission address to put on your site."
-      },
-      "none": "This organization has no form yet. Create one in Forms.",
       "settings": "Settings of the form {{name}}",
       "statuses": {
         "active": "Active",
         "suspended": "Suspended"
       },
       "name": "Form name",
+      "emoji": {
+        "label": "Emoji of the form",
+        "change": "Change the emoji"
+      },
+      "status": "Status",
+      "businessPlaceholder": "Describe the business, so the filter can tell an off-topic message.",
+      "messages": "Messages of the form {{name}}",
       "add": "Add form",
-      "edit": "Edit",
       "address": {
         "title": "Submission address",
         "active": "The address to put in the action attribute of your form, or to call with POST.",
@@ -335,19 +352,14 @@
         "copied": "Address copied"
       },
       "details": {
-        "title": "Name and business",
-        "noBusiness": "No business described. The relevance of messages is not evaluated.",
         "new": "The form gets a submission address when it is created. The address never changes."
       },
       "redirect": {
-        "title": "Redirect after submission",
         "confirmationPage": "After a submission from an HTML form, the visitor sees the Rondyr confirmation page. $t(inbox.forms.redirect.origin)",
-        "successUrl": "After a submission from an HTML form, the visitor sees <code>{{url}}</code>. $t(inbox.forms.redirect.origin)",
+        "redirects": "After a submission from an HTML form, the visitor goes to this URL. $t(inbox.forms.redirect.origin)",
         "origin": "The origin of the redirect URL must be in the allowed origins of the form.",
         "url": "Redirect URL",
         "placeholder": "https://www.example.com/thanks",
-        "save": "Save redirect",
-        "remove": "Remove redirect",
         "refusals": {
           "invalid-url": "Enter a full URL, for example https://www.example.com/thanks.",
           "not-https": "The URL must start with https://.",
@@ -356,18 +368,16 @@
         }
       },
       "honeypot": {
-        "title": "Honeypot field",
-        "none": "No honeypot field. $t(inbox.forms.honeypot.instructions)",
-        "current": "Current field: <code>{{field}}</code>. $t(inbox.forms.honeypot.instructions)",
         "instructions": "Add a text field with this name to your form, hidden with CSS, with <code>tabindex=\"-1\"</code> and <code>autocomplete=\"off\"</code>. Visitors leave it empty. A message that fills it goes to review without analysis.",
         "name": "Honeypot field name",
-        "placeholder": "_hp",
-        "save": "Save honeypot field",
-        "remove": "Remove honeypot field"
+        "placeholder": "_hp"
       },
       "turnstile": {
         "title": "Turnstile",
         "description": "Use the site key and secret key from your Cloudflare Turnstile widget.",
+        "configure": "Configure",
+        "on": "On",
+        "off": "Off",
         "key": {
           "checking": "Checking the stored secret key with Cloudflare…",
           "working": "Cloudflare accepts the stored secret key.",
@@ -392,8 +402,6 @@
         "saveFailed": "Couldn’t save the Turnstile settings."
       },
       "suspension": {
-        "title": "Suspension",
-        "suspendedTitle": "Form suspended",
         "description": "A suspended form refuses new messages with status 403. Received messages, destinations and the submission address are kept.",
         "suspend": "Suspend form",
         "confirm": "Confirm suspension",
@@ -504,7 +512,7 @@
       "origin": "Origin",
       "placeholder": "https://www.example.com",
       "add": "Add origin",
-      "remove": "Remove",
+      "removeLabel": "Remove {{origin}}",
       "inUse": "The redirect of this form points to this origin. Remove the redirect first.",
       "refusals": {
         "invalid-origin": "Enter a full origin, for example https://www.example.com.",
@@ -519,8 +527,6 @@
       }
     },
     "destinations": {
-      "deactivate": "Deactivate",
-      "reactivate": "Reactivate",
       "notSaved": "The change could not be saved. Try again.",
       "test": {
         "send": "Send a test",
@@ -533,17 +539,21 @@
         "notSent": "The test message could not be sent. Try again.",
         "limited": "This destination already got 3 tests this minute. Wait a minute and try again.",
         "limitUnavailable": "Rondyr could not check the test limit of this destination, so it sent nothing. Try again in a minute."
-      }
+      },
+      "label": "Destinations of the form {{name}}",
+      "loading": "Loading the destinations…",
+      "loadFailed": "Could not load the destinations.",
+      "empty": "No destinations for this form.",
+      "new": "New destination",
+      "kinds": {
+        "webhook": "Webhook",
+        "email": "Email"
+      },
+      "settingsOf": "Settings of {{name}}",
+      "active": "Send messages to {{name}}"
     },
     "webhooks": {
-      "label": "Webhooks of the form {{name}}",
-      "title": "Webhooks",
       "description": "Each accepted message is sent in a POST request to these URLs, signed with the webhook secret.",
-      "loading": "Loading the webhooks…",
-      "loadFailed": "Could not load the webhooks.",
-      "empty": "No webhooks for this form.",
-      "active": "Active",
-      "inactive": "Inactive",
       "previousSecret": "The previous secret also signs requests until {{date}}.",
       "rotate": "Rotate secret",
       "secret": {
@@ -569,14 +579,7 @@
       }
     },
     "emails": {
-      "label": "Email destinations of the form {{name}}",
-      "title": "Emails",
       "description": "Each accepted message is sent as plain text to the recipients of each destination, in the language of the destination.",
-      "loading": "Loading the email destinations…",
-      "loadFailed": "Could not load the email destinations.",
-      "empty": "No email destinations for this form.",
-      "active": "Active",
-      "inactive": "Inactive",
       "recipients": "Recipients, one per line",
       "language": "Email language",
       "languageValue": "Email language: {{language}}",
@@ -607,15 +610,7 @@
       }
     },
     "connectors": {
-      "label": "Connectors of the form {{name}}",
-      "title": "Connectors",
       "description": "Each accepted message is also sent to these services. A send that fails is retried, and the deliveries of a message show every attempt.",
-      "loading": "Loading the connectors…",
-      "loadFailed": "Could not load the connectors.",
-      "empty": "No connectors for this form.",
-      "active": "Active",
-      "inactive": "Inactive",
-      "service": "Service",
       "name": "Name",
       "nameHint": "Shown in this list and in the deliveries of a message. The name of the channel or of the table works well.",
       "optional": "{{label}} (optional)",

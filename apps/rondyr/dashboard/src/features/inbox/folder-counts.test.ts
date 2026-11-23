@@ -27,6 +27,7 @@ function form(publicId: string): Inbox["forms"][number] {
     name: publicId,
     publicId,
     status: "active",
+    emoji: null,
     businessContext: null,
     successUrl: null,
     honeypotField: null,

@@ -8,12 +8,12 @@ Rondyr encrypts the webhook URL or the token of a connector with `RONDYR_SECRETS
 
 ## Add a connector
 
-1. Open **Settings → Destinations** (admins only) and select your form.
-2. Under **Connectors**, choose the service and give the destination a name, such as the name of the channel. The name shows in this list and in the deliveries of a message.
+1. Open your form from **Forms** in the sidebar (admins only) and go to **Destinations**.
+2. Under **New destination**, choose the service and give the destination a name, such as the name of the channel. The name shows in the list of destinations and in the deliveries of a message.
 3. Fill in the settings of the service, described below, and select **Add connector**.
-4. Select **Send a test** to check the settings. The answer of the service shows next to the button.
+4. The new destination opens on its settings. Select **Send a test** to check them. The answer of the service shows under the button.
 
-A secret setting is never shown again once it is saved. To change a setting, select **Edit settings** and type every secret again.
+A secret setting is never shown again once it is saved. To change a setting, open the destination, select **Edit settings** and type every secret again.
 
 Only messages accepted after you add (or reactivate) a connector are sent to it; a quarantined message goes out when someone accepts it.
 

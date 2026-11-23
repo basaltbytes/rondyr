@@ -3,11 +3,17 @@
     "cancel": "Annuler",
     "loading": "Chargement…",
     "refresh": "Actualiser",
-    "save": "Enregistrer"
+    "save": "Enregistrer",
+    "saved": "Enregistré"
   },
   "languages": {
     "en": "English",
     "fr": "Français"
+  },
+  "themes": {
+    "system": "Système",
+    "light": "Clair",
+    "dark": "Sombre"
   },
   "session": {
     "checking": "Vérification de la session…"
@@ -19,7 +25,8 @@
   "authentication": {
     "account": {
       "label": "Compte {{email}}",
-      "language": "Langue"
+      "language": "Langue",
+      "theme": "Thème"
     },
     "signIn": {
       "title": "Connexion",
@@ -137,6 +144,9 @@
       "label": "Navigation",
       "messages": "Messages",
       "settings": "Réglages",
+      "back": "Retour aux messages",
+      "organization": "Organisation",
+      "filtering": "Filtrage",
       "operations": "Exploitation"
     },
     "folders": {
@@ -146,7 +156,6 @@
       "all": "Tous les messages"
     },
     "folderTotal": "{{folder}} · {{total}}",
-    "folderForms": "Formulaires de « {{folder}} »",
     "sections": {
       "forms": "Formulaires",
       "destinations": "Destinations",
@@ -176,7 +185,14 @@
       "forms_many": "{{count}} formulaires",
       "forms_other": "{{count}} formulaires",
       "loading": "Chargement des organisations…",
-      "loadFailed": "Impossible de charger les organisations."
+      "unavailable": {
+        "title": "Rondyr ne peut pas afficher vos organisations",
+        "unreachable": "Le serveur n’a pas répondu. Vérifiez votre connexion, puis réessayez.",
+        "status": "Le serveur a répondu par une erreur (HTTP {{status}}). Si vous exploitez cette instance, lisez les journaux du Worker et vérifiez que les migrations de la base de données sont appliquées.",
+        "signedOut": "Votre session a pris fin. Déconnectez-vous, puis reconnectez-vous.",
+        "unreadable": "Le tableau de bord n’a pas pu lire la réponse du serveur, ce qui arrive quand leurs versions diffèrent. Rechargez la page.",
+        "retry": "Réessayer"
+      }
     },
     "setup": {
       "description": "Une organisation a sa boîte de réception, ses formulaires et ses destinations.",
@@ -217,7 +233,6 @@
         }
       },
       "form": {
-        "remove": "Retirer le filtre sur {{name}}",
         "empty": {
           "title": "Aucun message de {{name}}",
           "others_zero": "Les autres formulaires n’en ont pas ici non plus.",
@@ -226,6 +241,10 @@
           "others_other": "Les autres formulaires ont {{count}} messages ici.",
           "showAll": "Afficher tous les formulaires"
         }
+      },
+      "forms": {
+        "label": "Filtrer par formulaire",
+        "all": "Tous les formulaires"
       },
       "search": {
         "label": "Rechercher dans les messages",
@@ -310,23 +329,21 @@
       }
     },
     "forms": {
-      "label": "Formulaires de l’organisation",
-      "new": "Nouveau",
       "newTitle": "Nouveau formulaire",
-      "back": "Retour aux formulaires",
-      "empty": {
-        "title": "Aucun formulaire",
-        "note": "Un formulaire donne une adresse d’envoi à mettre sur votre site."
-      },
-      "none": "Cette organisation n’a pas encore de formulaire. Créez-en un dans Formulaires.",
       "settings": "Réglages du formulaire {{name}}",
       "statuses": {
         "active": "Actif",
         "suspended": "Suspendu"
       },
       "name": "Nom du formulaire",
+      "emoji": {
+        "label": "Émoji du formulaire",
+        "change": "Changer l’émoji"
+      },
+      "status": "État",
+      "businessPlaceholder": "Décrivez l’activité, pour que le filtre repère un message hors sujet.",
+      "messages": "Messages du formulaire {{name}}",
       "add": "Ajouter le formulaire",
-      "edit": "Modifier",
       "address": {
         "title": "Adresse d’envoi",
         "active": "L’adresse à mettre dans l’attribut action de votre formulaire, ou à appeler en POST.",
@@ -335,19 +352,14 @@
         "copied": "Adresse copiée"
       },
       "details": {
-        "title": "Nom et activité",
-        "noBusiness": "Aucune activité décrite : la pertinence des messages n’est pas évaluée.",
         "new": "Le formulaire reçoit une adresse d’envoi dès sa création. Elle ne change plus ensuite."
       },
       "redirect": {
-        "title": "Redirection après envoi",
         "confirmationPage": "Après un envoi depuis un formulaire HTML, le visiteur voit la page de confirmation de Rondyr. $t(inbox.forms.redirect.origin)",
-        "successUrl": "Après un envoi depuis un formulaire HTML, le visiteur voit <code>{{url}}</code>. $t(inbox.forms.redirect.origin)",
+        "redirects": "Après un envoi depuis un formulaire HTML, le visiteur arrive sur cette adresse. $t(inbox.forms.redirect.origin)",
         "origin": "L’origine de l’adresse doit figurer dans les origines autorisées du formulaire.",
         "url": "Adresse de redirection",
         "placeholder": "https://www.example.com/merci",
-        "save": "Enregistrer la redirection",
-        "remove": "Retirer la redirection",
         "refusals": {
           "invalid-url": "Saisissez une adresse complète, par exemple https://www.example.com/merci.",
           "not-https": "L’adresse doit commencer par https://.",
@@ -356,18 +368,16 @@
         }
       },
       "honeypot": {
-        "title": "Champ piège",
-        "none": "Aucun champ piège. $t(inbox.forms.honeypot.instructions)",
-        "current": "Champ actuel : <code>{{field}}</code>. $t(inbox.forms.honeypot.instructions)",
         "instructions": "Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec <code>tabindex=\"-1\"</code> et <code>autocomplete=\"off\"</code> : les visiteurs le laissent vide, et un message qui le remplit est mis à vérifier sans être analysé.",
         "name": "Nom du champ piège",
-        "placeholder": "_hp",
-        "save": "Enregistrer le champ piège",
-        "remove": "Retirer le champ piège"
+        "placeholder": "_hp"
       },
       "turnstile": {
         "title": "Turnstile",
         "description": "Utilisez la clé de site et la clé secrète de votre widget Cloudflare Turnstile.",
+        "configure": "Configurer",
+        "on": "Activé",
+        "off": "Désactivé",
         "key": {
           "checking": "Vérification de la clé secrète enregistrée auprès de Cloudflare…",
           "working": "Cloudflare accepte la clé secrète enregistrée.",
@@ -392,8 +402,6 @@
         "saveFailed": "Impossible d’enregistrer les réglages Turnstile."
       },
       "suspension": {
-        "title": "Suspension",
-        "suspendedTitle": "Formulaire suspendu",
         "description": "Un formulaire suspendu refuse les nouveaux messages avec le statut 403. Les messages reçus, les destinations et l’adresse publique sont conservés.",
         "suspend": "Suspendre le formulaire",
         "confirm": "Confirmer la suspension",
@@ -504,7 +512,7 @@
       "origin": "Origine",
       "placeholder": "https://www.example.com",
       "add": "Ajouter l’origine",
-      "remove": "Retirer",
+      "removeLabel": "Retirer {{origin}}",
       "inUse": "La redirection après envoi de ce formulaire pointe vers cette origine. Retirez d’abord la redirection.",
       "refusals": {
         "invalid-origin": "Saisissez une origine complète, par exemple https://www.example.com.",
@@ -519,8 +527,6 @@
       }
     },
     "destinations": {
-      "deactivate": "Désactiver",
-      "reactivate": "Réactiver",
       "notSaved": "La modification n’a pas pu être enregistrée. Réessayez.",
       "test": {
         "send": "Envoyer un essai",
@@ -533,17 +539,21 @@
         "notSent": "Le message d’essai n’a pas pu être envoyé. Réessayez.",
         "limited": "Cette destination a déjà reçu 3 essais cette minute. Attendez une minute et réessayez.",
         "limitUnavailable": "Rondyr n’a pas pu vérifier la limite d’essais de cette destination et n’a rien envoyé. Réessayez dans une minute."
-      }
+      },
+      "label": "Destinations du formulaire {{name}}",
+      "loading": "Chargement des destinations…",
+      "loadFailed": "Impossible de charger les destinations.",
+      "empty": "Aucune destination pour ce formulaire.",
+      "new": "Nouvelle destination",
+      "kinds": {
+        "webhook": "Webhook",
+        "email": "E-mail"
+      },
+      "settingsOf": "Réglages de {{name}}",
+      "active": "Envoyer les messages à {{name}}"
     },
     "webhooks": {
-      "label": "Webhooks du formulaire {{name}}",
-      "title": "Webhooks",
       "description": "Chaque message accepté est envoyé en POST à ces adresses, signé avec le secret du webhook.",
-      "loading": "Chargement des webhooks…",
-      "loadFailed": "Impossible de charger les webhooks.",
-      "empty": "Aucun webhook pour ce formulaire.",
-      "active": "Actif",
-      "inactive": "Désactivé",
       "previousSecret": "L’ancien secret signe aussi les envois jusqu’au {{date}}.",
       "rotate": "Renouveler le secret",
       "secret": {
@@ -569,14 +579,7 @@
       }
     },
     "emails": {
-      "label": "Destinations e-mail du formulaire {{name}}",
-      "title": "E-mails",
       "description": "Chaque message accepté est envoyé en texte brut aux destinataires de chaque destination, dans la langue de la destination.",
-      "loading": "Chargement des destinations e-mail…",
-      "loadFailed": "Impossible de charger les destinations e-mail.",
-      "empty": "Aucune destination e-mail pour ce formulaire.",
-      "active": "Active",
-      "inactive": "Désactivée",
       "recipients": "Destinataires, un par ligne",
       "language": "Langue des e-mails",
       "languageValue": "Langue des e-mails : {{language}}",
@@ -607,15 +610,7 @@
       }
     },
     "connectors": {
-      "label": "Connecteurs du formulaire {{name}}",
-      "title": "Connecteurs",
       "description": "Chaque message accepté est aussi envoyé à ces services. Un envoi qui échoue est retenté, et les livraisons d’un message montrent chaque tentative.",
-      "loading": "Chargement des connecteurs…",
-      "loadFailed": "Impossible de charger les connecteurs.",
-      "empty": "Aucun connecteur pour ce formulaire.",
-      "active": "Actif",
-      "inactive": "Désactivé",
-      "service": "Service",
       "name": "Nom",
       "nameHint": "Affiché dans cette liste et dans les livraisons d’un message. Le nom du salon ou de la table convient bien.",
       "optional": "{{label}} (facultatif)",

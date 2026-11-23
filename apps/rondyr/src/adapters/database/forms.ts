@@ -25,7 +25,7 @@ const decodeFormIds = Schema.decodeUnknownEffect(Schema.Array(FormRow));
 const unreadable = () => StorageUnavailable.make();
 
 export const managedFormColumns = `
-  name, public_id AS publicId, status, business_context AS businessContext,
+  name, public_id AS publicId, status, emoji, business_context AS businessContext,
   success_url AS successUrl, honeypot_field AS honeypotField, turnstile_site_key AS turnstileSiteKey
 `;
 
@@ -52,8 +52,8 @@ const create = Effect.fn("Forms.create")(function* (
   const inserted = yield* d1(() =>
     db
       .prepare(`
-    INSERT INTO forms (id, organization_id, public_id, name, business_context)
-    SELECT ?3, m.organization_id, ?4, ?5, ?6 FROM organization_members m
+    INSERT INTO forms (id, organization_id, public_id, name, business_context, emoji)
+    SELECT ?3, m.organization_id, ?4, ?5, ?6, ?7 FROM organization_members m
     WHERE m.user_id = ?1 AND m.organization_id = ?2
     RETURNING ${managedFormColumns}
   `)
@@ -64,6 +64,7 @@ const create = Effect.fn("Forms.create")(function* (
         publicId,
         input.name,
         input.businessContext || null,
+        input.emoji ?? null,
       )
       .all(),
   );
@@ -81,7 +82,8 @@ const update = Effect.fn("Forms.update")(function* (
       .prepare(`
     UPDATE forms SET
       name = COALESCE(?4, name),
-      business_context = CASE WHEN ?5 = 1 THEN ?6 ELSE business_context END
+      business_context = CASE WHEN ?5 = 1 THEN ?6 ELSE business_context END,
+      emoji = COALESCE(?7, emoji)
     WHERE id IN (${scopedForm})
     RETURNING ${managedFormColumns}
   `)
@@ -92,6 +94,7 @@ const update = Effect.fn("Forms.update")(function* (
         changes.name ?? null,
         context === undefined ? 0 : 1,
         context || null,
+        changes.emoji ?? null,
       )
       .all(),
   );
