@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useRouterState } from "@tanstack/react-router";
 
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import { SignOutButton } from "~/features/authentication/account";
+import { SignOutButton } from "~/features/authentication/sign-out-button";
 import { NewOrganization } from "~/features/organization/new-organization";
 import { OrganizationsUnavailable } from "~/features/organization/organizations-unavailable";
 import { organizationsQuery } from "~/lib/api/organizations";

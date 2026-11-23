@@ -60,7 +60,7 @@ export function DeliveryHistory({ organizationId, submissionId, canRetry }: Deli
   const format = useFormats();
   const history = useQuery(deliveriesQuery(organizationId, submissionId));
   const retryDelivery = useMutation(retryDeliveryMutation(organizationId, submissionId));
-  const deliveries = history.data ?? null;
+  const deliveries = history.isError ? null : (history.data ?? null);
 
   const [problem, retry, retrying] = useActionState(
     async (_: RetryProblem | null, form: FormData): Promise<RetryProblem | null> => {

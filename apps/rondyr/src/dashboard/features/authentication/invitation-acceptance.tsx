@@ -13,7 +13,7 @@ import { memberErrorOf } from "~/lib/api/members";
 import { statusOf } from "~/lib/api/request";
 import { authClient, sessionQuery } from "~/lib/api/session";
 
-import { SignOutButton } from "./account.tsx";
+import { SignOutButton } from "./sign-out-button.tsx";
 import { SignInForm } from "./sign-in-form.tsx";
 
 type Summary = InvitationSummary;

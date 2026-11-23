@@ -3,7 +3,7 @@ import { createFileRoute, Navigate, redirect } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { ProductLogo } from "~/components/product-logo";
-import { SignOutButton } from "~/features/authentication/account";
+import { SignOutButton } from "~/features/authentication/sign-out-button";
 import { NewOrganization } from "~/features/organization/new-organization";
 import { OrganizationsUnavailable } from "~/features/organization/organizations-unavailable";
 import { organizationsQuery } from "~/lib/api/organizations";

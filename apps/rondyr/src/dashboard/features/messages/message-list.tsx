@@ -299,7 +299,9 @@ export function MessageList({ organization, search, openId, onForm, onSearch }: 
   const form = search.form ?? null;
   const searchText = search.q ?? null;
   const { forms } = organization;
-  const entries = list.data?.pages.flatMap((page) => page.entries) ?? null;
+  // A failed read shows why in place of the list it read before; a failed next page keeps it.
+  const failed = list.isError && !list.isFetchNextPageError;
+  const entries = failed ? null : (list.data?.pages.flatMap((page) => page.entries) ?? null);
   const inFolder = counts === undefined ? null : totalOf(counts, folder);
   const inForm =
     counts === undefined || form === null ? inFolder : totalOf(countsOfForm(counts, form), folder);
@@ -417,7 +419,7 @@ export function MessageList({ organization, search, openId, onForm, onSearch }: 
             ))}
           </ul>
         )}
-        {list.hasNextPage && (
+        {list.hasNextPage && !failed && (
           <div className="p-4">
             <Button disabled={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
               {list.isFetchingNextPage ? t("inbox.list.loadingMore") : t("inbox.list.more")}

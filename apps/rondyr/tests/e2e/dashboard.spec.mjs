@@ -1279,3 +1279,312 @@ test("explain a server error in place of the dashboard, and show the dashboard a
 
   await expect(page.getByRole("heading", { name: t("inbox.sections.organization") })).toBeVisible();
 });
+
+/** The title of the list of a folder, which ends with the number of its messages. */
+function folderHeading(page, folder) {
+  return page
+    .getByRole("region", { name: t("inbox.list.label") })
+    .getByRole("heading", { level: 1, name: new RegExp(`^${RegExp.escape(folder)}`, "u") });
+}
+
+/** The ID of the organization whose page is open, from the address. */
+function organizationIdOf(page) {
+  return new URL(page.url()).pathname.split("/")[2];
+}
+
+/** Send a message to a form through the API, as a site's server does. */
+async function postMessage(page, endpoint, message, verdict = "accept") {
+  const posted = await page.request.post(endpoint.href, {
+    data: { message, "fixture-verdict": verdict },
+  });
+  expect(posted.status(), `POST ${endpoint.pathname}`).toBe(202);
+}
+
+async function signInAsOwner(page) {
+  await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
+  await page.getByLabel(t("authentication.signIn.password")).fill(owner.password);
+  await page.getByRole("button", { name: t("authentication.signIn.submit"), exact: true }).click();
+}
+
+test.describe("addresses", () => {
+  test("keep the folder, the form, the searched text and the open message after a reload", async ({
+    dashboard: page,
+  }) => {
+    await createOrganization(page);
+    await openForm(page, formName);
+    const contact = await publicFormUrl(page, formName);
+    const quotes = "Quote requests";
+    await page.getByRole("link", { name: t("inbox.forms.newTitle"), exact: true }).click();
+    // The page of the form that was open also has a field for its name.
+    await expect(page.getByRole("heading", { name: t("inbox.forms.newTitle") })).toBeVisible();
+    await page.getByRole("textbox", { name: t("inbox.forms.name") }).fill(quotes);
+    await page.getByRole("button", { name: t("inbox.forms.add") }).click();
+    const quote = await publicFormUrl(page, quotes);
+    await postMessage(page, contact, "Contact question with a needle");
+    await postMessage(page, quote, "Quote request with a needle");
+    await postMessage(page, quote, "Quote request without it");
+    await openSubmission(page, t("inbox.folders.accepted"), "Quote request without it");
+    const list = page.getByRole("region", { name: t("inbox.list.label") });
+    const forms = list.getByRole("navigation", { name: t("inbox.list.forms.label"), exact: true });
+    const quoteChoice = forms.getByRole("button", {
+      name: new RegExp(`^${RegExp.escape(quotes)}`, "u"),
+    });
+    await quoteChoice.click();
+    const search = list.getByRole("searchbox", { name: t("inbox.list.search.label") });
+    await search.fill("needle");
+    await search.press("Enter");
+    await openMessage(page, "Quote request with a needle");
+    const address = page.url();
+
+    await page.reload();
+
+    expect(page.url()).toBe(address);
+    await expect(folderHeading(page, t("inbox.folders.accepted"))).toBeVisible();
+    await expect(quoteChoice).toHaveAttribute("aria-pressed", "true");
+    await expect(search).toHaveValue("needle");
+    await expect(
+      list.getByRole("link").filter({ hasText: "Quote request with a needle" }),
+    ).toBeVisible();
+    await expect(list.getByRole("link").filter({ hasText: "Contact question" })).toHaveCount(0);
+    await expect(list.getByRole("link").filter({ hasText: "without it" })).toHaveCount(0);
+    await expect(
+      page
+        .getByRole("region", { name: t("inbox.reader.label") })
+        .getByText("Quote request with a needle", { exact: true }),
+    ).toBeVisible();
+  });
+
+  test("move between the screens visited with Back and Forward", async ({ dashboard: page }) => {
+    await createOrganization(page);
+    const accepted = folderHeading(page, t("inbox.folders.accepted"));
+    const review = folderHeading(page, t("inbox.folders.quarantined"));
+    await folderLink(page, t("inbox.folders.accepted")).click();
+    await expect(accepted).toBeVisible();
+    await openForm(page, formName);
+    await expect(settingsFor(page, formName)).toBeVisible();
+
+    await page.goBack();
+    await expect(accepted).toBeVisible();
+    await page.goBack();
+    await expect(review).toBeVisible();
+    await page.goForward();
+    await expect(accepted).toBeVisible();
+    await page.goForward();
+
+    await expect(settingsFor(page, formName)).toBeVisible();
+  });
+
+  test("open the address of a message after signing in", async ({ dashboard: page }) => {
+    await createOrganization(page);
+    await openForm(page, formName);
+    const endpoint = await publicFormUrl(page, formName);
+    const message = "Request read from a link";
+    await postMessage(page, endpoint, message);
+    await openSubmission(page, t("inbox.folders.accepted"), message);
+    const address = page.url();
+    await page.context().clearCookies();
+
+    await page.goto(address);
+    await expect(
+      page.getByRole("heading", { name: t("authentication.signIn.title") }),
+    ).toBeVisible();
+    await signInAsOwner(page);
+
+    await expect(page).toHaveURL(address);
+    await expect(
+      page
+        .getByRole("region", { name: t("inbox.reader.label") })
+        .getByText(message, { exact: true }),
+    ).toBeVisible();
+  });
+
+  test("ignore a return address of another origin", async ({
+    dashboard: page,
+    dashboardOrigin,
+  }) => {
+    await createOrganization(page);
+    await page.context().clearCookies();
+    const signInAddress = new URL("/sign-in", dashboardOrigin);
+    signInAddress.searchParams.set("redirect", "https://elsewhere.example.test/");
+
+    await page.goto(signInAddress.href);
+    await signInAsOwner(page);
+
+    await expect(folderHeading(page, t("inbox.folders.quarantined"))).toBeVisible();
+    expect(new URL(page.url()).origin).toBe(dashboardOrigin);
+  });
+
+  test("send a reviewer who opens the address of a settings page to the messages", async ({
+    dashboard: page,
+    browser,
+    dashboardOrigin,
+  }) => {
+    await createOrganization(page);
+    const organizationId = organizationIdOf(page);
+    await openSettings(page, t("inbox.sections.members"));
+    await page.getByRole("textbox", { name: t("inbox.members.email") }).fill("reader@example.test");
+    await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
+    const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
+    const context = await browser.newContext();
+    const reviewer = await context.newPage();
+    await reviewer.goto(link);
+    await reviewer.getByRole("textbox", { name: t("invitation.name") }).fill("Reader");
+    await reviewer.getByLabel(t("invitation.password")).fill("playwright-reader-password");
+    await reviewer.getByRole("button", { name: t("invitation.createAndJoin") }).click();
+    await expect(folderHeading(reviewer, t("inbox.folders.quarantined"))).toBeVisible();
+
+    await reviewer.goto(`${dashboardOrigin}/o/${organizationId}/settings/members`);
+
+    await expect(reviewer).toHaveURL(
+      new RegExp(
+        `^${RegExp.escape(`${dashboardOrigin}/o/${organizationId}/messages`)}(?:\\?|$)`,
+        "u",
+      ),
+    );
+    await expect(folderHeading(reviewer, t("inbox.folders.quarantined"))).toBeVisible();
+    await expect(reviewer.getByRole("heading", { name: t("inbox.sections.members") })).toHaveCount(
+      0,
+    );
+    await context.close();
+  });
+
+  test("show the page of an unknown address", async ({ dashboard: page, dashboardOrigin }) => {
+    await page.goto(`${dashboardOrigin}/no-such-page`);
+
+    await expect(page.getByRole("heading", { name: t("notFound.title") })).toBeVisible();
+    await page.getByRole("link", { name: t("notFound.messages") }).click();
+    await expect(
+      page.getByRole("heading", { name: t("inbox.sections.organization") }),
+    ).toBeVisible();
+  });
+
+  test("show the page of an unknown address for the organization of another account", async ({
+    dashboard: page,
+    browser,
+    dashboardOrigin,
+  }) => {
+    await createOrganization(page);
+    await openSettings(page, t("inbox.sections.members"));
+    await page.getByRole("textbox", { name: t("inbox.members.email") }).fill("other@example.test");
+    await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
+    const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
+    // The other account joins, then creates an organization that the owner is not part of.
+    const context = await browser.newContext();
+    const other = await context.newPage();
+    await other.goto(link);
+    await other.getByRole("textbox", { name: t("invitation.name") }).fill("Other account");
+    await other.getByLabel(t("invitation.password")).fill("playwright-other-password");
+    await other.getByRole("button", { name: t("invitation.createAndJoin") }).click();
+    await other
+      .getByRole("button", { name: t("inbox.organizations.switcher", { name: organizationName }) })
+      .click();
+    await other.getByRole("menuitem", { name: t("inbox.sections.organization") }).click();
+    const ownName = "Other workshop";
+    await other
+      .getByRole("textbox", { name: t("inbox.setup.organization"), exact: true })
+      .fill(ownName);
+    await other.getByRole("textbox", { name: t("inbox.setup.firstForm") }).fill("Its contact");
+    await other.getByRole("button", { name: t("inbox.setup.submit") }).click();
+    await expect(
+      other.getByRole("button", { name: t("inbox.organizations.switcher", { name: ownName }) }),
+    ).toBeVisible();
+    const otherOrganization = organizationIdOf(other);
+    await context.close();
+
+    await page.goto(`${dashboardOrigin}/o/${otherOrganization}/messages`);
+
+    await expect(page.getByRole("heading", { name: t("notFound.title") })).toBeVisible();
+  });
+});
+
+test.describe("reads and writes", () => {
+  test("explain a blocked read of the messages and read them again", async ({
+    dashboard: page,
+  }) => {
+    await createOrganization(page);
+    const list = page.getByRole("region", { name: t("inbox.list.label") });
+    const submissions = "**/api/organizations/*/submissions?*";
+    await page.route(submissions, (route) => route.abort());
+
+    await list.getByRole("button", { name: t("common.refresh"), exact: true }).click();
+
+    await expect(list.getByRole("alert")).toHaveText(t("inbox.list.loadFailed"));
+    await expect(list).toContainText(t("common.readFailure.unreachable"));
+    await expect(list.getByText(t("inbox.list.empty.quarantined.title"))).toHaveCount(0);
+    await page.unroute(submissions);
+    await list.getByRole("button", { name: t("common.retry"), exact: true }).click();
+    await expect(list.getByText(t("inbox.list.empty.quarantined.title"))).toBeVisible();
+    await expect(list.getByRole("alert")).toHaveCount(0);
+  });
+
+  test("explain a blocked read of a settings page and read it again", async ({
+    dashboard: page,
+  }) => {
+    await createOrganization(page);
+    const members = "**/api/organizations/*/members";
+    await page.route(members, (route) => route.abort());
+
+    await openSettings(page, t("inbox.sections.members"));
+
+    await expect(page.getByRole("alert")).toHaveText(t("inbox.members.loadFailed"));
+    await expect(page.getByText(t("common.readFailure.unreachable"))).toBeVisible();
+    await page.unroute(members);
+    await page.getByRole("button", { name: t("inbox.members.retry"), exact: true }).click();
+    await expect(
+      page.getByRole("combobox", { name: t("inbox.members.roleOf", { name: owner.name }) }),
+    ).toHaveValue("admin");
+  });
+
+  test("move the counts after a decision without counting again, and count again on Refresh", async ({
+    dashboard: page,
+  }) => {
+    await createOrganization(page);
+    await openForm(page, formName);
+    const endpoint = await publicFormUrl(page, formName);
+    const message = "Request set aside by the filter";
+    // The fake model gives an answer that the classifier cannot read: the message waits for review.
+    await postMessage(page, endpoint, message, "unreadable");
+    const reader = await openSubmission(page, t("inbox.folders.quarantined"), message);
+    const review = folderLink(page, t("inbox.folders.quarantined"));
+    const accepted = folderLink(page, t("inbox.folders.accepted"));
+    await expect(review).toContainText("1");
+    const counted = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname.endsWith("/submission-counts")) counted.push(request);
+    });
+
+    await reader.getByRole("button", { name: t("inbox.reader.acceptAndSend") }).click();
+
+    await expect(review).toContainText("0");
+    await expect(accepted).toContainText("1");
+    expect(counted).toHaveLength(0);
+    const countedAgain = page.waitForRequest((request) =>
+      new URL(request.url()).pathname.endsWith("/submission-counts"),
+    );
+    await page
+      .getByRole("region", { name: t("inbox.list.label") })
+      .getByRole("button", { name: t("common.refresh"), exact: true })
+      .click();
+    await countedAgain;
+  });
+
+  test("open the sign-in form when the API says the session ended", async ({ dashboard: page }) => {
+    await createOrganization(page);
+    const address = page.url();
+    const submissions = "**/api/organizations/*/submissions?*";
+    await page.route(submissions, (route) => route.fulfill({ status: 401 }));
+
+    await page
+      .getByRole("region", { name: t("inbox.list.label") })
+      .getByRole("button", { name: t("common.refresh"), exact: true })
+      .click();
+
+    await expect(
+      page.getByRole("heading", { name: t("authentication.signIn.title") }),
+    ).toBeVisible();
+    await expect(page.getByText(t("authentication.signIn.sessionEnded"))).toBeVisible();
+    await page.unroute(submissions);
+    await signInAsOwner(page);
+    await expect(page).toHaveURL(address);
+  });
+});

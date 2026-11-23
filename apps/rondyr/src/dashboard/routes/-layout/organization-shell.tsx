@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from "react";
 
 import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
-import { AccountMenu } from "~/features/authentication/account";
+import { AccountMenu } from "~/features/authentication/account-menu";
 import { OrganizationSidebar } from "~/features/navigation/organization-sidebar";
 import { SettingsSidebar } from "~/features/navigation/settings-sidebar";
 import type { SidebarPage } from "~/features/navigation/sidebar-page";

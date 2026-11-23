@@ -57,7 +57,7 @@ interface AllowedOriginsProps {
 export function AllowedOrigins({ organizationId, form }: AllowedOriginsProps) {
   const { t } = useTranslation();
   const query = useQuery(originsQuery(organizationId, form.publicId));
-  const origins = query.data ?? null;
+  const origins = query.isError ? null : (query.data ?? null);
   const { mutateAsync: addOrigin } = useMutation(addOriginMutation(organizationId, form.publicId));
   const { mutateAsync: removeOrigin } = useMutation(
     removeOriginMutation(organizationId, form.publicId),

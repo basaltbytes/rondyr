@@ -27,8 +27,16 @@ export const MessagesSearch = Schema.Struct({
     Schema.catchDecoding(() => Effect.succeedSome(defaultFolder)),
     Schema.withDecodingDefaultKey(Effect.succeed(defaultFolder)),
   ),
-  form: Schema.optionalKey(FormPublicId.pipe(Schema.catchDecoding(() => Effect.succeedNone))),
-  q: Schema.optionalKey(SearchText.pipe(Schema.catchDecoding(() => Effect.succeedNone))),
+  // The router keeps the params of the address that a schema leaves out, so a refused
+  // value becomes undefined instead.
+  form: Schema.optionalKey(
+    Schema.UndefinedOr(FormPublicId).pipe(
+      Schema.catchDecoding(() => Effect.succeedSome(undefined)),
+    ),
+  ),
+  q: Schema.optionalKey(
+    Schema.UndefinedOr(SearchText).pipe(Schema.catchDecoding(() => Effect.succeedSome(undefined))),
+  ),
 });
 
 export type MessagesSearch = typeof MessagesSearch.Type;

@@ -80,7 +80,9 @@ function MemberManager({ organizationId, list, readAt, self }: MemberManagerProp
   const formats = useFormats();
   const language = useLanguage();
   const { members, invitations } = list;
-  const { mutateAsync: change } = useMutation(changeMembersMutation(organizationId, self));
+  const { mutateAsync: change, isPending: changing } = useMutation(
+    changeMembersMutation(organizationId, self),
+  );
   const [issued, setIssued] = useState<Issued | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [problem, setProblem] = useState<MemberProblem | null>(null);
@@ -174,6 +176,7 @@ function MemberManager({ organizationId, list, readAt, self }: MemberManagerProp
                     aria-label={t("inbox.members.roleOf", { name: member.name })}
                     className="w-auto"
                     value={member.role}
+                    disabled={changing}
                     onChange={(event) => {
                       const role = event.currentTarget.value === "admin" ? "admin" : "reviewer";
                       if (
@@ -297,6 +300,7 @@ function MemberManager({ organizationId, list, readAt, self }: MemberManagerProp
                       variant="ghost"
                       size="sm"
                       aria-label={t("inbox.members.cancelLabel", { email: invitation.email })}
+                      disabled={changing}
                       onClick={() => void cancel(invitation.id)}
                     >
                       {t("inbox.members.cancelInvitation")}

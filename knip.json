@@ -19,7 +19,8 @@
         "src/worker/worker.ts"
       ],
       "project": ["**/*.{ts,tsx,mjs}"],
-      "ignoreDependencies": ["tailwindcss"]
+      "ignoreDependencies": ["tailwindcss"],
+      "ignore": ["src/dashboard/route-tree.gen.ts"]
     },
     "packages/emdash-plugin": {
       "entry": ["test/**/*.test.ts"],

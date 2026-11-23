@@ -21,9 +21,13 @@ export function signInSearchOf(origin: string) {
   const ReturnAddress = Schema.String.check(
     Schema.makeFilter((address) => isPathOf(origin, address) || "Expected a path of this origin"),
   );
+  // The router keeps the params of the address that a schema leaves out, so a refused
+  // address becomes undefined instead.
   return Schema.Struct({
     redirect: Schema.optionalKey(
-      ReturnAddress.pipe(Schema.catchDecoding(() => Effect.succeedNone)),
+      Schema.UndefinedOr(ReturnAddress).pipe(
+        Schema.catchDecoding(() => Effect.succeedSome(undefined)),
+      ),
     ),
   });
 }

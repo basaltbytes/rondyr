@@ -64,8 +64,10 @@ const firstPage: string | null = null;
  * Each page gives the cursor of the next one.
  */
 export function messageListQuery(organizationId: string, search: MessagesSearch) {
+  // The router keeps every param of the address; the list depends on these three.
+  const filter: MessagesSearch = { folder: search.folder, form: search.form, q: search.q };
   return infiniteQueryOptions({
-    queryKey: [...listsKey(organizationId), search] as const,
+    queryKey: [...listsKey(organizationId), filter] as const,
     queryFn: ({ pageParam, signal }) => {
       const params = listParams(search);
       if (pageParam !== null) params.set("after", pageParam);

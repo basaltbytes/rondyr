@@ -1,8 +1,6 @@
 import { ChevronsUpDown, LogOut } from "lucide-react";
-import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,46 +19,21 @@ import {
   SidebarMenuItem,
   SidebarMenuLabel,
 } from "~/components/ui/sidebar";
-import { authClient } from "~/lib/api/session";
 import { setTheme, useTheme } from "~/lib/appearance";
 import { setLanguage, useLanguage } from "~/lib/i18n";
 import { chooseLanguage, languages } from "~/lib/language";
 import { chooseTheme, themes } from "~/lib/theme";
 
-/** Ends the session. Returns whether it worked. */
-async function signOut() {
-  try {
-    const result = await authClient.signOut();
-    return result.error === null;
-  } catch {
-    return false;
-  }
-}
+import { useSignOut } from "./use-sign-out.ts";
 
-/** Signs out, and remembers a request that fails. */
-function useSignOut(onSignedOut: () => Promise<void>) {
-  const [failed, setFailed] = useState(false);
-  const [pending, setPending] = useState(false);
-
-  async function leave() {
-    setPending(true);
-    const signedOut = await signOut();
-    setFailed(!signedOut);
-    setPending(false);
-    if (signedOut) await onSignedOut();
-  }
-
-  return { failed, pending, leave: () => void leave() };
-}
-
-interface AccountProps {
+interface AccountMenuProps {
   readonly email: string;
   /** Leaves the dashboard for the sign-in page, once the session has ended. */
   readonly onSignedOut: () => Promise<void>;
 }
 
 /** The signed-in account at the foot of the sidebar, with its menu. */
-export function AccountMenu({ email, onSignedOut }: AccountProps) {
+export function AccountMenu({ email, onSignedOut }: AccountMenuProps) {
   const { t } = useTranslation();
   const language = useLanguage();
   const theme = useTheme();
@@ -141,26 +114,5 @@ export function AccountMenu({ email, onSignedOut }: AccountProps) {
         </DropdownMenu>
       </SidebarMenuItem>
     </SidebarMenu>
-  );
-}
-
-/** Signs out from a page without a sidebar, such as the first run. */
-export function SignOutButton({ email, onSignedOut }: AccountProps) {
-  const { t } = useTranslation();
-  const { failed, pending, leave } = useSignOut(onSignedOut);
-  return (
-    <div className="grid gap-1 px-2">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <p className="min-w-0 text-xs wrap-anywhere text-muted-foreground">{email}</p>
-        <Button variant="ghost" size="sm" disabled={pending} onClick={leave}>
-          {pending ? t("authentication.signOut.pending") : t("authentication.signOut.submit")}
-        </Button>
-      </div>
-      {failed && (
-        <p role="alert" className="text-xs text-destructive">
-          {t("authentication.signOut.failed")}
-        </p>
-      )}
-    </div>
   );
 }

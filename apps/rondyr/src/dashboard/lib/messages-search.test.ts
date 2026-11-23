@@ -21,8 +21,12 @@ it("replaces an unknown folder with the default instead of failing", () => {
   assert.deepStrictEqual(decode({ folder: "spam" }), { folder: "quarantined" });
 });
 
-it("drops a text shorter than a search and an empty form", () => {
-  assert.deepStrictEqual(decode({ folder: "all", form: "", q: "ab" }), { folder: "all" });
+it("empties a text shorter than a search and an empty form", () => {
+  assert.deepStrictEqual(decode({ folder: "all", form: "", q: "ab" }), {
+    folder: "all",
+    form: undefined,
+    q: undefined,
+  });
 });
 
 it("trims the searched text", () => {

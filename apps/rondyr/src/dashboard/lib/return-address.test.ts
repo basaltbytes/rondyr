@@ -13,7 +13,9 @@ it("keeps a path of the dashboard as the return address", () => {
 });
 
 it("ignores an address of another origin", () => {
-  assert.deepStrictEqual(decode({ redirect: "https://elsewhere.example.test/" }), {});
+  assert.deepStrictEqual(decode({ redirect: "https://elsewhere.example.test/" }), {
+    redirect: undefined,
+  });
 });
 
 it("ignores an address that the browser would resolve on another host", () => {

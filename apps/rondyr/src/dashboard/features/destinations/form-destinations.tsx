@@ -293,7 +293,7 @@ export function FormDestinations({ organizationId, form }: FormDestinationsProps
   const { t } = useTranslation();
   const title = useId();
   const query = useQuery(destinationsQuery(organizationId, form.publicId));
-  const targets = query.data ?? null;
+  const targets = query.isError ? null : (query.data ?? null);
   const [opened, setOpened] = useState<readonly DestinationTarget["id"][]>([]);
   const [issued, setIssued] = useState<IssuedWebhookSecret | null>(null);
 

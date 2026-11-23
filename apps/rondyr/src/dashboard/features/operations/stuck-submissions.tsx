@@ -21,7 +21,7 @@ export function StuckSubmissions({ organizationId }: StuckSubmissionsProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const query = useQuery(stuckSubmissionsQuery(organizationId));
-  const stuck = query.data ?? null;
+  const stuck = query.isError ? null : (query.data ?? null);
   const { mutateAsync: retryStuck } = useMutation(retryStuckMutation(organizationId));
 
   const [retryFailed, retry, retrying] = useActionState(
