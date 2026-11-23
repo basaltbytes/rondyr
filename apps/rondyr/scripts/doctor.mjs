@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { posix } from "node:path";
 import { isDeepStrictEqual, parseEnv } from "node:util";
 
 import { queueNameVars } from "../worker-config.ts";
@@ -10,12 +11,16 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const pkg = JSON.parse(read("../package.json"));
 const rootPkg = JSON.parse(read("../../../package.json"));
 const wrangler = JSON.parse(read("../../../wrangler.json"));
-const workerEntry = read("../src/worker/worker.ts");
+// The Worker's entry point is the `main` of wrangler.json, and the Alchemy stack deploys
+// the Alchemy Worker of the same folder.
+const packageFolder = "./apps/rondyr/";
+const workerFolder = posix.dirname(wrangler.main);
+const workerEntryUrl = new URL(`../../../${wrangler.main}`, import.meta.url);
+const workerEntry = existsSync(workerEntryUrl) ? readFileSync(workerEntryUrl, "utf8") : "";
+const alchemyWorkerPath = `./${posix.relative(packageFolder, workerFolder)}/alchemy-worker.ts`;
 const deployPrompts = parseEnv(read("../../../.dev.vars.example"));
-const alchemyWorker = readFileSync(
-  new URL("../src/worker/alchemy-worker.ts", import.meta.url),
-  "utf8",
-);
+const alchemyWorkerUrl = new URL(`../${alchemyWorkerPath}`, import.meta.url);
+const alchemyWorker = existsSync(alchemyWorkerUrl) ? readFileSync(alchemyWorkerUrl, "utf8") : "";
 const alchemyRun = readFileSync(new URL("../alchemy-run.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../../../pnpm-workspace.yaml", import.meta.url), "utf8");
 // The versions live in the default catalog of pnpm-workspace.yaml; the manifest says `catalog:`.
@@ -42,6 +47,13 @@ const deadLetters = {
   DELIVERY_QUEUE: { queue: "deliveryDeadLetterQueue", consumer: "DeliveryDeadLetterConsumer" },
 };
 const errors = [];
+
+if (!wrangler.main.startsWith(packageFolder) || workerEntry === "") {
+  errors.push(`wrangler.json main must name the Worker's entry point in ${packageFolder}.`);
+}
+if (!alchemyRun.includes(`from "${alchemyWorkerPath}"`)) {
+  errors.push(`alchemy-run.ts must deploy ${alchemyWorkerPath}, beside the main of wrangler.json.`);
+}
 
 for (const name of ["@effect/platform-node", "@effect/vitest"]) {
   if (dependencies[name] !== dependencies.effect) {
