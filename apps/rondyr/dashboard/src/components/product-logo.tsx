@@ -25,50 +25,56 @@ function MarkPaths() {
   );
 }
 
+interface ProductLogoProps {
+  readonly compact?: boolean;
+  readonly size?: "default" | "lg";
+}
+
 /** Brand mark or wordmark. Inherits `currentColor` so it adapts to dark and light surfaces. */
-export function ProductLogo({ compact }: { readonly compact?: boolean }) {
+export function ProductLogo({ compact, size }: ProductLogoProps) {
   const isCompact = compact ?? false;
-  if (isCompact) {
-    return (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 64 64"
-        width={64}
-        height={64}
-        role="img"
-        aria-label={productName}
-        className="h-8 w-auto"
-      >
-        <MarkPaths />
-      </svg>
-    );
-  }
+  const heightClass = size === "lg" ? "h-12 w-auto" : "h-8 w-auto";
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 184 64"
-      width={184}
-      height={64}
-      role="img"
-      aria-label={productName}
-      className="h-8 w-auto"
-    >
-      <g transform="translate(0 2.5) scale(0.88)">
-        <MarkPaths />
-      </g>
-      <g
-        transform="translate(-48 2)"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="5.5"
-        strokeLinejoin="round"
-      >
-        <path d="M127.5 35.5c0 5.4-4.2 9.2-9.9 9.2s-9.9-3.8-9.9-9.2 4.2-9.2 9.9-9.2 9.9 3.8 9.9 9.2Z" />
-        <path d="M137.5 47V24.5m0 10.5c0-5.3 3.2-8.7 8.2-8.7 4.8 0 7.3 2.9 7.3 7.7v13" />
-        <path d="M182 15v32m0-11.5c0 5.4-3.8 9.2-9.5 9.2s-9.6-3.8-9.6-9.2 3.9-9.2 9.6-9.2 9.5 3.8 9.5 9.2Z" />
-        <path d="m191.5 24.5 9.2 22m8.5-22-10.8 26.9c-1.7 4.2-4.1 5.9-8 5.9" />
-        <path d="M217.5 47V24.5m0 11.2c0-6.2 4.2-9.8 10-9.4" />
-      </g>
-    </svg>
+    <span className="inline-flex items-center">
+      {isCompact ? (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 64 64"
+          width={64}
+          height={64}
+          aria-hidden="true"
+          className={heightClass}
+        >
+          <MarkPaths />
+        </svg>
+      ) : (
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 184 64"
+          width={184}
+          height={64}
+          aria-hidden="true"
+          className={heightClass}
+        >
+          <g transform="translate(0 2.5) scale(0.88)">
+            <MarkPaths />
+          </g>
+          <g
+            transform="translate(-48 2)"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="5.5"
+            strokeLinejoin="round"
+          >
+            <path d="M127.5 35.5c0 5.4-4.2 9.2-9.9 9.2s-9.9-3.8-9.9-9.2 4.2-9.2 9.9-9.2 9.9 3.8 9.9 9.2Z" />
+            <path d="M137.5 47V24.5m0 10.5c0-5.3 3.2-8.7 8.2-8.7 4.8 0 7.3 2.9 7.3 7.7v13" />
+            <path d="M182 15v32m0-11.5c0 5.4-3.8 9.2-9.5 9.2s-9.6-3.8-9.6-9.2 3.9-9.2 9.6-9.2 9.5 3.8 9.5 9.2Z" />
+            <path d="m191.5 24.5 9.2 22m8.5-22-10.8 26.9c-1.7 4.2-4.1 5.9-8 5.9" />
+            <path d="M217.5 47V24.5m0 11.2c0-6.2 4.2-9.8 10-9.4" />
+          </g>
+        </svg>
+      )}
+      <span className="sr-only">{productName}</span>
+    </span>
   );
 }

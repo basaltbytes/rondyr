@@ -520,8 +520,8 @@ export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
 
   return (
     <main className="mx-auto grid max-w-xl gap-5 px-5 py-12">
-      <h1>
-        <ProductLogo />
+      <h1 className="flex justify-center">
+        <ProductLogo size="lg" />
       </h1>
       {failed && (
         <p role="alert" className="text-sm text-destructive">
