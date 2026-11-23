@@ -1,7 +1,7 @@
-import type { Submission } from "~/lib/inbox-client";
+import type { SubmissionDetail } from "~/lib/api/messages";
 
 // The full fields of a message, or the preview of a list entry: both are records of text.
-type Fields = Submission["fields"];
+type Fields = SubmissionDetail["fields"];
 type Field = readonly [name: string, value: string];
 
 // A submission is a free record of fields, so the sender and the body of a

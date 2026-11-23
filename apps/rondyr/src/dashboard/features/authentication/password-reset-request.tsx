@@ -1,14 +1,13 @@
-import { Option, Schema } from "effect";
+import { useMutation } from "@tanstack/react-query";
+import { Option } from "effect";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { passwordResetRefusalOf, requestPasswordReset } from "~/lib/api/password-resets";
 import { useLanguage } from "~/lib/i18n";
-import { PasswordResetFailed, requestPasswordReset } from "~/lib/password-reset-client";
-
-const isFailed = Schema.is(PasswordResetFailed);
 
 interface Outcome {
   readonly status: "sent" | "noProvider" | "failed";
@@ -25,18 +24,18 @@ interface PasswordResetRequestProps {
 export function PasswordResetRequest({ onBack }: PasswordResetRequestProps) {
   const { t } = useTranslation();
   const language = useLanguage();
+  const { mutateAsync: requestLink } = useMutation({
+    mutationFn: (email: string) => requestPasswordReset(email, language),
+  });
   const [outcome, request, pending] = useActionState(
     async (_: Outcome | null, data: FormData): Promise<Outcome> => {
       const email = data.get("email")?.toString().trim() ?? "";
       try {
-        await requestPasswordReset(email, language);
+        await requestLink(email);
         return { status: "sent", email };
-      } catch (error) {
-        if (
-          isFailed(error) &&
-          Option.isSome(error.problem) &&
-          error.problem.value.error === "email-provider-missing"
-        ) {
+      } catch (cause) {
+        const refusal = passwordResetRefusalOf(cause);
+        if (Option.isSome(refusal) && refusal.value.error === "email-provider-missing") {
           return { status: "noProvider", email };
         }
         return { status: "failed", email };

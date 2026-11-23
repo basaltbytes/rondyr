@@ -5,28 +5,27 @@ import { useTranslation } from "react-i18next";
 import { ProductLogo } from "~/components/product-logo";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-
-/**
- * Why the organizations of the account could not be read: the server did not
- * answer, it answered with an error status, or its answer is not one that this
- * version of the dashboard reads.
- */
-export type LoadFailure = "unreachable" | "unreadable" | { readonly status: number };
+import { readFailureOf } from "~/lib/api/request";
 
 interface OrganizationsUnavailableProps {
-  readonly failure: LoadFailure;
+  /** What the read of the organizations threw. */
+  readonly cause: unknown;
   readonly onRetry: () => void;
+  /** The read runs again: the button waits for it. */
+  readonly retrying: boolean;
   /** The account and its sign-out button: this screen has no sidebar. */
   readonly signOut: ReactNode;
 }
 
 /** The screen shown in place of the dashboard when its organizations cannot be read. */
 export function OrganizationsUnavailable({
-  failure,
+  cause,
   onRetry,
+  retrying,
   signOut,
 }: OrganizationsUnavailableProps) {
   const { t } = useTranslation();
+  const failure = readFailureOf(cause);
   const Icon =
     failure === "unreachable" ? WifiOff : failure === "unreadable" ? FileWarning : ServerCrash;
 
@@ -54,7 +53,12 @@ export function OrganizationsUnavailable({
           <CardDescription role="alert">{explain()}</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button variant="default" className="justify-self-start" onClick={onRetry}>
+          <Button
+            variant="default"
+            className="justify-self-start"
+            disabled={retrying}
+            onClick={onRetry}
+          >
             <RefreshCw aria-hidden="true" className="size-4" />
             {t("inbox.organizations.unavailable.retry")}
           </Button>

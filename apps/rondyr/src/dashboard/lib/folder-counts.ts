@@ -1,9 +1,12 @@
-import type { Counts, Inbox, Status, StatusCounts } from "./inbox-client.ts";
+import type { InboxCounts, OrganizationCounts, SubmissionStatus } from "@rondyr/contracts/inbox";
+import type { ManagedForm } from "@rondyr/forms/form";
 
-/** A folder of the sidebar: the messages of one status, or all of them. */
-export type Folder = "quarantined" | "accepted" | "archived" | "all";
+import type { Folder } from "./messages-search.ts";
 
-type Form = Inbox["forms"][number];
+type StatusCounts = typeof InboxCounts.Type;
+type Counts = typeof OrganizationCounts.Type;
+type Status = typeof SubmissionStatus.Type;
+type Form = typeof ManagedForm.Type;
 
 const noMessage: StatusCounts = {
   received: 0,

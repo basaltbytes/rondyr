@@ -1,19 +1,16 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { Schema } from "effect";
 import { RefreshCw } from "lucide-react";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { connectorOf } from "@rondyr/deliveries/connectors/catalog";
 
+import { ReadFailure } from "~/components/read-failure";
 import { Button } from "~/components/ui/button";
-import { listDeliveries, retryDelivery } from "~/lib/deliveries-client";
-import type { Delivery } from "~/lib/deliveries-client";
+import { deliveriesQuery, retryDeliveryMutation, type DeliveryRecord } from "~/lib/api/deliveries";
+import { statusOf } from "~/lib/api/request";
 import { useFormats } from "~/lib/i18n";
-import { InboxRequestError } from "~/lib/inbox-client";
-import type { Inbox, Submission } from "~/lib/inbox-client";
-
-const isRequestError = Schema.is(InboxRequestError);
 
 /** Why a retry was not applied. Each one names a message of `inbox.deliveries.problems`. */
 type RetryProblem = "noLongerFailed" | "retryNotSaved";
@@ -26,7 +23,7 @@ const statusTones = {
   failed: "text-destructive",
 } as const;
 
-function Destination({ delivery }: { readonly delivery: Delivery }) {
+function Destination({ delivery }: { readonly delivery: DeliveryRecord }) {
   const { t } = useTranslation();
   const { destination } = delivery;
   if (destination.type === "webhook") {
@@ -52,50 +49,29 @@ function Destination({ delivery }: { readonly delivery: Delivery }) {
 }
 
 interface DeliveryHistoryProps {
-  readonly inboxId: Inbox["id"];
-  readonly submissionId: Submission["submissionId"];
-  readonly revision: number;
+  readonly organizationId: string;
+  readonly submissionId: string;
   /** A reviewer reads the deliveries; an admin may also retry a failed one. */
   readonly canRetry: boolean;
 }
 
-export function DeliveryHistory({
-  inboxId,
-  submissionId,
-  revision,
-  canRetry,
-}: DeliveryHistoryProps) {
+export function DeliveryHistory({ organizationId, submissionId, canRetry }: DeliveryHistoryProps) {
   const { t } = useTranslation();
   const format = useFormats();
-  const [deliveries, setDeliveries] = useState<readonly Delivery[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [reload, setReload] = useState(0);
-
-  function refresh() {
-    setFailed(false);
-    setReload((value) => value + 1);
-  }
-
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Loads the deliveries of the message from the Rondyr API.
-  useEffect(() => {
-    const request = new AbortController();
-    void listDeliveries(inboxId, submissionId, request.signal).then(setDeliveries, () => {
-      if (!request.signal.aborted) setFailed(true);
-    });
-    return () => request.abort();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh of the inbox or of this list initiates a new API request.
-  }, [inboxId, submissionId, revision, reload]);
+  const history = useQuery(deliveriesQuery(organizationId, submissionId));
+  const retryDelivery = useMutation(retryDeliveryMutation(organizationId, submissionId));
+  const deliveries = history.data ?? null;
 
   const [problem, retry, retrying] = useActionState(
     async (_: RetryProblem | null, form: FormData): Promise<RetryProblem | null> => {
       const delivery = deliveries?.find(({ id }) => id === form.get("delivery"));
       if (delivery === undefined) return null;
       try {
-        setDeliveries(await retryDelivery(inboxId, submissionId, delivery.id));
+        await retryDelivery.mutateAsync(delivery.id);
         return null;
-      } catch (error) {
-        if (isRequestError(error) && error.status === 409) {
-          refresh();
+      } catch (cause) {
+        if (statusOf(cause) === 409) {
+          void history.refetch();
           return "noLongerFailed";
         }
         return "retryNotSaved";
@@ -112,17 +88,21 @@ export function DeliveryHistory({
           variant="ghost"
           size="icon"
           aria-label={t("inbox.deliveries.refresh")}
-          onClick={refresh}
+          onClick={() => void history.refetch()}
         >
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
       </div>
-      {failed && (
-        <p role="alert" className="text-sm text-destructive">
-          {t("inbox.deliveries.loadFailed")}
-        </p>
+      {history.isError && (
+        <ReadFailure
+          cause={history.error}
+          title={t("inbox.deliveries.loadFailed")}
+          retry={t("common.retry")}
+          retrying={history.isFetching}
+          onRetry={() => void history.refetch()}
+        />
       )}
-      {deliveries === null && !failed && (
+      {history.isPending && (
         <output className="text-sm text-muted-foreground">{t("inbox.deliveries.loading")}</output>
       )}
       {deliveries?.length === 0 && (

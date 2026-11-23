@@ -1,31 +1,32 @@
-import { Option, Schema } from "effect";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Option } from "effect";
 import { X } from "lucide-react";
-import { useActionState, useEffect, useId, useState } from "react";
+import { useActionState, useId } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ReadFailure } from "~/components/read-failure";
 import { FormProblem } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import type { Inbox } from "~/lib/inbox-client";
-import { addOrigin, listOrigins, OriginRequestFailed, removeOrigin } from "~/lib/origins-client";
-import type { AllowedOrigin, OriginProblem } from "~/lib/origins-client";
-
-const isFailed = Schema.is(OriginRequestFailed);
+import type { ManagedForm } from "~/lib/api/forms";
+import {
+  addOriginMutation,
+  originRefusalOf,
+  originsQuery,
+  removeOriginMutation,
+  type OriginRequestError,
+} from "~/lib/api/origins";
 
 /** Why a request to the origins API failed: the problem that the API names, or no stated reason. */
-type OriginFailure = OriginProblem | "unexplained";
+type OriginFailure = OriginRequestError | "unexplained";
 
 /** Run a request and return why it failed, or null. */
 async function attempt(request: () => Promise<void>): Promise<OriginFailure | null> {
   try {
     await request();
     return null;
-  } catch (error) {
-    if (!isFailed(error)) return "unexplained";
-    return Option.match(error.problem, {
-      onNone: (): OriginFailure => "unexplained",
-      onSome: (problem): OriginFailure => problem,
-    });
+  } catch (cause) {
+    return Option.getOrElse(originRefusalOf(cause), (): OriginFailure => "unexplained");
   }
 }
 
@@ -38,7 +39,7 @@ interface OriginFailureNoteProps {
 function OriginFailureNote({ failure, fallback }: OriginFailureNoteProps) {
   const { t } = useTranslation();
 
-  function explain(problem: OriginProblem) {
+  function explain(problem: OriginRequestError) {
     return problem.error === "origin-in-use"
       ? t("inbox.origins.inUse")
       : t(`inbox.origins.refusals.${problem.reason}`);
@@ -49,32 +50,23 @@ function OriginFailureNote({ failure, fallback }: OriginFailureNoteProps) {
 }
 
 interface AllowedOriginsProps {
-  readonly inboxId: Inbox["id"];
-  readonly form: Inbox["forms"][number];
+  readonly organizationId: string;
+  readonly form: ManagedForm;
 }
 
-export function AllowedOrigins({ inboxId, form }: AllowedOriginsProps) {
+export function AllowedOrigins({ organizationId, form }: AllowedOriginsProps) {
   const { t } = useTranslation();
-  const [origins, setOrigins] = useState<readonly AllowedOrigin[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Loads the form's allowed origins from the Rondyr API.
-  useEffect(() => {
-    const request = new AbortController();
-    void listOrigins(inboxId, form.publicId, request.signal).then(setOrigins, () => {
-      if (!request.signal.aborted) setFailed(true);
-    });
-    return () => request.abort();
-  }, [inboxId, form.publicId]);
+  const query = useQuery(originsQuery(organizationId, form.publicId));
+  const origins = query.data ?? null;
+  const { mutateAsync: addOrigin } = useMutation(addOriginMutation(organizationId, form.publicId));
+  const { mutateAsync: removeOrigin } = useMutation(
+    removeOriginMutation(organizationId, form.publicId),
+  );
 
   const [addFailure, add, adding] = useActionState((_: OriginFailure | null, data: FormData) => {
     const origin = data.get("origin")?.toString() ?? "";
     return attempt(async () => {
-      const added = await addOrigin(inboxId, form.publicId, origin);
-      setOrigins((current) => {
-        const kept = current ?? [];
-        return kept.some((item) => item.origin === added.origin) ? kept : [...kept, added];
-      });
+      await addOrigin(origin);
     });
   }, null);
 
@@ -82,8 +74,7 @@ export function AllowedOrigins({ inboxId, form }: AllowedOriginsProps) {
     (_: OriginFailure | null, data: FormData) => {
       const origin = data.get("origin")?.toString() ?? "";
       return attempt(async () => {
-        await removeOrigin(inboxId, form.publicId, origin);
-        setOrigins((current) => current?.filter((item) => item.origin !== origin) ?? null);
+        await removeOrigin(origin);
       });
     },
     null,
@@ -108,8 +99,16 @@ export function AllowedOrigins({ inboxId, form }: AllowedOriginsProps) {
           {origins?.length === 0 ? t("inbox.origins.empty") : t("inbox.origins.description")}
         </p>
       </div>
-      {failed && <FormProblem>{t("inbox.origins.loadFailed")}</FormProblem>}
-      {origins === null && !failed && (
+      {query.isError && (
+        <ReadFailure
+          cause={query.error}
+          title={t("inbox.origins.loadFailed")}
+          retry={t("common.retry")}
+          retrying={query.isFetching}
+          onRetry={() => void query.refetch()}
+        />
+      )}
+      {query.isPending && (
         <output className="text-sm text-muted-foreground">{t("inbox.origins.loading")}</output>
       )}
       {origins !== null && origins.length > 0 && (

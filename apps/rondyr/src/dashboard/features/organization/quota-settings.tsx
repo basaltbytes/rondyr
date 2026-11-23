@@ -1,43 +1,40 @@
-import { use, useActionState, useId } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useActionState, useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
   maxDailyClassifications,
   maxDailySubmissions,
-  type DailyUsage,
 } from "@rondyr/organizations/organization-quotas";
 
+import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import type { Inbox } from "~/lib/inbox-client";
-import { saveDailyQuotas } from "~/lib/organization-quotas-client";
+import { quotasQuery, saveQuotasMutation, type DailyUsage } from "~/lib/api/quotas";
 
-type Usage = typeof DailyUsage.Type;
-type SaveState = { readonly usage: Usage; readonly result: "saved" | "saveFailed" | null };
+interface QuotaFormProps {
+  readonly organizationId: string;
+  readonly usage: DailyUsage;
+}
 
-function QuotaForm({
-  inboxId,
-  initial,
-}: {
-  readonly inboxId: Inbox["id"];
-  readonly initial: Usage;
-}) {
+function QuotaForm({ organizationId, usage }: QuotaFormProps) {
   const { t, i18n } = useTranslation();
-  const [{ usage, result }, save, saving] = useActionState(
-    async (state: SaveState, data: FormData): Promise<SaveState> => {
+  const { mutateAsync: saveQuotas } = useMutation(saveQuotasMutation(organizationId));
+  const [result, save, saving] = useActionState(
+    async (_: "saved" | "saveFailed" | null, data: FormData) => {
       try {
-        const updated = await saveDailyQuotas(inboxId, {
+        await saveQuotas({
           submissions: Number(data.get("submissions")),
           classifications: Number(data.get("classifications")),
         });
-        return { usage: updated, result: "saved" };
+        return "saved";
       } catch {
-        return { ...state, result: "saveFailed" };
+        return "saveFailed";
       }
     },
-    { usage: initial, result: null },
+    null,
   );
   const number = new Intl.NumberFormat(i18n.language);
   const junkId = useId();
@@ -105,14 +102,12 @@ function QuotaForm({
 }
 
 interface QuotaSettingsProps {
-  readonly inboxId: Inbox["id"];
-  readonly usage: Promise<Usage | null>;
-  readonly onRetry: () => void;
+  readonly organizationId: string;
 }
 
-export function QuotaSettings({ inboxId, usage, onRetry }: QuotaSettingsProps) {
+export function QuotaSettings({ organizationId }: QuotaSettingsProps) {
   const { t } = useTranslation();
-  const initial = use(usage);
+  const usage = useQuery(quotasQuery(organizationId));
   return (
     <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
       <header className="flex h-14 items-center gap-2 px-1">
@@ -125,16 +120,19 @@ export function QuotaSettings({ inboxId, usage, onRetry }: QuotaSettingsProps) {
             <CardDescription>{t("inbox.quotas.description")}</CardDescription>
           </CardHeader>
           <CardContent>
-            {initial === null ? (
-              <div className="grid justify-items-start gap-2">
-                <FormProblem>{t("inbox.quotas.loadFailed")}</FormProblem>
-                <Button type="button" variant="outline" onClick={onRetry}>
-                  {t("inbox.quotas.retry")}
-                </Button>
-              </div>
-            ) : (
-              <QuotaForm inboxId={inboxId} initial={initial} />
+            {usage.isError && (
+              <ReadFailure
+                cause={usage.error}
+                title={t("inbox.quotas.loadFailed")}
+                retry={t("inbox.quotas.retry")}
+                retrying={usage.isFetching}
+                onRetry={() => void usage.refetch()}
+              />
             )}
+            {usage.isPending && (
+              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
+            )}
+            {usage.isSuccess && <QuotaForm organizationId={organizationId} usage={usage.data} />}
           </CardContent>
         </Card>
       </div>

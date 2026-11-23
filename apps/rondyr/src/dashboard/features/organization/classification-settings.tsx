@@ -1,22 +1,24 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Option, Schema } from "effect";
-import { use, useActionState, useId, useState } from "react";
+import { useActionState, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  OrganizationClassificationPolicy,
-  type OrganizationClassificationSettings,
-} from "@rondyr/organizations/organization-classification-policy";
+import { OrganizationClassificationPolicy } from "@rondyr/organizations/organization-classification-policy";
 
+import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, SelectField, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import { saveClassificationOverride } from "~/lib/classification-policy-client";
-import type { Inbox } from "~/lib/inbox-client";
+import {
+  classificationQuery,
+  saveClassificationMutation,
+  type OrganizationClassificationSettings,
+} from "~/lib/api/classification";
 
 const thresholdNames = ["probableSpam", "ambiguous", "solicitation", "lowRelevance"] as const;
 const decodeOverride = Schema.decodeUnknownOption(OrganizationClassificationPolicy);
-type Settings = typeof OrganizationClassificationSettings.Type;
+type Settings = OrganizationClassificationSettings;
 type SaveResult = "saved" | "invalid" | "saveFailed" | null;
 type Translate = ReturnType<typeof useTranslation>["t"];
 
@@ -30,14 +32,14 @@ interface PolicyFormInput {
   escalation?: boolean;
 }
 
-function PolicyForm({
-  inboxId,
-  settings,
-}: {
-  readonly inboxId: Inbox["id"];
+interface PolicyFormProps {
+  readonly organizationId: string;
   readonly settings: Settings;
-}) {
+}
+
+function PolicyForm({ organizationId, settings }: PolicyFormProps) {
   const { t } = useTranslation();
+  const { mutateAsync: saveOverride } = useMutation(saveClassificationMutation(organizationId));
   const { defaults, override, escalationClassifier } = settings;
   const [thresholdMode, setThresholdMode] = useState(
     override?.thresholds === undefined ? "defaults" : "custom",
@@ -71,7 +73,7 @@ function PolicyForm({
     const decoded = usesDefaults ? Option.none() : decodeOverride(input);
     if (!usesDefaults && Option.isNone(decoded)) return "invalid";
     try {
-      await saveClassificationOverride(inboxId, Option.getOrNull(decoded));
+      await saveOverride(Option.getOrNull(decoded));
       setEdited(false);
       return "saved";
     } catch {
@@ -166,18 +168,12 @@ function PolicyForm({
 }
 
 interface ClassificationSettingsProps {
-  readonly inboxId: Inbox["id"];
-  readonly settings: Promise<Settings | null>;
-  readonly onRetry: () => void;
+  readonly organizationId: string;
 }
 
-export function ClassificationSettings({
-  inboxId,
-  settings,
-  onRetry,
-}: ClassificationSettingsProps) {
+export function ClassificationSettings({ organizationId }: ClassificationSettingsProps) {
   const { t } = useTranslation();
-  const initial = use(settings);
+  const settings = useQuery(classificationQuery(organizationId));
   return (
     <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
       <header className="flex h-14 items-center gap-2 px-1">
@@ -186,23 +182,35 @@ export function ClassificationSettings({
       </header>
       <div className="mx-auto max-w-xl px-5 pb-8">
         <Card>
-          {initial !== null && (
+          {settings.isSuccess && (
             <CardHeader>
               <CardDescription>
-                {t("inbox.policy.description", { classifier: modelName(t, initial.classifier) })}
+                {t("inbox.policy.description", {
+                  classifier: modelName(t, settings.data.classifier),
+                })}
               </CardDescription>
             </CardHeader>
           )}
           <CardContent>
-            {initial === null ? (
-              <div className="grid justify-items-start gap-2">
-                <FormProblem>{t("inbox.policy.loadFailed")}</FormProblem>
-                <Button type="button" variant="outline" onClick={onRetry}>
-                  {t("inbox.policy.retry")}
-                </Button>
-              </div>
-            ) : (
-              <PolicyForm inboxId={inboxId} settings={initial} />
+            {settings.isError && (
+              <ReadFailure
+                cause={settings.error}
+                title={t("inbox.policy.loadFailed")}
+                retry={t("inbox.policy.retry")}
+                retrying={settings.isFetching}
+                onRetry={() => void settings.refetch()}
+              />
+            )}
+            {settings.isPending && (
+              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
+            )}
+            {settings.isSuccess && (
+              // The form starts from the settings as they were read; other settings start it again.
+              <PolicyForm
+                key={JSON.stringify(settings.data)}
+                organizationId={organizationId}
+                settings={settings.data}
+              />
             )}
           </CardContent>
         </Card>

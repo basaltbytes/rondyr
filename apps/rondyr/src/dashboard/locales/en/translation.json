@@ -4,7 +4,13 @@
     "loading": "Loading…",
     "refresh": "Refresh",
     "save": "Save",
-    "saved": "Saved"
+    "saved": "Saved",
+    "retry": "Try again",
+    "readFailure": {
+      "unreachable": "The server did not answer. Check your connection, then try again.",
+      "unreadable": "The dashboard could not read the server’s answer, which happens when the two are not the same version. Reload the page.",
+      "status": "The server answered with an error (HTTP {{status}})."
+    }
   },
   "languages": {
     "en": "English",
@@ -17,6 +23,11 @@
   },
   "session": {
     "checking": "Checking the session…"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "description": "Nothing is at this address, or it belongs to an organization that your account is not a member of.",
+    "messages": "Go to the messages"
   },
   "sidebar": {
     "menu": "Menu",
@@ -41,7 +52,8 @@
         "unavailable": "The sign-in service is unavailable.",
         "refused": "Check your email address and your password.",
         "failed": "Sign-in failed. Try again."
-      }
+      },
+      "sessionEnded": "Your session has ended. Sign in again to go back to the page you were on."
     },
     "passwordReset": {
       "title": "Reset your password",
@@ -299,7 +311,8 @@
         "confirm": "Delete for good",
         "deleting": "Deleting…",
         "failed": "The message could not be deleted. Try again."
-      }
+      },
+      "loadFailed": "Could not load this message."
     },
     "deliveries": {
       "label": "Deliveries of the message",

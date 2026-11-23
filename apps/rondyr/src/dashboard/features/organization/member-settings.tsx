@@ -1,33 +1,31 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Redacted, Schema } from "effect";
-import { use, useActionState, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Redacted } from "effect";
+import { useActionState, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MemberRole } from "@rondyr/organizations/member-role";
-import type { IssuedInvitation } from "@rondyr/organizations/members";
 
+import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, SelectField, TextField } from "~/components/text-field";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { NativeSelect } from "~/components/ui/native-select";
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import { authClient } from "~/lib/auth-client";
-import { useFormats, useLanguage } from "~/lib/i18n";
-import type { Inbox } from "~/lib/inbox-client";
 import {
-  cancelInvitation,
-  changeMemberRole,
-  inviteMember,
-  MemberRequestFailed,
-  removeMember,
-} from "~/lib/members-client";
-import type { MemberList, OrganizationMember } from "~/lib/members-client";
+  changeMembersMutation,
+  memberErrorOf,
+  membersQuery,
+  type IssuedInvitation,
+  type Member,
+  type OrganizationMembers,
+} from "~/lib/api/members";
+import { useFormats, useLanguage } from "~/lib/i18n";
 
-const isRequestFailure = Schema.is(MemberRequestFailed);
 const roles = ["reviewer", "admin"] as const satisfies ReadonlyArray<MemberRole>;
 
-type Issued = typeof IssuedInvitation.Type;
+type Issued = IssuedInvitation;
 type InviteProblem = "alreadyMember" | "limit" | "inviteFailed";
 type MemberProblem = "lastAdmin" | "changeFailed" | "removeFailed" | "cancelFailed";
 
@@ -69,28 +67,26 @@ function IssuedLink({ issued, onHide }: { issued: Issued; onHide: () => void }) 
 }
 
 interface MemberManagerProps {
-  readonly inboxId: Inbox["id"];
-  readonly initial: MemberList;
+  readonly organizationId: string;
+  readonly list: OrganizationMembers;
   /** When the list was read: an invitation that expired before it shows as expired. */
   readonly readAt: number;
-  /** Reload the organizations after a change to the account's own membership. */
-  readonly onOwnMembershipChanged: () => void;
+  /** The user ID of the signed-in account. */
+  readonly self: string;
 }
 
-function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: MemberManagerProps) {
+function MemberManager({ organizationId, list, readAt, self }: MemberManagerProps) {
   const { t } = useTranslation();
   const formats = useFormats();
   const language = useLanguage();
-  const session = authClient.useSession();
-  const self = session.data?.user.id ?? null;
-  const [members, setMembers] = useState(initial.members);
-  const [invitations, setInvitations] = useState(initial.invitations);
+  const { members, invitations } = list;
+  const { mutateAsync: change } = useMutation(changeMembersMutation(organizationId, self));
   const [issued, setIssued] = useState<Issued | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [problem, setProblem] = useState<MemberProblem | null>(null);
-  const [removing, setRemoving] = useState<OrganizationMember | null>(null);
+  const [removing, setRemoving] = useState<Member | null>(null);
   // The account's own change from admin to reviewer, which only another admin can undo.
-  const [steppingDown, setSteppingDown] = useState<OrganizationMember | null>(null);
+  const [steppingDown, setSteppingDown] = useState<Member | null>(null);
   const emailField = useRef<HTMLInputElement>(null);
   const removeButton = useRef<HTMLButtonElement>(null);
 
@@ -99,43 +95,32 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
       const email = data.get("email")?.toString().trim() ?? "";
       const role = data.get("role") === "admin" ? "admin" : "reviewer";
       try {
-        const created = await inviteMember(inboxId, email, role, language);
-        setInvitations((current) => [
-          created.invitation,
-          ...current.filter(({ email: other }) => other !== created.invitation.email),
-        ]);
-        setIssued(created);
+        const invited = await change({ change: "invite", email, role, language });
+        if (invited.change === "invite") setIssued(invited.issued);
         setEmailInput("");
         return null;
-      } catch (error) {
-        if (isRequestFailure(error) && error.error === "already-member") return "alreadyMember";
-        if (isRequestFailure(error) && error.error === "invitation-limit") return "limit";
+      } catch (cause) {
+        if (memberErrorOf(cause) === "already-member") return "alreadyMember";
+        if (memberErrorOf(cause) === "invitation-limit") return "limit";
         return "inviteFailed";
       }
     },
     null,
   );
 
-  async function changeRole(member: OrganizationMember, role: MemberRole) {
+  async function changeRole(member: Member, role: MemberRole) {
     setProblem(null);
     try {
-      const changed = await changeMemberRole(inboxId, member.userId, role);
-      setMembers((current) =>
-        current.map((other) => (other.userId === changed.userId ? changed : other)),
-      );
-      if (changed.userId === self) onOwnMembershipChanged();
-    } catch (error) {
-      setProblem(
-        isRequestFailure(error) && error.error === "last-admin" ? "lastAdmin" : "changeFailed",
-      );
+      await change({ change: "role", member: member.userId, role });
+    } catch (cause) {
+      setProblem(memberErrorOf(cause) === "last-admin" ? "lastAdmin" : "changeFailed");
     }
   }
 
-  async function cancel(id: MemberList["invitations"][number]["id"]) {
+  async function cancel(id: OrganizationMembers["invitations"][number]["id"]) {
     setProblem(null);
     try {
-      await cancelInvitation(inboxId, id);
-      setInvitations((current) => current.filter((invitation) => invitation.id !== id));
+      await change({ change: "cancel", invitation: id });
       setIssued((current) => (current?.invitation.id === id ? null : current));
     } catch {
       setProblem("cancelFailed");
@@ -152,13 +137,9 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
     if (removing === null) return;
     setProblem(null);
     try {
-      await removeMember(inboxId, removing.userId);
-      setMembers((current) => current.filter(({ userId }) => userId !== removing.userId));
-      if (removing.userId === self) onOwnMembershipChanged();
-    } catch (error) {
-      setProblem(
-        isRequestFailure(error) && error.error === "last-admin" ? "lastAdmin" : "removeFailed",
-      );
+      await change({ change: "remove", member: removing.userId });
+    } catch (cause) {
+      setProblem(memberErrorOf(cause) === "last-admin" ? "lastAdmin" : "removeFailed");
     }
     setRemoving(null);
   }, undefined);
@@ -404,22 +385,14 @@ function MemberManager({ inboxId, initial, readAt, onOwnMembershipChanged }: Mem
 }
 
 interface MemberSettingsProps {
-  readonly inboxId: Inbox["id"];
-  readonly members: Promise<MemberList | null>;
-  readonly readAt: number;
-  readonly onRetry: () => void;
-  readonly onOwnMembershipChanged: () => void;
+  readonly organizationId: string;
+  /** The user ID of the signed-in account. */
+  readonly self: string;
 }
 
-export function MemberSettings({
-  inboxId,
-  members,
-  readAt,
-  onRetry,
-  onOwnMembershipChanged,
-}: MemberSettingsProps) {
+export function MemberSettings({ organizationId, self }: MemberSettingsProps) {
   const { t } = useTranslation();
-  const initial = use(members);
+  const members = useQuery(membersQuery(organizationId));
 
   return (
     <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
@@ -428,17 +401,24 @@ export function MemberSettings({
         <h1 className="truncate text-base font-semibold">{t("inbox.sections.members")}</h1>
       </header>
       <div className="mx-auto max-w-xl px-5 pb-8">
-        {initial === null ? (
-          <div className="grid justify-items-start gap-2">
-            <FormProblem>{t("inbox.members.loadFailed")}</FormProblem>
-            <Button onClick={onRetry}>{t("inbox.members.retry")}</Button>
-          </div>
-        ) : (
+        {members.isError && (
+          <ReadFailure
+            cause={members.error}
+            title={t("inbox.members.loadFailed")}
+            retry={t("inbox.members.retry")}
+            retrying={members.isFetching}
+            onRetry={() => void members.refetch()}
+          />
+        )}
+        {members.isPending && (
+          <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
+        )}
+        {members.isSuccess && (
           <MemberManager
-            inboxId={inboxId}
-            initial={initial}
-            readAt={readAt}
-            onOwnMembershipChanged={onOwnMembershipChanged}
+            organizationId={organizationId}
+            list={members.data}
+            readAt={members.dataUpdatedAt}
+            self={self}
           />
         )}
       </div>

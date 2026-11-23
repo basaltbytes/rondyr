@@ -3,16 +3,19 @@ import { Trans, useTranslation } from "react-i18next";
 
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Button } from "~/components/ui/button";
+import type {
+  DestinationChange,
+  IssuedWebhookSecret,
+  SavedDestination,
+  WebhookTarget,
+} from "~/lib/api/destinations";
 import { useFormats } from "~/lib/i18n";
-import type { Inbox } from "~/lib/inbox-client";
-import { rotateSecret } from "~/lib/targets-client";
-import type { IssuedSecret, Webhook } from "~/lib/targets-client";
 
 import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
 import { DestinationTest } from "./destination-test.tsx";
 
 interface IssuedSecretNoteProps {
-  readonly issued: IssuedSecret;
+  readonly issued: IssuedWebhookSecret;
   readonly onHide: () => void;
 }
 
@@ -53,25 +56,31 @@ function IssuedSecretNote({ issued, onHide }: IssuedSecretNoteProps) {
 }
 
 interface WebhookPanelProps {
-  readonly inboxId: Inbox["id"];
-  readonly target: Webhook;
+  readonly organizationId: string;
+  readonly target: WebhookTarget;
   /** The secret that the API just issued for this webhook, if any. */
-  readonly issued: IssuedSecret | null;
-  readonly onReplaced: (target: Webhook) => void;
+  readonly issued: IssuedWebhookSecret | null;
+  /** Sends a change of the destination, then its cached copy. */
+  readonly onChange: (change: DestinationChange) => Promise<SavedDestination>;
   /** Show a new secret, or hide the one shown with null. */
-  readonly onIssued: (issued: IssuedSecret | null) => void;
+  readonly onIssued: (issued: IssuedWebhookSecret | null) => void;
 }
 
 /** What an open webhook shows: its secret when one was just issued, its test and its rotation. */
-export function WebhookPanel({ inboxId, target, issued, onReplaced, onIssued }: WebhookPanelProps) {
+export function WebhookPanel({
+  organizationId,
+  target,
+  issued,
+  onChange,
+  onIssued,
+}: WebhookPanelProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const [failure, rotate, rotating] = useActionState(
     () =>
       attempt(async () => {
-        const next = await rotateSecret(inboxId, target.id);
-        onReplaced(next.target);
-        onIssued(next);
+        const rotated = await onChange({ change: "secret" });
+        onIssued(rotated.issued);
       }),
     null,
   );
@@ -88,7 +97,7 @@ export function WebhookPanel({ inboxId, target, issued, onReplaced, onIssued }: 
       )}
       {issued !== null && <IssuedSecretNote issued={issued} onHide={() => onIssued(null)} />}
       <div className="flex flex-wrap items-center gap-2">
-        <DestinationTest inboxId={inboxId} targetId={target.id} />
+        <DestinationTest organizationId={organizationId} targetId={target.id} />
         <form action={rotate} className="contents">
           <Button type="submit" size="sm" disabled={rotating}>
             {t("inbox.webhooks.rotate")}

@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 
-import type { Inbox } from "./inbox-client.ts";
+import type { ManagedForm } from "~/lib/api/forms";
 
 import {
   countsAfterMove,
@@ -22,7 +22,7 @@ const counts = {
   ],
 };
 
-function form(publicId: string): Inbox["forms"][number] {
+function form(publicId: string): ManagedForm {
   return {
     name: publicId,
     publicId,

@@ -1,6 +1,7 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Redacted, Schema } from "effect";
-import { use, useActionState, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Redacted } from "effect";
+import { useActionState, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -10,16 +11,20 @@ import {
   type CreatedApiToken,
 } from "@rondyr/organizations/api-token";
 
+import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import { ApiTokenRequestFailed, createApiToken, revokeApiToken } from "~/lib/api-tokens-client";
+import {
+  apiTokensQuery,
+  createApiTokenMutation,
+  revokeApiTokenMutation,
+} from "~/lib/api/api-tokens";
+import { statusOf } from "~/lib/api/request";
 import { useFormats } from "~/lib/i18n";
-import type { Inbox } from "~/lib/inbox-client";
 
 type ApiToken = ApiTokenList[number];
-const isRequestFailure = Schema.is(ApiTokenRequestFailed);
 
 function IssuedToken({ token, onHide }: { token: Redacted.Redacted<string>; onHide: () => void }) {
   const { t } = useTranslation();
@@ -56,10 +61,16 @@ function IssuedToken({ token, onHide }: { token: Redacted.Redacted<string>; onHi
   );
 }
 
-function TokenList({ inboxId, initial }: { inboxId: Inbox["id"]; initial: ApiTokenList }) {
+interface TokenListProps {
+  readonly organizationId: string;
+  readonly tokens: ApiTokenList;
+}
+
+function TokenList({ organizationId, tokens }: TokenListProps) {
   const { t } = useTranslation();
   const formats = useFormats();
-  const [tokens, setTokens] = useState(initial);
+  const { mutateAsync: createApiToken } = useMutation(createApiTokenMutation(organizationId));
+  const { mutateAsync: revokeApiToken } = useMutation(revokeApiTokenMutation(organizationId));
   const [nameInput, setNameInput] = useState("");
   const [issued, setIssued] = useState<typeof CreatedApiToken.Type | null>(null);
   const [confirming, setConfirming] = useState<ApiToken | null>(null);
@@ -72,15 +83,12 @@ function TokenList({ inboxId, initial }: { inboxId: Inbox["id"]; initial: ApiTok
       const name = data.get("name")?.toString().trim() ?? "";
       if (name.length === 0) return "invalidName";
       try {
-        const created = await createApiToken(inboxId, name);
-        const { token, ...summary } = created;
-        setTokens((current) => [summary, ...current]);
-        setIssued({ ...summary, token });
+        setIssued(await createApiToken(name));
         setNameInput("");
         return null;
-      } catch (error) {
-        if (isRequestFailure(error) && error.status === 409) return "limit";
-        if (isRequestFailure(error) && error.status === 400) return "invalidName";
+      } catch (cause) {
+        if (statusOf(cause) === 409) return "limit";
+        if (statusOf(cause) === 400) return "invalidName";
         return "createFailed";
       }
     },
@@ -90,8 +98,7 @@ function TokenList({ inboxId, initial }: { inboxId: Inbox["id"]; initial: ApiTok
   const [, revoke, revoking] = useActionState(async () => {
     if (confirming === null) return;
     try {
-      await revokeApiToken(inboxId, confirming.id);
-      setTokens((current) => current.filter(({ id }) => id !== confirming.id));
+      await revokeApiToken(confirming.id);
       setIssued((current) => (current?.id === confirming.id ? null : current));
       setConfirming(null);
     } catch {
@@ -225,14 +232,12 @@ function TokenList({ inboxId, initial }: { inboxId: Inbox["id"]; initial: ApiTok
 }
 
 interface ApiTokenSettingsProps {
-  readonly inboxId: Inbox["id"];
-  readonly tokens: Promise<ApiTokenList | null>;
-  readonly onRetry: () => void;
+  readonly organizationId: string;
 }
 
-export function ApiTokenSettings({ inboxId, tokens, onRetry }: ApiTokenSettingsProps) {
+export function ApiTokenSettings({ organizationId }: ApiTokenSettingsProps) {
   const { t } = useTranslation();
-  const initial = use(tokens);
+  const tokens = useQuery(apiTokensQuery(organizationId));
 
   return (
     <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
@@ -246,14 +251,19 @@ export function ApiTokenSettings({ inboxId, tokens, onRetry }: ApiTokenSettingsP
             <CardDescription>{t("inbox.apiTokens.description")}</CardDescription>
           </CardHeader>
           <CardContent>
-            {initial === null ? (
-              <div className="grid justify-items-start gap-2">
-                <FormProblem>{t("inbox.apiTokens.loadFailed")}</FormProblem>
-                <Button onClick={onRetry}>{t("inbox.apiTokens.retry")}</Button>
-              </div>
-            ) : (
-              <TokenList inboxId={inboxId} initial={initial} />
+            {tokens.isError && (
+              <ReadFailure
+                cause={tokens.error}
+                title={t("inbox.apiTokens.loadFailed")}
+                retry={t("inbox.apiTokens.retry")}
+                retrying={tokens.isFetching}
+                onRetry={() => void tokens.refetch()}
+              />
             )}
+            {tokens.isPending && (
+              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
+            )}
+            {tokens.isSuccess && <TokenList organizationId={organizationId} tokens={tokens.data} />}
           </CardContent>
         </Card>
       </div>

@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { ChevronsUpDown, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -19,7 +20,7 @@ import {
   SidebarMenuItem,
   SidebarMenuLabel,
 } from "~/components/ui/sidebar";
-import type { Inbox } from "~/lib/inbox-client";
+import type { Organization } from "~/lib/api/organizations";
 
 import { initialsOf } from "./initials.ts";
 
@@ -39,20 +40,14 @@ function OrganizationMark({ name }: OrganizationMarkProps) {
 }
 
 interface OrganizationSwitcherProps {
-  readonly inboxes: readonly Inbox[];
-  readonly inbox: Inbox;
-  readonly onInbox: (id: string) => void;
-  readonly onNew: () => void;
+  readonly organizations: readonly Organization[];
+  readonly organization: Organization;
 }
 
 /** The open organization, and a menu to open another one or to create one. */
-export function OrganizationSwitcher({
-  inboxes,
-  inbox,
-  onInbox,
-  onNew,
-}: OrganizationSwitcherProps) {
+export function OrganizationSwitcher({ organizations, organization }: OrganizationSwitcherProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -61,16 +56,16 @@ export function OrganizationSwitcher({
             render={
               <SidebarMenuButton
                 size="lg"
-                tooltip={inbox.name}
-                aria-label={t("inbox.organizations.switcher", { name: inbox.name })}
+                tooltip={organization.name}
+                aria-label={t("inbox.organizations.switcher", { name: organization.name })}
               />
             }
           >
-            <OrganizationMark name={inbox.name} />
+            <OrganizationMark name={organization.name} />
             <SidebarMenuLabel>
-              <span className="block truncate text-sidebar-foreground">{inbox.name}</span>
+              <span className="block truncate text-sidebar-foreground">{organization.name}</span>
               <span className="block truncate text-xs font-normal text-sidebar-foreground/70 tabular-nums">
-                {t("inbox.organizations.forms", { count: inbox.forms.length })}
+                {t("inbox.organizations.forms", { count: organization.forms.length })}
               </span>
             </SidebarMenuLabel>
             <SidebarMenuBadge>
@@ -80,8 +75,13 @@ export function OrganizationSwitcher({
           <DropdownMenuContent>
             <DropdownMenuGroup>
               <DropdownMenuLabel>{t("inbox.organizations.title")}</DropdownMenuLabel>
-              <DropdownMenuRadioGroup value={inbox.id} onValueChange={onInbox}>
-                {inboxes.map(({ id, name }) => (
+              <DropdownMenuRadioGroup
+                value={organization.id}
+                onValueChange={(organizationId: string) =>
+                  void navigate({ to: "/o/$organizationId/messages", params: { organizationId } })
+                }
+              >
+                {organizations.map(({ id, name }) => (
                   <DropdownMenuRadioItem key={id} value={id}>
                     <OrganizationMark name={name} />
                     <span className="min-w-0 flex-1 wrap-anywhere">{name}</span>
@@ -90,7 +90,14 @@ export function OrganizationSwitcher({
               </DropdownMenuRadioGroup>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onNew}>
+            <DropdownMenuItem
+              onClick={() =>
+                void navigate({
+                  to: "/organizations/new",
+                  state: { organizationId: organization.id },
+                })
+              }
+            >
               <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
                 <Plus aria-hidden="true" className="size-4" />
               </span>

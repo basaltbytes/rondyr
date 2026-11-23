@@ -1,7 +1,11 @@
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { cn } from "cn";
 import { Download, RefreshCw, Search, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { allows } from "@rondyr/organizations/member-role";
 
 import { Button } from "~/components/ui/button";
 import {
@@ -13,39 +17,59 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
+import { emojiOf, FormEmoji } from "~/components/form-emoji";
+import { ReadFailure } from "~/components/read-failure";
 import { Input } from "~/components/ui/input";
 import { SidebarTrigger } from "~/components/ui/sidebar";
+import type { ManagedForm } from "~/lib/api/forms";
+import {
+  exportAddress,
+  messageCountsQuery,
+  messageListQuery,
+  refreshMessages,
+  type InboxEntry,
+} from "~/lib/api/messages";
+import type { Organization } from "~/lib/api/organizations";
+import { countsOfForm, formsOfFolder, totalOf, type FolderForm } from "~/lib/folder-counts";
 import { useFormats } from "~/lib/i18n";
-import type { Inbox, SubmissionEntry } from "~/lib/inbox-client";
+import type { Folder, MessagesSearch } from "~/lib/messages-search";
 
-import type { Folder, FolderForm } from "~/lib/folder-counts";
-import { emojiOf, FormEmoji } from "~/components/form-emoji";
 import { excerptOf, listDay, senderOf, subjectOf } from "./message-preview.ts";
 
-type Form = Inbox["forms"][number];
-
 interface MessageRowProps {
-  readonly submission: SubmissionEntry;
+  readonly organizationId: Organization["id"];
+  readonly submission: InboxEntry;
+  /** The search params of the list, which the address of the open message keeps. */
+  readonly search: MessagesSearch;
   /** The form of the message, when its emoji tells it apart from the other forms. */
-  readonly form: Form | undefined;
+  readonly form: ManagedForm | undefined;
   readonly active: boolean;
   /** The status is shown where a folder mixes several of them. */
   readonly showStatus: boolean;
   readonly now: number;
-  readonly onOpen: () => void;
 }
 
-function MessageRow({ submission, form, active, showStatus, now, onOpen }: MessageRowProps) {
+/** A message of the list: a link to its address, with the list beside it. */
+function MessageRow({
+  organizationId,
+  submission,
+  search,
+  form,
+  active,
+  showStatus,
+  now,
+}: MessageRowProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const sender = senderOf(submission.preview);
   const subject = subjectOf(submission.preview);
   const day = listDay(submission.receivedAt, now);
   return (
-    <button
-      type="button"
+    <Link
+      to="/o/$organizationId/messages/$submissionId"
+      params={{ organizationId, submissionId: submission.submissionId }}
+      search={search}
       aria-current={active ? "true" : undefined}
-      onClick={onOpen}
       className={cn(
         "flex w-full gap-3 border-l-3 px-4 py-3 text-start transition-colors duration-150 ease-out",
         active ? "border-l-primary bg-primary/10" : "border-l-transparent hover:bg-muted",
@@ -93,43 +117,20 @@ function MessageRow({ submission, form, active, showStatus, now, onOpen }: Messa
           <span className="truncate">{submission.formName}</span>
         </span>
       </span>
-    </button>
+    </Link>
   );
 }
 
 interface MessageListProps {
-  readonly folder: Folder;
-  /** The forms of the organization. With several, each message shows the emoji of its form. */
-  readonly forms: readonly Form[];
-  /** The forms that the folder has messages of, when there are several to tell apart. */
-  readonly formsOfFolder: readonly FolderForm[];
-  /** The public ID of the form that the list is narrowed to, if any. */
-  readonly form: Form["publicId"] | null;
-  /** `null` while the first page loads. */
-  readonly entries: readonly SubmissionEntry[] | null;
-  /** The number of messages listed, when the counts are known. */
-  readonly total: number | null;
-  /** The number of messages of the folder in the other forms, when the counts are known. */
-  readonly elsewhere: number | null;
-  readonly selected: SubmissionEntry["submissionId"] | null;
-  readonly hasMore: boolean;
-  readonly loadingMore: boolean;
-  readonly failed: boolean;
-  /** When the list was read, to tell today's messages from older ones. */
-  readonly now: number;
-  /** Hidden on a narrow screen while a message is open. */
-  readonly collapsed: boolean;
-  readonly onOpen: (submission: SubmissionEntry) => void;
-  readonly onMore: () => void;
-  readonly onRefresh: () => void;
+  readonly organization: Organization;
+  /** The folder, the form and the text of the list, from its address. */
+  readonly search: MessagesSearch;
+  /** The ID of the open message, if any. A narrow screen then hides the list. */
+  readonly openId: string | null;
   /** Narrow the list to the messages of a form, or show those of every form again with null. */
-  readonly onForm: (form: Form["publicId"] | null) => void;
-  /** The text that the list is narrowed to, if any. */
-  readonly search: string | null;
+  readonly onForm: (form: ManagedForm["publicId"] | null) => void;
   /** Narrow the list to the messages that contain a text, or show them all again with null. */
   readonly onSearch: (search: string | null) => void;
-  /** The addresses of the exports of the list, for an admin. */
-  readonly exports: { readonly csv: string; readonly jsonl: string } | null;
 }
 
 /** The shortest text that the API searches for. */
@@ -208,8 +209,8 @@ function chip(active: boolean) {
 
 interface FormChipsProps {
   readonly forms: readonly FolderForm[];
-  readonly form: Form["publicId"] | null;
-  readonly onForm: (form: Form["publicId"] | null) => void;
+  readonly form: ManagedForm["publicId"] | null;
+  readonly onForm: (form: ManagedForm["publicId"] | null) => void;
 }
 
 /** The forms of the folder, an emoji, a name and a count each. One of them narrows the list. */
@@ -289,32 +290,32 @@ function ExportMenu({ exports }: ExportMenuProps) {
   );
 }
 
-export function MessageList({
-  folder,
-  forms,
-  formsOfFolder,
-  form,
-  entries,
-  total,
-  elsewhere,
-  selected,
-  hasMore,
-  loadingMore,
-  failed,
-  now,
-  collapsed,
-  onOpen,
-  onMore,
-  onRefresh,
-  onForm,
-  search,
-  onSearch,
-  exports,
-}: MessageListProps) {
+export function MessageList({ organization, search, openId, onForm, onSearch }: MessageListProps) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const list = useInfiniteQuery(messageListQuery(organization.id, search));
+  const { data: counts } = useQuery(messageCountsQuery(organization.id));
+  const folder: Folder = search.folder;
+  const form = search.form ?? null;
+  const searchText = search.q ?? null;
+  const { forms } = organization;
+  const entries = list.data?.pages.flatMap((page) => page.entries) ?? null;
+  const inFolder = counts === undefined ? null : totalOf(counts, folder);
+  const inForm =
+    counts === undefined || form === null ? inFolder : totalOf(countsOfForm(counts, form), folder);
+  // The counts know nothing of a search.
+  const total = searchText === null ? inForm : null;
+  const elsewhere = inFolder === null || total === null ? null : inFolder - total;
+  const folderForms = counts === undefined ? [] : formsOfFolder(forms, counts, folder, form);
   const formName = forms.find(({ publicId }) => publicId === form)?.name ?? null;
+  const exports = allows(organization.role, "export-submissions")
+    ? {
+        csv: exportAddress(organization.id, "csv", search),
+        jsonl: exportAddress(organization.id, "jsonl", search),
+      }
+    : null;
   // With one form, nothing tells the messages apart, so they show no emoji.
-  const formOf = (submission: SubmissionEntry) =>
+  const formOf = (submission: InboxEntry) =>
     forms.length > 1
       ? forms.find(({ publicId }) => publicId === submission.formPublicId)
       : undefined;
@@ -323,7 +324,7 @@ export function MessageList({
       aria-label={t("inbox.list.label")}
       className={cn(
         "flex min-h-0 flex-col bg-background lg:hairline-r",
-        collapsed && "max-lg:hidden",
+        openId !== null && "max-lg:hidden",
       )}
     >
       <header className="flex h-14 shrink-0 items-center gap-1 hairline-b px-1">
@@ -337,34 +338,44 @@ export function MessageList({
           )}
         </h1>
         {exports !== null && <ExportMenu exports={exports} />}
-        <Button variant="ghost" size="icon" aria-label={t("common.refresh")} onClick={onRefresh}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={t("common.refresh")}
+          onClick={() => void refreshMessages(queryClient, organization.id)}
+        >
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
       </header>
-      {formsOfFolder.length > 0 && <FormChips forms={formsOfFolder} form={form} onForm={onForm} />}
-      <SearchBar search={search} onSearch={onSearch} />
+      {folderForms.length > 0 && <FormChips forms={folderForms} form={form} onForm={onForm} />}
+      <SearchBar key={searchText ?? ""} search={searchText} onSearch={onSearch} />
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
-        {failed && (
-          <p role="alert" className="px-4 py-3 text-sm text-destructive">
-            {t("inbox.list.loadFailed")}
-          </p>
+        {list.isError && (
+          <ReadFailure
+            className="px-4 py-3"
+            cause={list.error}
+            title={t("inbox.list.loadFailed")}
+            retry={t("common.retry")}
+            retrying={list.isFetching}
+            onRetry={() => void (list.isFetchNextPageError ? list.fetchNextPage() : list.refetch())}
+          />
         )}
-        {entries === null && !failed && (
+        {list.isPending && (
           <output className="block px-4 py-3 text-sm text-muted-foreground">
             {t("inbox.list.loading")}
           </output>
         )}
-        {entries?.length === 0 && search !== null && (
+        {entries?.length === 0 && searchText !== null && (
           <div className="grid justify-items-start gap-2 px-4 py-10">
             <h2 className="text-base font-semibold text-balance wrap-anywhere">
-              {t("inbox.list.search.empty", { search })}
+              {t("inbox.list.search.empty", { search: searchText })}
             </h2>
             <Button className="mt-2" onClick={() => onSearch(null)}>
               {t("inbox.list.search.showAll")}
             </Button>
           </div>
         )}
-        {entries?.length === 0 && search === null && formName !== null && (
+        {entries?.length === 0 && searchText === null && formName !== null && (
           <div className="grid justify-items-start gap-2 px-4 py-10">
             <h2 className="text-base font-semibold text-balance wrap-anywhere">
               {t("inbox.list.form.empty.title", { name: formName })}
@@ -379,7 +390,7 @@ export function MessageList({
             </Button>
           </div>
         )}
-        {entries?.length === 0 && search === null && formName === null && (
+        {entries?.length === 0 && searchText === null && formName === null && (
           <div className="grid gap-2 px-4 py-10">
             <h2 className="text-base font-semibold text-balance">
               {t(`inbox.list.empty.${folder}.title`)}
@@ -394,21 +405,22 @@ export function MessageList({
             {entries.map((submission) => (
               <li key={submission.submissionId} className="hairline-b">
                 <MessageRow
+                  organizationId={organization.id}
                   submission={submission}
+                  search={search}
                   form={formOf(submission)}
-                  active={submission.submissionId === selected}
+                  active={submission.submissionId === openId}
                   showStatus={folder === "all"}
-                  now={now}
-                  onOpen={() => onOpen(submission)}
+                  now={list.dataUpdatedAt}
                 />
               </li>
             ))}
           </ul>
         )}
-        {hasMore && (
+        {list.hasNextPage && (
           <div className="p-4">
-            <Button disabled={loadingMore} onClick={onMore}>
-              {loadingMore ? t("inbox.list.loadingMore") : t("inbox.list.more")}
+            <Button disabled={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
+              {list.isFetchingNextPage ? t("inbox.list.loadingMore") : t("inbox.list.more")}
             </Button>
           </div>
         )}

@@ -4,7 +4,13 @@
     "loading": "Chargement…",
     "refresh": "Actualiser",
     "save": "Enregistrer",
-    "saved": "Enregistré"
+    "saved": "Enregistré",
+    "retry": "Réessayer",
+    "readFailure": {
+      "unreachable": "Le serveur n’a pas répondu. Vérifiez votre connexion, puis réessayez.",
+      "unreadable": "Le tableau de bord n’a pas pu lire la réponse du serveur, ce qui arrive quand leurs versions diffèrent. Rechargez la page.",
+      "status": "Le serveur a répondu par une erreur (HTTP {{status}})."
+    }
   },
   "languages": {
     "en": "English",
@@ -17,6 +23,11 @@
   },
   "session": {
     "checking": "Vérification de la session…"
+  },
+  "notFound": {
+    "title": "Page introuvable",
+    "description": "Il n’y a rien à cette adresse, ou elle appartient à une organisation dont votre compte n’est pas membre.",
+    "messages": "Aller aux messages"
   },
   "sidebar": {
     "menu": "Menu",
@@ -41,7 +52,8 @@
         "unavailable": "Le service de connexion est indisponible.",
         "refused": "Vérifiez votre adresse e-mail et votre mot de passe.",
         "failed": "La connexion a échoué. Réessayez."
-      }
+      },
+      "sessionEnded": "Votre session a pris fin. Reconnectez-vous pour revenir à la page où vous étiez."
     },
     "passwordReset": {
       "title": "Réinitialiser votre mot de passe",
@@ -299,7 +311,8 @@
         "confirm": "Supprimer définitivement",
         "deleting": "Suppression…",
         "failed": "Le message n’a pas pu être supprimé. Réessayez."
-      }
+      },
+      "loadFailed": "Impossible de charger ce message."
     },
     "deliveries": {
       "label": "Livraisons du message",

@@ -1,36 +1,39 @@
-import { Option, Schema } from "effect";
+import { useMutation } from "@tanstack/react-query";
+import { Option } from "effect";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
-import type { Inbox } from "~/lib/inbox-client";
-import { TargetRequestFailed, testTarget } from "~/lib/targets-client";
-import type { Target, TestResult } from "~/lib/targets-client";
-
-const isFailed = Schema.is(TargetRequestFailed);
+import {
+  destinationRefusalOf,
+  testDestination,
+  type DestinationTarget,
+  type TargetTestResult,
+} from "~/lib/api/destinations";
+import { statusOf } from "~/lib/api/request";
 
 /** How a test ended: the answer of the recipient, or why the test did not run. */
-type TestOutcome = TestResult | "alreadyRunning" | "limited" | "limitUnavailable" | "notSent";
+type TestOutcome = TargetTestResult | "alreadyRunning" | "limited" | "limitUnavailable" | "notSent";
 
 interface DestinationTestProps {
-  readonly inboxId: Inbox["id"];
-  readonly targetId: Target["id"];
+  readonly organizationId: string;
+  readonly targetId: DestinationTarget["id"];
 }
 
 /** Sends a test message to one destination and shows the answer of its recipient. */
-export function DestinationTest({ inboxId, targetId }: DestinationTestProps) {
+export function DestinationTest({ organizationId, targetId }: DestinationTestProps) {
   const { t } = useTranslation();
+  const { mutateAsync: test } = useMutation({
+    mutationFn: () => testDestination(organizationId, targetId),
+  });
   const [outcome, send, sending] = useActionState(async (): Promise<TestOutcome | null> => {
     try {
-      return await testTarget(inboxId, targetId);
-    } catch (error) {
-      if (isFailed(error) && error.status === 409) return "alreadyRunning";
-      if (isFailed(error) && error.status === 429) return "limited";
-      if (
-        isFailed(error) &&
-        Option.isSome(error.problem) &&
-        error.problem.value.error === "test-limit-unavailable"
-      ) {
+      return await test();
+    } catch (cause) {
+      if (statusOf(cause) === 409) return "alreadyRunning";
+      if (statusOf(cause) === 429) return "limited";
+      const refusal = destinationRefusalOf(cause);
+      if (Option.isSome(refusal) && refusal.value.error === "test-limit-unavailable") {
         return "limitUnavailable";
       }
       return "notSent";

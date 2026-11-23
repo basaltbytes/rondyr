@@ -1,6 +1,6 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "cn";
-import { Schema } from "effect";
 import {
   Archive,
   Check,
@@ -10,22 +10,31 @@ import {
   RotateCw,
   Trash2,
 } from "lucide-react";
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "~/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
-import { useFormats } from "~/lib/i18n";
-import { FormProblem } from "~/components/text-field";
-import {
-  deleteSubmission,
-  getSubmission,
-  InboxRequestError,
-  reviewSubmission,
-} from "~/lib/inbox-client";
-import type { Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
+import { allows } from "@rondyr/organizations/member-role";
 
 import { FormEmoji } from "~/components/form-emoji";
+import { ReadFailure } from "~/components/read-failure";
+import { FormProblem } from "~/components/text-field";
+import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import {
+  applyDecision,
+  deleteMessageMutation,
+  messageCountsQuery,
+  messageListQuery,
+  messageQuery,
+  reviewMessageMutation,
+  type DecidedFrom,
+} from "~/lib/api/messages";
+import type { Organization } from "~/lib/api/organizations";
+import { statusOf } from "~/lib/api/request";
+import { countsOfForm, totalOf } from "~/lib/folder-counts";
+import { useFormats } from "~/lib/i18n";
+import type { MessagesSearch } from "~/lib/messages-search";
+
 import { DeliveryHistory } from "./delivery-history.tsx";
 import { readMessage } from "./message-preview.ts";
 
@@ -38,8 +47,6 @@ const statusTones = {
   archived: "text-muted-foreground",
 } as const;
 
-const isRequestError = Schema.is(InboxRequestError);
-
 /** Why a decision was not applied. Each one names a message of `inbox.reader.problems`. */
 type DecisionProblem =
   | "notSaved"
@@ -47,35 +54,24 @@ type DecisionProblem =
   | "alreadyHandledRefresh"
   | "classificationQuotaReached";
 
+const isDecision = (value: FormDataEntryValue | null) =>
+  value === "approve" || value === "dismiss" || value === "reclassify";
+
 interface MessageReaderProps {
-  readonly inboxId: Inbox["id"];
-  /** The message as the list has it. Its preview is shown until the full fields arrive. */
-  readonly entry: SubmissionEntry;
-  /** The form of the message, when its emoji tells it apart from the other forms. */
-  readonly fromForm: Inbox["forms"][number] | undefined;
-  readonly revision: number;
-  /** The place of the message in the list, from 1, or null when the list does not have it. */
-  readonly position: number | null;
-  /** How many messages the folder has. */
-  readonly total: number;
-  /** Opens the message before this one in the list, if there is one. */
-  readonly onPrevious: (() => void) | null;
-  /** Opens the message after this one in the list, if there is one. */
-  readonly onNext: (() => void) | null;
-  /** The message as the API returns it once it is accepted, archived or sent back to the filter. */
-  readonly onReviewed: (submission: Submission) => void;
-  readonly onClose: () => void;
-  /** Whether the role of the account allows deleting the message. */
-  readonly mayDelete: boolean;
-  /** Whether the role of the account allows retrying a failed delivery. */
-  readonly mayRetry: boolean;
-  /** The message was deleted for good. */
-  readonly onDeleted: () => void;
+  readonly organization: Organization;
+  readonly submissionId: string;
+  /** The folder, the form and the text of the list beside the reader. */
+  readonly search: MessagesSearch;
+  /**
+   * Opens another message, or the list alone with null. After a decision or a deletion
+   * the address of the message that left replaces itself.
+   */
+  readonly onOpen: (submissionId: string | null, replace: boolean) => void;
 }
 
 interface DeletionProps {
-  readonly inboxId: Inbox["id"];
-  readonly submissionId: Submission["submissionId"];
+  readonly organizationId: Organization["id"];
+  readonly message: DecidedFrom;
   readonly onDeleted: () => void;
 }
 
@@ -83,16 +79,16 @@ interface DeletionProps {
  * Deletes the message for good, after a confirmation in the page: a browser
  * dialog would let a page of another origin answer for the person.
  */
-function Deletion({ inboxId, submissionId, onDeleted }: DeletionProps) {
+function Deletion({ organizationId, message, onDeleted }: DeletionProps) {
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  const deletion = useMutation(deleteMessageMutation(organizationId));
   const [failed, remove, removing] = useActionState(async () => {
     try {
-      await deleteSubmission(inboxId, submissionId);
-    } catch (error) {
-      // Another admin deleted it first: it is gone either way.
-      if (!isRequestError(error) || error.status !== 404) return true;
+      await deletion.mutateAsync(message);
+    } catch {
+      return true;
     }
     setConfirming(false);
     onDeleted();
@@ -157,56 +153,62 @@ function Deletion({ inboxId, submissionId, onDeleted }: DeletionProps) {
  * One message. The bar on top has the place of the message in the list and the
  * decision, at the height of the list's header. Under it everything starts on
  * one left edge: why the message is here, who wrote, what they wrote, then the
- * other fields.
+ * other fields. A message opened by its address shows even when the list does not
+ * have it.
  */
-export function MessageReader({
-  inboxId,
-  entry,
-  fromForm,
-  revision,
-  position,
-  total,
-  onPrevious,
-  onNext,
-  onReviewed,
-  onClose,
-  mayDelete,
-  mayRetry,
-  onDeleted,
-}: MessageReaderProps) {
+export function MessageReader({ organization, submissionId, search, onOpen }: MessageReaderProps) {
   const { t } = useTranslation();
   const format = useFormats();
-  const { submissionId } = entry;
-  const [detail, setDetail] = useState<Submission | null>(null);
-  const [detailFailed, setDetailFailed] = useState(false);
-  const [detailRequests, setDetailRequests] = useState(0);
-
+  const queryClient = useQueryClient();
+  const organizationId = organization.id;
+  const list = useInfiniteQuery(messageListQuery(organizationId, search));
+  const { data: counts } = useQuery(messageCountsQuery(organizationId));
   // A list entry has long values cut short. The decision does not wait for the full ones.
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Loads the full fields of the open message from the Rondyr API.
-  useEffect(() => {
-    const request = new AbortController();
-    void getSubmission(inboxId, submissionId, request.signal).then(setDetail, () => {
-      if (!request.signal.aborted) setDetailFailed(true);
-    });
-    return () => request.abort();
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A retry initiates a new API request.
-  }, [inboxId, submissionId, detailRequests]);
+  const detail = useQuery(messageQuery(organizationId, submissionId));
+  const review = useMutation(reviewMessageMutation(organizationId));
+  const entries = list.data?.pages.flatMap((page) => page.entries) ?? [];
+  const index = entries.findIndex((entry) => entry.submissionId === submissionId);
+  const listed = entries[index];
+  const above = index < 0 ? undefined : entries[index - 1];
+  const below = index < 0 ? undefined : entries[index + 1];
+  const entry = detail.data ?? listed;
+  const inFolder = counts === undefined ? null : totalOf(counts, search.folder);
+  const inForm =
+    counts === undefined || search.form === undefined
+      ? inFolder
+      : totalOf(countsOfForm(counts, search.form), search.folder);
+  const total = (search.q === undefined ? inForm : null) ?? entries.length;
+  const position = index < 0 ? null : index + 1;
+
+  /** The message left the folder: the next one opens, like in a mail client. */
+  function openNext() {
+    onOpen((below ?? above)?.submissionId ?? null, true);
+  }
+
+  /** After a decision, the message leaves a folder other than All. */
+  function decided() {
+    if (search.folder !== "all") openNext();
+  }
 
   const [problem, decide, pending] = useActionState(
     async (_: DecisionProblem | null, form: FormData): Promise<DecisionProblem | null> => {
       const decision = form.get("decision");
-      if (decision !== "approve" && decision !== "dismiss" && decision !== "reclassify") {
-        return null;
-      }
+      if (entry === undefined || !isDecision(decision)) return null;
       try {
-        onReviewed(await reviewSubmission(inboxId, submissionId, decision));
+        await review.mutateAsync({ message: entry, decision });
+        decided();
         return null;
-      } catch (error) {
+      } catch (cause) {
         // Reclassify takes a slot of the organization's daily classification quota.
-        if (isRequestError(error) && error.status === 429) return "classificationQuotaReached";
-        if (!isRequestError(error) || error.status !== 409) return "notSaved";
+        if (statusOf(cause) === 429) return "classificationQuotaReached";
+        if (statusOf(cause) !== 409) return "notSaved";
         try {
-          onReviewed(await getSubmission(inboxId, submissionId, new AbortController().signal));
+          const current = await queryClient.query({
+            ...messageQuery(organizationId, submissionId),
+            staleTime: 0,
+          });
+          applyDecision(queryClient, organizationId, entry, current);
+          decided();
         } catch {
           return "alreadyHandledRefresh";
         }
@@ -216,7 +218,35 @@ export function MessageReader({
     null,
   );
 
-  const { sender, subject, body, details } = readMessage(detail?.fields ?? entry.preview);
+  if (entry === undefined) {
+    return detail.isError ? (
+      <ReadFailure
+        className="px-5 py-6"
+        cause={detail.error}
+        title={t("inbox.reader.loadFailed")}
+        retry={t("common.retry")}
+        retrying={detail.isFetching}
+        onRetry={() => void detail.refetch()}
+      />
+    ) : (
+      <output className="block px-5 py-6 text-sm text-muted-foreground">
+        {t("common.loading")}
+      </output>
+    );
+  }
+
+  const fields = detail.data?.fields ?? listed?.preview ?? {};
+  const detailFailed = detail.isError;
+  const fromForm =
+    organization.forms.length > 1
+      ? organization.forms.find(({ publicId }) => publicId === entry.formPublicId)
+      : undefined;
+  const mayDelete = allows(organization.role, "delete-submissions");
+  const mayRetry = allows(organization.role, "retry-deliveries");
+  const onClose = () => onOpen(null, false);
+  const onPrevious = above === undefined ? null : () => onOpen(above.submissionId, false);
+  const onNext = below === undefined ? null : () => onOpen(below.submissionId, false);
+  const { sender, subject, body, details } = readMessage(fields);
   return (
     <>
       <header className="@container flex h-14 shrink-0 items-center gap-1.5 hairline-b px-3">
@@ -260,7 +290,7 @@ export function MessageReader({
         )}
         <span className="flex-1" />
         {mayDelete && (
-          <Deletion inboxId={inboxId} submissionId={submissionId} onDeleted={onDeleted} />
+          <Deletion organizationId={organization.id} message={entry} onDeleted={openNext} />
         )}
         {mayDelete && entry.status === "quarantined" && (
           <span aria-hidden="true" className="mx-1 h-4 w-px shrink-0 bg-border" />
@@ -347,13 +377,7 @@ export function MessageReader({
               <p role="alert" className="text-sm text-pretty text-destructive">
                 {t("inbox.reader.detail.loadFailed")}
               </p>
-              <Button
-                size="sm"
-                onClick={() => {
-                  setDetailFailed(false);
-                  setDetailRequests((value) => value + 1);
-                }}
-              >
+              <Button size="sm" disabled={detail.isFetching} onClick={() => void detail.refetch()}>
                 {t("inbox.reader.detail.retry")}
               </Button>
             </div>
@@ -385,9 +409,8 @@ export function MessageReader({
           )}
           {entry.status === "accepted" && (
             <DeliveryHistory
-              inboxId={inboxId}
+              organizationId={organization.id}
               submissionId={submissionId}
-              revision={revision}
               canRetry={mayRetry}
             />
           )}

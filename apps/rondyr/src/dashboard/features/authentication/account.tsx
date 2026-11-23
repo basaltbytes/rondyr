@@ -21,8 +21,8 @@ import {
   SidebarMenuItem,
   SidebarMenuLabel,
 } from "~/components/ui/sidebar";
+import { authClient } from "~/lib/api/session";
 import { setTheme, useTheme } from "~/lib/appearance";
-import { authClient } from "~/lib/auth-client";
 import { setLanguage, useLanguage } from "~/lib/i18n";
 import { chooseLanguage, languages } from "~/lib/language";
 import { chooseTheme, themes } from "~/lib/theme";
@@ -38,14 +38,16 @@ async function signOut() {
 }
 
 /** Signs out, and remembers a request that fails. */
-function useSignOut() {
+function useSignOut(onSignedOut: () => Promise<void>) {
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(false);
 
   async function leave() {
     setPending(true);
-    setFailed(!(await signOut()));
+    const signedOut = await signOut();
+    setFailed(!signedOut);
     setPending(false);
+    if (signedOut) await onSignedOut();
   }
 
   return { failed, pending, leave: () => void leave() };
@@ -53,14 +55,16 @@ function useSignOut() {
 
 interface AccountProps {
   readonly email: string;
+  /** Leaves the dashboard for the sign-in page, once the session has ended. */
+  readonly onSignedOut: () => Promise<void>;
 }
 
 /** The signed-in account at the foot of the sidebar, with its menu. */
-export function AccountMenu({ email }: AccountProps) {
+export function AccountMenu({ email, onSignedOut }: AccountProps) {
   const { t } = useTranslation();
   const language = useLanguage();
   const theme = useTheme();
-  const { failed, pending, leave } = useSignOut();
+  const { failed, pending, leave } = useSignOut(onSignedOut);
   return (
     <SidebarMenu>
       {failed && (
@@ -141,9 +145,9 @@ export function AccountMenu({ email }: AccountProps) {
 }
 
 /** Signs out from a page without a sidebar, such as the first run. */
-export function SignOutButton({ email }: AccountProps) {
+export function SignOutButton({ email, onSignedOut }: AccountProps) {
   const { t } = useTranslation();
-  const { failed, pending, leave } = useSignOut();
+  const { failed, pending, leave } = useSignOut(onSignedOut);
   return (
     <div className="grid gap-1 px-2">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">

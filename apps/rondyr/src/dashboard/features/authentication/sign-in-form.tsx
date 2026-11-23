@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { authClient } from "~/lib/auth-client";
+import { authClient } from "~/lib/api/session";
 
 import { PasswordResetRequest } from "./password-reset-request.tsx";
 
@@ -29,9 +29,21 @@ async function signIn(
   }
 }
 
-export function SignInForm() {
+interface SignInFormProps {
+  /** Opens what the account came for, once the session has started. */
+  readonly onSignedIn: () => Promise<void>;
+}
+
+export function SignInForm({ onSignedIn }: SignInFormProps) {
   const { t } = useTranslation();
-  const [problem, action, pending] = useActionState(signIn, null);
+  const [problem, action, pending] = useActionState(
+    async (previous: SignInProblem | null, fields: FormData) => {
+      const refused = await signIn(previous, fields);
+      if (refused === null) await onSignedIn();
+      return refused;
+    },
+    null,
+  );
   const [resetting, setResetting] = useState(false);
 
   if (resetting) return <PasswordResetRequest onBack={() => setResetting(false)} />;

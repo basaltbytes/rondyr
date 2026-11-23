@@ -3,13 +3,13 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
-import type { Form } from "~/lib/forms-client";
+import type { ManagedForm } from "~/lib/api/forms";
 
 /** The emoji of a form that has none yet. */
 const defaultEmoji = "📄";
 
 /** The emoji that the dashboard shows next to the name of a form. */
-export function emojiOf(form: Pick<Form, "emoji">) {
+export function emojiOf(form: Pick<ManagedForm, "emoji">) {
   return form.emoji ?? defaultEmoji;
 }
 
@@ -24,7 +24,7 @@ const choices = [
 ].flat();
 
 interface FormEmojiProps {
-  readonly form: Pick<Form, "emoji">;
+  readonly form: Pick<ManagedForm, "emoji">;
   readonly className?: string;
 }
 

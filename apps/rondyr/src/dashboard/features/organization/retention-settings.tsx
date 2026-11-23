@@ -1,15 +1,15 @@
-import { use, useActionState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { maxRetentionDays } from "@rondyr/organizations/retention";
 
+import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import type { Inbox } from "~/lib/inbox-client";
-import { saveRetention } from "~/lib/retention-client";
-import type { Retention } from "~/lib/retention-client";
+import { retentionQuery, saveRetentionMutation, type RetentionPeriods } from "~/lib/api/retention";
 
 /** Whole days from 1 to the maximum, or an empty field to keep the messages. */
 function daysIn(data: FormData, name: string): number | null | "invalid" {
@@ -21,26 +21,27 @@ function daysIn(data: FormData, name: string): number | null | "invalid" {
 
 type Outcome = "saved" | "invalid" | "failed";
 
-function RetentionForm({ inboxId, initial }: { inboxId: Inbox["id"]; initial: Retention }) {
+interface RetentionFormProps {
+  readonly organizationId: string;
+  readonly periods: RetentionPeriods;
+}
+
+function RetentionForm({ organizationId, periods }: RetentionFormProps) {
   const { t } = useTranslation();
-  const [state, save, saving] = useActionState(
-    async (
-      previous: { periods: Retention; outcome: Outcome | null },
-      data: FormData,
-    ): Promise<{ periods: Retention; outcome: Outcome | null }> => {
+  const { mutateAsync: saveRetention } = useMutation(saveRetentionMutation(organizationId));
+  const [outcome, save, saving] = useActionState(
+    async (_: Outcome | null, data: FormData): Promise<Outcome | null> => {
       const accepted = daysIn(data, "accepted");
       const quarantine = daysIn(data, "quarantine");
-      if (accepted === "invalid" || quarantine === "invalid") {
-        return { ...previous, outcome: "invalid" };
-      }
+      if (accepted === "invalid" || quarantine === "invalid") return "invalid";
       try {
-        const periods = await saveRetention(inboxId, { accepted, quarantine });
-        return { periods, outcome: "saved" };
+        await saveRetention({ accepted, quarantine });
+        return "saved";
       } catch {
-        return { ...previous, outcome: "failed" };
+        return "failed";
       }
     },
-    { periods: initial, outcome: null },
+    null,
   );
 
   return (
@@ -54,7 +55,9 @@ function RetentionForm({ inboxId, initial }: { inboxId: Inbox["id"]; initial: Re
         min={1}
         max={maxRetentionDays}
         step={1}
-        defaultValue={state.periods.accepted ?? ""}
+        // The field shows the saved period again once the periods are read anew.
+        key={`accepted:${periods.accepted ?? ""}`}
+        defaultValue={periods.accepted ?? ""}
         placeholder={t("inbox.retention.unlimited")}
       />
       <TextField
@@ -66,12 +69,13 @@ function RetentionForm({ inboxId, initial }: { inboxId: Inbox["id"]; initial: Re
         min={1}
         max={maxRetentionDays}
         step={1}
-        defaultValue={state.periods.quarantine ?? ""}
+        key={`quarantine:${periods.quarantine ?? ""}`}
+        defaultValue={periods.quarantine ?? ""}
         placeholder={t("inbox.retention.unlimited")}
       />
       <FormProblem>
-        {state.outcome === "invalid" || state.outcome === "failed"
-          ? t(`inbox.retention.outcomes.${state.outcome}`)
+        {outcome === "invalid" || outcome === "failed"
+          ? t(`inbox.retention.outcomes.${outcome}`)
           : null}
       </FormProblem>
       <div className="flex flex-wrap items-center gap-3">
@@ -79,7 +83,7 @@ function RetentionForm({ inboxId, initial }: { inboxId: Inbox["id"]; initial: Re
           {saving ? t("inbox.retention.saving") : t("common.save")}
         </Button>
         <output className="text-sm text-muted-foreground">
-          {state.outcome === "saved" ? t("inbox.retention.outcomes.saved") : null}
+          {outcome === "saved" ? t("inbox.retention.outcomes.saved") : null}
         </output>
       </div>
     </form>
@@ -87,15 +91,13 @@ function RetentionForm({ inboxId, initial }: { inboxId: Inbox["id"]; initial: Re
 }
 
 interface RetentionSettingsProps {
-  readonly inboxId: Inbox["id"];
-  readonly retention: Promise<Retention | null>;
-  readonly onRetry: () => void;
+  readonly organizationId: string;
 }
 
 /** How long the organization keeps its messages, which a purge deletes once an hour. */
-export function RetentionSettings({ inboxId, retention, onRetry }: RetentionSettingsProps) {
+export function RetentionSettings({ organizationId }: RetentionSettingsProps) {
   const { t } = useTranslation();
-  const initial = use(retention);
+  const retention = useQuery(retentionQuery(organizationId));
   return (
     <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
       <header className="flex h-14 items-center gap-2 px-1">
@@ -109,13 +111,20 @@ export function RetentionSettings({ inboxId, retention, onRetry }: RetentionSett
             <CardDescription>{t("inbox.retention.description")}</CardDescription>
           </CardHeader>
           <CardContent>
-            {initial === null ? (
-              <div className="grid justify-items-start gap-2">
-                <FormProblem>{t("inbox.retention.loadFailed")}</FormProblem>
-                <Button onClick={onRetry}>{t("inbox.retention.retry")}</Button>
-              </div>
-            ) : (
-              <RetentionForm inboxId={inboxId} initial={initial} />
+            {retention.isError && (
+              <ReadFailure
+                cause={retention.error}
+                title={t("inbox.retention.loadFailed")}
+                retry={t("inbox.retention.retry")}
+                retrying={retention.isFetching}
+                onRetry={() => void retention.refetch()}
+              />
+            )}
+            {retention.isPending && (
+              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
+            )}
+            {retention.isSuccess && (
+              <RetentionForm organizationId={organizationId} periods={retention.data} />
             )}
           </CardContent>
         </Card>

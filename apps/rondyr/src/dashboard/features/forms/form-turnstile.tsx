@@ -1,5 +1,6 @@
-import { Option, Schema } from "effect";
-import { useActionState, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Option } from "effect";
+import { useActionState, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { TurnstileKeyState } from "@rondyr/forms/turnstile";
@@ -8,36 +9,37 @@ import { FormProblem, TextField } from "~/components/text-field";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { checkTurnstileKey, FormRequestFailed, setTurnstile } from "~/lib/forms-client";
-import type { Form, FormProblem as FormRequestProblem } from "~/lib/forms-client";
-import type { Inbox } from "~/lib/inbox-client";
-
-const isFailed = Schema.is(FormRequestFailed);
+import {
+  formRefusalOf,
+  turnstileKeyQuery,
+  type FormChange,
+  type FormRequestError,
+  type ManagedForm,
+} from "~/lib/api/forms";
 
 /** Why a save failed: the problem that the API names, or no stated reason. */
-type SaveFailure = FormRequestProblem["error"] | "unexplained";
+type SaveFailure = FormRequestError["error"] | "unexplained";
 
 /** The answer of the key check, while it runs, or the failure of the request. */
 type KeyCheck = TurnstileKeyState | "checking" | "requestFailed";
 
 interface StoredKeyStateProps {
-  readonly inboxId: Inbox["id"];
-  readonly publicId: Form["publicId"];
+  readonly organizationId: string;
+  readonly publicId: ManagedForm["publicId"];
 }
 
-/** Whether Cloudflare still accepts the stored secret key, checked on each display. */
-function StoredKeyState({ inboxId, publicId }: StoredKeyStateProps) {
+/**
+ * Whether Cloudflare still accepts the stored secret key, checked on each display and
+ * after each save, which stores a new key.
+ */
+function StoredKeyState({ organizationId, publicId }: StoredKeyStateProps) {
   const { t } = useTranslation();
-  const [check, setCheck] = useState<KeyCheck>("checking");
-
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Asks the Rondyr API, which asks Cloudflare Siteverify, about the stored key.
-  useEffect(() => {
-    const request = new AbortController();
-    void checkTurnstileKey(inboxId, publicId, request.signal).then(setCheck, () => {
-      if (!request.signal.aborted) setCheck("requestFailed");
-    });
-    return () => request.abort();
-  }, [inboxId, publicId]);
+  const keyCheck = useQuery(turnstileKeyQuery(organizationId, publicId));
+  const check: KeyCheck = keyCheck.isFetching
+    ? "checking"
+    : keyCheck.isError
+      ? "requestFailed"
+      : (keyCheck.data ?? "checking");
 
   switch (check) {
     case "refused":
@@ -118,22 +120,21 @@ function WidgetSnippet({ siteKey }: { readonly siteKey: string }) {
 }
 
 interface FormTurnstileProps {
-  readonly inboxId: Inbox["id"];
-  readonly form: Form;
-  readonly onChanged: () => Promise<void>;
+  readonly organizationId: string;
+  readonly form: ManagedForm;
+  /** Sends a change of the form, then reads the organizations again. */
+  readonly onChange: (change: FormChange) => Promise<ManagedForm>;
 }
 
 /**
  * Turnstile on a form: off with a way to set it up, both keys while they are
  * typed, and once on, the state of the stored key and the HTML of the widget.
  */
-export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) {
+export function FormTurnstile({ organizationId, form, onChange }: FormTurnstileProps) {
   const { t } = useTranslation();
   const [configuring, setConfiguring] = useState(false);
-  // Each save stores a new secret key, which the key state then checks again.
-  const [saves, setSaves] = useState(0);
   const [result, save, saving] = useActionState(async (_: SaveFailure | null, data: FormData) => {
-    const settings =
+    const keys =
       data.get("action") === "clear"
         ? null
         : {
@@ -141,14 +142,11 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
             secretKey: String(data.get("secretKey") ?? ""),
           };
     try {
-      await setTurnstile(inboxId, form.publicId, settings);
-      setSaves((count) => count + 1);
-      await onChanged();
+      await onChange({ change: "turnstile", keys });
       setConfiguring(false);
       return null;
-    } catch (error) {
-      if (!isFailed(error)) return "unexplained";
-      return Option.match(error.problem, {
+    } catch (cause) {
+      return Option.match(formRefusalOf(cause), {
         onNone: (): SaveFailure => "unexplained",
         onSome: (problem): SaveFailure => problem.error,
       });
@@ -243,11 +241,7 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
         </Button>
       </form>
       <FormProblem>{result === null ? null : explain(result)}</FormProblem>
-      <StoredKeyState
-        key={`${form.publicId}:${saves}`}
-        inboxId={inboxId}
-        publicId={form.publicId}
-      />
+      <StoredKeyState organizationId={organizationId} publicId={form.publicId} />
       <WidgetSnippet key={siteKey} siteKey={siteKey} />
     </div>
   );

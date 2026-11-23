@@ -7,15 +7,18 @@ import { connectorOf } from "@rondyr/deliveries/connectors/catalog";
 
 import { TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
-import type { Inbox } from "~/lib/inbox-client";
-import { replaceConnectorSettings } from "~/lib/targets-client";
-import type { ConnectorDestination, ConnectorDraft } from "~/lib/targets-client";
+import type {
+  ConnectorTarget,
+  CreateConnectorTarget,
+  DestinationChange,
+  SavedDestination,
+} from "~/lib/api/destinations";
 
 import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
 import type { DestinationFailure } from "./destination-problems.tsx";
 import { DestinationTest } from "./destination-test.tsx";
 
-type Kind = ConnectorDestination["type"];
+type Kind = ConnectorTarget["type"];
 
 const FieldTexts = Schema.Record(
   Schema.String,
@@ -41,7 +44,7 @@ function useFieldTexts(kind: Kind) {
 const settingName = (name: string) => `setting.${name}`;
 
 /** The name and the settings typed in a form of a connector. */
-export function draftIn(kind: Kind, data: FormData): ConnectorDraft {
+export function draftIn(kind: Kind, data: FormData): CreateConnectorTarget {
   return {
     type: kind,
     name: data.get("name")?.toString() ?? "",
@@ -78,7 +81,7 @@ export function NameField({ initial }: NameFieldProps) {
 interface SettingFieldsProps {
   readonly kind: Kind;
   /** The destination that the form edits, or null for a new one. */
-  readonly saved: ConnectorDestination | null;
+  readonly saved: ConnectorTarget | null;
 }
 
 /** One field per setting of a connector. */
@@ -128,7 +131,7 @@ export function DraftProblem({ kind, failure, fallback }: DraftProblemProps) {
 }
 
 interface SavedSettingsProps {
-  readonly target: ConnectorDestination;
+  readonly target: ConnectorTarget;
 }
 
 /** The settings of a destination. A secret shows that it is saved, never its value. */
@@ -154,13 +157,14 @@ function SavedSettings({ target }: SavedSettingsProps) {
 }
 
 interface ConnectorPanelProps {
-  readonly inboxId: Inbox["id"];
-  readonly target: ConnectorDestination;
-  readonly onReplaced: (target: ConnectorDestination) => void;
+  readonly organizationId: string;
+  readonly target: ConnectorTarget;
+  /** Sends a change of the destination, then its cached copy. */
+  readonly onChange: (change: DestinationChange) => Promise<SavedDestination>;
 }
 
 /** What an open connector destination shows: its settings, their edition and a test. */
-export function ConnectorPanel({ inboxId, target, onReplaced }: ConnectorPanelProps) {
+export function ConnectorPanel({ organizationId, target, onChange }: ConnectorPanelProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   // The form keeps what was typed when the API refuses it.
@@ -172,7 +176,7 @@ export function ConnectorPanel({ inboxId, target, onReplaced }: ConnectorPanelPr
     const draft = draftIn(target.type, new FormData(event.currentTarget));
     startSaving(async () => {
       const failed = await attempt(async () => {
-        onReplaced(await replaceConnectorSettings(inboxId, target.id, draft));
+        await onChange({ change: "settings", draft });
         setEditing(false);
       });
       setFailure(failed);
@@ -209,7 +213,7 @@ export function ConnectorPanel({ inboxId, target, onReplaced }: ConnectorPanelPr
         <>
           <SavedSettings target={target} />
           <div className="flex flex-wrap items-center gap-2">
-            <DestinationTest inboxId={inboxId} targetId={target.id} />
+            <DestinationTest organizationId={organizationId} targetId={target.id} />
             <Button
               size="sm"
               onClick={() => {

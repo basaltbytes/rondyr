@@ -1,13 +1,12 @@
-import { Schema } from "effect";
+import { useMutation } from "@tanstack/react-query";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { FormProblem } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { confirmRecipient, TargetRequestFailed } from "~/lib/targets-client";
-
-const isFailed = Schema.is(TargetRequestFailed);
+import { confirmRecipient } from "~/lib/api/destinations";
+import { statusOf } from "~/lib/api/request";
 
 type Outcome = "confirmed" | "invalid" | "failed";
 
@@ -23,12 +22,15 @@ interface RecipientConfirmationProps {
  */
 export function RecipientConfirmation({ token }: RecipientConfirmationProps) {
   const { t } = useTranslation();
+  const { mutateAsync: confirmAddress } = useMutation({
+    mutationFn: () => confirmRecipient(token),
+  });
   const [outcome, confirm, confirming] = useActionState(async (): Promise<Outcome> => {
     try {
-      await confirmRecipient(token);
+      await confirmAddress();
       return "confirmed";
-    } catch (error) {
-      return isFailed(error) && error.status === 404 ? "invalid" : "failed";
+    } catch (cause) {
+      return statusOf(cause) === 404 ? "invalid" : "failed";
     }
   }, null);
 

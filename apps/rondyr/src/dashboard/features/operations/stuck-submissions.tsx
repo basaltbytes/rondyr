@@ -1,21 +1,15 @@
-import { Schema } from "effect";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { RotateCw } from "lucide-react";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ReadFailure } from "~/components/read-failure";
 import { Button } from "~/components/ui/button";
+import { retryStuckMutation, stuckSubmissionsQuery } from "~/lib/api/operations";
 import { useFormats } from "~/lib/i18n";
-import { InboxRequestError } from "~/lib/inbox-client";
-import type { Inbox } from "~/lib/inbox-client";
-import { listStuck, retryStuck } from "~/lib/operations-client";
-import type { Stuck } from "~/lib/operations-client";
-
-const isRequestError = Schema.is(InboxRequestError);
 
 interface StuckSubmissionsProps {
-  readonly organizationId: Inbox["id"];
-  /** Reads the status again once a retry has changed it. */
-  readonly onRetried: () => void;
+  readonly organizationId: string;
 }
 
 /**
@@ -23,20 +17,12 @@ interface StuckSubmissionsProps {
  * first, each with its form, its time of arrival and a Retry button. No field
  * of a message appears here: the inbox shows it.
  */
-export function StuckSubmissions({ organizationId, onRetried }: StuckSubmissionsProps) {
+export function StuckSubmissions({ organizationId }: StuckSubmissionsProps) {
   const { t } = useTranslation();
   const format = useFormats();
-  const [stuck, setStuck] = useState<Stuck | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Loads the stuck submissions of the organization from the Rondyr API.
-  useEffect(() => {
-    const request = new AbortController();
-    void listStuck(organizationId, request.signal).then(setStuck, () => {
-      if (!request.signal.aborted) setFailed(true);
-    });
-    return () => request.abort();
-  }, [organizationId]);
+  const query = useQuery(stuckSubmissionsQuery(organizationId));
+  const stuck = query.data ?? null;
+  const { mutateAsync: retryStuck } = useMutation(retryStuckMutation(organizationId));
 
   const [retryFailed, retry, retrying] = useActionState(
     async (_: boolean, form: FormData): Promise<boolean> => {
@@ -45,13 +31,12 @@ export function StuckSubmissions({ organizationId, onRetried }: StuckSubmissions
       );
       if (submission === undefined) return false;
       try {
-        setStuck(await retryStuck(organizationId, submission.submissionId));
-      } catch (error) {
         // Already retried, or handed off since: the new status shows it.
-        if (!isRequestError(error) || error.status !== 409) return true;
+        await retryStuck(submission.submissionId);
+        return false;
+      } catch {
+        return true;
       }
-      onRetried();
-      return false;
     },
     false,
   );
@@ -60,12 +45,16 @@ export function StuckSubmissions({ organizationId, onRetried }: StuckSubmissions
     <section aria-label={t("operations.stuck.title")} className="grid gap-2 text-sm">
       <h4 className="font-medium">{t("operations.stuck.title")}</h4>
       <p className="text-pretty text-muted-foreground">{t("operations.stuck.description")}</p>
-      {failed && (
-        <p role="alert" className="text-destructive">
-          {t("operations.stuck.loadFailed")}
-        </p>
+      {query.isError && (
+        <ReadFailure
+          cause={query.error}
+          title={t("operations.stuck.loadFailed")}
+          retry={t("common.retry")}
+          retrying={query.isFetching}
+          onRetry={() => void query.refetch()}
+        />
       )}
-      {stuck === null && !failed && (
+      {query.isPending && (
         <output className="text-muted-foreground">{t("operations.stuck.loading")}</output>
       )}
       {retryFailed && (

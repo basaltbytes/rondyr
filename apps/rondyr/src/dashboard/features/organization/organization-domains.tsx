@@ -1,5 +1,6 @@
-import { Option, Schema } from "effect";
-import { use, useActionState, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Option } from "effect";
+import { useActionState, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -7,49 +8,47 @@ import {
   type OrganizationDomainList,
 } from "@rondyr/organizations/organization-domain";
 
+import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
-import type { Inbox } from "~/lib/inbox-client";
-import { addDomain, DomainRequestFailed, removeDomain } from "~/lib/organization-domains-client";
-
-const isRequestFailure = Schema.is(DomainRequestFailed);
+import {
+  addDomainMutation,
+  domainRefusalOf,
+  domainsQuery,
+  removeDomainMutation,
+} from "~/lib/api/domains";
 
 type AddFailure = "invalid-domain" | "domain-limit" | "not-added";
 
 interface DomainListProps {
-  readonly inboxId: Inbox["id"];
-  readonly initialDomains: OrganizationDomainList;
+  readonly organizationId: string;
+  readonly domains: OrganizationDomainList;
 }
 
-function DomainList({ inboxId, initialDomains }: DomainListProps) {
+function DomainList({ organizationId, domains }: DomainListProps) {
   const { t } = useTranslation();
-  const [domains, setDomains] = useState(initialDomains);
   const [input, setInput] = useState("");
+  const { mutateAsync: addDomain } = useMutation(addDomainMutation(organizationId));
+  const { mutateAsync: removeDomain } = useMutation(removeDomainMutation(organizationId));
 
   const [addFailure, add, adding] = useActionState(async (_: AddFailure | null, data: FormData) => {
     const hostname = data.get("domain")?.toString() ?? "";
     try {
-      const { domain } = await addDomain(inboxId, hostname);
-      setDomains((current) =>
-        current.includes(domain) ? current : [...current, domain].toSorted(),
-      );
+      await addDomain(hostname);
       setInput("");
       return null;
-    } catch (error) {
-      if (isRequestFailure(error)) {
-        if (Option.isSome(error.problem)) return error.problem.value.error;
-      }
-      return "not-added";
+    } catch (cause) {
+      const refusal = domainRefusalOf(cause);
+      return Option.isSome(refusal) ? refusal.value.error : "not-added";
     }
   }, null);
 
   const [removeFailed, remove, removing] = useActionState(async (_: boolean, data: FormData) => {
     const domain = data.get("domain")?.toString() ?? "";
     try {
-      await removeDomain(inboxId, domain);
-      setDomains((current) => current.filter((item) => item !== domain));
+      await removeDomain(domain);
       return false;
     } catch {
       return true;
@@ -117,14 +116,12 @@ function DomainList({ inboxId, initialDomains }: DomainListProps) {
 }
 
 interface OrganizationDomainsProps {
-  readonly inboxId: Inbox["id"];
-  readonly domains: Promise<OrganizationDomainList | null>;
-  readonly onRetry: () => void;
+  readonly organizationId: string;
 }
 
-export function OrganizationDomains({ inboxId, domains, onRetry }: OrganizationDomainsProps) {
+export function OrganizationDomains({ organizationId }: OrganizationDomainsProps) {
   const { t } = useTranslation();
-  const initialDomains = use(domains);
+  const domains = useQuery(domainsQuery(organizationId));
 
   return (
     <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
@@ -140,15 +137,20 @@ export function OrganizationDomains({ inboxId, domains, onRetry }: OrganizationD
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {initialDomains === null ? (
-              <div className="grid justify-items-start gap-2">
-                <FormProblem>{t("inbox.domains.loadFailed")}</FormProblem>
-                <Button type="button" variant="outline" onClick={onRetry}>
-                  {t("inbox.domains.retry")}
-                </Button>
-              </div>
-            ) : (
-              <DomainList inboxId={inboxId} initialDomains={initialDomains} />
+            {domains.isError && (
+              <ReadFailure
+                cause={domains.error}
+                title={t("inbox.domains.loadFailed")}
+                retry={t("inbox.domains.retry")}
+                retrying={domains.isFetching}
+                onRetry={() => void domains.refetch()}
+              />
+            )}
+            {domains.isPending && (
+              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
+            )}
+            {domains.isSuccess && (
+              <DomainList organizationId={organizationId} domains={domains.data} />
             )}
           </CardContent>
         </Card>

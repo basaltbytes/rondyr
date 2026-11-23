@@ -28,7 +28,7 @@ async function createOrganization(page) {
 async function openForm(page, name) {
   await page
     .getByRole("navigation", { name: t("inbox.sections.forms"), exact: true })
-    .getByRole("button", { name, exact: true })
+    .getByRole("link", { name, exact: true })
     .click();
 }
 
@@ -41,17 +41,28 @@ async function openSettings(page, name, labels = t) {
   const settings = labels("inbox.navigation.settings");
   await page
     .getByRole("navigation", { name: settings, exact: true })
-    .getByRole("button", { name: settings, exact: true })
+    .getByRole("link", { name: settings, exact: true })
     .click();
   await page
     .getByRole("complementary", { name: settings, exact: true })
-    .getByRole("button", { name, exact: true })
+    .getByRole("link", { name, exact: true })
+    .click();
+}
+
+/**
+ * Open a page of the settings after a reload, which keeps the page of the settings that
+ * was open, with its navigation.
+ */
+async function reopenSettings(page, name, labels = t) {
+  await page
+    .getByRole("complementary", { name: labels("inbox.navigation.settings"), exact: true })
+    .getByRole("link", { name, exact: true })
     .click();
 }
 
 /** Leave the settings for the messages and the forms. */
 async function leaveSettings(page) {
-  await page.getByRole("button", { name: t("inbox.navigation.back"), exact: true }).click();
+  await page.getByRole("link", { name: t("inbox.navigation.back"), exact: true }).click();
 }
 
 /** The destinations of a form, on its page. */
@@ -128,26 +139,26 @@ function accountMenu(page) {
   });
 }
 
-/** The button of a folder in the navigation, which is the sidebar or the drawer. */
-function folderButton(navigation, folder) {
+/** The link of a folder in the navigation, which is the sidebar or the drawer. */
+function folderLink(navigation, folder) {
   return (
     navigation
       .getByRole("navigation", { name: t("inbox.navigation.messages"), exact: true })
       // The name of a folder ends with the number of its messages.
-      .getByRole("button", { name: new RegExp(`^${RegExp.escape(folder)}`, "u") })
+      .getByRole("link", { name: new RegExp(`^${RegExp.escape(folder)}`, "u") })
   );
 }
 
 /** Open a message from a folder of the sidebar, once the list shows it. */
 async function openSubmission(page, folder, message) {
-  await folderButton(page, folder).click();
+  await folderLink(page, folder).click();
   return openMessage(page, message);
 }
 
 /** Open a message of the folder on screen, once the list shows it. */
 async function openMessage(page, message) {
   const list = page.getByRole("region", { name: t("inbox.list.label") });
-  const row = list.getByRole("button").filter({ hasText: message });
+  const row = list.getByRole("link").filter({ hasText: message });
   await expect(async () => {
     await list.getByRole("button", { name: t("common.refresh"), exact: true }).click();
     await expect(row).toBeVisible({ timeout: 500 });
@@ -181,7 +192,7 @@ test("add a domain and remove it after reopening the settings in French", async 
   await accountMenu(page).click();
   await page.getByRole("menuitemradio", { name: t("languages.fr") }).click();
   await page.reload();
-  await openSettings(page, frenchT("inbox.sections.domains"), frenchT);
+  await reopenSettings(page, frenchT("inbox.sections.domains"), frenchT);
   await page
     .getByRole("button", { name: frenchT("inbox.domains.removeLabel", { domain }) })
     .click();
@@ -198,8 +209,8 @@ test.describe("on a deployment with OpenAI Decisions as the second model", () =>
     await accountMenu(page).click();
     await page.getByRole("menuitemradio", { name: t("languages.fr") }).click();
     await page.keyboard.press("Escape");
-    const openPolicy = () => openSettings(page, frenchT("inbox.sections.classification"), frenchT);
-    await openPolicy();
+    const policy = frenchT("inbox.sections.classification");
+    await openSettings(page, policy, frenchT);
     const mode = page.getByRole("combobox", { name: frenchT("inbox.policy.thresholdMode") });
     const offTopic = page.getByRole("combobox", { name: frenchT("inbox.policy.offTopic") });
     const escalation = page.getByRole("switch", { name: frenchT("inbox.policy.escalation") });
@@ -229,7 +240,7 @@ test.describe("on a deployment with OpenAI Decisions as the second model", () =>
     await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
 
     await page.reload();
-    await openPolicy();
+    await reopenSettings(page, policy, frenchT);
     await expect(relevance).toHaveValue("0.62");
     await expect(offTopic).toHaveValue("accept");
     await expect(escalation).toBeChecked();
@@ -240,7 +251,7 @@ test.describe("on a deployment with OpenAI Decisions as the second model", () =>
     await expect(page.getByText(frenchT("inbox.policy.saved"))).toBeVisible();
 
     await page.reload();
-    await openPolicy();
+    await reopenSettings(page, policy, frenchT);
     await expect(relevance).toHaveValue("0.5");
     await expect(offTopic).toHaveValue("defaults");
     await expect(escalation).not.toBeChecked();
@@ -275,7 +286,7 @@ test("keep the stored escalation choice when saving without a second model", asy
   expect(stored).toBe(204);
 
   await page.reload();
-  await openSettings(page, t("inbox.sections.classification"));
+  await reopenSettings(page, t("inbox.sections.classification"));
   await expect(escalation).toBeChecked();
   await expect(escalation).toBeDisabled();
   await offTopic.selectOption({ label: t("inbox.policy.accept") });
@@ -283,7 +294,7 @@ test("keep the stored escalation choice when saving without a second model", asy
   await expect(page.getByText(t("inbox.policy.saved"))).toBeVisible();
 
   await page.reload();
-  await openSettings(page, t("inbox.sections.classification"));
+  await reopenSettings(page, t("inbox.sections.classification"));
   await expect(offTopic).toHaveValue("accept");
   await expect(escalation).toBeChecked();
 });
@@ -298,7 +309,7 @@ test("sign in, create an organization and manage its forms, then sign out", asyn
   const renamed = "Business quotes";
   const emoji = "🧾";
   const forms = page.getByRole("navigation", { name: t("inbox.sections.forms"), exact: true });
-  await page.getByRole("button", { name: t("inbox.forms.newTitle"), exact: true }).click();
+  await page.getByRole("link", { name: t("inbox.forms.newTitle"), exact: true }).click();
   await page.getByRole("textbox", { name: t("inbox.forms.name") }).fill(addedName);
   await page.getByRole("button", { name: t("inbox.forms.add") }).click();
   const beforeRename = await publicFormUrl(page, addedName);
@@ -313,9 +324,9 @@ test("sign in, create an organization and manage its forms, then sign out", asyn
   await settings.getByRole("button", { name: t("inbox.forms.emoji.change"), exact: true }).click();
   await page.getByRole("button", { name: emoji, exact: true }).click();
   // The sidebar lists the form under its new name, with its emoji.
-  await expect(forms.getByRole("button", { name: renamed, exact: true })).toContainText(emoji);
+  await expect(forms.getByRole("link", { name: renamed, exact: true })).toContainText(emoji);
   await page.reload();
-  await expect(forms.getByRole("button", { name: renamed, exact: true })).toContainText(emoji);
+  await expect(forms.getByRole("link", { name: renamed, exact: true })).toContainText(emoji);
   await openForm(page, renamed);
   const suspend = settings.getByRole("button", { name: t("inbox.forms.suspension.suspend") });
   const reactivate = settings.getByRole("button", {
@@ -429,7 +440,7 @@ test("show today's usage and retain changed daily quotas", async ({ dashboard: p
   await expect(page.getByText(t("inbox.quotas.saved"))).toBeVisible();
 
   await page.reload();
-  await openSettings(page, t("inbox.sections.quotas"));
+  await reopenSettings(page, t("inbox.sections.quotas"));
   await expect(submissions).toHaveAccessibleDescription(
     t("inbox.quotas.used", { used: "1", limit: "10" }),
   );
@@ -553,7 +564,7 @@ test("add destinations, confirm a recipient, send a test and retry a failed webh
     .click();
   await expect(secret).toHaveCount(0);
   // Leaving the page and coming back lists the webhook without its secret.
-  await folderButton(page, t("inbox.folders.accepted")).click();
+  await folderLink(page, t("inbox.folders.accepted")).click();
   await openForm(page, formName);
   const webhook = destinations.getByRole("listitem").filter({ hasText: receiver });
   await expect(webhook).toBeVisible();
@@ -579,7 +590,7 @@ test("add destinations, confirm a recipient, send a test and retry a failed webh
     mailbox.getByRole("heading", { name: t("recipientConfirmation.confirmed.title") }),
   ).toBeVisible();
   await mailbox.close();
-  await folderButton(page, t("inbox.folders.accepted")).click();
+  await folderLink(page, t("inbox.folders.accepted")).click();
   await openForm(page, formName);
   await openDestination(destination, email);
   await expect(
@@ -844,7 +855,7 @@ test("show the emoji of each form in a folder, narrow the folder to one form and
   const contactEndpoint = await publicFormUrl(page, formName);
   const quotes = "Quote requests";
   const emoji = "🧾";
-  await page.getByRole("button", { name: t("inbox.forms.newTitle"), exact: true }).click();
+  await page.getByRole("link", { name: t("inbox.forms.newTitle"), exact: true }).click();
   await page.getByRole("button", { name: t("inbox.forms.emoji.change"), exact: true }).click();
   await page.getByRole("button", { name: emoji, exact: true }).click();
   await page.getByRole("textbox", { name: t("inbox.forms.name") }).fill(quotes);
@@ -861,8 +872,8 @@ test("show the emoji of each form in a folder, narrow the folder to one form and
   await openSubmission(page, accepted, question);
   await openMessage(page, quote);
   const list = page.getByRole("region", { name: t("inbox.list.label") });
-  const fromContact = list.getByRole("button").filter({ hasText: question });
-  const fromQuotes = list.getByRole("button").filter({ hasText: quote });
+  const fromContact = list.getByRole("link").filter({ hasText: question });
+  const fromQuotes = list.getByRole("link").filter({ hasText: quote });
   const forms = list.getByRole("navigation", { name: t("inbox.list.forms.label"), exact: true });
   // The forms appear above the list once the counts say that two of them have a message in the folder.
   await expect(async () => {
@@ -900,7 +911,7 @@ test("offer no choice of form above the list of an organization that has one for
   await openSubmission(page, accepted, message);
 
   // The count of the folder shows that the counts of its forms have arrived.
-  await expect(folderButton(page, accepted)).toContainText("1");
+  await expect(folderLink(page, accepted)).toContainText("1");
   const list = page.getByRole("region", { name: t("inbox.list.label") });
   await expect(
     list.getByRole("navigation", { name: t("inbox.list.forms.label"), exact: true }),
@@ -927,7 +938,7 @@ test("open the navigation as a drawer on a narrow screen and close it by choosin
 
   await page.getByRole("button", { name: t("sidebar.toggle"), exact: true }).click();
   await expect(drawer).toBeVisible();
-  await folderButton(drawer, t("inbox.folders.accepted")).click();
+  await folderLink(drawer, t("inbox.folders.accepted")).click();
 
   await expect(drawer).toBeHidden();
   await expect(page.getByRole("heading", { name: t("inbox.folders.accepted") })).toBeVisible();
@@ -948,7 +959,7 @@ test("show an open message in place of the list on a narrow screen, and the list
   await page.setViewportSize(narrowScreen);
   await page.getByRole("button", { name: t("sidebar.toggle"), exact: true }).click();
   const drawer = page.getByRole("dialog", { name: t("inbox.navigation.label") });
-  await folderButton(drawer, t("inbox.folders.accepted")).click();
+  await folderLink(drawer, t("inbox.folders.accepted")).click();
   const list = page.getByRole("region", { name: t("inbox.list.label") });
 
   const reader = await openMessage(page, message);
@@ -991,7 +1002,7 @@ test("show the French language of an email destination after leaving the page an
   const destination = emails.getByRole("listitem").filter({ hasText: email });
   await expect(destination).toBeVisible();
 
-  await folderButton(page, t("inbox.folders.accepted")).click();
+  await folderLink(page, t("inbox.folders.accepted")).click();
   await openForm(page, formName);
   await openDestination(destination, email);
 
@@ -1037,7 +1048,7 @@ test("create, copy, and revoke a token that is only displayed once", async ({
   ).toEqual({ format: true, suffix });
 
   await page.reload();
-  await openSettings(page, t("inbox.sections.apiTokens"));
+  await reopenSettings(page, t("inbox.sections.apiTokens"));
   await expect(page.getByText(name, { exact: true })).toBeVisible();
   await expect(page.getByText(`••••${suffix}`, { exact: true })).toBeVisible();
   await expect(secret).toHaveCount(0);
@@ -1097,7 +1108,7 @@ test("invite a reviewer, who creates an account from the link and sees no settin
   await context.close();
 
   await page.reload();
-  await openSettings(page, t("inbox.sections.members"));
+  await reopenSettings(page, t("inbox.sections.members"));
   await expect(
     page.getByRole("combobox", { name: t("inbox.members.roleOf", { name: reviewer.name }) }),
   ).toHaveValue("reviewer");
@@ -1132,7 +1143,7 @@ test("count the API tokens of a member before removing it, and confirm before st
   await context.close();
 
   await page.reload();
-  await openSettings(page, t("inbox.sections.members"));
+  await reopenSettings(page, t("inbox.sections.members"));
   const remove = page.getByRole("button", {
     name: t("inbox.members.removeLabel", { name: second.name }),
   });
@@ -1206,8 +1217,8 @@ test("search the messages, export the list, delete a message and keep messages 3
   const list = page.getByRole("region", { name: t("inbox.list.label") });
   await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).fill("NEEDLE");
   await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).press("Enter");
-  await expect(list.getByRole("button").filter({ hasText: "The needle is here" })).toBeVisible();
-  await expect(list.getByRole("button").filter({ hasText: "Only hay in this one" })).toHaveCount(0);
+  await expect(list.getByRole("link").filter({ hasText: "The needle is here" })).toBeVisible();
+  await expect(list.getByRole("link").filter({ hasText: "Only hay in this one" })).toHaveCount(0);
   await list.getByRole("button", { name: t("inbox.list.export.label"), exact: true }).click();
   const csv = page.getByRole("menuitem", { name: t("inbox.list.export.csv") });
   const exported = await page.request.get(new URL(await csv.getAttribute("href"), endpoint).href);
@@ -1229,7 +1240,7 @@ test("search the messages, export the list, delete a message and keep messages 3
   await confirmation
     .getByRole("button", { name: t("inbox.reader.delete.confirm"), exact: true })
     .click();
-  await expect(list.getByRole("button").filter({ hasText: "The needle is here" })).toHaveCount(0);
+  await expect(list.getByRole("link").filter({ hasText: "The needle is here" })).toHaveCount(0);
   await expect(
     list.getByRole("heading", { name: t("inbox.list.search.empty", { search: "NEEDLE" }) }),
   ).toBeVisible();
@@ -1240,7 +1251,7 @@ test("search the messages, export the list, delete a message and keep messages 3
   await page.getByRole("button", { name: t("common.save"), exact: true }).click();
   await expect(page.getByText(t("inbox.retention.outcomes.saved"))).toBeVisible();
   await page.reload();
-  await openSettings(page, t("inbox.sections.retention"));
+  await reopenSettings(page, t("inbox.sections.retention"));
   await expect(accepted).toHaveValue("30");
   await expect(page.getByRole("spinbutton", { name: t("inbox.retention.quarantine") })).toHaveValue(
     "",

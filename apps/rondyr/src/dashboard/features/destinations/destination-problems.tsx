@@ -1,29 +1,25 @@
-import { Option, Schema } from "effect";
+import { Option } from "effect";
 import { useTranslation } from "react-i18next";
 
 import { maxDestinationNameLength } from "@rondyr/deliveries/connectors/connector-target";
 import { maxRecipients } from "@rondyr/deliveries/email";
 
 import { FormProblem } from "~/components/text-field";
-import { TargetRequestFailed } from "~/lib/targets-client";
-import type { TargetProblem } from "~/lib/targets-client";
+import { destinationRefusalOf, type TargetRequestError } from "~/lib/api/destinations";
 
-const isFailed = Schema.is(TargetRequestFailed);
+/**
+ * Why a request to the destinations API failed: the problem that the API names, or no
+ * stated reason.
+ */
+export type DestinationFailure = TargetRequestError | "unexplained";
 
-/** Why a request to the targets API failed: the problem that the API names, or no stated reason. */
-export type DestinationFailure = TargetProblem | "unexplained";
-
-/** Run a request to the targets API and return why it failed, or null. */
+/** Run a request to the destinations API and return why it failed, or null. */
 export async function attempt(request: () => Promise<void>): Promise<DestinationFailure | null> {
   try {
     await request();
     return null;
-  } catch (error) {
-    if (!isFailed(error)) return "unexplained";
-    return Option.match(error.problem, {
-      onNone: (): DestinationFailure => "unexplained",
-      onSome: (problem): DestinationFailure => problem,
-    });
+  } catch (cause) {
+    return Option.getOrElse(destinationRefusalOf(cause), (): DestinationFailure => "unexplained");
   }
 }
 
@@ -35,7 +31,7 @@ interface DestinationFailureNoteProps {
   readonly settingLabel?: (name: string) => string;
 }
 
-/** The message of a failed request to the targets API, next to the fields it is about. */
+/** The message of a failed request to the destinations API, next to the fields it is about. */
 export function DestinationFailureNote({
   failure,
   fallback,
@@ -43,7 +39,7 @@ export function DestinationFailureNote({
 }: DestinationFailureNoteProps) {
   const { t } = useTranslation();
 
-  function explain(problem: TargetProblem) {
+  function explain(problem: TargetRequestError) {
     switch (problem.error) {
       case "destination-refused":
         return t(`inbox.webhooks.refusals.${problem.reason}`);

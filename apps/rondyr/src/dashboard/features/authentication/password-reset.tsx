@@ -1,4 +1,5 @@
-import { Option, Schema } from "effect";
+import { useMutation } from "@tanstack/react-query";
+import { Option } from "effect";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -7,9 +8,8 @@ import { accountPasswordLength } from "@rondyr/organizations/account";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { completePasswordReset, PasswordResetFailed } from "~/lib/password-reset-client";
-
-const isFailed = Schema.is(PasswordResetFailed);
+import { completePasswordReset, passwordResetRefusalOf } from "~/lib/api/password-resets";
+import { statusOf } from "~/lib/api/request";
 
 type Outcome = "changed" | "invalid" | "rejected" | "failed";
 
@@ -21,18 +21,19 @@ interface PasswordResetProps {
 /** The page of a reset link: choose a new password, which signs the account out everywhere. */
 export function PasswordReset({ token }: PasswordResetProps) {
   const { t } = useTranslation();
+  const { mutateAsync: complete } = useMutation({
+    mutationFn: (password: string) => completePasswordReset(token, password),
+  });
   const [outcome, save, saving] = useActionState(
     async (_: Outcome | null, data: FormData): Promise<Outcome> => {
       const password = data.get("password")?.toString() ?? "";
       try {
-        await completePasswordReset(token, password);
+        await complete(password);
         return "changed";
-      } catch (error) {
-        if (!isFailed(error)) return "failed";
-        if (Option.isSome(error.problem) && error.problem.value.error === "reset-invalid") {
-          return "invalid";
-        }
-        return error.status === 400 ? "rejected" : "failed";
+      } catch (cause) {
+        const refusal = passwordResetRefusalOf(cause);
+        if (Option.isSome(refusal) && refusal.value.error === "reset-invalid") return "invalid";
+        return statusOf(cause) === 400 ? "rejected" : "failed";
       }
     },
     null,

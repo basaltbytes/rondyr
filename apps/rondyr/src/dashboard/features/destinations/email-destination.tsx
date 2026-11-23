@@ -1,55 +1,56 @@
-import { Schema } from "effect";
+import { useMutation } from "@tanstack/react-query";
 import { useActionState, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { SelectField, TextAreaField } from "~/components/text-field";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import type { Inbox } from "~/lib/inbox-client";
 import {
   destinationLanguages,
   isDestinationLanguage,
-  replaceRecipients,
   resendConfirmation,
-  TargetRequestFailed,
-} from "~/lib/targets-client";
-import type { EmailDestination } from "~/lib/targets-client";
+  type DestinationChange,
+  type EmailTarget,
+  type SavedDestination,
+} from "~/lib/api/destinations";
+import { statusOf } from "~/lib/api/request";
 
 import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
 import type { DestinationFailure } from "./destination-problems.tsx";
 import { DestinationTest } from "./destination-test.tsx";
 
-const isFailed = Schema.is(TargetRequestFailed);
-
 /** What became of a new confirmation email. Each one names a message of `inbox.emails.resend`. */
 type ResendOutcome = "sent" | "confirmed" | "limit" | "noProvider" | "failed";
 
-function resendOutcomeOf(error: TargetRequestFailed | null): ResendOutcome {
-  if (error?.status === 409) return "confirmed";
-  if (error?.status === 429) return "limit";
-  if (error?.status === 503) return "noProvider";
+function resendOutcomeOf(status: number | null): ResendOutcome {
+  if (status === 409) return "confirmed";
+  if (status === 429) return "limit";
+  if (status === 503) return "noProvider";
   return "failed";
 }
 
 interface RecipientsProps {
-  readonly inboxId: Inbox["id"];
-  readonly target: EmailDestination;
+  readonly organizationId: string;
+  readonly target: EmailTarget;
 }
 
 /**
  * The recipients of a destination, each `pending` until its owner confirms it
  * with the link that Rondyr emailed. Messages and tests go to confirmed ones only.
  */
-function Recipients({ inboxId, target }: RecipientsProps) {
+function Recipients({ organizationId, target }: RecipientsProps) {
   const { t } = useTranslation();
+  const { mutateAsync: sendAgain } = useMutation({
+    mutationFn: (address: string) => resendConfirmation(organizationId, target.id, address),
+  });
   const [resent, resend, resending] = useActionState(
     async (_: { address: string; outcome: ResendOutcome } | null, data: FormData) => {
       const address = data.get("address")?.toString() ?? "";
       try {
-        await resendConfirmation(inboxId, target.id, address);
+        await sendAgain(address);
         return { address, outcome: "sent" as const };
-      } catch (error) {
-        return { address, outcome: resendOutcomeOf(isFailed(error) ? error : null) };
+      } catch (cause) {
+        return { address, outcome: resendOutcomeOf(statusOf(cause)) };
       }
     },
     null,
@@ -106,7 +107,7 @@ export function languageIn(data: FormData) {
 
 interface LanguageFieldProps {
   /** The language that the field shows first. */
-  readonly initial: EmailDestination["language"];
+  readonly initial: EmailTarget["language"];
 }
 
 /** The language in which Rondyr writes the emails of a destination. */
@@ -129,20 +130,21 @@ export function LanguageField({ initial }: LanguageFieldProps) {
 }
 
 interface EmailPanelProps {
-  readonly inboxId: Inbox["id"];
-  readonly target: EmailDestination;
-  readonly onReplaced: (target: EmailDestination) => void;
+  readonly organizationId: string;
+  readonly target: EmailTarget;
+  /** Sends a change of the destination, then its cached copy. */
+  readonly onChange: (change: DestinationChange) => Promise<SavedDestination>;
 }
 
 /** What an open email destination shows: its recipients, its language, their edition and a test. */
-export function EmailPanel({ inboxId, target, onReplaced }: EmailPanelProps) {
+export function EmailPanel({ organizationId, target, onChange }: EmailPanelProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [failure, save, saving] = useActionState((_: DestinationFailure | null, data: FormData) => {
     const recipients = addressesIn(data);
     const language = languageIn(data);
     return attempt(async () => {
-      onReplaced(await replaceRecipients(inboxId, target.id, recipients, language));
+      await onChange({ change: "recipients", recipients, language });
       setEditing(false);
     });
   }, null);
@@ -153,7 +155,11 @@ export function EmailPanel({ inboxId, target, onReplaced }: EmailPanelProps) {
       <p className="text-xs text-pretty text-muted-foreground">
         {t("inbox.emails.confirmationNote")}
       </p>
-      <Recipients key={target.recipients.join(",")} inboxId={inboxId} target={target} />
+      <Recipients
+        key={target.recipients.join(",")}
+        organizationId={organizationId}
+        target={target}
+      />
       <p className="text-xs text-muted-foreground">
         {t("inbox.emails.languageValue", { language: t(`languages.${target.language}`) })}
       </p>
@@ -181,7 +187,7 @@ export function EmailPanel({ inboxId, target, onReplaced }: EmailPanelProps) {
         </form>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <DestinationTest inboxId={inboxId} targetId={target.id} />
+          <DestinationTest organizationId={organizationId} targetId={target.id} />
           <Button size="sm" onClick={() => setEditing(true)}>
             {t("inbox.emails.editRecipients")}
           </Button>

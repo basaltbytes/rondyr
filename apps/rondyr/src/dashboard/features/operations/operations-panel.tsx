@@ -1,17 +1,17 @@
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { QuarantineReason } from "@rondyr/contracts/classification";
-import type { OperationsStatus, OrganizationStatus } from "@rondyr/contracts/operations-status";
 import { DeliveryStatus } from "@rondyr/deliveries/delivery";
 
+import { ReadFailure } from "~/components/read-failure";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
+import { operationsQuery, type OrganizationStatus } from "~/lib/api/operations";
 import { useFormats } from "~/lib/i18n";
-import { readOperationsStatus } from "~/lib/operations-client";
 
 import { StuckSubmissions } from "./stuck-submissions.tsx";
 
@@ -50,12 +50,10 @@ function Figure({ label, value, tone, quiet }: FigureProps) {
 }
 
 interface OrganizationMetricsProps {
-  readonly organization: typeof OrganizationStatus.Type;
-  /** Reads the status again after a change on this page. */
-  readonly onChanged: () => void;
+  readonly organization: OrganizationStatus;
 }
 
-function OrganizationMetrics({ organization, onChanged }: OrganizationMetricsProps) {
+function OrganizationMetrics({ organization }: OrganizationMetricsProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const { outbox, deliveries, receivedLast24h, quarantinedLast24h } = organization;
@@ -138,7 +136,7 @@ function OrganizationMetrics({ organization, onChanged }: OrganizationMetricsPro
         </div>
         {outbox.stuck > 0 && (
           <div className="mt-6 hairline-t pt-4">
-            <StuckSubmissions organizationId={organization.id} onRetried={onChanged} />
+            <StuckSubmissions organizationId={organization.id} />
           </div>
         )}
       </CardContent>
@@ -149,38 +147,11 @@ function OrganizationMetrics({ organization, onChanged }: OrganizationMetricsPro
 // The value of the sentence about the Cron, in the color of the text.
 const cronValue = <span className="font-medium text-foreground tabular-nums" />;
 
-type Status =
-  | { readonly kind: "loading" | "failed" }
-  | { readonly kind: "ready"; readonly snapshot: typeof OperationsStatus.Type };
-
 /** How the processing of every organization of the account is doing: Cron, queues and deliveries. */
 export function OperationsPanel() {
   const { t } = useTranslation();
   const format = useFormats();
-  const [status, setStatus] = useState<Status>({ kind: "loading" });
-  const [revision, setRevision] = useState(0);
-
-  function refresh() {
-    setStatus({ kind: "loading" });
-    setRevision((value) => value + 1);
-  }
-
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Reads the processing status from the Rondyr API when the page opens or refreshes.
-  useEffect(() => {
-    let current = true;
-    void readOperationsStatus().then(
-      (snapshot) => {
-        if (current) setStatus({ kind: "ready", snapshot });
-      },
-      () => {
-        if (current) setStatus({ kind: "failed" });
-      },
-    );
-    return () => {
-      current = false;
-    };
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A refresh initiates a new API request.
-  }, [revision]);
+  const status = useQuery(operationsQuery);
 
   return (
     <main className="flex min-h-0 min-w-0 flex-col lg:col-span-2">
@@ -191,44 +162,44 @@ export function OperationsPanel() {
           variant="ghost"
           size="icon"
           aria-label={t("common.refresh")}
-          disabled={status.kind === "loading"}
-          onClick={refresh}
+          disabled={status.isFetching}
+          onClick={() => void status.refetch()}
         >
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
       </header>
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         <div className="mx-auto grid max-w-4xl gap-4 px-5 py-5">
-          {status.kind === "loading" && (
+          {status.isPending && (
             <output className="text-sm text-muted-foreground">{t("operations.loading")}</output>
           )}
-          {status.kind === "failed" && (
-            <p role="alert" className="text-sm text-destructive">
-              {t("operations.unavailable")}
-            </p>
+          {status.isError && (
+            <ReadFailure
+              cause={status.error}
+              title={t("operations.unavailable")}
+              retry={t("common.retry")}
+              retrying={status.isFetching}
+              onRetry={() => void status.refetch()}
+            />
           )}
-          {status.kind === "ready" && (
+          {status.isSuccess && (
             <>
               <p className="text-sm text-muted-foreground">
-                {status.snapshot.lastSuccessfulCronAt === null ? (
+                {status.data.lastSuccessfulCronAt === null ? (
                   <Trans i18nKey="operations.cron.never" components={{ value: cronValue }} />
                 ) : (
                   <Trans
                     i18nKey="operations.cron.last"
-                    values={{ date: format.timestamp(status.snapshot.lastSuccessfulCronAt) }}
+                    values={{ date: format.timestamp(status.data.lastSuccessfulCronAt) }}
                     components={{ value: cronValue }}
                   />
                 )}
               </p>
-              {status.snapshot.organizations.length === 0 && (
+              {status.data.organizations.length === 0 && (
                 <p className="text-sm text-muted-foreground">{t("operations.noOrganizations")}</p>
               )}
-              {status.snapshot.organizations.map((organization) => (
-                <OrganizationMetrics
-                  key={organization.id}
-                  organization={organization}
-                  onChanged={refresh}
-                />
+              {status.data.organizations.map((organization) => (
+                <OrganizationMetrics key={organization.id} organization={organization} />
               ))}
             </>
           )}

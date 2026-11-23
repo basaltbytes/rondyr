@@ -1,3 +1,4 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Mails } from "lucide-react";
 import { useActionState, useId, useState } from "react";
 import type { ReactNode } from "react";
@@ -8,16 +9,14 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { SidebarTrigger } from "~/components/ui/sidebar";
 import {
-  clearHoneypotField,
-  clearSuccessUrl,
-  createForm,
-  setFormStatus,
-  setHoneypotField,
-  setSuccessUrl,
-  updateForm,
-} from "~/lib/forms-client";
-import type { Form, FormChanges } from "~/lib/forms-client";
-import type { Inbox } from "~/lib/inbox-client";
+  changeFormMutation,
+  createFormMutation,
+  type FormChange,
+  type FormChanges,
+  type ManagedForm,
+} from "~/lib/api/forms";
+import { messageCountsQuery } from "~/lib/api/messages";
+import { countsOfForm, totalOf } from "~/lib/folder-counts";
 
 import { AllowedOrigins } from "./allowed-origins.tsx";
 import { EmojiPicker, emojiOf } from "~/components/form-emoji";
@@ -56,21 +55,20 @@ function PageBar({ title, children }: PageBarProps) {
 }
 
 interface FormStatusFieldProps {
-  readonly inboxId: Inbox["id"];
-  readonly form: Form;
-  readonly onChanged: () => Promise<void>;
+  readonly form: ManagedForm;
+  /** Sends a change of the form, then reads the organizations again. */
+  readonly onChange: (change: FormChange) => Promise<ManagedForm>;
 }
 
 /** Whether the form takes messages. Suspending it asks for a confirmation first. */
-function FormStatusField({ inboxId, form, onChanged }: FormStatusFieldProps) {
+function FormStatusField({ form, onChange }: FormStatusFieldProps) {
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const [failure, change, changing] = useActionState((_: FormFailure | null, data: FormData) => {
     const action = data.get("action");
     if (action !== "suspend" && action !== "reactivate") return null;
     return attempt(async () => {
-      await setFormStatus(inboxId, form.publicId, action);
-      await onChanged();
+      await onChange({ change: "status", action });
       setConfirming(false);
     });
   }, null);
@@ -124,12 +122,8 @@ function FormStatusField({ inboxId, form, onChanged }: FormStatusFieldProps) {
 }
 
 interface FormPageProps {
-  readonly inboxId: Inbox["id"];
-  readonly form: Form;
-  /** How many messages the form has, once the counts are known. */
-  readonly messages: number | null;
-  /** Reload the organizations after a change to the form. */
-  readonly onChanged: () => Promise<void>;
+  readonly organizationId: string;
+  readonly form: ManagedForm;
   /** Open the messages of the form. */
   readonly onMessages: () => void;
   /** Where the accepted messages of the form go, which another feature shows. */
@@ -141,34 +135,29 @@ interface FormPageProps {
  * at the top, edited in place; its settings as fields; then its destinations
  * and its allowed origins side by side.
  */
-export function FormPage({
-  inboxId,
-  form,
-  messages,
-  onChanged,
-  onMessages,
-  destinations,
-}: FormPageProps) {
+export function FormPage({ organizationId, form, onMessages, destinations }: FormPageProps) {
   const { t } = useTranslation();
   const ids = useId();
   const [failure, setFailure] = useState<FormFailure | null>(null);
   const [saving, setSaving] = useState(false);
+  const { mutateAsync: onChange } = useMutation(changeFormMutation(organizationId, form.publicId));
+  const { data: counts } = useQuery(messageCountsQuery(organizationId));
+  const messages =
+    counts === undefined ? null : totalOf(countsOfForm(counts, form.publicId), "all");
   const publicUrl = `${window.location.origin}/f/${encodeURIComponent(form.publicId)}`;
 
-  async function change(changes: FormChanges) {
+  async function change(details: FormChanges) {
     setSaving(true);
     const failed = await attempt(async () => {
-      await updateForm(inboxId, form.publicId, changes);
-      await onChanged();
+      await onChange({ change: "details", details });
     });
     setFailure(failed);
     setSaving(false);
   }
 
-  const save = (request: () => Promise<Form>) =>
+  const save = (formChange: FormChange) =>
     attempt(async () => {
-      await request();
-      await onChanged();
+      await onChange(formChange);
     });
 
   return (
@@ -258,7 +247,7 @@ export function FormPage({
               />
             </div>
           </Field>
-          <FormStatusField inboxId={inboxId} form={form} onChanged={onChanged} />
+          <FormStatusField form={form} onChange={onChange} />
           <Field
             label={t("inbox.forms.redirect.url")}
             htmlFor={`${ids}-redirect`}
@@ -277,13 +266,7 @@ export function FormPage({
               placeholder={t("inbox.forms.redirect.placeholder")}
               maxLength={2048}
               fallback={t("inbox.forms.problems.redirectNotSaved")}
-              onSave={(url) =>
-                save(() =>
-                  url === null
-                    ? clearSuccessUrl(inboxId, form.publicId)
-                    : setSuccessUrl(inboxId, form.publicId, url),
-                )
-              }
+              onSave={(url) => save({ change: "successUrl", url })}
             />
           </Field>
           <Field
@@ -299,23 +282,21 @@ export function FormPage({
               placeholder={t("inbox.forms.honeypot.placeholder")}
               maxLength={100}
               fallback={t("inbox.forms.problems.honeypotNotSaved")}
-              onSave={(field) =>
-                save(() =>
-                  field === null
-                    ? clearHoneypotField(inboxId, form.publicId)
-                    : setHoneypotField(inboxId, form.publicId, field),
-                )
-              }
+              onSave={(field) => save({ change: "honeypot", field })}
             />
           </Field>
           <Field label={t("inbox.forms.turnstile.title")}>
-            <FormTurnstile inboxId={inboxId} form={form} onChanged={onChanged} />
+            <FormTurnstile organizationId={organizationId} form={form} onChange={onChange} />
           </Field>
         </div>
 
         <div className="mt-12 grid gap-10 lg:grid-cols-2">
           {destinations}
-          <AllowedOrigins key={`origins-${form.publicId}`} inboxId={inboxId} form={form} />
+          <AllowedOrigins
+            key={`origins-${form.publicId}`}
+            organizationId={organizationId}
+            form={form}
+          />
         </div>
       </section>
     </main>
@@ -323,19 +304,20 @@ export function FormPage({
 }
 
 interface NewFormPageProps {
-  readonly inboxId: Inbox["id"];
-  /** Reload the organizations, then open the page of the new form. */
-  readonly onCreated: (publicId: Form["publicId"]) => Promise<void>;
+  readonly organizationId: string;
+  /** Open the page of the new form, once the organizations are read again. */
+  readonly onCreated: (publicId: ManagedForm["publicId"]) => Promise<void>;
 }
 
 /** Adds a form to the organization: its emoji, its name and its business. */
-export function NewFormPage({ inboxId, onCreated }: NewFormPageProps) {
+export function NewFormPage({ organizationId, onCreated }: NewFormPageProps) {
   const { t } = useTranslation();
   const [emoji, setEmoji] = useState<string | null>(null);
+  const { mutateAsync: create } = useMutation(createFormMutation(organizationId));
   const [failure, add, adding] = useActionState(
     (_: FormFailure | null, data: FormData) =>
       attempt(async () => {
-        const created = await createForm(inboxId, {
+        const created = await create({
           name: data.get("name")?.toString() ?? "",
           emoji,
           businessContext: data.get("businessContext")?.toString() ?? "",

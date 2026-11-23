@@ -1,7 +1,8 @@
+import { createLink } from "@tanstack/react-router";
 import { cn } from "cn";
 import { PanelLeft } from "lucide-react";
 import { createContext, use, useEffect, useState } from "react";
-import type { ComponentProps, ReactNode } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
@@ -237,25 +238,63 @@ export function SidebarMenuItem({ className, ...props }: ComponentProps<"li">) {
   return <li data-slot="sidebar-menu-item" className={cn("relative", className)} {...props} />;
 }
 
-interface SidebarMenuButtonProps extends ComponentProps<"button"> {
+interface MenuRowProps {
   /** The page this item opens is the current one. */
-  readonly active?: boolean;
+  readonly active?: boolean | undefined;
   /** A row of the item's sub-menu is the current page. */
-  readonly activeWithin?: boolean;
+  readonly activeWithin?: boolean | undefined;
   /** Leaves room at the end of the row for a `SidebarMenuAction`. */
-  readonly hasAction?: boolean;
+  readonly hasAction?: boolean | undefined;
   /** A row of a `SidebarMenuSub`, in a lighter weight than the item above it. */
-  readonly nested?: boolean;
+  readonly nested?: boolean | undefined;
   /** `lg` holds two lines of text next to a square mark. */
-  readonly size?: "default" | "lg";
+  readonly size?: "default" | "lg" | undefined;
   /** Shown next to the icon while the sidebar is collapsed. */
-  readonly tooltip?: string;
+  readonly tooltip?: string | undefined;
 }
 
 /**
  * A row of 40px, 44px under a finger. Its weight never changes: the current
  * page is told by its surface, so the labels do not shift.
  */
+function menuRowClass(
+  { active, activeWithin, hasAction, nested, size }: MenuRowProps,
+  collapsed: boolean,
+) {
+  return cn(
+    "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none focus-visible:outline-sidebar-ring disabled:pointer-events-none disabled:opacity-50",
+    nested === true ? "font-normal" : "font-medium",
+    size === "lg" ? "h-12" : "h-10 pointer-coarse:h-11",
+    collapsed ? "justify-center px-0" : "px-3",
+    hasAction === true && !collapsed && "pr-8 pointer-coarse:pr-11",
+    active === true
+      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs"
+      : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground",
+    active !== true &&
+      (activeWithin === true ? "text-sidebar-foreground" : "text-sidebar-foreground/75"),
+  );
+}
+
+/** A row with the name of its page beside its icon while the sidebar is collapsed. */
+interface WithTooltipProps {
+  readonly row: ReactElement;
+  readonly tooltip: string | undefined;
+}
+
+function WithTooltip({ row, tooltip }: WithTooltipProps) {
+  const { collapsed } = useSidebar();
+  if (!collapsed || tooltip === undefined) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={row} />
+      <TooltipContent side="right">{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+interface SidebarMenuButtonProps extends ComponentProps<"button">, MenuRowProps {}
+
+/** A row that acts on the page, such as the trigger of a menu. */
 export function SidebarMenuButton({
   active,
   activeWithin,
@@ -268,35 +307,53 @@ export function SidebarMenuButton({
   ...props
 }: SidebarMenuButtonProps) {
   const { collapsed } = useSidebar();
-  const button = (
+  const row = (
     <button
       type={type ?? "button"}
       data-slot="sidebar-menu-button"
       aria-current={active === true ? "page" : undefined}
       className={cn(
-        "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none focus-visible:outline-sidebar-ring disabled:pointer-events-none disabled:opacity-50",
-        nested === true ? "font-normal" : "font-medium",
-        size === "lg" ? "h-12" : "h-10 pointer-coarse:h-11",
-        collapsed ? "justify-center px-0" : "px-3",
-        hasAction === true && !collapsed && "pr-8 pointer-coarse:pr-11",
-        active === true
-          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs"
-          : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground",
-        active !== true &&
-          (activeWithin === true ? "text-sidebar-foreground" : "text-sidebar-foreground/75"),
+        menuRowClass({ active, activeWithin, hasAction, nested, size }, collapsed),
         className,
       )}
       {...props}
     />
   );
-  if (!collapsed || tooltip === undefined) return button;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={button} />
-      <TooltipContent side="right">{tooltip}</TooltipContent>
-    </Tooltip>
-  );
+  return <WithTooltip row={row} tooltip={tooltip} />;
 }
+
+interface SidebarMenuAnchorProps extends ComponentProps<"a">, MenuRowProps {}
+
+function SidebarMenuAnchor({
+  active,
+  activeWithin,
+  hasAction,
+  nested,
+  size,
+  tooltip,
+  className,
+  children,
+  ...props
+}: SidebarMenuAnchorProps) {
+  const { collapsed } = useSidebar();
+  const row = (
+    <a
+      data-slot="sidebar-menu-button"
+      className={cn(
+        menuRowClass({ active, activeWithin, hasAction, nested, size }, collapsed),
+        className,
+      )}
+      {...props}
+      aria-current={active === true ? "page" : undefined}
+    >
+      {children}
+    </a>
+  );
+  return <WithTooltip row={row} tooltip={tooltip} />;
+}
+
+/** A row that opens a page of the dashboard: a link, which has the address of the page. */
+export const SidebarMenuLink = createLink(SidebarMenuAnchor);
 
 /**
  * A control at the end of a menu item, over its row, which leaves it room with

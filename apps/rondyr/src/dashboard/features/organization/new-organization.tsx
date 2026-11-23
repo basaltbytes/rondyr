@@ -1,22 +1,25 @@
+import { useMutation } from "@tanstack/react-query";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { FormProblem, TextAreaField, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { createInbox } from "~/lib/inbox-client";
+import { createOrganizationMutation } from "~/lib/api/organizations";
 
 interface NewOrganizationProps {
-  readonly onCreated: () => void;
+  /** Opens the new organization, once the organizations are read again. */
+  readonly onCreated: () => Promise<void>;
 }
 
 /** Creates an organization and its first form. */
 export function NewOrganization({ onCreated }: NewOrganizationProps) {
   const { t } = useTranslation();
+  const { mutateAsync: create } = useMutation(createOrganizationMutation);
   const [failed, action, pending] = useActionState(async (_: boolean, form: FormData) => {
     try {
-      await createInbox(form);
-      onCreated();
+      await create(form);
+      await onCreated();
       return false;
     } catch {
       return true;

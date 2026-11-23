@@ -1,26 +1,28 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { ChevronDown, Mail, Plug, Webhook as WebhookIcon } from "lucide-react";
-import { useEffect, useId, useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { connectorOf, connectors } from "@rondyr/deliveries/connectors/catalog";
 
-import { FormProblem, SelectField, TextAreaField, TextField } from "~/components/text-field";
+import { ReadFailure } from "~/components/read-failure";
+import { SelectField, TextAreaField, TextField } from "~/components/text-field";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
-import { useLanguage } from "~/lib/i18n";
-import type { Inbox } from "~/lib/inbox-client";
 import {
-  createConnectorTarget,
-  createEmailTarget,
-  createWebhook,
+  addDestinationMutation,
+  changeDestinationMutation,
+  destinationsQuery,
   isConnectorType,
-  listTargets,
-  setTargetActive,
-} from "~/lib/targets-client";
-import type { IssuedSecret, Target } from "~/lib/targets-client";
+  type DestinationTarget,
+  type IssuedWebhookSecret,
+  type NewDestination as NewDestinationDraft,
+} from "~/lib/api/destinations";
+import type { ManagedForm } from "~/lib/api/forms";
+import { useLanguage } from "~/lib/i18n";
 
 import {
   ConnectorPanel,
@@ -34,24 +36,22 @@ import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
 import type { DestinationFailure } from "./destination-problems.tsx";
 import { WebhookPanel } from "./webhook-destination.tsx";
 
-type Form = Inbox["forms"][number];
-
 /** What names a destination in its row: the URL, the recipients or the name. */
-function nameOf(target: Target) {
+function nameOf(target: DestinationTarget) {
   if (target.type === "webhook") return target.url;
   if (target.type === "email") return target.recipients.join(", ");
   return target.name;
 }
 
 interface DestinationRowProps {
-  readonly inboxId: Inbox["id"];
-  readonly target: Target;
+  readonly organizationId: string;
+  readonly form: ManagedForm;
+  readonly target: DestinationTarget;
   readonly open: boolean;
   /** The secret that the API just issued for this destination, if it is a webhook. */
-  readonly issued: IssuedSecret | null;
+  readonly issued: IssuedWebhookSecret | null;
   readonly onToggle: () => void;
-  readonly onReplaced: (target: Target) => void;
-  readonly onIssued: (issued: IssuedSecret | null) => void;
+  readonly onIssued: (issued: IssuedWebhookSecret | null) => void;
 }
 
 /**
@@ -59,16 +59,19 @@ interface DestinationRowProps {
  * The line opens on its settings and its test.
  */
 function DestinationRow({
-  inboxId,
+  organizationId,
+  form,
   target,
   open,
   issued,
   onToggle,
-  onReplaced,
   onIssued,
 }: DestinationRowProps) {
   const { t } = useTranslation();
   const panel = useId();
+  const { mutateAsync: onChange } = useMutation(
+    changeDestinationMutation(organizationId, form.publicId, target.id),
+  );
   const [failure, setFailure] = useState<DestinationFailure | null>(null);
   const [switching, startSwitching] = useTransition();
   const name = nameOf(target);
@@ -81,7 +84,7 @@ function DestinationRow({
   function setActive(active: boolean) {
     startSwitching(async () => {
       const failed = await attempt(async () => {
-        onReplaced(await setTargetActive(inboxId, target.id, active ? "activate" : "deactivate"));
+        await onChange({ change: "active", active });
       });
       setFailure(failed);
     });
@@ -91,17 +94,19 @@ function DestinationRow({
   if (target.type === "webhook") {
     settings = (
       <WebhookPanel
-        inboxId={inboxId}
+        organizationId={organizationId}
         target={target}
         issued={issued}
-        onReplaced={onReplaced}
+        onChange={onChange}
         onIssued={onIssued}
       />
     );
   } else if (target.type === "email") {
-    settings = <EmailPanel inboxId={inboxId} target={target} onReplaced={onReplaced} />;
+    settings = <EmailPanel organizationId={organizationId} target={target} onChange={onChange} />;
   } else {
-    settings = <ConnectorPanel inboxId={inboxId} target={target} onReplaced={onReplaced} />;
+    settings = (
+      <ConnectorPanel organizationId={organizationId} target={target} onChange={onChange} />
+    );
   }
 
   return (
@@ -157,17 +162,21 @@ function DestinationRow({
 }
 
 interface NewDestinationProps {
-  readonly inboxId: Inbox["id"];
-  readonly form: Form;
-  readonly onAdded: (target: Target) => void;
-  readonly onIssued: (issued: IssuedSecret) => void;
+  readonly organizationId: string;
+  readonly form: ManagedForm;
+  /** The destination just added, which opens on its settings. */
+  readonly onAdded: (target: DestinationTarget) => void;
+  readonly onIssued: (issued: IssuedWebhookSecret) => void;
 }
 
 /** Adds a destination. Its type comes first, and decides which fields follow. */
-function NewDestination({ inboxId, form, onAdded, onIssued }: NewDestinationProps) {
+function NewDestination({ organizationId, form, onAdded, onIssued }: NewDestinationProps) {
   const { t } = useTranslation();
   const dashboardLanguage = useLanguage();
-  const [kind, setKind] = useState<Target["type"]>("webhook");
+  const { mutateAsync: addDestination } = useMutation(
+    addDestinationMutation(organizationId, form.publicId),
+  );
+  const [kind, setKind] = useState<DestinationTarget["type"]>("webhook");
   // The form keeps what was typed when the API refuses it, and empties once saved.
   const [added, setAdded] = useState(0);
   const [failure, setFailure] = useState<DestinationFailure | null>(null);
@@ -178,21 +187,15 @@ function NewDestination({ inboxId, form, onAdded, onIssued }: NewDestinationProp
     const data = new FormData(event.currentTarget);
     startSaving(async () => {
       const failed = await attempt(async () => {
-        if (kind === "webhook") {
-          const issued = await createWebhook(
-            inboxId,
-            form.publicId,
-            data.get("url")?.toString() ?? "",
-          );
-          onAdded(issued.target);
-          onIssued(issued);
-        } else if (kind === "email") {
-          onAdded(
-            await createEmailTarget(inboxId, form.publicId, addressesIn(data), languageIn(data)),
-          );
-        } else {
-          onAdded(await createConnectorTarget(inboxId, form.publicId, draftIn(kind, data)));
-        }
+        const draft: NewDestinationDraft =
+          kind === "webhook"
+            ? { type: "webhook", url: data.get("url")?.toString() ?? "" }
+            : kind === "email"
+              ? { type: "email", recipients: addressesIn(data), language: languageIn(data) }
+              : { type: "connector", draft: draftIn(kind, data) };
+        const saved = await addDestination(draft);
+        onAdded(saved.target);
+        if (saved.issued !== null) onIssued(saved.issued);
         setAdded((count) => count + 1);
       });
       setFailure(failed);
@@ -278,38 +281,23 @@ function NewDestination({ inboxId, form, onAdded, onIssued }: NewDestinationProp
 }
 
 interface FormDestinationsProps {
-  readonly inboxId: Inbox["id"];
-  readonly form: Form;
+  readonly organizationId: string;
+  readonly form: ManagedForm;
 }
 
 /**
  * Where the accepted messages of a form go: webhooks, emails and the services
  * of connectors, in one list. A destination just added opens on its settings.
  */
-export function FormDestinations({ inboxId, form }: FormDestinationsProps) {
+export function FormDestinations({ organizationId, form }: FormDestinationsProps) {
   const { t } = useTranslation();
   const title = useId();
-  const [targets, setTargets] = useState<readonly Target[] | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [opened, setOpened] = useState<readonly Target["id"][]>([]);
-  const [issued, setIssued] = useState<IssuedSecret | null>(null);
+  const query = useQuery(destinationsQuery(organizationId, form.publicId));
+  const targets = query.data ?? null;
+  const [opened, setOpened] = useState<readonly DestinationTarget["id"][]>([]);
+  const [issued, setIssued] = useState<IssuedWebhookSecret | null>(null);
 
-  // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Loads the form's destinations from the Rondyr API.
-  useEffect(() => {
-    const request = new AbortController();
-    void listTargets(inboxId, form.publicId, request.signal).then(setTargets, () => {
-      if (!request.signal.aborted) setFailed(true);
-    });
-    return () => request.abort();
-  }, [inboxId, form.publicId]);
-
-  function replace(target: Target) {
-    setTargets(
-      (current) => current?.map((item) => (item.id === target.id ? target : item)) ?? null,
-    );
-  }
-
-  function toggle(id: Target["id"]) {
+  function toggle(id: DestinationTarget["id"]) {
     setOpened((ids) => (ids.includes(id) ? ids.filter((other) => other !== id) : [...ids, id]));
   }
 
@@ -326,8 +314,16 @@ export function FormDestinations({ inboxId, form }: FormDestinationsProps) {
           </span>
         )}
       </h2>
-      {failed && <FormProblem>{t("inbox.destinations.loadFailed")}</FormProblem>}
-      {targets === null && !failed && (
+      {query.isError && (
+        <ReadFailure
+          cause={query.error}
+          title={t("inbox.destinations.loadFailed")}
+          retry={t("common.retry")}
+          retrying={query.isFetching}
+          onRetry={() => void query.refetch()}
+        />
+      )}
+      {query.isPending && (
         <output className="text-sm text-muted-foreground">{t("inbox.destinations.loading")}</output>
       )}
       {targets?.length === 0 && (
@@ -338,24 +334,21 @@ export function FormDestinations({ inboxId, form }: FormDestinationsProps) {
           {targets.map((target) => (
             <DestinationRow
               key={target.id}
-              inboxId={inboxId}
+              organizationId={organizationId}
+              form={form}
               target={target}
               open={opened.includes(target.id)}
               issued={issued?.target.id === target.id ? issued : null}
               onToggle={() => toggle(target.id)}
-              onReplaced={replace}
               onIssued={setIssued}
             />
           ))}
         </ul>
       )}
       <NewDestination
-        inboxId={inboxId}
+        organizationId={organizationId}
         form={form}
-        onAdded={(target) => {
-          setTargets((current) => [...(current ?? []), target]);
-          setOpened((ids) => [...ids, target.id]);
-        }}
+        onAdded={(target) => setOpened((ids) => [...ids, target.id])}
         onIssued={setIssued}
       />
     </section>

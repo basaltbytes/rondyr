@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "~": folder("."),
+      "@rondyr/contracts": folder("../domain/submissions"),
       "@rondyr/deliveries": folder("../domain/deliveries"),
     },
   },

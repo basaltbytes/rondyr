@@ -1,25 +1,21 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { cn } from "cn";
 import {
-  Activity,
   Archive,
-  ChevronLeft,
   CircleCheck,
   CirclePause,
-  Gauge,
   Inbox as InboxIcon,
-  KeyRound,
   Mails,
-  Network,
   Plus,
-  ScanSearch,
   Settings,
-  Timer,
-  Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { allows } from "@rondyr/organizations/member-role";
 
+import { FormEmoji } from "~/components/form-emoji";
 import { ProductLogo } from "~/components/product-logo";
 import {
   Sidebar,
@@ -30,37 +26,18 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuBadge,
-  SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuLabel,
+  SidebarMenuLink,
   useSidebar,
 } from "~/components/ui/sidebar";
-import type { Counts, Inbox } from "~/lib/inbox-client";
-import { cn } from "cn";
-
-import { FormEmoji } from "~/components/form-emoji";
-import { OrganizationSwitcher } from "./organization-switcher.tsx";
+import { messageCountsQuery } from "~/lib/api/messages";
+import type { Organization } from "~/lib/api/organizations";
 import { totalOf } from "~/lib/folder-counts";
-import type { Folder } from "~/lib/folder-counts";
+import { messagesSearch } from "~/lib/messages-search";
 
-type Form = Inbox["forms"][number];
-
-/** A page of the organization's settings, or the status of the processing. */
-export type SettingsSection =
-  | "members"
-  | "apiTokens"
-  | "retention"
-  | "classification"
-  | "domains"
-  | "quotas"
-  | "operations";
-
-/** What the dashboard shows in place of the messages. */
-export type Page =
-  | { readonly at: "form"; readonly publicId: Form["publicId"] }
-  | { readonly at: "newForm" }
-  | { readonly at: "organization" }
-  | { readonly at: "settings"; readonly section: SettingsSection };
+import { OrganizationSwitcher } from "./organization-switcher.tsx";
+import type { SidebarPage } from "./sidebar-page.ts";
 
 const folders = [
   ["quarantined", InboxIcon],
@@ -68,140 +45,40 @@ const folders = [
   ["archived", Archive],
   ["all", Mails],
 ] as const;
-const organizationSettings = [
-  ["members", Users],
-  ["apiTokens", KeyRound],
-  ["retention", Timer],
-] as const;
-const filteringSettings = [
-  ["classification", ScanSearch],
-  ["domains", Network],
-  ["quotas", Gauge],
-] as const;
 
 interface OrganizationSidebarProps {
-  readonly inboxes: readonly Inbox[];
-  readonly inbox: Inbox;
-  readonly counts: Counts | null;
-  readonly folder: Folder;
-  /** The page shown in place of the messages, if any. */
-  readonly page: Page | null;
+  readonly organizations: readonly Organization[];
+  readonly organization: Organization;
+  /** The page shown beside the sidebar. */
+  readonly page: SidebarPage;
+  /** The text that the list is narrowed to, which a change of folder keeps. */
+  readonly searchText: string | null;
   /** The signed-in account and its menu. */
   readonly account: ReactNode;
-  readonly onInbox: (id: string) => void;
-  readonly onFolder: (folder: Folder) => void;
-  /** Leave the settings for the messages that were shown before them. */
-  readonly onBack: () => void;
-  readonly onPage: (page: Page) => void;
 }
 
 /**
- * The navigation of an organization: its folders of messages and its forms.
- * The settings have a navigation of their own, which takes the place of this
- * one while a page of the settings is open.
+ * The navigation of an organization: its folders of messages and its forms. The
+ * settings have a navigation of their own, which takes the place of this one while a
+ * page of the settings is open.
  */
 export function OrganizationSidebar({
-  inboxes,
-  inbox,
-  counts,
-  folder,
+  organizations,
+  organization,
   page,
+  searchText,
   account,
-  onInbox,
-  onFolder,
-  onBack,
-  onPage,
 }: OrganizationSidebarProps) {
   const { t } = useTranslation();
   const { collapsed, setOpenMobile } = useSidebar();
-
-  function open(next: Page) {
-    onPage(next);
-    setOpenMobile(false);
-  }
-
-  if (page?.at === "settings") {
-    const entries = (sections: typeof organizationSettings | typeof filteringSettings) =>
-      sections.map(([key, Icon]) => (
-        <SidebarMenuItem key={key}>
-          <SidebarMenuButton
-            active={page.section === key}
-            tooltip={t(`inbox.sections.${key}`)}
-            onClick={() => open({ at: "settings", section: key })}
-          >
-            <Icon aria-hidden="true" className="size-4 shrink-0" />
-            <SidebarMenuLabel>{t(`inbox.sections.${key}`)}</SidebarMenuLabel>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ));
-    return (
-      <Sidebar label={t("inbox.navigation.settings")}>
-        <SidebarHeader>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                size="lg"
-                tooltip={t("inbox.navigation.back")}
-                aria-label={t("inbox.navigation.back")}
-                onClick={() => {
-                  onBack();
-                  setOpenMobile(false);
-                }}
-              >
-                <ChevronLeft aria-hidden="true" className="size-4 shrink-0" />
-                <SidebarMenuLabel>
-                  <span className="block truncate text-sidebar-foreground">
-                    {t("inbox.navigation.settings")}
-                  </span>
-                  <span className="block truncate text-xs font-normal text-sidebar-foreground/70">
-                    {t("inbox.navigation.back")}
-                  </span>
-                </SidebarMenuLabel>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-        <SidebarContent>
-          {allows(inbox.role, "manage-settings") && (
-            <>
-              <SidebarGroup aria-label={t("inbox.navigation.organization")}>
-                <SidebarGroupLabel>{t("inbox.navigation.organization")}</SidebarGroupLabel>
-                <SidebarMenu>{entries(organizationSettings)}</SidebarMenu>
-              </SidebarGroup>
-              <SidebarGroup aria-label={t("inbox.navigation.filtering")}>
-                <SidebarGroupLabel>{t("inbox.navigation.filtering")}</SidebarGroupLabel>
-                <SidebarMenu>{entries(filteringSettings)}</SidebarMenu>
-              </SidebarGroup>
-            </>
-          )}
-          {allows(inbox.role, "read-operations") && (
-            <SidebarGroup aria-label={t("inbox.navigation.operations")}>
-              <SidebarGroupLabel>{t("inbox.navigation.operations")}</SidebarGroupLabel>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    active={page.section === "operations"}
-                    tooltip={t("operations.title")}
-                    onClick={() => open({ at: "settings", section: "operations" })}
-                  >
-                    <Activity aria-hidden="true" className="size-4 shrink-0" />
-                    <SidebarMenuLabel>{t("operations.title")}</SidebarMenuLabel>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroup>
-          )}
-        </SidebarContent>
-        <SidebarFooter>{account}</SidebarFooter>
-      </Sidebar>
-    );
-  }
-
+  const { data: counts } = useQuery(messageCountsQuery(organization.id));
+  const organizationId = organization.id;
+  const close = () => setOpenMobile(false);
   // A reviewer reads and decides; the forms, the settings and the status are an admin's.
-  const managesForms = allows(inbox.role, "manage-forms");
-  const firstSettings: SettingsSection | null = allows(inbox.role, "manage-settings")
+  const managesForms = allows(organization.role, "manage-forms");
+  const firstSettings = allows(organization.role, "manage-settings")
     ? "members"
-    : allows(inbox.role, "read-operations")
+    : allows(organization.role, "read-operations")
       ? "operations"
       : null;
 
@@ -211,32 +88,27 @@ export function OrganizationSidebar({
         <div className={cn("flex", collapsed ? "justify-center" : "px-1")}>
           <ProductLogo compact={collapsed} />
         </div>
-        <OrganizationSwitcher
-          inboxes={inboxes}
-          inbox={inbox}
-          onInbox={onInbox}
-          onNew={() => open({ at: "organization" })}
-        />
+        <OrganizationSwitcher organizations={organizations} organization={organization} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup aria-label={t("inbox.navigation.messages")}>
           <SidebarGroupLabel>{t("inbox.navigation.messages")}</SidebarGroupLabel>
           <SidebarMenu>
             {folders.map(([key, Icon]) => {
-              const total = counts === null ? null : totalOf(counts, key);
+              const total = counts === undefined ? null : totalOf(counts, key);
               const label = t(`inbox.folders.${key}`);
-              const active = page === null && folder === key;
+              const active = page.at === "messages" && page.folder === key;
               return (
                 <SidebarMenuItem key={key}>
-                  <SidebarMenuButton
+                  <SidebarMenuLink
+                    to="/o/$organizationId/messages"
+                    params={{ organizationId }}
+                    search={messagesSearch(key, null, searchText)}
                     active={active}
                     tooltip={
                       total === null ? label : t("inbox.folderTotal", { folder: label, total })
                     }
-                    onClick={() => {
-                      onFolder(key);
-                      setOpenMobile(false);
-                    }}
+                    onClick={close}
                   >
                     <Icon aria-hidden="true" className="size-4 shrink-0" />
                     <SidebarMenuLabel>{label}</SidebarMenuLabel>
@@ -254,7 +126,7 @@ export function OrganizationSidebar({
                         </span>
                       </SidebarMenuBadge>
                     )}
-                  </SidebarMenuButton>
+                  </SidebarMenuLink>
                 </SidebarMenuItem>
               );
             })}
@@ -267,24 +139,27 @@ export function OrganizationSidebar({
                 {t("inbox.sections.forms")}
               </SidebarGroupLabel>
               {!collapsed && (
-                <button
-                  type="button"
+                <Link
+                  to="/o/$organizationId/forms/new"
+                  params={{ organizationId }}
                   aria-label={t("inbox.forms.newTitle")}
-                  aria-current={page?.at === "newForm" ? "page" : undefined}
+                  aria-current={page.at === "newForm" ? "page" : undefined}
                   className="relative flex size-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors duration-150 ease-out before:absolute before:-inset-1 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-sidebar-ring aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-foreground pointer-coarse:size-11 pointer-coarse:before:hidden"
-                  onClick={() => open({ at: "newForm" })}
+                  onClick={close}
                 >
                   <Plus aria-hidden="true" className="size-4" />
-                </button>
+                </Link>
               )}
             </div>
             <SidebarMenu>
-              {inbox.forms.map((form) => (
+              {organization.forms.map((form) => (
                 <SidebarMenuItem key={form.publicId}>
-                  <SidebarMenuButton
-                    active={page?.at === "form" && page.publicId === form.publicId}
+                  <SidebarMenuLink
+                    to="/o/$organizationId/forms/$publicId"
+                    params={{ organizationId, publicId: form.publicId }}
+                    active={page.at === "form" && page.publicId === form.publicId}
                     tooltip={form.name}
-                    onClick={() => open({ at: "form", publicId: form.publicId })}
+                    onClick={close}
                   >
                     <FormEmoji form={form} />
                     <SidebarMenuLabel>{form.name}</SidebarMenuLabel>
@@ -294,7 +169,7 @@ export function OrganizationSidebar({
                         <span className="sr-only">{t("inbox.forms.statuses.suspended")}</span>
                       </>
                     )}
-                  </SidebarMenuButton>
+                  </SidebarMenuLink>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
@@ -306,13 +181,19 @@ export function OrganizationSidebar({
           <nav aria-label={t("inbox.navigation.settings")}>
             <SidebarMenu>
               <SidebarMenuItem>
-                <SidebarMenuButton
+                <SidebarMenuLink
+                  to={
+                    firstSettings === "members"
+                      ? "/o/$organizationId/settings/members"
+                      : "/o/$organizationId/status"
+                  }
+                  params={{ organizationId }}
                   tooltip={t("inbox.navigation.settings")}
-                  onClick={() => open({ at: "settings", section: firstSettings })}
+                  onClick={close}
                 >
                   <Settings aria-hidden="true" className="size-4 shrink-0" />
                   <SidebarMenuLabel>{t("inbox.navigation.settings")}</SidebarMenuLabel>
-                </SidebarMenuButton>
+                </SidebarMenuLink>
               </SidebarMenuItem>
             </SidebarMenu>
           </nav>
