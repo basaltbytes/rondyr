@@ -257,10 +257,12 @@
         "tooShort_many": "Enter at least {{count}} characters."
       },
       "export": {
-        "label": "Export this list:",
+        "label": "Export this list",
         "csv": "CSV",
+        "csvAbout": "For a spreadsheet, with one column for each common field.",
         "jsonl": "JSON Lines",
-        "limit": "(the 10,000 newest messages at most)"
+        "jsonlAbout": "One JSON object for each message, with all its fields.",
+        "limit": "The list as it is filtered here, up to the 10,000 newest messages."
       }
     },
     "reader": {

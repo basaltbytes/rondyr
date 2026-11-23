@@ -257,10 +257,12 @@
         "showAll": "Afficher tous les messages"
       },
       "export": {
-        "label": "Exporter cette liste :",
+        "label": "Exporter cette liste",
         "csv": "CSV",
+        "csvAbout": "Pour un tableur, avec une colonne par champ courant.",
         "jsonl": "JSON Lines",
-        "limit": "(les 10 000 messages les plus récents au plus)"
+        "jsonlAbout": "Un objet JSON par message, avec tous ses champs.",
+        "limit": "La liste telle qu’elle est filtrée ici, jusqu’aux 10 000 messages les plus récents."
       }
     },
     "reader": {

@@ -1208,12 +1208,16 @@ test("search the messages, export the list, delete a message and keep messages 3
   await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).press("Enter");
   await expect(list.getByRole("button").filter({ hasText: "The needle is here" })).toBeVisible();
   await expect(list.getByRole("button").filter({ hasText: "Only hay in this one" })).toHaveCount(0);
-  const csv = list.getByRole("link", { name: t("inbox.list.export.csv"), exact: true });
+  await list.getByRole("button", { name: t("inbox.list.export.label"), exact: true }).click();
+  const csv = page.getByRole("menuitem", { name: t("inbox.list.export.csv") });
   const exported = await page.request.get(new URL(await csv.getAttribute("href"), endpoint).href);
   expect(exported.headers()["cache-control"]).toBe("no-store");
   const text = await exported.text();
   expect(text).toContain("The needle is here");
   expect(text).not.toContain("Only hay in this one");
+  // The menu stays open while it is read: the rest of the page is out of reach until it closes.
+  await page.keyboard.press("Escape");
+  await expect(csv).toBeHidden();
 
   const reader = await openMessage(page, "The needle is here");
   const remove = reader.getByRole("button", { name: t("inbox.reader.delete.action") });

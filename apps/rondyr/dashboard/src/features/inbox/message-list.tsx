@@ -4,6 +4,15 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuLinkItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { SidebarTrigger } from "~/components/ui/sidebar";
 import { useFormats } from "~/lib/i18n";
@@ -236,6 +245,50 @@ function FormChips({ forms, form, onForm }: FormChipsProps) {
   );
 }
 
+interface ExportMenuProps {
+  /** The addresses that download the list as it is filtered on screen. */
+  readonly exports: { readonly csv: string; readonly jsonl: string };
+}
+
+/** Downloads the list on screen. The menu says what each format holds, and the limit. */
+function ExportMenu({ exports }: ExportMenuProps) {
+  const { t } = useTranslation();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon" aria-label={t("inbox.list.export.label")} />}
+      >
+        <Download aria-hidden="true" className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{t("inbox.list.export.label")}</DropdownMenuLabel>
+          <DropdownMenuLinkItem href={exports.csv} download>
+            <span className="grid gap-0.5">
+              <span className="font-medium">{t("inbox.list.export.csv")}</span>
+              <span className="text-xs text-pretty text-muted-foreground">
+                {t("inbox.list.export.csvAbout")}
+              </span>
+            </span>
+          </DropdownMenuLinkItem>
+          <DropdownMenuLinkItem href={exports.jsonl} download>
+            <span className="grid gap-0.5">
+              <span className="font-medium">{t("inbox.list.export.jsonl")}</span>
+              <span className="text-xs text-pretty text-muted-foreground">
+                {t("inbox.list.export.jsonlAbout")}
+              </span>
+            </span>
+          </DropdownMenuLinkItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <p className="px-2 py-1.5 text-xs text-pretty text-muted-foreground">
+          {t("inbox.list.export.limit")}
+        </p>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function MessageList({
   folder,
   forms,
@@ -268,7 +321,10 @@ export function MessageList({
   return (
     <section
       aria-label={t("inbox.list.label")}
-      className={cn("flex min-h-0 flex-col bg-background lg:hairline-r", collapsed && "max-lg:hidden")}
+      className={cn(
+        "flex min-h-0 flex-col bg-background lg:hairline-r",
+        collapsed && "max-lg:hidden",
+      )}
     >
       <header className="flex h-14 shrink-0 items-center gap-1 hairline-b px-1">
         <SidebarTrigger />
@@ -280,33 +336,13 @@ export function MessageList({
             </span>
           )}
         </h1>
+        {exports !== null && <ExportMenu exports={exports} />}
         <Button variant="ghost" size="icon" aria-label={t("common.refresh")} onClick={onRefresh}>
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
       </header>
       {formsOfFolder.length > 0 && <FormChips forms={formsOfFolder} form={form} onForm={onForm} />}
       <SearchBar search={search} onSearch={onSearch} />
-      {exports !== null && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 hairline-b px-4 py-2 text-xs text-muted-foreground">
-          <Download aria-hidden="true" className="size-3.5 shrink-0" />
-          <span>{t("inbox.list.export.label")}</span>
-          <a
-            className="font-medium text-foreground underline underline-offset-4"
-            href={exports.csv}
-            download
-          >
-            {t("inbox.list.export.csv")}
-          </a>
-          <a
-            className="font-medium text-foreground underline underline-offset-4"
-            href={exports.jsonl}
-            download
-          >
-            {t("inbox.list.export.jsonl")}
-          </a>
-          <span>{t("inbox.list.export.limit")}</span>
-        </p>
-      )}
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         {failed && (
           <p role="alert" className="px-4 py-3 text-sm text-destructive">
