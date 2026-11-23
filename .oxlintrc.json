@@ -62,7 +62,6 @@
     {
       "files": [
         "apps/rondyr/src/**",
-        "apps/rondyr/dashboard/**",
         "apps/rondyr/evals/**",
         "apps/rondyr/scripts/**",
         "apps/rondyr/tests/**",
@@ -109,16 +108,17 @@
               },
               {
                 "group": [
+                  "**/worker/**",
+                  "**/worker*",
+                  "**/dashboard/**",
+                  "~/**",
                   "**/application/**",
                   "**/ports/**",
                   "**/adapters/**",
                   "**/http/**",
-                  "**/jobs/**",
-                  "**/dashboard/**",
-                  "~/**",
-                  "**/worker*"
+                  "**/jobs/**"
                 ],
-                "message": "The domain has no dependencies on application code or adapters."
+                "message": "The domain imports neither the Worker nor the dashboard."
               },
               {
                 "group": [
@@ -134,7 +134,31 @@
       }
     },
     {
-      "files": ["apps/rondyr/src/application/**", "apps/rondyr/src/ports/**"],
+      "files": ["apps/rondyr/src/worker/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/dashboard/**", "~/**"],
+                "message": "The Worker imports the domain, never the dashboard."
+              },
+              {
+                "group": [
+                  "**/packages/**",
+                  "@basaltbytes/emdash-plugin-rondyr",
+                  "@basaltbytes/emdash-plugin-rondyr/*"
+                ],
+                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/rondyr/src/worker/ports/**"],
       "rules": {
         "no-restricted-imports": [
           "error",
@@ -157,29 +181,8 @@
                 "message": "Application code and ports depend on domain contracts."
               },
               {
-                "group": [
-                  "**/packages/**",
-                  "@basaltbytes/emdash-plugin-rondyr",
-                  "@basaltbytes/emdash-plugin-rondyr/*"
-                ],
-                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "files": ["apps/rondyr/src/http/**", "apps/rondyr/src/jobs/**"],
-      "excludeFiles": ["**/*.test.ts"],
-      "rules": {
-        "no-restricted-imports": [
-          "error",
-          {
-            "patterns": [
-              {
-                "group": ["**/adapters/**"],
-                "message": "Routes and jobs use ports. apps/rondyr/src/worker-implementation.ts provides the adapters."
+                "group": ["**/dashboard/**", "~/**"],
+                "message": "The Worker imports the domain, never the dashboard."
               },
               {
                 "group": [
@@ -195,7 +198,37 @@
       }
     },
     {
-      "files": ["apps/rondyr/dashboard/src/**"],
+      "files": ["apps/rondyr/src/worker/http/**", "apps/rondyr/src/worker/jobs/**"],
+      "excludeFiles": ["**/*.test.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**"],
+                "message": "Routes and jobs use ports. apps/rondyr/src/worker/worker-implementation.ts provides the adapters."
+              },
+              {
+                "group": ["**/dashboard/**", "~/**"],
+                "message": "The Worker imports the domain, never the dashboard."
+              },
+              {
+                "group": [
+                  "**/packages/**",
+                  "@basaltbytes/emdash-plugin-rondyr",
+                  "@basaltbytes/emdash-plugin-rondyr/*"
+                ],
+                "message": "The Worker and the dashboard import nothing from the EmDash plugin, which sites compile under the MIT license."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["apps/rondyr/src/dashboard/**"],
+      "excludeFiles": ["apps/rondyr/src/dashboard/vitest.config.ts"],
       "rules": {
         "rondyr/web-import-direction": "error",
         "rondyr/require-react-disable-reason": "error",
@@ -240,12 +273,17 @@
               },
               {
                 "group": [
-                  "**/src/adapters/*",
-                  "**/src/application/*",
-                  "**/src/http/*",
-                  "**/src/worker*"
+                  "**/worker/**",
+                  "**/worker",
+                  "**/worker.ts",
+                  "**/worker-implementation*",
+                  "**/alchemy-worker*"
                 ],
                 "message": "The dashboard talks to Rondyr through HTTP."
+              },
+              {
+                "group": ["**/domain/**"],
+                "message": "The dashboard imports the domain through the @rondyr/* aliases."
               },
               {
                 "group": [

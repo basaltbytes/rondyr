@@ -1,6 +1,6 @@
 # Classifier evaluation
 
-`pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `apps/rondyr/src/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
+`pnpm evaluate` replays a labeled corpus as the submission history of one organization. It uses the Worker's repetition rules and builds the same input for Jev and OpenAI Decisions. It runs in Node, calls the adapters with the gateway options of `apps/rondyr/src/worker/adapters/ai/gateway.ts` for occurrences below the repetition thresholds, then applies `reviewReason` to their scores.
 
 The runner and the Worker read their default policies from `apps/rondyr/src/domain/submissions/classification-policy.ts`. The initial evaluation on real submissions is recorded in [#31](https://github.com/basaltbytes/rondyr/issues/31), and [#40](https://github.com/basaltbytes/rondyr/issues/40) records the measurement behind the solicitation threshold. [Architecture section 5](../architecture.md#5-intelligent-classification) describes the current defaults.
 

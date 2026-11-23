@@ -33,11 +33,11 @@ const upstream = {
 
 test("takes every upstream file except .github, and deletes the copy's other files", () => {
   const changes = treeChanges(
-    ["wrangler.json", "apps/rondyr/src/worker.ts", ".github/workflows/ci.yml"],
+    ["wrangler.json", "apps/rondyr/src/worker/worker.ts", ".github/workflows/ci.yml"],
     ["wrangler.json", "apps/rondyr/src/old.ts", ".github/workflows/ci.yml", ".github/own.yml"],
   );
   assert.deepEqual(changes, {
-    take: ["wrangler.json", "apps/rondyr/src/worker.ts"],
+    take: ["wrangler.json", "apps/rondyr/src/worker/worker.ts"],
     remove: ["apps/rondyr/src/old.ts"],
   });
 });

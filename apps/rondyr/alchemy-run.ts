@@ -10,7 +10,7 @@ import RondyrWorker, {
   databaseResource,
   deliveryDeadLetterQueue,
   deliveryQueue,
-} from "./src/alchemy-worker.ts";
+} from "./src/worker/alchemy-worker.ts";
 
 // The root wrangler.json declares the consumers of the queues; each Alchemy consumer gets
 // the same settings. The logical IDs below name existing resources of the prod stage:

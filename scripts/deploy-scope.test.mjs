@@ -44,7 +44,7 @@ test("skips the deployment when only the lint rules changed", () => {
 });
 
 test("deploys when the Worker package changed", () => {
-  const files = ["apps/rondyr/src/worker.ts", "packages/emdash-plugin/src/plugin.ts"];
+  const files = ["apps/rondyr/src/worker/worker.ts", "packages/emdash-plugin/src/plugin.ts"];
   assert.equal(decide({ files, packages: [worker, plugin] }).deploy, true);
 });
 
@@ -60,7 +60,7 @@ test("deploys when a package the Worker depends on changed", () => {
 
 test("counts shared branding and Worker build inputs as changes to the Worker", () => {
   for (const path of [
-    "apps/rondyr/src/worker.ts",
+    "apps/rondyr/src/worker/worker.ts",
     "docs/brand/rondyr.svg",
     "docs/brand/rondyr-mark.svg",
     "docs/brand/rondyr-favicon.svg",

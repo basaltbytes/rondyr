@@ -1,5 +1,5 @@
-import { scoreWithJev } from "../src/adapters/ai/jev.ts";
-import { scoreWithOpenAi } from "../src/adapters/ai/openai-decisions.ts";
+import { scoreWithJev } from "../src/worker/adapters/ai/jev.ts";
+import { scoreWithOpenAi } from "../src/worker/adapters/ai/openai-decisions.ts";
 import { ClassifierProvider } from "../src/domain/submissions/classification-policy.ts";
 
 /** The values of `RONDYR_CLASSIFIER`. */
@@ -23,7 +23,7 @@ interface Classifier {
   readonly prices: Prices;
 }
 
-/** The classifiers of src/adapters/ai/classifier.ts. */
+/** The classifiers of src/worker/adapters/ai/classifier.ts. */
 export const classifiers = {
   jev: {
     model: "typesafe/jev",

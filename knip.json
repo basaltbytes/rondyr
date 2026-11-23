@@ -16,7 +16,7 @@
         "drizzle-config.ts",
         "i18next.config.ts",
         "scripts/*.mjs",
-        "src/worker.ts"
+        "src/worker/worker.ts"
       ],
       "project": ["**/*.{ts,tsx,mjs}"],
       "ignoreDependencies": ["tailwindcss"]

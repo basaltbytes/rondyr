@@ -66,7 +66,7 @@ The project's files and folders are in kebab-case, except names imposed by tools
 
 1. **Modular monolith.** One Worker, no microservices.
 2. **Domain isolated from the platform.** `apps/rondyr/src/domain` imports neither `cloudflare:*`, nor Drizzle, nor the Alchemy IaC; an Oxlint rule checks this. It depends on Effect and on the Alchemy Domain modeling API.
-3. **Ports and adapters.** The ports in `apps/rondyr/src/ports` declare the Effect services, the adapters provide the layers, and `apps/rondyr/src/worker-implementation.ts` composes them. Routes and jobs use ports only: an Oxlint rule forbids them from importing `apps/rondyr/src/adapters`, except in tests. The domain declares `InboxStore` and the external system `Classifier` itself, since it cannot import `apps/rondyr/src/ports`.
+3. **Ports and adapters.** The ports in `apps/rondyr/src/worker/ports` declare the Effect services, the adapters provide the layers, and `apps/rondyr/src/worker/worker-implementation.ts` composes them. Routes and jobs use ports only: an Oxlint rule forbids them from importing `apps/rondyr/src/worker/adapters`, except in tests. The domain declares `InboxStore` and the external system `Classifier` itself, since it cannot import `apps/rondyr/src/worker/ports`.
 4. **Non-destructive AI.** A doubt, a technical error or an off-topic message leads to quarantine, never to deletion.
 5. **At least once, with idempotency.** Queues can deliver the same message twice; each consumer tolerates it.
 6. **Bounded cost.** The per-client and per-form limits and the daily submission quota apply before storage. The honeypot field, Turnstile, repetition and the daily classification quota apply before analysis.
@@ -204,7 +204,7 @@ A `failed` delivery can be retried from the dashboard. The retry keeps the deliv
 
 A test send goes through the `sendTest` method of the `NotificationProvider` port, with the provider for the destination's type and the same checks as a delivery: configuration, URL, secrets, email provider. Each test gets a new ID and creates no submission, delivery or attempt; the route waits at most 30 seconds for the answer, without a retry. The webhook receives version 1 of the payload with the type `test`, and the email has "Test message" ("Message d’essai" in French) in its subject and its text. An email test goes to the confirmed recipients only, like a delivery. A destination gets at most 3 tests per minute, counted by the Rate Limiting binding `TARGET_TEST_RATE_LIMIT` with the key `target-test:<targetId>` before the send: a fourth test answers `429` with `Retry-After: 60`, and a binding that does not answer refuses the test with `503`, since each email test uses the provider's quota and the reputation of the sending domain. The count is per Cloudflare location and approximate, as for the intake. Within one Worker instance, the route also keeps the destinations under test in memory and answers `409` to a second simultaneous test.
 
-The `email` provider builds the message and calls the `EmailSender` port, which does not depend on any email provider: it receives the sender, the recipients, the optional `Reply-To`, the subject, the text and the idempotency key, and tells apart a success, a permanent rejection (`EmailRejected`) and a failure to retry (`EmailUnavailable`). `RONDYR_EMAIL_PROVIDER` chooses the stage's adapter in `apps/rondyr/src/adapters/email/email-sender.ts`. It is `resend` by default and also accepts `cloudflare`. Resend uses the delivery ID as the idempotency key for 24 hours, which covers the six automatic attempts. With Cloudflare, an attempt interrupted after acceptance can send a duplicate on retry. The delivery ID stays in the message.
+The `email` provider builds the message and calls the `EmailSender` port, which does not depend on any email provider: it receives the sender, the recipients, the optional `Reply-To`, the subject, the text and the idempotency key, and tells apart a success, a permanent rejection (`EmailRejected`) and a failure to retry (`EmailUnavailable`). `RONDYR_EMAIL_PROVIDER` chooses the stage's adapter in `apps/rondyr/src/worker/adapters/email/email-sender.ts`. It is `resend` by default and also accepts `cloudflare`. Resend uses the delivery ID as the idempotency key for 24 hours, which covers the six automatic attempts. With Cloudflare, an attempt interrupted after acceptance can send a duplicate on retry. The delivery ID stays in the message.
 
 ### Known limitations
 
@@ -277,7 +277,7 @@ An organization can declare up to ten lowercase ASCII hostnames. When the domain
 - **Jev** receives the input in a `state` object, with two or three named questions of type `noul` that return a score between 0 and 1. The call goes through the Workers AI binding.
 - **OpenAI Decisions** receives the same data as JSON and questions of type `predicate`. The call goes through the AI Gateway `default` gateway with Cloudflare unified billing, without an OpenAI key in Rondyr.
 
-The Alchemy stack creates no gateway. AI Gateway creates `default` on the account's first authenticated request, with log collection on; Jev calls made through the binding go through it too, and their logs contained the submission fields as long as the adapter did not opt out. Both adapters therefore turn off log collection and caching on every call, with the options in `apps/rondyr/src/adapters/ai/gateway.ts`, and one test per adapter checks these options. In local development, the `AI` binding is missing and every message goes to quarantine with the reason `classification-error`.
+The Alchemy stack creates no gateway. AI Gateway creates `default` on the account's first authenticated request, with log collection on; Jev calls made through the binding go through it too, and their logs contained the submission fields as long as the adapter did not opt out. Both adapters therefore turn off log collection and caching on every call, with the options in `apps/rondyr/src/worker/adapters/ai/gateway.ts`, and one test per adapter checks these options. In local development, the `AI` binding is missing and every message goes to quarantine with the reason `classification-error`.
 
 ### AI pipeline security
 
@@ -507,7 +507,7 @@ The submission routes go through `ReviewApi`, the domain model's API, called in 
 
 A refused success URL answers `400` with `{"error":"success-url-refused","reason":…}`. A refused webhook URL answers `400` with `{"error":"destination-refused","reason":…}`. A refused origin answers `400` with `{"error":"origin-refused","reason":…}`; `parseAllowedOrigin`, in `apps/rondyr/src/domain/forms/allowed-origin.ts`, accepts HTTPS, and HTTP only for `localhost`, `127.0.0.0/8` and `[::1]`, then normalizes the origin. It refuses a path, query parameters, a fragment, credentials and wildcards (`invalid-origin`, `wildcard`, `not-https`, `credentials`, `not-an-origin`). Without `RONDYR_SECRETS_KEY`, creation and rotation answer `503` with `{"error":"secrets-key-missing"}`; listing and activation work. A refused recipient list answers `400` with `{"error":"recipients-refused","reason":…}` (`no-recipients`, `too-many-recipients`, `invalid-address`, `duplicate-address`). Without `RONDYR_EMAIL_FROM`, or without the key or binding of the chosen email provider, creating an email destination answers `503` with `{"error":"email-provider-missing"}`; listing, editing recipients and activation work. Responses that contain a secret have `Cache-Control: no-store`, like every admin API response. [docs/webhooks.md](docs/webhooks.md) documents the contract for recipients, and [docs/email.md](docs/email.md) the provider setup and the message format.
 
-Every route of this table under `/api/organizations/:organizationId` asks `authorize`, in `apps/rondyr/src/http/organization-access.ts`, for a permission, except the review routes, which go through the domain model. A `reviewer` may list and read messages, count them, accept, archive and read the delivery history; every other route needs the `admin` role and answers `403` to a reviewer. An account without a role in the organization gets `404`, as for an organization that does not exist. `GET /api/operations` returns only the organizations that the account administers. `apps/rondyr/src/http/routes.ts` gathers every route of the Worker; a workerd test records each route that the router registers and compares the list with a table of who may call each one, so a new route fails the test until it declares its rights. The test then calls each route as a reviewer (`403` on admin routes, anything but `401` and `403` on review routes), as an account of another organization (`404`), without a session (`401`) and with an API token (`403` outside its list).
+Every route of this table under `/api/organizations/:organizationId` asks `authorize`, in `apps/rondyr/src/worker/http/organization-access.ts`, for a permission, except the review routes, which go through the domain model. A `reviewer` may list and read messages, count them, accept, archive and read the delivery history; every other route needs the `admin` role and answers `403` to a reviewer. An account without a role in the organization gets `404`, as for an organization that does not exist. `GET /api/operations` returns only the organizations that the account administers. `apps/rondyr/src/worker/http/routes.ts` gathers every route of the Worker; a workerd test records each route that the router registers and compares the list with a table of who may call each one, so a new route fails the test until it declares its rights. The test then calls each route as a reviewer (`403` on admin routes, anything but `401` and `403` on review routes), as an account of another organization (`404`), without a session (`401`) and with an API token (`403` outside its list).
 
 The search (`q`) finds 3 to 100 characters anywhere in the values of the fields, not in their names, with `LIKE … ESCAPE '\\'` on `json_each(fields)`: `%`, `_` and `\\` are escaped and match themselves. SQLite's `LIKE` ignores the case of ASCII letters only, so `é` does not find `É`. There is no full-text index: a search reads the messages of the organization in the order of the index `(organization_id, received_at, id)`, from the cursor of the page, and stops once it fills the page, so a page costs the messages between the cursor and its last match. It combines with the status and the form, and an API token may use it. The export, the deletion and the retention need the `admin` role; the counts of the folders ignore the search.
 
@@ -549,7 +549,7 @@ The classification quota counts 1,000 slots per day by default. The intake batch
 
 - Public sign-up is closed. `POST /api/setup` requires `RONDYR_SETUP_TOKEN`, of at least 32 characters and compared in constant time, and D1 refuses to create a second account through this path. Each client gets 5 attempts a minute, counted in the `CLIENT_RATE_LIMIT` namespace under the key `setup:<client>`, before the comparison; the sixth answers `429`. `GET /api/setup` answers `open`, `closed`, `token-missing` or `token-too-short`, and says nothing about the token once an account exists; the dashboard shows the setup page from it. Whoever deploys chooses the token, on the Deploy to Cloudflare form or in the Worker's secrets, so a stranger who finds the address of a new instance first cannot claim it. The token can be deleted after setup.
 - The authentication routes, and every admin request that relies on the session, refuse a request whose origin differs from the Worker's origin. That origin is `BETTER_AUTH_URL` when it is set; otherwise it is the request's own origin, which must be HTTPS on the default port (or loopback HTTP in development): Cloudflare routes to a Worker only the hostnames of its account. Each hostname has its own host-only session cookie. The session cookie is `Secure`, `HttpOnly` and `SameSite=Lax`.
-- A request with `Authorization: Bearer rdr_…` never uses the session, even with a valid cookie, and needs no `Origin` header. On `POST /f/:public-id`, any `Authorization` header makes a server intake, and the same middleware verifies it: another scheme gets `401`, never the public path. A router middleware (`apps/rondyr/src/http/api-token-authentication.ts`) hashes the token with SHA-256 and looks the hash up among active tokens, without writing to D1. An unknown or revoked token gets `401`. A valid token gets `403` on every `/api` route outside its allow list, which the middleware checks against the matched route, so a route added later is refused by default. A resource outside the token's organization answers `404`, as for an account that is not a member.
+- A request with `Authorization: Bearer rdr_…` never uses the session, even with a valid cookie, and needs no `Origin` header. On `POST /f/:public-id`, any `Authorization` header makes a server intake, and the same middleware verifies it: another scheme gets `401`, never the public path. A router middleware (`apps/rondyr/src/worker/http/api-token-authentication.ts`) hashes the token with SHA-256 and looks the hash up among active tokens, without writing to D1. An unknown or revoked token gets `401`. A valid token gets `403` on every `/api` route outside its allow list, which the middleware checks against the matched route, so a route added later is refused by default. A resource outside the token's organization answers `404`, as for an account that is not a member.
 - Tokens go through the `ApiTokens` port. D1 keeps the hash and the last four characters; the full value appears only in the creation response. At most ten tokens are active per organization: the insert counts them in the same statement, so concurrent creations cannot exceed the limit. Decision events keep the token ID. The Worker wraps the token in `Redacted` as soon as it reads the header, and the token appears in no log or error summary.
 - Better Auth rate-limits sign-in attempts, with a counter in D1.
 - Every admin query is scoped to the account's organizations or to the token's organization, and the aggregate checks this access again before a review decision. Tests cover reads and writes from an account of another organization, for messages, destinations, allowed origins, forms, the delivery history, retries and test sends, and every review route with a token of another organization.
@@ -649,61 +649,64 @@ What remains after a deletion:
 │   ├── drizzle-config.ts
 │   ├── database/migrations/        # Drizzle migrations and snapshots
 │   ├── src/
-│   │   ├── worker.ts               # Wrangler and workerd entry point
-│   │   ├── alchemy-worker.ts       # Worker resource and bindings of the Alchemy production
-│   │   ├── worker-implementation.ts # layer composition, fetch, queue, scheduled
-│   │   ├── domain/submissions/     # aggregate, commands, events, policies, saga,
-│   │   │                           # projection, queries, ReviewApi, shared schemas
-│   │   ├── domain/deliveries/      # IDs, statuses, retry rules, webhook URL rule,
-│   │   │                           # payload, email address rule, email text
-│   │   │                           # and destination API contracts
-│   │   ├── domain/deliveries/connectors/ # defineConnector, the catalog, and one file
-│   │   │                           # per connector: discord, slack, airtable
-│   │   ├── domain/forms/           # allowed origin rule, status, success URL rule
-│   │   │                           # and form API contracts
-│   │   ├── domain/organizations/   # roles and permissions, members and invitations,
-│   │   │                           # retention, API tokens, quotas, domains, policy
-│   │   ├── ports/                  # authentication, intake, outbox, classification-queue,
-│   │   │                           # background-tasks, organization-directory,
-│   │   │                           # stored-messages, storage, delivery-store,
-│   │   │                           # delivery-queue, notification-provider,
-│   │   │                           # notification-targets, secret-cipher, form-origins,
-│   │   │                           # forms, email-sender, delivery-history,
-│   │   │                           # client-rate-limit, members, recipient-confirmations,
-│   │   │                           # test-send-limit, submission-exports, submission-retention,
-│   │   │                           # password-resets
-│   │   ├── adapters/
-│   │   │   ├── ai/                 # classifier, jev, openai-decisions
-│   │   │   ├── authentication/     # better-auth, provider
-│   │   │   ├── crypto/             # secret-cipher (AES-GCM, RONDYR_SECRETS_KEY)
-│   │   │   ├── email/              # provider choice per stage, Resend and Cloudflare
-│   │   │   ├── database/           # Drizzle schemas, d1, intake, outbox, inbox,
-│   │   │   │                       # organization-directory, stored-messages, delivery-store,
-│   │   │   │                       # notification-targets, form-origins, forms,
-│   │   │   │                       # delivery-history, members, recipient-confirmations,
-│   │   │   │                       # submission-exports, submission-retention, password-resets
-│   │   │   ├── notifications/      # providers per type, webhook, email, connector,
-│   │   │   │                       # test adapter
-│   │   │   ├── queues/             # classification-queue, delivery-queue
-│   │   │   └── workers/            # background-tasks (Alchemy's waitUntil), client-rate-limit
-│   │   │                           # and test-send-limit (Rate Limiting bindings)
-│   │   ├── http/                   # public, submission, authentication, review, target, origin,
-│   │   │                           # form, delivery, member, invitation, organization-access,
-│   │   │                           # recipient-confirmation, submission-administration,
-│   │   │                           # password-reset, and routes.ts, which gathers them
-│   │   └── jobs/
-│   │       ├── submission-outbox.ts    # publication (intake and Cron), queue consumer
-│   │       ├── delivery-outbox.ts  # DeliveryScheduler, publication (policy and Cron),
-│   │       │                       # delivery consumer, retry, test send
-│   │       ├── recipient-confirmations.ts # confirmation emails of new recipients
-│   │       └── retention-purge.ts  # hourly purge of expired messages (Cron)
-│   ├── dashboard/src/
-│   │   ├── routes/                 # dashboard, invitation, recipient-confirmation, reset-password
-│   │   ├── features/               # authentication, inbox, operations, recipients
-│   │   ├── components/             # text-field, and ui/: shadcn/ui (Base UI) components adapted to the theme
-│   │   ├── hooks/                  # use-mobile
-│   │   ├── lib/                    # HTTP clients
-│   │   └── dashboard.css           # Tailwind theme
+│   │   ├── domain/                     # imported by worker/ and dashboard/, imports neither
+│   │   │   ├── submissions/            # aggregate, commands, events, policies, saga,
+│   │   │   │                           # projection, queries, ReviewApi, shared schemas
+│   │   │   ├── deliveries/             # IDs, statuses, retry rules, webhook URL rule,
+│   │   │   │                           # payload, email address rule, email text
+│   │   │   │                           # and destination API contracts
+│   │   │   ├── deliveries/connectors/  # defineConnector, the catalog, and one file
+│   │   │   │                           # per connector: discord, slack, airtable
+│   │   │   ├── forms/                  # allowed origin rule, status, success URL rule
+│   │   │   │                           # and form API contracts
+│   │   │   └── organizations/          # roles and permissions, members and invitations,
+│   │   │                               # retention, API tokens, quotas, domains, policy
+│   │   ├── worker/                     # runs in workerd; imports domain/
+│   │   │   ├── worker.ts               # Wrangler and workerd entry point
+│   │   │   ├── alchemy-worker.ts       # Worker resource and bindings of the Alchemy production
+│   │   │   ├── worker-implementation.ts # layer composition, fetch, queue, scheduled
+│   │   │   ├── ports/                  # authentication, intake, outbox, classification-queue,
+│   │   │   │                           # background-tasks, organization-directory,
+│   │   │   │                           # stored-messages, storage, delivery-store,
+│   │   │   │                           # delivery-queue, notification-provider,
+│   │   │   │                           # notification-targets, secret-cipher, form-origins,
+│   │   │   │                           # forms, email-sender, delivery-history,
+│   │   │   │                           # client-rate-limit, members, recipient-confirmations,
+│   │   │   │                           # test-send-limit, submission-exports, submission-retention,
+│   │   │   │                           # password-resets
+│   │   │   ├── adapters/
+│   │   │   │   ├── ai/                 # classifier, jev, openai-decisions
+│   │   │   │   ├── authentication/     # better-auth, provider
+│   │   │   │   ├── crypto/             # secret-cipher (AES-GCM, RONDYR_SECRETS_KEY)
+│   │   │   │   ├── email/              # provider choice per stage, Resend and Cloudflare
+│   │   │   │   ├── database/           # Drizzle schemas, d1, intake, outbox, inbox,
+│   │   │   │   │                       # organization-directory, stored-messages, delivery-store,
+│   │   │   │   │                       # notification-targets, form-origins, forms,
+│   │   │   │   │                       # delivery-history, members, recipient-confirmations,
+│   │   │   │   │                       # submission-exports, submission-retention, password-resets
+│   │   │   │   ├── notifications/      # providers per type, webhook, email, connector,
+│   │   │   │   │                       # test adapter
+│   │   │   │   ├── queues/             # classification-queue, delivery-queue
+│   │   │   │   └── workers/            # background-tasks (Alchemy's waitUntil), client-rate-limit
+│   │   │   │                           # and test-send-limit (Rate Limiting bindings)
+│   │   │   ├── http/                   # public, submission, authentication, review, target, origin,
+│   │   │   │                           # form, delivery, member, invitation, organization-access,
+│   │   │   │                           # recipient-confirmation, submission-administration,
+│   │   │   │                           # password-reset, and routes.ts, which gathers them
+│   │   │   └── jobs/
+│   │   │       ├── submission-outbox.ts    # publication (intake and Cron), queue consumer
+│   │   │       ├── delivery-outbox.ts      # DeliveryScheduler, publication (policy and Cron),
+│   │   │       │                           # delivery consumer, retry, test send
+│   │   │       ├── recipient-confirmations.ts # confirmation emails of new recipients
+│   │   │       └── retention-purge.ts      # hourly purge of expired messages (Cron)
+│   │   └── dashboard/                  # runs in the browser; imports domain/ through @rondyr/*
+│   │       ├── routes/                 # dashboard, invitation, recipient-confirmation, reset-password
+│   │       ├── features/               # authentication, inbox, operations, recipients
+│   │       ├── components/             # text-field, and ui/: shadcn/ui (Base UI) components
+│   │       ├── hooks/                  # use-mobile
+│   │       ├── lib/                    # HTTP clients
+│   │       ├── locales/                # en and fr: every text of the dashboard
+│   │       └── dashboard.css           # Tailwind theme
 │   ├── evals/                      # classifier evaluation harness, synthetic corpus
 │   ├── public/_headers             # HTTP headers of the dashboard assets
 │   ├── scripts/                    # doctor, worker-budget, smoke, setup-owner
@@ -721,11 +724,11 @@ What remains after a deletion:
 └── pnpm-workspace.yaml             # packages and the catalog of dependency versions
 ```
 
-Tests are next to the code they cover, in `apps/rondyr/src/**/*.test.ts` and `apps/rondyr/dashboard/src/**/*.test.ts`. The dashboard imports the domain schemas through the aliases `@rondyr/contracts` (submissions), `@rondyr/deliveries` (destinations) and `@rondyr/forms` (allowed origins and forms), which gives it the same contracts as the API. There is no `application/` layer: the use cases are the commands, the policy and the saga of the model.
+Tests are next to the code they cover: `apps/rondyr/src/domain/**/*.test.ts` and `apps/rondyr/src/worker/**/*.test.ts` run in workerd, `apps/rondyr/src/dashboard/**/*.test.ts` in Node. The dashboard imports the domain schemas through the aliases `@rondyr/contracts` (submissions), `@rondyr/deliveries` (destinations) and `@rondyr/forms` (allowed origins and forms), which gives it the same contracts as the API. There is no `application/` layer: the use cases are the commands, the policy and the saga of the model.
 
 ## 10. Tests and quality criteria
 
-`pnpm check` runs lint, formatting, type checking, tests, Knip, the migration check and `apps/rondyr/scripts/doctor.mjs` in sequence. `pnpm test:e2e` runs the dashboard's browser tests against the build, then `apps/rondyr/scripts/dev-server-check.mjs` (`pnpm test:dev`) against the Vite dev server of `pnpm dev`: on a database of its own, it creates the owner, a form and a submission, and fails unless the queue consumer accepts or quarantines it within 90 seconds. The dev server runs each Durable Object behind a wrapper of `@cloudflare/vite-plugin` that serves only the RPC methods of the class's prototype, while the Alchemy bridge resolves its methods (`send`, the backfill's calls) on the instance; under `import.meta.env.DEV`, `apps/rondyr/src/worker.ts` exports a class whose prototype has every method and forwards it to a bridge instance. Integration tests run in workerd against the built Worker, with D1, the queues and the Durable Objects emulated. A fake Workers AI, defined in `apps/rondyr/tests/integration/external-workers.ts` and used by Vitest and Playwright, answers according to the message's `fixture-verdict` field: `accept` gets acceptance scores, `solicitation` a solicitation score above the threshold, `ambiguous` an ambiguous spam score without solicitation, `ambiguous-solicitation` an ambiguous spam score and solicitation above the threshold, `missing-solicitation` an answer without a solicitation score, and `accept-after-error` an invalid answer on the first call for its message, then acceptance scores. For `ambiguous` and `ambiguous-solicitation`, OpenAI Decisions answers with low spam and solicitation scores and high relevance. Relevance is low if the business context contains `fixture-relevance: low`. Other messages get an invalid answer, which the classifier quarantines with the reason `classification-error`. The fake records the input it receives on each call. The tests read back the fields or the full input through a service binding, to check that the model never sees a message with a filled honeypot field and that it receives the repetition facts.
+`pnpm check` runs lint, formatting, type checking, tests, Knip, the migration check and `apps/rondyr/scripts/doctor.mjs` in sequence. `pnpm test:e2e` runs the dashboard's browser tests against the build, then `apps/rondyr/scripts/dev-server-check.mjs` (`pnpm test:dev`) against the Vite dev server of `pnpm dev`: on a database of its own, it creates the owner, a form and a submission, and fails unless the queue consumer accepts or quarantines it within 90 seconds. The dev server runs each Durable Object behind a wrapper of `@cloudflare/vite-plugin` that serves only the RPC methods of the class's prototype, while the Alchemy bridge resolves its methods (`send`, the backfill's calls) on the instance; under `import.meta.env.DEV`, `apps/rondyr/src/worker/worker.ts` exports a class whose prototype has every method and forwards it to a bridge instance. Integration tests run in workerd against the built Worker, with D1, the queues and the Durable Objects emulated. A fake Workers AI, defined in `apps/rondyr/tests/integration/external-workers.ts` and used by Vitest and Playwright, answers according to the message's `fixture-verdict` field: `accept` gets acceptance scores, `solicitation` a solicitation score above the threshold, `ambiguous` an ambiguous spam score without solicitation, `ambiguous-solicitation` an ambiguous spam score and solicitation above the threshold, `missing-solicitation` an answer without a solicitation score, and `accept-after-error` an invalid answer on the first call for its message, then acceptance scores. For `ambiguous` and `ambiguous-solicitation`, OpenAI Decisions answers with low spam and solicitation scores and high relevance. Relevance is low if the business context contains `fixture-relevance: low`. Other messages get an invalid answer, which the classifier quarantines with the reason `classification-error`. The fake records the input it receives on each call. The tests read back the fields or the full input through a service binding, to check that the model never sees a message with a filled honeypot field and that it receives the repetition facts.
 
 The test Worker gets the `CLIENT_RATE_LIMIT` binding from the root `wrangler.json`, which Miniflare simulates with fixed windows aligned on the clock. The test sends twice the limit plus one request: at least one window then exceeds the limit, even if a window ends during the test, and the first 5 requests always go through. It therefore does not depend on when it runs.
 
@@ -769,7 +772,7 @@ A recipient Worker, declared in the same place, records each request and answers
 
 The measurements recorded in #31 and #40 give the first results on real submissions. The criterion that comes first is to lose no real request.
 
-`pnpm evaluate`, in `apps/rondyr/evals/`, reads a labeled JSON Lines corpus (`legitimate`, `spam`, `ambiguous`, `off-topic`) and the form's business context, in a `.context.txt` file next to it. It calls `scoreWithJev` and `scoreWithOpenAi` through the Workers AI REST API (`POST /ai/run`), with the options of `apps/rondyr/src/adapters/ai/gateway.ts` passed as `cf-aig-*` headers, then applies `reviewReason`. For each classifier, the report gives the legitimate messages quarantined, the spam accepted, the matrix of label against decision, weighted by `duplicates` or not, the precision and recall of the spam quarantine, the latency, the estimated cost, the failures and a threshold sweep computed on the recorded scores. It contains no field value. A cache per classifier, model, scoring version, line and input fingerprint avoids paying twice for the same call.
+`pnpm evaluate`, in `apps/rondyr/evals/`, reads a labeled JSON Lines corpus (`legitimate`, `spam`, `ambiguous`, `off-topic`) and the form's business context, in a `.context.txt` file next to it. It calls `scoreWithJev` and `scoreWithOpenAi` through the Workers AI REST API (`POST /ai/run`), with the options of `apps/rondyr/src/worker/adapters/ai/gateway.ts` passed as `cf-aig-*` headers, then applies `reviewReason`. For each classifier, the report gives the legitimate messages quarantined, the spam accepted, the matrix of label against decision, weighted by `duplicates` or not, the precision and recall of the spam quarantine, the latency, the estimated cost, the failures and a threshold sweep computed on the recorded scores. It contains no field value. A cache per classifier, model, scoring version, line and input fingerprint avoids paying twice for the same call.
 
 The synthetic corpus `apps/rondyr/evals/corpus/synthetic.jsonl`, under version control, covers the four labels in several languages. Real corpora stay in `apps/rondyr/evals/corpus/local/`, which Git ignores. For any measurement through Workers AI, the message content goes to the model provider, as in production. The `--dry` mode replaces Workers AI with fake scores. The harness tests run in Node, without network, in the `evals` Vitest project. See [docs/evaluation.md](docs/evaluation.md).
 
@@ -779,7 +782,7 @@ The root `wrangler.json` is the deployment definition. The Deploy to Cloudflare 
 
 Workers Builds runs the root `build` and `deploy` scripts on each push to the production branch of the operator's repository: a copy made by the button, or a fork imported into Workers Builds. `apps/rondyr/scripts/deploy-cloudflare.mjs` creates the D1 database if it does not exist, applies the pending migrations of `apps/rondyr/database/migrations` with `wrangler d1 migrations apply DB --remote` (history in `d1_migrations`) before the new code, then deploys with `wrangler deploy`. When the Worker has no `BETTER_AUTH_SECRET` or `RONDYR_SECRETS_KEY`, it generates them (32 random bytes) and uploads them with the same version (`--secrets-file`, which never removes a secret). It never replaces a secret that exists, and stops before deploying when the secrets cannot be listed. No log shows a generated value. Without a deploy-time backfill, the Alchemy Domain library starts the runs of the model's consumers at the first domain call of each isolate. The origin comes from the request unless the `BETTER_AUTH_URL` variable is set (section 8, "Authentication and isolation"). A copy made by the button updates through `.github/workflows/update-rondyr.yml`, which runs the `scripts/update-from-upstream.mjs` of the chosen upstream version: every file except `.github/` takes the upstream content, and `wrangler.json` keeps the copy's resource names and IDs and its `send_email` binding. The browser tests of `ci.yml` and its Alchemy production job run in `basaltbytes/rondyr` and in a fork that sets `BETTER_AUTH_URL_PROD`, the variable of the Alchemy path. A copy made by the button has no such variable: it skips the browser tests unless it sets `RONDYR_BROWSER_TESTS`, so it spends little of its Actions minutes, and it never runs the production job.
 
-The second path deploys with Alchemy from GitHub Actions, as the Basaltbytes instance does (the Worker `rondyr-prod` on its custom domain). A push to `main` runs `pnpm check`, `pnpm deploy:dry` and the dashboard browser tests (`pnpm test:e2e`), then `pnpm run deploy:alchemy --stage prod` with its D1 migrations (history in `__alchemy_migrations`), unless the Worker package did not change, and runs `apps/rondyr/scripts/smoke.mjs` against `BETTER_AUTH_URL_PROD`. The script waits up to 15 minutes for `/health` to answer `ok`, and the run fails with an error annotation when it does not. The **Deploy** workflow redeploys `prod` by hand from `main`. `apps/rondyr/alchemy-run.ts` and `apps/rondyr/src/alchemy-worker.ts` read from `wrangler.json` the compatibility date and flags, the assets, the Cron, the observability settings, the rate limits and the consumer settings (batch size, a 1-second wait, retries), and name their own resources: generated queue and database names, the custom domain from `BETTER_AUTH_URL`, Durable Object classes in Alchemy's own `exports` map. `apps/rondyr/scripts/doctor.mjs` fails when the two definitions drift: bindings, consumer settings, DLQ consumers, rate limits, the `AI` binding, the compatibility flags, the classes exported by `src/worker.ts`, and the platform settings of the button. The two paths differ in what is not shared: the Worker name (`rondyr` from `wrangler.json`, `rondyr-<stage>` with Alchemy), the migration history (`d1_migrations` with Wrangler, `__alchemy_migrations` with Alchemy), the custom domain (added in the dashboard, or attached from `BETTER_AUTH_URL` on the `prod` stage), the secrets (generated by `deploy-cloudflare.mjs`, or provided by the operator), and the backfill (none at deploy with Wrangler; the Alchemy deployment waits for the backfill workflow of new or changed consumers). [docs/deployment.md](docs/deployment.md#choose-a-path) compares them for an operator. `pnpm smoke` is also a manual tool: with a form and an API token of its organization, it submits one message and waits for its classification ([docs/operations.md](docs/operations.md#smoke-test)).
+The second path deploys with Alchemy from GitHub Actions, as the Basaltbytes instance does (the Worker `rondyr-prod` on its custom domain). A push to `main` runs `pnpm check`, `pnpm deploy:dry` and the dashboard browser tests (`pnpm test:e2e`), then `pnpm run deploy:alchemy --stage prod` with its D1 migrations (history in `__alchemy_migrations`), unless the Worker package did not change, and runs `apps/rondyr/scripts/smoke.mjs` against `BETTER_AUTH_URL_PROD`. The script waits up to 15 minutes for `/health` to answer `ok`, and the run fails with an error annotation when it does not. The **Deploy** workflow redeploys `prod` by hand from `main`. `apps/rondyr/alchemy-run.ts` and `apps/rondyr/src/worker/alchemy-worker.ts` read from `wrangler.json` the compatibility date and flags, the assets, the Cron, the observability settings, the rate limits and the consumer settings (batch size, a 1-second wait, retries), and name their own resources: generated queue and database names, the custom domain from `BETTER_AUTH_URL`, Durable Object classes in Alchemy's own `exports` map. `apps/rondyr/scripts/doctor.mjs` fails when the two definitions drift: bindings, consumer settings, DLQ consumers, rate limits, the `AI` binding, the compatibility flags, the classes exported by `src/worker/worker.ts`, and the platform settings of the button. The two paths differ in what is not shared: the Worker name (`rondyr` from `wrangler.json`, `rondyr-<stage>` with Alchemy), the migration history (`d1_migrations` with Wrangler, `__alchemy_migrations` with Alchemy), the custom domain (added in the dashboard, or attached from `BETTER_AUTH_URL` on the `prod` stage), the secrets (generated by `deploy-cloudflare.mjs`, or provided by the operator), and the backfill (none at deploy with Wrangler; the Alchemy deployment waits for the backfill workflow of new or changed consumers). [docs/deployment.md](docs/deployment.md#choose-a-path) compares them for an operator. `pnpm smoke` is also a manual tool: with a form and an API token of its organization, it submits one message and waits for its classification ([docs/operations.md](docs/operations.md#smoke-test)).
 
 Before the deployment, the **Changed packages** job (`scripts/deploy-scope.mjs`) asks pnpm which workspace packages changed since the commit of the last successful prod deployment, with `--filter "...[<commit>]"`, on a checkout with the full history. It reads that commit from the GitHub Actions API, among the push runs of `ci.yml` and the manual runs of `deploy.yml` of this repository (a fork's pull request never counts), so a Worker change whose run failed or was cancelled is part of the next deployment. The deployment, with its migrations, runs when pnpm lists the Worker package `rondyr` (`apps/rondyr/`, or a package it depends on such as `tooling/tsconfig/`), and when a file that builds or deploys it changed: `apps/rondyr/`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` (which holds the catalog of versions), the root `wrangler.json` and `package.json`, `.nvmrc`, `patches/` or `.github/`. Any other changed file must belong to another changed package (`packages/emdash-plugin/`, `tooling/oxlint/`, a future `apps/docs/`) or to the documentation (`README.md`, `architecture.md`, `AGENTS.md`, `CONTRIBUTING.md`, `docs/`, `.agents/`, `.claude/`, `skills-lock.json`); otherwise the push deploys. A comparison that can't be made, an API error or a failure of the job counts as "everything changed". A merge that touches only the plugin or the documentation runs the checks and deploys nothing. Pull requests run the same detection against their base, for the log, and check every package.
 
@@ -815,7 +818,7 @@ None at the moment.
 
 - Rondyr is licensed under AGPL-3.0, like usine: anyone who offers a modified version as a service must publish its source, and a self-hoster has no obligation. The dependencies are under MIT or Apache-2.0, and the Oxlint plugin taken from usine is already under AGPL-3.0 (#21).
 - A submission's status is an event stream in a Durable Object, projected into D1 for the Inbox.
-- Runtime queries remain prepared SQL, in the adapters of `apps/rondyr/src/adapters/database`, and Effect Schema decodes the rows they return. Drizzle is used for the schema, the migrations and Better Auth (#23).
+- Runtime queries remain prepared SQL, in the adapters of `apps/rondyr/src/worker/adapters/database`, and Effect Schema decodes the rows they return. Drizzle is used for the schema, the migrations and Better Auth (#23).
 - Jev goes through the Workers AI binding; OpenAI Decisions goes through AI Gateway with unified billing. The choice is made per stage.
 - An off-topic message goes to human review by default; each organization can choose instead to accept it with the `off-topic` label (#6).
 - Both classifiers go through the `default` gateway, which AI Gateway creates itself, and each call turns off log collection and caching there. The stack provisions no gateway (#22).

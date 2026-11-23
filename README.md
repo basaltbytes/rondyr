@@ -95,7 +95,7 @@ Report security vulnerabilities privately through [GitHub security advisories](h
 Rondyr includes code from these projects. Each keeps its own license, with the license file next to the code:
 
 - [dmmulroy/anti-slop](https://github.com/dmmulroy/anti-slop) (MIT): 16 lint rules and 3 shared modules in [`tooling/oxlint/`](./tooling/oxlint/).
-- [shadcn/ui](https://github.com/shadcn/ui) (MIT): the dashboard components in [`apps/rondyr/dashboard/src/components/ui/`](./apps/rondyr/dashboard/src/components/ui/).
+- [shadcn/ui](https://github.com/shadcn/ui) (MIT): the dashboard components in [`apps/rondyr/src/dashboard/components/ui/`](./apps/rondyr/src/dashboard/components/ui/).
 - [Alchemy](https://github.com/alchemy-run/alchemy) (Apache-2.0): the agent skill in [`.agents/skills/alchemy-domain/`](./.agents/skills/alchemy-domain/).
 - [artimath/effect-skills](https://github.com/artimath/effect-skills) (MIT): the Schema reference in [`.agents/skills/effect-ts/references/schema-decisions.md`](./.agents/skills/effect-ts/references/schema-decisions.md).
 

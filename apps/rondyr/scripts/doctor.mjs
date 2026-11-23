@@ -10,9 +10,12 @@ const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const pkg = JSON.parse(read("../package.json"));
 const rootPkg = JSON.parse(read("../../../package.json"));
 const wrangler = JSON.parse(read("../../../wrangler.json"));
-const workerEntry = read("../src/worker.ts");
+const workerEntry = read("../src/worker/worker.ts");
 const deployPrompts = parseEnv(read("../../../.dev.vars.example"));
-const alchemyWorker = readFileSync(new URL("../src/alchemy-worker.ts", import.meta.url), "utf8");
+const alchemyWorker = readFileSync(
+  new URL("../src/worker/alchemy-worker.ts", import.meta.url),
+  "utf8",
+);
 const alchemyRun = readFileSync(new URL("../alchemy-run.ts", import.meta.url), "utf8");
 const workspace = readFileSync(new URL("../../../pnpm-workspace.yaml", import.meta.url), "utf8");
 // The versions live in the default catalog of pnpm-workspace.yaml; the manifest says `catalog:`.
@@ -69,7 +72,7 @@ for (const binding of expectedBindings) {
     errors.push(`Wrangler must derive ${binding}_NAME from the queue, not set it in vars.`);
   }
   if (!alchemyWorker.includes(`${binding}_NAME:`)) {
-    errors.push(`src/alchemy-worker.ts must pass ${binding}_NAME to the Worker.`);
+    errors.push(`src/worker/alchemy-worker.ts must pass ${binding}_NAME to the Worker.`);
   }
   const consumer = queues.consumers?.find((candidate) => candidate.queue === producer.queue);
   if (consumer === undefined || !consumer.dead_letter_queue) {
@@ -93,7 +96,7 @@ for (const binding of expectedBindings) {
     errors.push(`Wrangler must derive ${deadLetterName} from the queue, not set it in vars.`);
   }
   if (!alchemyWorker.includes(`${deadLetterName}:`)) {
-    errors.push(`src/alchemy-worker.ts must pass ${deadLetterName} to the Worker.`);
+    errors.push(`src/worker/alchemy-worker.ts must pass ${deadLetterName} to the Worker.`);
   }
   const { queue: resource, consumer: consumerName } = deadLetters[binding];
   const consumerDeclaration = new RegExp(
@@ -129,7 +132,7 @@ for (const name of ["CLIENT_RATE_LIMIT", "TARGET_TEST_RATE_LIMIT"]) {
     );
   }
   if (!alchemyWorker.includes(`${name}:`)) {
-    errors.push(`src/alchemy-worker.ts must pass ${name} to the Worker.`);
+    errors.push(`src/worker/alchemy-worker.ts must pass ${name} to the Worker.`);
   }
 }
 if (
@@ -153,17 +156,17 @@ for (const { class_name: className } of wrangler.durable_objects?.bindings ?? []
     errors.push(`Wrangler must export the Durable Object class ${className} with SQLite storage.`);
   }
   if (!entryExports.has(className)) {
-    errors.push(`src/worker.ts must export the Durable Object class ${className}.`);
+    errors.push(`src/worker/worker.ts must export the Durable Object class ${className}.`);
   }
 }
 
 // Workers AI runs the default classifier; without the binding every message waits in
 // quarantine. Alchemy binds it outside local development.
 if (wrangler.ai?.binding !== "AI" || !alchemyWorker.includes("AI: Cloudflare.Workers.AI()")) {
-  errors.push("Wrangler and src/alchemy-worker.ts must bind Workers AI as AI.");
+  errors.push("Wrangler and src/worker/alchemy-worker.ts must bind Workers AI as AI.");
 }
 if (!alchemyWorker.includes("flags: wrangler.compatibility_flags")) {
-  errors.push("src/alchemy-worker.ts must read the compatibility flags of wrangler.json.");
+  errors.push("src/worker/alchemy-worker.ts must read the compatibility flags of wrangler.json.");
 }
 
 // A deployment from the Deploy to Cloudflare button: no preview URL serves an old version
