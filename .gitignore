@@ -1,6 +1,9 @@
 # A rule without a slash before its end, such as dist/ or .env, applies in every package.
 # A rule with one, such as apps/rondyr/evals/out/, applies only to that path from the root.
 node_modules/
+.pnpm-store/
+# Editor settings that an extension writes when a package is opened on its own.
+apps/rondyr/.vscode/
 dist/
 .astro/
 .alchemy/
