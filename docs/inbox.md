@@ -44,7 +44,7 @@ If a delivery stops as **Failed** after automatic retries (for example, your web
 
 ## Export messages
 
-Admins can download the currently filtered list at any time from the top of the message list:
+Admins can download the currently filtered list at any time. Select **Export this list**, the download button above the message list, then a format:
 
 - **CSV**: ready for spreadsheets, with columns for the most common field names (up to 100 columns; extra rare field names go into an `other_fields` column). Values that could run as spreadsheet formulas are escaped automatically.
 - **JSON Lines**: one JSON object per line containing `submissionId`, `receivedAt`, `form`, `status`, `reason`, `label`, and `fields`.

@@ -45,11 +45,11 @@ function IssuedLink({ issued, onHide }: { issued: Issued; onHide: () => void }) 
   }
 
   return (
-    <section className="grid gap-2 rounded-md border p-3">
+    <section className="grid gap-2 rounded-md border p-4">
       <output className="text-sm text-pretty">
         {t(`inbox.members.emails.${issued.email}`, { email: issued.invitation.email })}
       </output>
-      <code className="rounded-md bg-muted px-3 py-2 text-sm wrap-anywhere">
+      <code className="rounded-md bg-muted px-4 py-2.5 text-sm wrap-anywhere">
         {Redacted.value(issued.link)}
       </code>
       <div className="flex flex-wrap gap-2">

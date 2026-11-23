@@ -8,7 +8,7 @@ export function Alert({ className, ...props }: ComponentProps<"div">) {
       data-slot="alert"
       role="alert"
       className={cn(
-        "grid w-full gap-1.5 rounded-lg bg-warning-subtle px-4 py-3 text-sm text-foreground",
+        "grid w-full gap-1.5 rounded-lg border bg-warning-subtle px-5 py-3.5 text-sm text-foreground shadow-xs",
         className,
       )}
       {...props}

@@ -4,11 +4,13 @@ Create a form in the dashboard, copy its submission address, and point your site
 
 ## 1. Create a form and copy its address
 
-Open **Settings → Forms** in the dashboard. If you already created a form during initial setup, select it; otherwise select **+ New**, give it a name, and describe your business so the spam filter knows what messages belong there.
+In the sidebar of the dashboard, **Forms** lists the forms of your organization. If you already created a form during initial setup, select it; otherwise select **+** next to **Forms**, pick an emoji, give the form a name, and describe your business so the spam filter knows what messages belong there. The emoji shows next to the form's name in the sidebar and, once you have several forms, on each message, so you can tell which form a message came from.
 
-![Settings Forms screen showing the Contact form with its submission address, Copy address button, business description, redirect URL, and honeypot field](./screenshots/forms.webp)
+A form has one page, with its name and its settings at the top, then its **Destinations** and its **Allowed origins**. The name, the business description, the redirect URL and the honeypot field name save when you leave the field or press Enter.
 
-Select **Copy address** to copy your form's public URL. It looks like `https://forms.example.com/f/YOUR_PUBLIC_ID` and never changes, even if you rename the form later.
+![Page of the Contact form showing its emoji and name, the submission address with its copy button, the status, the redirect URL and the honeypot field name](./screenshots/forms.webp)
+
+Select the copy button in **Submission address** to copy your form's public URL. It looks like `https://forms.example.com/f/YOUR_PUBLIC_ID` and never changes, even if you rename the form later.
 
 ## 2. Add an HTML form to your page
 
@@ -40,10 +42,10 @@ Send a test message from your page. Within a few seconds, it shows up in **Accep
 
 By default, visitors who submit an HTML form see Rondyr's built-in confirmation page (in English or French, matching their browser language). To send them back to your own thank-you page instead:
 
-1. Open **Settings → Allowed origins**, pick your form, and add your site's origin (for example `https://www.example.com`).
-2. Open **Settings → Forms**, pick the same form, enter your full HTTPS thank-you URL under **Redirect after submission** (such as `https://www.example.com/thanks`), and select **Save redirect**.
+1. Open your form from **Forms** in the sidebar and, under **Allowed origins**, add your site's origin (for example `https://www.example.com`).
+2. On the same page, enter your full HTTPS thank-you URL in **Redirect URL** (such as `https://www.example.com/thanks`) and press Enter.
 
-Rondyr requires the redirect URL's origin to be in the form's allowed origins list so nobody can point your visitors elsewhere. To remove that origin later, remove the redirect URL first.
+Rondyr requires the redirect URL's origin to be in the form's allowed origins list so nobody can point your visitors elsewhere. To go back to the confirmation page, empty **Redirect URL** and press Enter. To remove that origin later, remove the redirect URL first.
 
 ## Submit with JavaScript (`fetch`)
 
@@ -77,10 +79,10 @@ For a server that forwards the visitor's Turnstile token, send `Rondyr-Turnstile
 
 By default, a form accepts browser submissions from any origin. To make sure only pages on your own website can submit to it:
 
-1. Open **Settings → Allowed origins** and select the form.
+1. Open your form from **Forms** in the sidebar and go to **Allowed origins**, at the end of its page.
 2. Enter your site's origin, such as `https://www.example.com`, and select **Add origin**.
 
-![Settings Allowed origins screen showing https://www.claywork.example listed for the Contact form](./screenshots/origins.webp)
+![Destinations and allowed origins of the Contact form, with https://www.claywork.example in the allowed origins](./screenshots/origins.webp)
 
 An origin is just the scheme, host, and optional port, with no path or wildcard. Origins must use `https://`, except `http://localhost` and loopback addresses (`http://127.0.0.1:8080`) for local testing. Once a form lists at least one origin, browsers on any other site are refused. Keep in mind that allowed origins stop other websites from submitting through their visitors' browsers, not automated scripts outside a browser; see [Fight spam](./spam-protection.md) for bot defenses.
 
@@ -94,4 +96,4 @@ An origin is just the scheme, host, and optional port, with no path or wildcard.
 
 ## Suspend a form
 
-To pause submissions without deleting the form or losing its history, open **Settings → Forms**, scroll to **Suspension**, and select **Suspend form**. A suspended form refuses new submissions while keeping its existing messages, destinations, allowed origins, and submission address intact. Select **Reactivate form** whenever you want to accept messages again.
+To pause submissions without deleting the form or losing its history, open your form from **Forms** in the sidebar, select **Suspend form** next to **Status**, and confirm. A suspended form refuses new submissions while keeping its existing messages, destinations, allowed origins, and submission address intact. Select **Reactivate form** whenever you want to accept messages again.

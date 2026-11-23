@@ -4,16 +4,30 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "~/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuLinkItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { Input } from "~/components/ui/input";
 import { SidebarTrigger } from "~/components/ui/sidebar";
 import { useFormats } from "~/lib/i18n";
-import type { SubmissionEntry } from "~/lib/inbox-client";
+import type { Inbox, SubmissionEntry } from "~/lib/inbox-client";
 
-import type { Folder } from "./folder-counts.ts";
+import type { Folder, FolderForm } from "./folder-counts.ts";
+import { emojiOf, FormEmoji } from "./form-emoji.tsx";
 import { excerptOf, listDay, senderOf, subjectOf } from "./message-preview.ts";
+
+type Form = Inbox["forms"][number];
 
 interface MessageRowProps {
   readonly submission: SubmissionEntry;
+  /** The form of the message, when its emoji tells it apart from the other forms. */
+  readonly form: Form | undefined;
   readonly active: boolean;
   /** The status is shown where a folder mixes several of them. */
   readonly showStatus: boolean;
@@ -21,7 +35,7 @@ interface MessageRowProps {
   readonly onOpen: () => void;
 }
 
-function MessageRow({ submission, active, showStatus, now, onOpen }: MessageRowProps) {
+function MessageRow({ submission, form, active, showStatus, now, onOpen }: MessageRowProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const sender = senderOf(submission.preview);
@@ -33,41 +47,51 @@ function MessageRow({ submission, active, showStatus, now, onOpen }: MessageRowP
       aria-current={active ? "true" : undefined}
       onClick={onOpen}
       className={cn(
-        "grid w-full grid-cols-1 gap-1 px-4 py-3 text-start transition-colors duration-150 ease-out",
-        active ? "bg-accent" : "hover:bg-muted",
+        "flex w-full gap-3 border-l-3 px-4 py-3 text-start transition-colors duration-150 ease-out",
+        active ? "border-l-primary bg-primary/10" : "border-l-transparent hover:bg-muted",
       )}
     >
-      <span className="flex items-baseline justify-between gap-3">
-        <span className="truncate text-sm font-medium">
-          {sender.label ?? t("inbox.unknownSender")}
-        </span>
-        <time
-          dateTime={new Date(submission.receivedAt).toISOString()}
-          aria-label={format.longDateTime(submission.receivedAt)}
-          className="shrink-0 text-xs text-muted-foreground tabular-nums"
+      {form !== undefined && (
+        <span
+          aria-hidden="true"
+          className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-lg leading-none"
         >
-          {day === "today" && format.timeOfDay(submission.receivedAt)}
-          {day === "yesterday" && t("inbox.list.yesterday")}
-          {day === "earlier" && format.dayOfYear(submission.receivedAt)}
-        </time>
-      </span>
-      <span className="line-clamp-2 text-sm wrap-anywhere text-muted-foreground">
-        {subject !== null && <span className="text-foreground">{subject} · </span>}
-        {excerptOf(submission.preview)}
-      </span>
-      <span className="flex items-center gap-2 text-xs text-muted-foreground">
-        {submission.reason !== null && (
-          <span className="shrink-0 font-medium text-warning">
-            {t(`status.reasons.${submission.reason}`)}
+          {emojiOf(form)}
+        </span>
+      )}
+      <span className="grid min-w-0 flex-1 grid-cols-1 gap-1">
+        <span className="flex items-baseline justify-between gap-3">
+          <span className="truncate text-sm font-medium">
+            {sender.label ?? t("inbox.unknownSender")}
           </span>
-        )}
-        {showStatus && submission.reason === null && (
-          <span className="shrink-0">{t(`inbox.statuses.${submission.status}`)}</span>
-        )}
-        {submission.label === "off-topic" && (
-          <span className="shrink-0">{t("inbox.offTopicLabel")}</span>
-        )}
-        <span className="truncate">{submission.formName}</span>
+          <time
+            dateTime={new Date(submission.receivedAt).toISOString()}
+            aria-label={format.longDateTime(submission.receivedAt)}
+            className="shrink-0 text-xs text-muted-foreground tabular-nums"
+          >
+            {day === "today" && format.timeOfDay(submission.receivedAt)}
+            {day === "yesterday" && t("inbox.list.yesterday")}
+            {day === "earlier" && format.dayOfYear(submission.receivedAt)}
+          </time>
+        </span>
+        <span className="line-clamp-2 text-sm wrap-anywhere text-muted-foreground">
+          {subject !== null && <span className="text-foreground">{subject} · </span>}
+          {excerptOf(submission.preview)}
+        </span>
+        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          {submission.reason !== null && (
+            <span className="shrink-0 font-medium text-warning">
+              {t(`status.reasons.${submission.reason}`)}
+            </span>
+          )}
+          {showStatus && submission.reason === null && (
+            <span className="shrink-0">{t(`inbox.statuses.${submission.status}`)}</span>
+          )}
+          {submission.label === "off-topic" && (
+            <span className="shrink-0">{t("inbox.offTopicLabel")}</span>
+          )}
+          <span className="truncate">{submission.formName}</span>
+        </span>
       </span>
     </button>
   );
@@ -75,8 +99,12 @@ function MessageRow({ submission, active, showStatus, now, onOpen }: MessageRowP
 
 interface MessageListProps {
   readonly folder: Folder;
-  /** The name of the form that the list is narrowed to, if any. */
-  readonly formName: string | null;
+  /** The forms of the organization. With several, each message shows the emoji of its form. */
+  readonly forms: readonly Form[];
+  /** The forms that the folder has messages of, when there are several to tell apart. */
+  readonly formsOfFolder: readonly FolderForm[];
+  /** The public ID of the form that the list is narrowed to, if any. */
+  readonly form: Form["publicId"] | null;
   /** `null` while the first page loads. */
   readonly entries: readonly SubmissionEntry[] | null;
   /** The number of messages listed, when the counts are known. */
@@ -94,8 +122,8 @@ interface MessageListProps {
   readonly onOpen: (submission: SubmissionEntry) => void;
   readonly onMore: () => void;
   readonly onRefresh: () => void;
-  /** Show the messages of every form again. */
-  readonly onAllForms: () => void;
+  /** Narrow the list to the messages of a form, or show those of every form again with null. */
+  readonly onForm: (form: Form["publicId"] | null) => void;
   /** The text that the list is narrowed to, if any. */
   readonly search: string | null;
   /** Narrow the list to the messages that contain a text, or show them all again with null. */
@@ -168,9 +196,104 @@ function SearchBar({ search, onSearch }: SearchBarProps) {
   );
 }
 
+/** A choice of the row of forms. The chosen one has the surface of a current page. */
+function chip(active: boolean) {
+  return cn(
+    "flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors duration-150 ease-out pointer-coarse:h-11",
+    active
+      ? "border-border bg-primary text-primary-foreground"
+      : "border-transparent bg-muted text-muted-foreground hover:text-foreground",
+  );
+}
+
+interface FormChipsProps {
+  readonly forms: readonly FolderForm[];
+  readonly form: Form["publicId"] | null;
+  readonly onForm: (form: Form["publicId"] | null) => void;
+}
+
+/** The forms of the folder, an emoji, a name and a count each. One of them narrows the list. */
+function FormChips({ forms, form, onForm }: FormChipsProps) {
+  const { t } = useTranslation();
+  return (
+    <nav
+      aria-label={t("inbox.list.forms.label")}
+      className="flex shrink-0 gap-1.5 overflow-x-auto hairline-b px-3 py-2"
+    >
+      <button
+        type="button"
+        aria-pressed={form === null}
+        className={chip(form === null)}
+        onClick={() => onForm(null)}
+      >
+        {t("inbox.list.forms.all")}
+      </button>
+      {forms.map(({ form: part, total }) => (
+        <button
+          key={part.publicId}
+          type="button"
+          aria-pressed={part.publicId === form}
+          className={chip(part.publicId === form)}
+          onClick={() => onForm(part.publicId)}
+        >
+          <FormEmoji form={part} className="text-sm" />
+          <span className="max-w-32 truncate">{part.name}</span>
+          <span className="tabular-nums opacity-70">{total}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+interface ExportMenuProps {
+  /** The addresses that download the list as it is filtered on screen. */
+  readonly exports: { readonly csv: string; readonly jsonl: string };
+}
+
+/** Downloads the list on screen. The menu says what each format holds, and the limit. */
+function ExportMenu({ exports }: ExportMenuProps) {
+  const { t } = useTranslation();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" size="icon" aria-label={t("inbox.list.export.label")} />}
+      >
+        <Download aria-hidden="true" className="size-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>{t("inbox.list.export.label")}</DropdownMenuLabel>
+          <DropdownMenuLinkItem href={exports.csv} download>
+            <span className="grid gap-0.5">
+              <span className="font-medium">{t("inbox.list.export.csv")}</span>
+              <span className="text-xs text-pretty text-muted-foreground">
+                {t("inbox.list.export.csvAbout")}
+              </span>
+            </span>
+          </DropdownMenuLinkItem>
+          <DropdownMenuLinkItem href={exports.jsonl} download>
+            <span className="grid gap-0.5">
+              <span className="font-medium">{t("inbox.list.export.jsonl")}</span>
+              <span className="text-xs text-pretty text-muted-foreground">
+                {t("inbox.list.export.jsonlAbout")}
+              </span>
+            </span>
+          </DropdownMenuLinkItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <p className="px-2 py-1.5 text-xs text-pretty text-muted-foreground">
+          {t("inbox.list.export.limit")}
+        </p>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function MessageList({
   folder,
-  formName,
+  forms,
+  formsOfFolder,
+  form,
   entries,
   total,
   elsewhere,
@@ -183,26 +306,29 @@ export function MessageList({
   onOpen,
   onMore,
   onRefresh,
-  onAllForms,
+  onForm,
   search,
   onSearch,
   exports,
 }: MessageListProps) {
   const { t } = useTranslation();
+  const formName = forms.find(({ publicId }) => publicId === form)?.name ?? null;
+  // With one form, nothing tells the messages apart, so they show no emoji.
+  const formOf = (submission: SubmissionEntry) =>
+    forms.length > 1
+      ? forms.find(({ publicId }) => publicId === submission.formPublicId)
+      : undefined;
   return (
     <section
       aria-label={t("inbox.list.label")}
-      className={cn("flex min-h-0 flex-col bg-card lg:hairline-r", collapsed && "max-lg:hidden")}
+      className={cn(
+        "flex min-h-0 flex-col bg-background lg:hairline-r",
+        collapsed && "max-lg:hidden",
+      )}
     >
       <header className="flex h-14 shrink-0 items-center gap-1 hairline-b px-1">
         <SidebarTrigger />
-        <h1
-          className={cn(
-            "text-base font-semibold",
-            // Next to the form, the folder keeps its whole name and the form's is cut.
-            formName === null ? "min-w-0 flex-1 truncate" : "shrink-0",
-          )}
-        >
+        <h1 className="min-w-0 flex-1 truncate text-base font-semibold">
           {t(`inbox.folders.${folder}`)}
           {total !== null && (
             <span className="ml-2 text-sm font-normal text-muted-foreground tabular-nums">
@@ -210,47 +336,13 @@ export function MessageList({
             </span>
           )}
         </h1>
-        {formName !== null && (
-          <>
-            <Button
-              size="sm"
-              title={formName}
-              aria-label={t("inbox.list.form.remove", { name: formName })}
-              className="ml-2 min-w-0 shrink"
-              onClick={onAllForms}
-            >
-              <span className="truncate">{formName}</span>
-              <X aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
-            </Button>
-            <span className="flex-1" />
-          </>
-        )}
+        {exports !== null && <ExportMenu exports={exports} />}
         <Button variant="ghost" size="icon" aria-label={t("common.refresh")} onClick={onRefresh}>
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
       </header>
+      {formsOfFolder.length > 0 && <FormChips forms={formsOfFolder} form={form} onForm={onForm} />}
       <SearchBar search={search} onSearch={onSearch} />
-      {exports !== null && (
-        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 hairline-b px-4 py-2 text-xs text-muted-foreground">
-          <Download aria-hidden="true" className="size-3.5 shrink-0" />
-          <span>{t("inbox.list.export.label")}</span>
-          <a
-            className="font-medium text-foreground underline underline-offset-4"
-            href={exports.csv}
-            download
-          >
-            {t("inbox.list.export.csv")}
-          </a>
-          <a
-            className="font-medium text-foreground underline underline-offset-4"
-            href={exports.jsonl}
-            download
-          >
-            {t("inbox.list.export.jsonl")}
-          </a>
-          <span>{t("inbox.list.export.limit")}</span>
-        </p>
-      )}
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         {failed && (
           <p role="alert" className="px-4 py-3 text-sm text-destructive">
@@ -282,7 +374,7 @@ export function MessageList({
                 {t("inbox.list.form.empty.others", { count: elsewhere })}
               </p>
             )}
-            <Button className="mt-2" onClick={onAllForms}>
+            <Button className="mt-2" onClick={() => onForm(null)}>
               {t("inbox.list.form.empty.showAll")}
             </Button>
           </div>
@@ -303,6 +395,7 @@ export function MessageList({
               <li key={submission.submissionId} className="hairline-b">
                 <MessageRow
                   submission={submission}
+                  form={formOf(submission)}
                   active={submission.submissionId === selected}
                   showStatus={folder === "all"}
                   now={now}

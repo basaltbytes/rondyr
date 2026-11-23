@@ -6,8 +6,8 @@ import type { TurnstileKeyState } from "@rondyr/forms/turnstile";
 
 import { FormProblem, TextField } from "~/components/text-field";
 import { Alert, AlertDescription, AlertTitle } from "~/components/ui/alert";
+import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { checkTurnstileKey, FormRequestFailed, setTurnstile } from "~/lib/forms-client";
 import type { Form, FormProblem as FormRequestProblem } from "~/lib/forms-client";
 import type { Inbox } from "~/lib/inbox-client";
@@ -90,7 +90,7 @@ function WidgetSnippet({ siteKey }: { readonly siteKey: string }) {
   return (
     <div className="grid justify-items-start gap-2">
       <p className="text-sm text-muted-foreground">{t("inbox.forms.turnstile.embed")}</p>
-      <pre className="w-full min-w-0 overflow-x-auto rounded-md bg-muted p-3 text-xs">
+      <pre className="w-full min-w-0 rounded-md bg-muted px-4 py-3 text-xs wrap-anywhere whitespace-pre-wrap">
         <code>{snippet}</code>
       </pre>
       <div className="flex flex-wrap items-center gap-2">
@@ -123,8 +123,13 @@ interface FormTurnstileProps {
   readonly onChanged: () => Promise<void>;
 }
 
+/**
+ * Turnstile on a form: off with a way to set it up, both keys while they are
+ * typed, and once on, the state of the stored key and the HTML of the widget.
+ */
 export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) {
   const { t } = useTranslation();
+  const [configuring, setConfiguring] = useState(false);
   // Each save stores a new secret key, which the key state then checks again.
   const [saves, setSaves] = useState(0);
   const [result, save, saving] = useActionState(async (_: SaveFailure | null, data: FormData) => {
@@ -139,6 +144,7 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
       await setTurnstile(inboxId, form.publicId, settings);
       setSaves((count) => count + 1);
       await onChanged();
+      setConfiguring(false);
       return null;
     } catch (error) {
       if (!isFailed(error)) return "unexplained";
@@ -164,65 +170,85 @@ export function FormTurnstile({ inboxId, form, onChanged }: FormTurnstileProps) 
     }
   }
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{t("inbox.forms.turnstile.title")}</CardTitle>
-        <CardDescription>{t("inbox.forms.turnstile.description")}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-4">
-          {siteKey !== null && (
-            <StoredKeyState
-              key={`${form.publicId}:${saves}`}
-              inboxId={inboxId}
-              publicId={form.publicId}
-            />
-          )}
-          <form action={save} className="grid gap-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <TextField
-                key={siteKey}
-                name="siteKey"
-                label={t("inbox.forms.turnstile.siteKey")}
-                defaultValue={siteKey ?? ""}
-                maxLength={256}
-                pattern={"[a-zA-Z0-9_\\-]+"}
-                autoComplete="off"
-                spellCheck={false}
-                required
-              />
-              <TextField
-                type="password"
-                name="secretKey"
-                label={t("inbox.forms.turnstile.secretKey")}
-                maxLength={256}
-                autoComplete="new-password"
-                required
-              />
-            </div>
-            <FormProblem>{result === null ? null : explain(result)}</FormProblem>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="submit" disabled={saving}>
-                {saving ? t("inbox.forms.turnstile.saving") : t("inbox.forms.turnstile.save")}
-              </Button>
-              {siteKey !== null && (
-                <Button
-                  type="submit"
-                  name="action"
-                  value="clear"
-                  variant="ghost"
-                  formNoValidate
-                  disabled={saving}
-                >
-                  {t("inbox.forms.turnstile.disable")}
-                </Button>
-              )}
-            </div>
-          </form>
-          {siteKey !== null && <WidgetSnippet key={siteKey} siteKey={siteKey} />}
+  if (configuring) {
+    return (
+      <form action={save} className="grid gap-3 rounded-md bg-muted p-4">
+        <p className="text-xs text-pretty text-muted-foreground">
+          {t("inbox.forms.turnstile.description")}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TextField
+            name="siteKey"
+            label={t("inbox.forms.turnstile.siteKey")}
+            defaultValue={siteKey ?? ""}
+            maxLength={256}
+            pattern={"[a-zA-Z0-9_\\-]+"}
+            autoComplete="off"
+            spellCheck={false}
+            required
+          />
+          <TextField
+            type="password"
+            name="secretKey"
+            label={t("inbox.forms.turnstile.secretKey")}
+            maxLength={256}
+            autoComplete="new-password"
+            required
+          />
         </div>
-      </CardContent>
-    </Card>
+        <FormProblem>{result === null ? null : explain(result)}</FormProblem>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="submit" variant="default" disabled={saving}>
+            {saving ? t("inbox.forms.turnstile.saving") : t("inbox.forms.turnstile.save")}
+          </Button>
+          <Button variant="ghost" disabled={saving} onClick={() => setConfiguring(false)}>
+            {t("common.cancel")}
+          </Button>
+        </div>
+      </form>
+    );
+  }
+
+  if (siteKey === null) {
+    return (
+      <div className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2">
+        <Badge>{t("inbox.forms.turnstile.off")}</Badge>
+        <span className="min-w-0 flex-1 basis-40 text-sm text-pretty text-muted-foreground">
+          {t("inbox.forms.turnstile.key.off")}
+        </span>
+        <Button size="sm" onClick={() => setConfiguring(true)}>
+          {t("inbox.forms.turnstile.configure")}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      <form action={save} className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-2">
+        <Badge variant="success">{t("inbox.forms.turnstile.on")}</Badge>
+        <span className="min-w-0 flex-1 basis-40" />
+        <Button size="sm" disabled={saving} onClick={() => setConfiguring(true)}>
+          {t("inbox.forms.turnstile.configure")}
+        </Button>
+        <Button
+          type="submit"
+          name="action"
+          value="clear"
+          variant="ghost"
+          size="sm"
+          disabled={saving}
+        >
+          {t("inbox.forms.turnstile.disable")}
+        </Button>
+      </form>
+      <FormProblem>{result === null ? null : explain(result)}</FormProblem>
+      <StoredKeyState
+        key={`${form.publicId}:${saves}`}
+        inboxId={inboxId}
+        publicId={form.publicId}
+      />
+      <WidgetSnippet key={siteKey} siteKey={siteKey} />
+    </div>
   );
 }

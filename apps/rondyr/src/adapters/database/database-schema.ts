@@ -44,6 +44,8 @@ export const forms = sqliteTable(
     publicId: text("public_id").notNull().unique(),
     businessContext: text("business_context"),
     name: text().notNull(),
+    // One emoji shown next to the name in the dashboard, or NULL.
+    emoji: text(),
     // `active` or `suspended`. A suspended form refuses submissions and keeps its messages.
     status: text().notNull().default("active"),
     // Normalized by parseSuccessUrl. Its origin is one of the form's allowed origins.

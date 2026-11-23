@@ -21,9 +21,11 @@ import {
   SidebarMenuItem,
   SidebarMenuLabel,
 } from "~/components/ui/sidebar";
+import { setTheme, useTheme } from "~/lib/appearance";
 import { authClient } from "~/lib/auth-client";
 import { setLanguage, useLanguage } from "~/lib/i18n";
 import { chooseLanguage, languages } from "~/lib/language";
+import { chooseTheme, themes } from "~/lib/theme";
 
 /** Ends the session. Returns whether it worked. */
 async function signOut() {
@@ -57,11 +59,15 @@ interface AccountProps {
 export function AccountMenu({ email }: AccountProps) {
   const { t } = useTranslation();
   const language = useLanguage();
+  const theme = useTheme();
   const { failed, pending, leave } = useSignOut();
   return (
     <SidebarMenu>
       {failed && (
-        <li role="alert" className="px-2.5 text-xs text-pretty text-destructive">
+        <li
+          role="alert"
+          className="rounded-md bg-destructive px-2.5 py-1 text-xs text-pretty text-destructive-foreground"
+        >
           {t("authentication.signOut.failed")}
         </li>
       )}
@@ -79,7 +85,7 @@ export function AccountMenu({ email }: AccountProps) {
           >
             <span
               aria-hidden="true"
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-card text-xs font-semibold text-foreground uppercase shadow-raised"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground uppercase"
             >
               {email.slice(0, 1)}
             </span>
@@ -109,6 +115,20 @@ export function AccountMenu({ email }: AccountProps) {
               </DropdownMenuRadioGroup>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>{t("authentication.account.theme")}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={theme}
+                onValueChange={(value: string) => setTheme(chooseTheme(value))}
+              >
+                {themes.map((name) => (
+                  <DropdownMenuRadioItem key={name} value={name}>
+                    <span className="min-w-0 flex-1">{t(`themes.${name}`)}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={leave}>
               <LogOut aria-hidden="true" className="size-4" />
               {t("authentication.signOut.submit")}
@@ -125,16 +145,18 @@ export function SignOutButton({ email }: AccountProps) {
   const { t } = useTranslation();
   const { failed, pending, leave } = useSignOut();
   return (
-    <div className="grid justify-items-start gap-1">
-      <p className="text-xs wrap-anywhere text-muted-foreground">{email}</p>
+    <div className="grid gap-1 px-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <p className="min-w-0 text-xs wrap-anywhere text-muted-foreground">{email}</p>
+        <Button variant="ghost" size="sm" disabled={pending} onClick={leave}>
+          {pending ? t("authentication.signOut.pending") : t("authentication.signOut.submit")}
+        </Button>
+      </div>
       {failed && (
         <p role="alert" className="text-xs text-destructive">
           {t("authentication.signOut.failed")}
         </p>
       )}
-      <Button variant="ghost" disabled={pending} onClick={leave}>
-        {pending ? t("authentication.signOut.pending") : t("authentication.signOut.submit")}
-      </Button>
     </div>
   );
 }

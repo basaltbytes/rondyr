@@ -115,6 +115,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       name: "Contact",
       publicId: first.publicId,
       status: "active",
+      emoji: null,
       businessContext: null,
       successUrl: null,
       honeypotField: null,
@@ -142,6 +143,9 @@ it.live("manages the forms of the account's organizations and refuses other orga
       { name: "n".repeat(101) },
       { name: 42 },
       { name: "Classes", businessContext: "c".repeat(2001) },
+      { name: "Classes", emoji: "" },
+      { name: "Classes", emoji: "pot" },
+      { name: "Classes", emoji: "🏺🏺" },
     ];
     const invalidCreations = yield* Effect.forEach(invalidForms, (body) =>
       call("POST", forms, body, headers),
@@ -153,7 +157,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
     const createdClasses = yield* call(
       "POST",
       forms,
-      { name: "  Classes  ", businessContext: " Pottery workshops " },
+      { name: "  Classes  ", emoji: " 🏺 ", businessContext: " Pottery workshops " },
       headers,
     );
     assert.strictEqual(createdClasses.status, 201);
@@ -163,6 +167,7 @@ it.live("manages the forms of the account's organizations and refuses other orga
       name: "Classes",
       publicId: classes.publicId,
       status: "active",
+      emoji: "🏺",
       businessContext: "Pottery workshops",
       successUrl: null,
       honeypotField: null,
@@ -213,6 +218,26 @@ it.live("manages the forms of the account's organizations and refuses other orga
       (body) => call("PATCH", lesson, body, headers),
     );
     assert.deepEqual(invalidEdits.map(statusOf), [400, 400, 400, 400]);
+
+    // The emoji changes alone, a flag and a joined sequence included, and the other edits keep it.
+    const emojis = yield* Effect.forEach(
+      [{ emoji: "🎓" }, { emoji: "🇫🇷" }, { emoji: " 🧑‍🏫 " }, { name: "Courses" }],
+      (body) => call("PATCH", lesson, body, headers).pipe(Effect.flatMap(formOf)),
+    );
+    assert.deepEqual(
+      emojis.map(({ name, emoji, businessContext }) => [name, emoji, businessContext]),
+      [
+        ["Courses", "🎓", null],
+        ["Courses", "🇫🇷", null],
+        ["Courses", "🧑‍🏫", null],
+        ["Courses", "🧑‍🏫", null],
+      ],
+    );
+    const invalidEmojis = yield* Effect.forEach(
+      [{ emoji: "" }, { emoji: "course" }, { emoji: "🎓🎓" }, { emoji: 7 }, { emoji: null }],
+      (body) => call("PATCH", lesson, body, headers),
+    );
+    assert.deepEqual(invalidEmojis.map(statusOf), [400, 400, 400, 400, 400]);
 
     // Suspend and reactivate; repeating an action changes nothing.
     const statuses = yield* Effect.forEach(

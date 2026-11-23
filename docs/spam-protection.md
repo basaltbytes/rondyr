@@ -4,7 +4,7 @@ Rondyr filters every message automatically with a classifier model (Jev or OpenA
 
 ## 1. Describe your business
 
-Open **Settings → Forms**, select your form, and edit **Name and business** with one or two plain sentences about what you do (for example, *"Pottery studio in Lyon offering wheel-throwing workshops and handmade stoneware ceramics."*).
+Open your form from **Forms** in the sidebar and type, under its name, one or two plain sentences about what you do (for example, *"Pottery studio in Lyon offering wheel-throwing workshops and handmade stoneware ceramics."*).
 
 With a business description in place, the classifier checks three things on every message:
 
@@ -22,8 +22,8 @@ If teammates or colleagues occasionally test your forms or write from your compa
 
 A honeypot is a field that real visitors never see and leave blank, while simple spam bots fill every input on the page. It adds zero friction for visitors.
 
-1. Open **Settings → Forms**, select your form, and scroll to **Honeypot field**.
-2. Enter a field name (for example `_hp`) and select **Save honeypot field**.
+1. Open your form from **Forms** in the sidebar.
+2. Enter a field name (for example `_hp`) in **Honeypot field name** and press Enter.
 3. Add a matching text input inside your site's `<form>`, hidden with CSS rather than `type="hidden"`, with `tabindex="-1"` and `autocomplete="off"`:
 
 ```html
@@ -43,15 +43,15 @@ When a visitor leaves `_hp` blank, Rondyr strips it out before saving the messag
 
 For persistent bots that ignore honeypots, attach a [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/get-started/) widget to your form.
 
-![Settings Forms screen scrolled to the Honeypot field and Turnstile cards, showing saved keys, active verification status, and the HTML embed snippet](./screenshots/spam-form.webp)
+![Page of the Contact form showing the honeypot field name and Turnstile turned on, with the state of the stored key and the HTML embed snippet](./screenshots/spam-form.webp)
 
 1. In your Cloudflare dashboard, create a Turnstile widget for your website's hostname and copy its **Site key** and **Secret key**.
-2. In Rondyr, open **Settings → Forms**, select your form, paste both keys under **Turnstile**, and select **Save Turnstile keys**. Rondyr checks the secret key with Cloudflare right away so typos are caught before saving.
+2. In Rondyr, open your form from **Forms** in the sidebar, select **Configure** next to **Turnstile**, paste both keys, and select **Save Turnstile keys**. Rondyr checks the secret key with Cloudflare right away so typos are caught before saving.
 3. Select **Copy HTML** and paste the two lines inside your `<form>` (load the Turnstile `<script>` only once per page). If you submit via JavaScript JSON, send the token in the `cf-turnstile-response` field. If your server forwards the post on the visitor’s behalf, [opt in to Turnstile on server intake](./api.md#turnstile-for-forwarded-submissions).
 
 Rondyr removes the Turnstile token before saving the message. Submissions with a missing or invalid token go to **To review** labeled **Turnstile verification failed** without calling the AI classifier, while still returning the usual confirmation response to the visitor.
 
-If Cloudflare's verification service has a brief outage, Rondyr doesn't block real visitors; messages fall back to normal AI classification. Each time you open a form's settings in **Forms**, Rondyr re-checks your saved Turnstile secret key with Cloudflare and warns you on the Turnstile card if the widget was deleted or the key stopped working.
+If Cloudflare's verification service has a brief outage, Rondyr doesn't block real visitors; messages fall back to normal AI classification. Each time you open a form's page, Rondyr re-checks your saved Turnstile secret key with Cloudflare and warns you under **Turnstile** if the widget was deleted or the key stopped working.
 
 ## Repeat detection
 

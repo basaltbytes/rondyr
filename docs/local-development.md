@@ -28,7 +28,7 @@ It asks for the same values and prints `First account created (HTTP 201).`. Rond
 
 ## First submission
 
-In the dashboard, create an organization and a form, with an optional description of the business. Open **Forms** to copy the form URL, then post to it:
+In the dashboard, create an organization and a form, with an optional description of the business. Open the form from **Forms** in the sidebar to copy its submission address, then post to it:
 
 ```sh
 curl --json '{"email":"visitor@example.com","message":"Is there room in the Saturday class?"}' \

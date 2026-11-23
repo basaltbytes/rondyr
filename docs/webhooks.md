@@ -6,11 +6,13 @@ Rondyr encrypts webhook signing secrets with `RONDYR_SECRETS_KEY`, which button 
 
 ## 1. Add a webhook in the dashboard
 
-1. Open **Settings → Destinations** (admins only) and select your form.
-2. Under **Webhooks**, paste your HTTPS endpoint URL (for example `https://hooks.claywork.example/rondyr`) and select **Add webhook**.
+1. Open your form from **Forms** in the sidebar (admins only) and go to **Destinations**.
+2. Under **New destination**, keep **Webhook**, paste your HTTPS endpoint URL (for example `https://hooks.claywork.example/rondyr`) and select **Add webhook**.
 3. Copy the signing secret (`whsec_…`) shown immediately after creation and save it in your receiving app's configuration. Rondyr shows a secret once and never again.
 
-![Settings Destinations screen showing an active webhook https://hooks.claywork.example/rondyr with Send a test, Rotate secret, and Deactivate buttons](./screenshots/destinations-webhook.webp)
+A destination is one line of the list. Select it to open its settings, and use its switch to stop sending to it without losing them.
+
+![Destinations of the Contact form with the webhook https://hooks.claywork.example/rondyr turned on and open on Send a test and Rotate secret](./screenshots/destinations-webhook.webp)
 
 Only messages accepted after you create (or reactivate) a webhook are sent to it; quarantined messages go out only when someone accepts them.
 
@@ -86,7 +88,7 @@ export default {
 
 ## 3. Send a test request
 
-Select **Send a test** on your webhook in **Destinations** (up to 3 tests per minute per destination). Rondyr signs and sends one request with `"type": "test"`, waits up to 30 seconds without retrying, and reports whether your endpoint returned a `2xx` status or an error. Make sure your receiver skips storing messages when `payload.type === "test"`.
+Open your webhook in **Destinations** and select **Send a test** (up to 3 tests per minute per destination). Rondyr signs and sends one request with `"type": "test"`, waits up to 30 seconds without retrying, and reports whether your endpoint returned a `2xx` status or an error. Make sure your receiver skips storing messages when `payload.type === "test"`.
 
 ## Payload and headers
 
@@ -126,7 +128,7 @@ Rondyr-Signature: v1=5f2b…
 
 ## Rotate a signing secret
 
-Select **Rotate secret** next to a webhook in **Destinations** to generate a new secret. For the next 24 hours, Rondyr sends two signatures in `Rondyr-Signature` (new secret first, previous secret second) so you can update your receiver without downtime. After 24 hours, only the new secret signs requests. If a secret leaked, rotate it and update your receiver immediately so it stops accepting the old secret.
+Open a webhook in **Destinations** and select **Rotate secret** to generate a new secret. For the next 24 hours, Rondyr sends two signatures in `Rondyr-Signature` (new secret first, previous secret second) so you can update your receiver without downtime. After 24 hours, only the new secret signs requests. If a secret leaked, rotate it and update your receiver immediately so it stops accepting the old secret.
 
 ## Retries and deduplication
 

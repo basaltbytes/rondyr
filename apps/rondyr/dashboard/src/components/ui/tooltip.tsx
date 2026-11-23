@@ -28,7 +28,7 @@ export function TooltipContent({ className, side, children, ...props }: TooltipC
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"
           className={cn(
-            "pointer-events-none flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground transition duration-150 ease-out data-ending-style:opacity-0 data-instant:transition-none data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:data-starting-style:scale-100",
+            "pointer-events-none flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-md border bg-primary px-3 py-1.5 text-xs text-primary-foreground shadow-xs transition duration-150 ease-out data-ending-style:opacity-0 data-instant:transition-none data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:data-starting-style:scale-100",
             className,
           )}
           {...props}

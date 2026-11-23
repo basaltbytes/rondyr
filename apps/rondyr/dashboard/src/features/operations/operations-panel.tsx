@@ -184,7 +184,7 @@ export function OperationsPanel() {
 
   return (
     <main className="flex min-h-0 min-w-0 flex-col lg:col-span-2">
-      <header className="flex h-14 shrink-0 items-center gap-1 bg-card hairline-b px-1">
+      <header className="flex h-14 shrink-0 items-center gap-1 bg-background hairline-b px-1">
         <SidebarTrigger />
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold">{t("operations.title")}</h1>
         <Button
