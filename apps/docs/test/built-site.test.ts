@@ -179,10 +179,10 @@ test("contains no Worker internals on any page of the site", () => {
   assert.deepEqual(hits, [], "Move Worker internals to contributor material on GitHub.");
 });
 
-test("serves the Rondyr mark from docs/brand/ as the favicon", () => {
+test("serves the Rondyr favicon from docs/brand/", () => {
   assert.equal(
     built("favicon.svg"),
-    readFileSync(repositoryPath("docs/brand/rondyr-mark.svg"), "utf8"),
+    readFileSync(repositoryPath("docs/brand/rondyr-favicon.svg"), "utf8"),
   );
   const icons = elements(
     builtPage("/"),

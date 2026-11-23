@@ -77,6 +77,6 @@ pnpm --filter @rondyr/docs run deploy
 
 ## Theme
 
-`src/styles/theme.css` takes the colors from `docs/brand/rondyr.svg`. The header shows the wordmark from `docs/brand/`. The build writes a light and a dark copy of it to `.astro/brand/` with fixed colors, because Safari draws an SVG image with the system's color scheme even when the reader picks the other theme in the header. The favicon is `docs/brand/rondyr-mark.svg`, unchanged.
+`src/styles/theme.css` takes the colors from `docs/brand/rondyr.svg`. The header shows the wordmark from `docs/brand/`. The build writes a light and a dark copy of it to `.astro/brand/` with fixed colors, because Safari draws an SVG image with the system's color scheme even when the reader picks the other theme in the header. The favicon uses the fixed colors in `docs/brand/rondyr-favicon.svg`.
 
 `patches/lucode-starlight@1.0.0.patch` is the patch of usine.dev's documentation: pagination links wrap on narrow screens, and the mobile menu shows the sidebar's groups with links 44 pixels high. A fenced `mermaid` block renders to SVG at build time with [Pele](https://pele.run/).
