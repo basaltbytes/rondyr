@@ -14,6 +14,7 @@ import { useOrganization } from "~/routes/-layout/organization-context";
  * the searched text are in the address, so a reload and a link keep them.
  */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/messages")({
+  staticData: { sidebar: { at: "messages" } },
   validateSearch: Schema.toStandardSchemaV1(MessagesSearch),
   loaderDeps: ({ search }) => search,
   loader: ({ context, params, deps }) =>

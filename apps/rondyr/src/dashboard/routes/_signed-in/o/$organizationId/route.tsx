@@ -8,7 +8,7 @@ import { messageCountsQuery } from "~/lib/api/messages";
 import { organizationsQuery } from "~/lib/api/organizations";
 import { useSignedOut } from "~/lib/session";
 import { organizationOf } from "~/routes/-layout/organization-access";
-import { OrganizationShell, useSidebarPage } from "~/routes/-layout/organization-shell";
+import { OrganizationShell } from "~/routes/-layout/organization-shell";
 
 /**
  * The layout of an organization: the sidebar, and the page beside it. An organization
@@ -35,7 +35,6 @@ function OrganizationLayout() {
   const { organizationId } = Route.useParams();
   const { user } = Route.useRouteContext();
   const organizations = useQuery(organizationsQuery);
-  const page = useSidebarPage();
   const signedOut = useSignedOut();
 
   if (organizations.isError && organizations.data === undefined) {
@@ -57,7 +56,6 @@ function OrganizationLayout() {
       key={organization.id}
       organizations={organizations.data}
       organization={organization}
-      page={page}
     >
       <Outlet />
     </OrganizationShell>

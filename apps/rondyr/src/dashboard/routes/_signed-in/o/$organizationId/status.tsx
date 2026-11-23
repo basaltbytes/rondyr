@@ -9,6 +9,7 @@ import { useOrganization } from "~/routes/-layout/organization-context";
 
 /** How the processing of the organizations is doing. A reviewer has no status page. */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/status")({
+  staticData: { sidebar: { at: "settings", section: "operations" } },
   beforeLoad: ({ context }) => requirePermission(context.organization, "read-operations"),
   loader: ({ context }) =>
     context.queryClient.query({ ...operationsQuery, staleTime: "static" }).then(

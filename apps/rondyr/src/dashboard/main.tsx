@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 import "~/lib/i18n";
 import { NotFoundPage } from "~/components/not-found-page";
 import { PagePending } from "~/components/page-pending";
+import type { SidebarSection } from "~/features/navigation/sidebar-page";
 import { sessionQuery } from "~/lib/api/session";
 import { statusOf } from "~/lib/api/request";
 import { parseSearch, stringifySearch } from "~/lib/search-params";
@@ -69,6 +70,10 @@ router.subscribe("onBeforeNavigate", () => {
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
+  }
+  interface StaticDataRouteOption {
+    /** The page that the sidebar marks while the route is open; the routes under it inherit it. */
+    sidebar?: SidebarSection;
   }
   interface HistoryState {
     /** The organization whose sidebar the creation of another one shows. */

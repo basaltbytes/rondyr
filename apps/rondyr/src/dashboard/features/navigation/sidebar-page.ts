@@ -17,3 +17,14 @@ export type SidebarPage =
   | { readonly at: "newForm" }
   | { readonly at: "organization" }
   | { readonly at: "settings"; readonly section: SettingsSection };
+
+/**
+ * The page of the sidebar that a route declares in its static data. The folder of the
+ * messages and the public ID of a form come from the address.
+ */
+export type SidebarSection =
+  | { readonly at: "messages" }
+  | { readonly at: "form" }
+  | { readonly at: "newForm" }
+  | { readonly at: "organization" }
+  | { readonly at: "settings"; readonly section: SettingsSection };

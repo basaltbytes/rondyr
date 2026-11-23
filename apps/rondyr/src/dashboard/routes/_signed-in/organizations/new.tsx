@@ -14,6 +14,7 @@ import { OrganizationShell, useOpenCreatedOrganization } from "~/routes/-layout/
  * opened from. Once created, the new organization opens.
  */
 export const Route = createFileRoute("/_signed-in/organizations/new")({
+  staticData: { sidebar: { at: "organization" } },
   loader: ({ context }) =>
     context.queryClient.query({ ...organizationsQuery, staleTime: "static" }).then(
       () => undefined,
@@ -44,11 +45,7 @@ function NewOrganizationPage() {
   // An account without an organization creates its first one where the dashboard opens.
   if (organization === undefined) return <Navigate to="/" replace />;
   return (
-    <OrganizationShell
-      organizations={known}
-      organization={organization}
-      page={{ at: "organization" }}
-    >
+    <OrganizationShell organizations={known} organization={organization}>
       <main className="min-w-0 lg:col-span-2 lg:overflow-y-auto">
         <header className="flex h-14 items-center px-1">
           <SidebarTrigger />

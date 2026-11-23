@@ -6,6 +6,7 @@ import { useOrganization } from "~/routes/-layout/organization-context";
 
 /** The members of the organization and its invitations. */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/settings/members")({
+  staticData: { sidebar: { at: "settings", section: "members" } },
   loader: ({ context, params }) =>
     context.queryClient.query({ ...membersQuery(params.organizationId), staleTime: "static" }).then(
       () => undefined,

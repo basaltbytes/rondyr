@@ -6,6 +6,7 @@ import { useOrganization } from "~/routes/-layout/organization-context";
 
 /** How long the organization keeps its messages. */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/settings/retention")({
+  staticData: { sidebar: { at: "settings", section: "retention" } },
   loader: ({ context, params }) =>
     context.queryClient
       .query({ ...retentionQuery(params.organizationId), staleTime: "static" })

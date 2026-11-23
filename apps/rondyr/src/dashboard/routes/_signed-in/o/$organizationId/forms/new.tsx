@@ -8,6 +8,7 @@ import { useOrganization } from "~/routes/-layout/organization-context";
 
 /** The creation of a form. A reviewer has no page of forms. */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/forms/new")({
+  staticData: { sidebar: { at: "newForm" } },
   beforeLoad: ({ context }) => requirePermission(context.organization, "manage-forms"),
   component: NewForm,
 });

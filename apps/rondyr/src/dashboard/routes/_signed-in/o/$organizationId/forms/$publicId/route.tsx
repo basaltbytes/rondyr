@@ -15,6 +15,7 @@ import { useOrganization } from "~/routes/-layout/organization-context";
  * reviewer has no page of forms.
  */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/forms/$publicId")({
+  staticData: { sidebar: { at: "form" } },
   beforeLoad: ({ context, params }) => {
     requirePermission(context.organization, "manage-forms");
     const forms = context.organization?.forms ?? [];

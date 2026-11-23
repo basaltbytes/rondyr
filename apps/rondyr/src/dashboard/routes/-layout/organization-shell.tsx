@@ -19,33 +19,23 @@ import { useSignedOut } from "~/lib/session";
 import { lastMessages } from "./last-messages.ts";
 import { OrganizationContext } from "./organization-context.ts";
 
-/** The page of the address, which the sidebar marks as current. */
-export function useSidebarPage(): SidebarPage {
-  const routeId = useMatches({ select: (matches) => matches.at(-1)?.routeId });
+/**
+ * The page that the sidebar marks: the one that the deepest open route declares in its
+ * static data, with the folder or the form of the address. A route that declares none,
+ * such as a redirect, counts as the messages.
+ */
+function useSidebarPage(): SidebarPage {
+  const declared = useMatches({
+    select: (matches) =>
+      matches.findLast(({ staticData }) => staticData.sidebar !== undefined)?.staticData.sidebar,
+  });
   const { publicId } = useParams({ strict: false });
   const { folder } = useSearch({ strict: false });
-  switch (routeId) {
-    case "/_signed-in/o/$organizationId/forms/new":
-      return { at: "newForm" };
-    case "/_signed-in/o/$organizationId/forms/$publicId":
-      return { at: "form", publicId: publicId ?? "" };
-    case "/_signed-in/o/$organizationId/settings/members":
-      return { at: "settings", section: "members" };
-    case "/_signed-in/o/$organizationId/settings/api-tokens":
-      return { at: "settings", section: "apiTokens" };
-    case "/_signed-in/o/$organizationId/settings/retention":
-      return { at: "settings", section: "retention" };
-    case "/_signed-in/o/$organizationId/settings/classification":
-      return { at: "settings", section: "classification" };
-    case "/_signed-in/o/$organizationId/settings/domains":
-      return { at: "settings", section: "domains" };
-    case "/_signed-in/o/$organizationId/settings/quotas":
-      return { at: "settings", section: "quotas" };
-    case "/_signed-in/o/$organizationId/status":
-      return { at: "settings", section: "operations" };
-    default:
-      return { at: "messages", folder: folder ?? "quarantined" };
+  if (declared === undefined || declared.at === "messages") {
+    return { at: "messages", folder: folder ?? "quarantined" };
   }
+  if (declared.at === "form") return { at: "form", publicId: publicId ?? "" };
+  return declared;
 }
 
 /**
@@ -67,8 +57,6 @@ export function useOpenCreatedOrganization(known: readonly Organization[]) {
 interface OrganizationShellProps {
   readonly organizations: readonly Organization[];
   readonly organization: Organization;
-  /** The page beside the sidebar. */
-  readonly page: SidebarPage;
   readonly children: ReactNode;
 }
 
@@ -79,10 +67,10 @@ interface OrganizationShellProps {
 export function OrganizationShell({
   organizations,
   organization,
-  page,
   children,
 }: OrganizationShellProps) {
   const { user } = useRouteContext({ from: "/_signed-in" });
+  const page = useSidebarPage();
   const { q } = useSearch({ strict: false });
   const signedOut = useSignedOut();
   const account = <AccountMenu email={user.email} onSignedOut={signedOut} />;
