@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 
 import { ProductLogo } from "~/components/product-logo";
 import { AccountMenu, SignOutButton } from "~/features/authentication/account";
-import { SignedOut } from "~/features/authentication/owner-setup";
-import { InboxPanel } from "~/features/inbox/inbox-panel";
+import { SignedOut } from "~/features/authentication/signed-out";
+import { InboxPanel } from "./inbox-panel.tsx";
 import { authClient } from "~/lib/auth-client";
 
 // The status page is not part of the first paint, so its code loads when it opens.

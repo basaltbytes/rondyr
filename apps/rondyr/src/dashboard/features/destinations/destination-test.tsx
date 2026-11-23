@@ -12,13 +12,13 @@ const isFailed = Schema.is(TargetRequestFailed);
 /** How a test ended: the answer of the recipient, or why the test did not run. */
 type TestOutcome = TestResult | "alreadyRunning" | "limited" | "limitUnavailable" | "notSent";
 
-interface TargetTestProps {
+interface DestinationTestProps {
   readonly inboxId: Inbox["id"];
   readonly targetId: Target["id"];
 }
 
 /** Sends a test message to one destination and shows the answer of its recipient. */
-export function TargetTest({ inboxId, targetId }: TargetTestProps) {
+export function DestinationTest({ inboxId, targetId }: DestinationTestProps) {
   const { t } = useTranslation();
   const [outcome, send, sending] = useActionState(async (): Promise<TestOutcome | null> => {
     try {

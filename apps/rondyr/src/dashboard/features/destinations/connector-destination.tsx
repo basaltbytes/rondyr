@@ -11,9 +11,9 @@ import type { Inbox } from "~/lib/inbox-client";
 import { replaceConnectorSettings } from "~/lib/targets-client";
 import type { ConnectorDestination, ConnectorDraft } from "~/lib/targets-client";
 
-import { attempt, TargetFailureNote } from "./target-problems.tsx";
-import type { TargetFailure } from "./target-problems.tsx";
-import { TargetTest } from "./target-test.tsx";
+import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
+import type { DestinationFailure } from "./destination-problems.tsx";
+import { DestinationTest } from "./destination-test.tsx";
 
 type Kind = ConnectorDestination["type"];
 
@@ -111,7 +111,7 @@ export function SettingFields({ kind, saved }: SettingFieldsProps) {
 
 interface DraftProblemProps {
   readonly kind: Kind;
-  readonly failure: TargetFailure | null;
+  readonly failure: DestinationFailure | null;
   readonly fallback: string;
 }
 
@@ -119,7 +119,7 @@ interface DraftProblemProps {
 export function DraftProblem({ kind, failure, fallback }: DraftProblemProps) {
   const textOf = useFieldTexts(kind);
   return (
-    <TargetFailureNote
+    <DestinationFailureNote
       failure={failure}
       fallback={fallback}
       settingLabel={(name) => textOf(name).label}
@@ -164,7 +164,7 @@ export function ConnectorPanel({ inboxId, target, onReplaced }: ConnectorPanelPr
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   // The form keeps what was typed when the API refuses it.
-  const [failure, setFailure] = useState<TargetFailure | null>(null);
+  const [failure, setFailure] = useState<DestinationFailure | null>(null);
   const [saving, startSaving] = useTransition();
 
   function save(event: FormEvent<HTMLFormElement>) {
@@ -209,7 +209,7 @@ export function ConnectorPanel({ inboxId, target, onReplaced }: ConnectorPanelPr
         <>
           <SavedSettings target={target} />
           <div className="flex flex-wrap items-center gap-2">
-            <TargetTest inboxId={inboxId} targetId={target.id} />
+            <DestinationTest inboxId={inboxId} targetId={target.id} />
             <Button
               size="sm"
               onClick={() => {

@@ -26,54 +26,58 @@ import { listDomains } from "~/lib/organization-domains-client";
 import { getDailyUsage } from "~/lib/organization-quotas-client";
 import { getRetention } from "~/lib/retention-client";
 
-import { InboxSetup } from "./inbox-setup.tsx";
+import { NewOrganization } from "~/features/organization/new-organization";
 import {
   countsAfterMove,
   countsAfterRemoval,
   countsOfForm,
   formsOfFolder,
   totalOf,
-} from "./folder-counts.ts";
-import type { Folder } from "./folder-counts.ts";
-import { InboxSidebar } from "./inbox-sidebar.tsx";
-import type { Page, SettingsSection } from "./inbox-sidebar.tsx";
-import { MessageList } from "./message-list.tsx";
-import { OrganizationsUnavailable } from "./organizations-unavailable.tsx";
-import type { LoadFailure } from "./organizations-unavailable.tsx";
-import { SubmissionReader } from "./submission-reader.tsx";
+} from "~/lib/folder-counts";
+import type { Folder } from "~/lib/folder-counts";
+import { OrganizationSidebar } from "~/features/navigation/organization-sidebar";
+import type { Page, SettingsSection } from "~/features/navigation/organization-sidebar";
+import { MessageList } from "~/features/messages/message-list";
+import { OrganizationsUnavailable } from "~/features/organization/organizations-unavailable";
+import type { LoadFailure } from "~/features/organization/organizations-unavailable";
+import { FormDestinations } from "~/features/destinations/form-destinations";
+import { MessageReader } from "~/features/messages/message-reader";
 
 // The pages of the forms and of the settings are not part of the first paint, so
 // their code loads when one of them opens.
 const FormPage = lazy(async () => {
-  const { FormPage: Loaded } = await import("./form-page.tsx");
+  const { FormPage: Loaded } = await import("~/features/forms/form-page");
   return { default: Loaded };
 });
 const NewFormPage = lazy(async () => {
-  const { NewFormPage: Loaded } = await import("./form-page.tsx");
+  const { NewFormPage: Loaded } = await import("~/features/forms/form-page");
   return { default: Loaded };
 });
 const ApiTokenSettings = lazy(async () => {
-  const { ApiTokenSettings: Settings } = await import("./api-token-settings.tsx");
+  const { ApiTokenSettings: Settings } = await import("~/features/organization/api-token-settings");
   return { default: Settings };
 });
 const OrganizationDomains = lazy(async () => {
-  const { OrganizationDomains: Domains } = await import("./organization-domains.tsx");
+  const { OrganizationDomains: Domains } =
+    await import("~/features/organization/organization-domains");
   return { default: Domains };
 });
 const ClassificationSettings = lazy(async () => {
-  const { ClassificationSettings: Settings } = await import("./classification-settings.tsx");
+  const { ClassificationSettings: Settings } =
+    await import("~/features/organization/classification-settings");
   return { default: Settings };
 });
 const MemberSettings = lazy(async () => {
-  const { MemberSettings: Settings } = await import("./member-settings.tsx");
+  const { MemberSettings: Settings } = await import("~/features/organization/member-settings");
   return { default: Settings };
 });
 const RetentionSettings = lazy(async () => {
-  const { RetentionSettings: Settings } = await import("./retention-settings.tsx");
+  const { RetentionSettings: Settings } =
+    await import("~/features/organization/retention-settings");
   return { default: Settings };
 });
 const QuotaSettings = lazy(async () => {
-  const { QuotaSettings: Settings } = await import("./quota-settings.tsx");
+  const { QuotaSettings: Settings } = await import("~/features/organization/quota-settings");
   return { default: Settings };
 });
 
@@ -424,7 +428,7 @@ function InboxView({
 
   return (
     <SidebarProvider className="lg:h-dvh lg:overflow-hidden">
-      <InboxSidebar
+      <OrganizationSidebar
         inboxes={inboxes}
         inbox={inbox}
         counts={counts}
@@ -480,7 +484,7 @@ function InboxView({
               {current === null ? (
                 <ReaderPlaceholder waiting={counts?.quarantined ?? null} />
               ) : (
-                <SubmissionReader
+                <MessageReader
                   key={current.submissionId}
                   inboxId={inbox.id}
                   entry={current}
@@ -515,6 +519,13 @@ function InboxView({
                 }
                 onChanged={onFormsChanged}
                 onMessages={() => openFolder("all", shownForm.publicId)}
+                destinations={
+                  <FormDestinations
+                    key={`destinations-${shownForm.publicId}`}
+                    inboxId={inbox.id}
+                    form={shownForm}
+                  />
+                }
               />
             )}
             {selection.at === "newForm" && (
@@ -532,7 +543,7 @@ function InboxView({
                   <SidebarTrigger />
                 </header>
                 <div className="mx-auto max-w-xl px-5 pb-8">
-                  <InboxSetup onCreated={onOrganizationCreated} />
+                  <NewOrganization onCreated={onOrganizationCreated} />
                 </div>
               </main>
             )}
@@ -644,7 +655,7 @@ export function InboxPanel({ account, signOut, operations }: InboxPanelProps) {
         </output>
       ) : (
         <>
-          <InboxSetup onCreated={readAgain} />
+          <NewOrganization onCreated={readAgain} />
           {signOut}
         </>
       )}

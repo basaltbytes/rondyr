@@ -8,8 +8,8 @@ import type { Inbox } from "~/lib/inbox-client";
 import { rotateSecret } from "~/lib/targets-client";
 import type { IssuedSecret, Webhook } from "~/lib/targets-client";
 
-import { attempt, TargetFailureNote } from "./target-problems.tsx";
-import { TargetTest } from "./target-test.tsx";
+import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
+import { DestinationTest } from "./destination-test.tsx";
 
 interface IssuedSecretNoteProps {
   readonly issued: IssuedSecret;
@@ -88,14 +88,14 @@ export function WebhookPanel({ inboxId, target, issued, onReplaced, onIssued }: 
       )}
       {issued !== null && <IssuedSecretNote issued={issued} onHide={() => onIssued(null)} />}
       <div className="flex flex-wrap items-center gap-2">
-        <TargetTest inboxId={inboxId} targetId={target.id} />
+        <DestinationTest inboxId={inboxId} targetId={target.id} />
         <form action={rotate} className="contents">
           <Button type="submit" size="sm" disabled={rotating}>
             {t("inbox.webhooks.rotate")}
           </Button>
         </form>
       </div>
-      <TargetFailureNote failure={failure} fallback={t("inbox.destinations.notSaved")} />
+      <DestinationFailureNote failure={failure} fallback={t("inbox.destinations.notSaved")} />
     </>
   );
 }

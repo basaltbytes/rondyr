@@ -38,10 +38,10 @@ import {
 import type { Counts, Inbox } from "~/lib/inbox-client";
 import { cn } from "cn";
 
-import { FormEmoji } from "./form-emoji.tsx";
+import { FormEmoji } from "~/components/form-emoji";
 import { OrganizationSwitcher } from "./organization-switcher.tsx";
-import { totalOf } from "./folder-counts.ts";
-import type { Folder } from "./folder-counts.ts";
+import { totalOf } from "~/lib/folder-counts";
+import type { Folder } from "~/lib/folder-counts";
 
 type Form = Inbox["forms"][number];
 
@@ -79,7 +79,7 @@ const filteringSettings = [
   ["quotas", Gauge],
 ] as const;
 
-interface InboxSidebarProps {
+interface OrganizationSidebarProps {
   readonly inboxes: readonly Inbox[];
   readonly inbox: Inbox;
   readonly counts: Counts | null;
@@ -100,7 +100,7 @@ interface InboxSidebarProps {
  * The settings have a navigation of their own, which takes the place of this
  * one while a page of the settings is open.
  */
-export function InboxSidebar({
+export function OrganizationSidebar({
   inboxes,
   inbox,
   counts,
@@ -111,7 +111,7 @@ export function InboxSidebar({
   onFolder,
   onBack,
   onPage,
-}: InboxSidebarProps) {
+}: OrganizationSidebarProps) {
   const { t } = useTranslation();
   const { collapsed, setOpenMobile } = useSidebar();
 

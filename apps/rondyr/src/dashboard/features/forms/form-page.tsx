@@ -20,8 +20,7 @@ import type { Form, FormChanges } from "~/lib/forms-client";
 import type { Inbox } from "~/lib/inbox-client";
 
 import { AllowedOrigins } from "./allowed-origins.tsx";
-import { FormDestinations } from "./form-destinations.tsx";
-import { EmojiPicker, emojiOf } from "./form-emoji.tsx";
+import { EmojiPicker, emojiOf } from "~/components/form-emoji";
 import { CopyButton, Field, SavingInput } from "./form-field.tsx";
 import { attempt, FormFailureNote } from "./form-problems.tsx";
 import type { FormFailure } from "./form-problems.tsx";
@@ -133,6 +132,8 @@ interface FormPageProps {
   readonly onChanged: () => Promise<void>;
   /** Open the messages of the form. */
   readonly onMessages: () => void;
+  /** Where the accepted messages of the form go, which another feature shows. */
+  readonly destinations: ReactNode;
 }
 
 /**
@@ -140,7 +141,14 @@ interface FormPageProps {
  * at the top, edited in place; its settings as fields; then its destinations
  * and its allowed origins side by side.
  */
-export function FormPage({ inboxId, form, messages, onChanged, onMessages }: FormPageProps) {
+export function FormPage({
+  inboxId,
+  form,
+  messages,
+  onChanged,
+  onMessages,
+  destinations,
+}: FormPageProps) {
   const { t } = useTranslation();
   const ids = useId();
   const [failure, setFailure] = useState<FormFailure | null>(null);
@@ -306,7 +314,7 @@ export function FormPage({ inboxId, form, messages, onChanged, onMessages }: For
         </div>
 
         <div className="mt-12 grid gap-10 lg:grid-cols-2">
-          <FormDestinations key={`destinations-${form.publicId}`} inboxId={inboxId} form={form} />
+          {destinations}
           <AllowedOrigins key={`origins-${form.publicId}`} inboxId={inboxId} form={form} />
         </div>
       </section>

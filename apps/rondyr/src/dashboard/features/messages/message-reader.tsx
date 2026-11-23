@@ -25,7 +25,7 @@ import {
 } from "~/lib/inbox-client";
 import type { Inbox, Submission, SubmissionEntry } from "~/lib/inbox-client";
 
-import { FormEmoji } from "./form-emoji.tsx";
+import { FormEmoji } from "~/components/form-emoji";
 import { DeliveryHistory } from "./delivery-history.tsx";
 import { readMessage } from "./message-preview.ts";
 
@@ -47,7 +47,7 @@ type DecisionProblem =
   | "alreadyHandledRefresh"
   | "classificationQuotaReached";
 
-interface SubmissionReaderProps {
+interface MessageReaderProps {
   readonly inboxId: Inbox["id"];
   /** The message as the list has it. Its preview is shown until the full fields arrive. */
   readonly entry: SubmissionEntry;
@@ -159,7 +159,7 @@ function Deletion({ inboxId, submissionId, onDeleted }: DeletionProps) {
  * one left edge: why the message is here, who wrote, what they wrote, then the
  * other fields.
  */
-export function SubmissionReader({
+export function MessageReader({
   inboxId,
   entry,
   fromForm,
@@ -173,7 +173,7 @@ export function SubmissionReader({
   mayDelete,
   mayRetry,
   onDeleted,
-}: SubmissionReaderProps) {
+}: MessageReaderProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const { submissionId } = entry;

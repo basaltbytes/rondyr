@@ -6,12 +6,12 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { createInbox } from "~/lib/inbox-client";
 
-interface InboxSetupProps {
+interface NewOrganizationProps {
   readonly onCreated: () => void;
 }
 
 /** Creates an organization and its first form. */
-export function InboxSetup({ onCreated }: InboxSetupProps) {
+export function NewOrganization({ onCreated }: NewOrganizationProps) {
   const { t } = useTranslation();
   const [failed, action, pending] = useActionState(async (_: boolean, form: FormData) => {
     try {

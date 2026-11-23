@@ -1,6 +1,6 @@
 import { assert, it } from "@effect/vitest";
 
-import type { Inbox } from "~/lib/inbox-client";
+import type { Inbox } from "./inbox-client.ts";
 
 import {
   countsAfterMove,

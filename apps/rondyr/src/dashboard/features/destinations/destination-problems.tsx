@@ -11,24 +11,24 @@ import type { TargetProblem } from "~/lib/targets-client";
 const isFailed = Schema.is(TargetRequestFailed);
 
 /** Why a request to the targets API failed: the problem that the API names, or no stated reason. */
-export type TargetFailure = TargetProblem | "unexplained";
+export type DestinationFailure = TargetProblem | "unexplained";
 
 /** Run a request to the targets API and return why it failed, or null. */
-export async function attempt(request: () => Promise<void>): Promise<TargetFailure | null> {
+export async function attempt(request: () => Promise<void>): Promise<DestinationFailure | null> {
   try {
     await request();
     return null;
   } catch (error) {
     if (!isFailed(error)) return "unexplained";
     return Option.match(error.problem, {
-      onNone: (): TargetFailure => "unexplained",
-      onSome: (problem): TargetFailure => problem,
+      onNone: (): DestinationFailure => "unexplained",
+      onSome: (problem): DestinationFailure => problem,
     });
   }
 }
 
-interface TargetFailureNoteProps {
-  readonly failure: TargetFailure | null;
+interface DestinationFailureNoteProps {
+  readonly failure: DestinationFailure | null;
   /** The message for a failure that the API does not explain. */
   readonly fallback: string;
   /** The label of a setting of a connector, for a refusal that names one. */
@@ -36,7 +36,11 @@ interface TargetFailureNoteProps {
 }
 
 /** The message of a failed request to the targets API, next to the fields it is about. */
-export function TargetFailureNote({ failure, fallback, settingLabel }: TargetFailureNoteProps) {
+export function DestinationFailureNote({
+  failure,
+  fallback,
+  settingLabel,
+}: DestinationFailureNoteProps) {
   const { t } = useTranslation();
 
   function explain(problem: TargetProblem) {

@@ -1,4 +1,4 @@
-import type { Counts, Inbox, Status, StatusCounts } from "~/lib/inbox-client";
+import type { Counts, Inbox, Status, StatusCounts } from "./inbox-client.ts";
 
 /** A folder of the sidebar: the messages of one status, or all of them. */
 export type Folder = "quarantined" | "accepted" | "archived" | "all";

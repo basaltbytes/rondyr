@@ -15,9 +15,9 @@ import {
 } from "~/lib/targets-client";
 import type { EmailDestination } from "~/lib/targets-client";
 
-import { attempt, TargetFailureNote } from "./target-problems.tsx";
-import type { TargetFailure } from "./target-problems.tsx";
-import { TargetTest } from "./target-test.tsx";
+import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
+import type { DestinationFailure } from "./destination-problems.tsx";
+import { DestinationTest } from "./destination-test.tsx";
 
 const isFailed = Schema.is(TargetRequestFailed);
 
@@ -138,7 +138,7 @@ interface EmailPanelProps {
 export function EmailPanel({ inboxId, target, onReplaced }: EmailPanelProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
-  const [failure, save, saving] = useActionState((_: TargetFailure | null, data: FormData) => {
+  const [failure, save, saving] = useActionState((_: DestinationFailure | null, data: FormData) => {
     const recipients = addressesIn(data);
     const language = languageIn(data);
     return attempt(async () => {
@@ -169,7 +169,7 @@ export function EmailPanel({ inboxId, target, onReplaced }: EmailPanelProps) {
             spellCheck={false}
           />
           <LanguageField initial={target.language} />
-          <TargetFailureNote failure={failure} fallback={t("inbox.destinations.notSaved")} />
+          <DestinationFailureNote failure={failure} fallback={t("inbox.destinations.notSaved")} />
           <div className="flex flex-wrap gap-2">
             <Button type="submit" size="sm" variant="default" disabled={saving}>
               {t("common.save")}
@@ -181,7 +181,7 @@ export function EmailPanel({ inboxId, target, onReplaced }: EmailPanelProps) {
         </form>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <TargetTest inboxId={inboxId} targetId={target.id} />
+          <DestinationTest inboxId={inboxId} targetId={target.id} />
           <Button size="sm" onClick={() => setEditing(true)}>
             {t("inbox.emails.editRecipients")}
           </Button>

@@ -30,8 +30,8 @@ import {
   SettingFields,
 } from "./connector-destination.tsx";
 import { addressesIn, EmailPanel, LanguageField, languageIn } from "./email-destination.tsx";
-import { attempt, TargetFailureNote } from "./target-problems.tsx";
-import type { TargetFailure } from "./target-problems.tsx";
+import { attempt, DestinationFailureNote } from "./destination-problems.tsx";
+import type { DestinationFailure } from "./destination-problems.tsx";
 import { WebhookPanel } from "./webhook-destination.tsx";
 
 type Form = Inbox["forms"][number];
@@ -69,7 +69,7 @@ function DestinationRow({
 }: DestinationRowProps) {
   const { t } = useTranslation();
   const panel = useId();
-  const [failure, setFailure] = useState<TargetFailure | null>(null);
+  const [failure, setFailure] = useState<DestinationFailure | null>(null);
   const [switching, startSwitching] = useTransition();
   const name = nameOf(target);
   const Icon = target.type === "webhook" ? WebhookIcon : target.type === "email" ? Mail : Plug;
@@ -146,7 +146,7 @@ function DestinationRow({
           onCheckedChange={setActive}
         />
       </div>
-      <TargetFailureNote failure={failure} fallback={t("inbox.destinations.notSaved")} />
+      <DestinationFailureNote failure={failure} fallback={t("inbox.destinations.notSaved")} />
       {open && (
         <div id={panel} className="grid grid-cols-1 gap-3 px-4 pt-1 pb-4">
           {settings}
@@ -170,7 +170,7 @@ function NewDestination({ inboxId, form, onAdded, onIssued }: NewDestinationProp
   const [kind, setKind] = useState<Target["type"]>("webhook");
   // The form keeps what was typed when the API refuses it, and empties once saved.
   const [added, setAdded] = useState(0);
-  const [failure, setFailure] = useState<TargetFailure | null>(null);
+  const [failure, setFailure] = useState<DestinationFailure | null>(null);
   const [saving, startSaving] = useTransition();
 
   function add(event: FormEvent<HTMLFormElement>) {
@@ -260,10 +260,10 @@ function NewDestination({ inboxId, form, onAdded, onIssued }: NewDestinationProp
         </>
       )}
       {kind === "webhook" && (
-        <TargetFailureNote failure={failure} fallback={t("inbox.webhooks.notAdded")} />
+        <DestinationFailureNote failure={failure} fallback={t("inbox.webhooks.notAdded")} />
       )}
       {kind === "email" && (
-        <TargetFailureNote failure={failure} fallback={t("inbox.emails.notAdded")} />
+        <DestinationFailureNote failure={failure} fallback={t("inbox.emails.notAdded")} />
       )}
       {kind !== "webhook" && kind !== "email" && (
         <DraftProblem kind={kind} failure={failure} fallback={t("inbox.connectors.notAdded")} />

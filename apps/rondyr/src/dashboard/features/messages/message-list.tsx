@@ -18,8 +18,8 @@ import { SidebarTrigger } from "~/components/ui/sidebar";
 import { useFormats } from "~/lib/i18n";
 import type { Inbox, SubmissionEntry } from "~/lib/inbox-client";
 
-import type { Folder, FolderForm } from "./folder-counts.ts";
-import { emojiOf, FormEmoji } from "./form-emoji.tsx";
+import type { Folder, FolderForm } from "~/lib/folder-counts";
+import { emojiOf, FormEmoji } from "~/components/form-emoji";
 import { excerptOf, listDay, senderOf, subjectOf } from "./message-preview.ts";
 
 type Form = Inbox["forms"][number];
