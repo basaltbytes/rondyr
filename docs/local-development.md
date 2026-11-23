@@ -39,7 +39,7 @@ The queue consumer picks the message up a few seconds later. Locally there is no
 
 ## Checks
 
-The repository is a pnpm workspace. `apps/rondyr/` is the Worker and its dashboard, `packages/emdash-plugin/` the EmDash plugin, and `tooling/` the lint rules and the shared TypeScript settings. Dependency versions are in the catalog of `pnpm-workspace.yaml`. Run the commands from the root; they run in each package.
+The repository is a pnpm workspace. `apps/rondyr/` is the Worker and its dashboard, `packages/emdash-plugin/` the EmDash plugin, and `tooling/` the lint rules and the shared TypeScript settings. In `apps/rondyr/src/`, `domain/` has the rules that the Worker and the dashboard share, `worker/` the code that runs in workerd, and `dashboard/` the React app; a new file of `dashboard/routes/` is a new address, and `pnpm dev` adds it to `dashboard/route-tree.gen.ts`. Dependency versions are in the catalog of `pnpm-workspace.yaml`. Run the commands from the root; they run in each package.
 
 ```sh
 pnpm check         # lint, format, types, tests in workerd and Node, Knip, migrations, for every package

@@ -36,6 +36,14 @@ Use the search bar above the message list to search across field values (3 to 10
 
 Combine search with any folder and click a form name under a folder to narrow the list to one form.
 
+## Share a link to a message
+
+Every screen of the dashboard has its own address, so the browser's Back and Forward buttons move between the screens you opened and a reload keeps your place. The address of a list has its folder, its form and its search, such as `/o/<organization ID>/messages?folder=accepted&form=<form ID>&q=cups`, and the address of an open message adds its ID: `/o/<organization ID>/messages/<message ID>`. Copy the address of an open message to send it to another member of the organization; it opens the message even when the list beside it no longer has it.
+
+A link opened by someone who isn't signed in shows the sign-in form first, then the message. A link to an organization that the account isn't a member of shows **Page not found**, the same page as a mistyped address. A reviewer who opens the address of a form or of a settings page arrives on the messages instead, since those pages are for admins.
+
+The search is part of the address, so it is sent to your Rondyr instance with the page request when you reload, as the search request already is; the dashboard sends no `Referer` header to other sites.
+
 ## Check deliveries and retry failures
 
 Open any message in **Accepted** to see its **Deliveries** section below the message text. Each destination shows its current status (**Pending**, **Sending**, **Delivered**, **Retry scheduled**, or **Failed**), the next scheduled retry time if it's waiting, and an expandable list of attempts with timestamps and error summaries.

@@ -18,8 +18,8 @@ Multiple EmDash forms (such as `contact-en` and `contact-fr`) can share one Rond
 ## 1. Set up Rondyr
 
 1. In your Rondyr dashboard, open or create an organization for the site, and create a form (or one shared form for language variants). For a declared form that uses Turnstile, save the widget’s site and secret keys in the Rondyr dashboard, on the form's page, under **Turnstile**. In forms plugin mode, configure Turnstile in EmDash.
-2. In **Settings → API tokens**, create a token for your site and copy it once; this becomes `RONDYR_API_TOKEN`. Keep in mind that removing the admin who created a token revokes it, so create a replacement token before removing that admin.
-3. On the page of each Rondyr form, under **Destinations**, add one webhook pointing to `https://<your-emdash-site>/_emdash/api/plugins/rondyr/webhook`, and copy its signing secret; this becomes `RONDYR_WEBHOOK_SECRET`.
+2. In **Settings → API tokens** (`/o/<organization ID>/settings/api-tokens` in the dashboard), create a token for your site and copy it once; this becomes `RONDYR_API_TOKEN`. Keep in mind that removing the admin who created a token revokes it, so create a replacement token before removing that admin.
+3. On the page of each Rondyr form (`/o/<organization ID>/forms/<form ID>`), under **Destinations**, add one webhook pointing to `https://<your-emdash-site>/_emdash/api/plugins/rondyr/webhook`, and copy its signing secret; this becomes `RONDYR_WEBHOOK_SECRET`.
 
 ## 2. Install and configure the plugin in EmDash
 

@@ -57,7 +57,7 @@ Form builder, CRM, attachments, visual automations, template engine, SaaS billin
 | Dashboard authentication | Better Auth, sessions in D1 |
 | Asynchronous processing | Cloudflare Queues and a Cron every minute |
 | Classifier | Jev (`typesafe/jev`, Workers AI binding) or OpenAI Decisions (`openai/decisions`, through AI Gateway), chosen per stage |
-| Dashboard | React 19 and Vite, served as Worker assets |
+| Dashboard | React 19, Vite, TanStack Router and TanStack Query, served as Worker assets |
 | Quality | Oxlint with a local plugin, Oxfmt, `effect-tsgo`, Knip, Vitest in workerd |
 
 The project's files and folders are in kebab-case, except names imposed by tools. Domain files have a suffix per type: `.aggregate.ts`, `.command.ts`, `.event.ts`, `.policy.ts`, `.saga.ts`, `.projection.ts`, `.query.ts`, `.external.ts`, `.api.ts`. SQL columns are in `snake_case`.
@@ -700,11 +700,18 @@ What remains after a deletion:
 │   │   │       ├── recipient-confirmations.ts # confirmation emails of new recipients
 │   │   │       └── retention-purge.ts      # hourly purge of expired messages (Cron)
 │   │   └── dashboard/                  # runs in the browser; imports domain/ through @rondyr/*
-│   │       ├── routes/                 # dashboard, invitation, recipient-confirmation, reset-password
-│   │       ├── features/               # authentication, inbox, operations, recipients
-│   │       ├── components/             # text-field, and ui/: shadcn/ui (Base UI) components
+│   │       ├── main.tsx                # the cache, the router and the answer to a 401
+│   │       ├── routes/                 # one file per address; _signed-in/ checks the session,
+│   │       │                           # o/$organizationId/route.tsx is the sidebar layout,
+│   │       │                           # -layout/ has what several routes share
+│   │       ├── route-tree.gen.ts       # written by the Vite plugin of TanStack Router
+│   │       ├── features/               # messages, forms, destinations, organization,
+│   │       │                           # navigation, operations, authentication, recipients
+│   │       ├── components/             # ui/: shadcn/ui (Base UI) components, and what several
+│   │       │                           # features show: form emoji, failed read, unknown address
 │   │       ├── hooks/                  # use-mobile
-│   │       ├── lib/                    # HTTP clients
+│   │       ├── lib/                    # api/: the HTTP clients, their queries and mutations;
+│   │       │                           # folder counts, search params, i18n, formats, theme
 │   │       ├── locales/                # en and fr: every text of the dashboard
 │   │       └── dashboard.css           # Tailwind theme
 │   ├── evals/                      # classifier evaluation harness, synthetic corpus
@@ -724,7 +731,9 @@ What remains after a deletion:
 └── pnpm-workspace.yaml             # packages and the catalog of dependency versions
 ```
 
-Tests are next to the code they cover: `apps/rondyr/src/domain/**/*.test.ts` and `apps/rondyr/src/worker/**/*.test.ts` run in workerd, `apps/rondyr/src/dashboard/**/*.test.ts` in Node. The dashboard imports the domain schemas through the aliases `@rondyr/contracts` (submissions), `@rondyr/deliveries` (destinations) and `@rondyr/forms` (allowed origins and forms), which gives it the same contracts as the API. There is no `application/` layer: the use cases are the commands, the policy and the saga of the model.
+Tests are next to the code they cover: `apps/rondyr/src/domain/**/*.test.ts` and `apps/rondyr/src/worker/**/*.test.ts` run in workerd, `apps/rondyr/src/dashboard/**/*.test.ts` in Node. Oxlint refuses an import of `worker/` or `dashboard/` from `domain/`, of `dashboard/` from `worker/`, and of `worker/` from `dashboard/`, which reaches the domain through its aliases only.
+
+Every screen of the dashboard has an address. TanStack Router reads it from the files of `src/dashboard/routes`: `/o/:organizationId/messages` and `/o/:organizationId/messages/:submissionId` with the folder, the form and the searched text as search params, the page of a form, one address per page of the settings, the **Status** page, and `/sign-in`. The pages of a link sent by email (`/invitation`, `/confirm-recipient`, `/reset-password`) keep their secret in the fragment. A layout route checks the Better Auth session before its children load; a page of an organization that the account is not a member of shows the page of an unknown address, and a reviewer who opens a page of forms or of settings arrives on the messages. TanStack Query holds every read: the loader of a route starts the reads of its page, and the page shows a failed read with a button that reads again. The counts of an organization are read once and moved in the cache by a decision or a deletion, since the API reads every message to count them. `wrangler.json` serves the page for every path outside `/health`, `/f` and `/api`, so a new address needs no route of the Worker. The dashboard imports the domain schemas through the aliases `@rondyr/contracts` (submissions), `@rondyr/deliveries` (destinations) and `@rondyr/forms` (allowed origins and forms), which gives it the same contracts as the API. There is no `application/` layer: the use cases are the commands, the policy and the saga of the model.
 
 ## 10. Tests and quality criteria
 
@@ -736,7 +745,7 @@ A recipient Worker, declared in the same place, records each request and answers
 
 ### Current coverage
 
-- `pnpm test:e2e` exercises the dashboard in Chromium, in a dedicated CI job. The suite covers the session cycle, creating an organization, managing forms and origins, HTML posts with confirmation or redirect, the CORS refusal of a JSON post and the review of a message with a filled honeypot field. It also covers creating destinations, tests and the retry of a failed webhook, and filtering a folder by form. The last tests check that the **Status** page counts a new message after a refresh, lists a stuck submission without its content and retries it until it is accepted, and that a message quarantined after a classifier error goes back to the filter with **Reclassify** and is accepted, or stays in quarantine with an explanation when the daily classification quota is used up. Playwright checks the CSP of `apps/rondyr/public/_headers` on the built dashboard and watches the browser console.
+- `pnpm test:e2e` exercises the dashboard in Chromium, in a dedicated CI job. The suite covers the session cycle, creating an organization, managing forms and origins, HTML posts with confirmation or redirect, the CORS refusal of a JSON post and the review of a message with a filled honeypot field. It also covers creating destinations, tests and the retry of a failed webhook, and filtering a folder by form. The last tests check that the **Status** page counts a new message after a refresh, lists a stuck submission without its content and retries it until it is accepted, and that a message quarantined after a classifier error goes back to the filter with **Reclassify** and is accepted, or stays in quarantine with an explanation when the daily classification quota is used up. Other tests check the addresses: a reload keeps the folder, the form, the searched text and the open message, Back and Forward move between the screens visited, the address of a message opened signed out leads to it after the sign-in, a return address of another origin is ignored, a reviewer who opens a page of the settings arrives on the messages, and an unknown address or the organization of another account shows the page of an unknown address. They also check a blocked read with its **Retry**, the counts that a decision moves without counting again, and the sign-in form that a `401` opens. Playwright checks the CSP of `apps/rondyr/public/_headers` on the built dashboard and watches the browser console.
 - Model stories: thresholds, order of the spam, solicitation and relevance rules, quarantine of a solicitation with its scores then acceptance by a reviewer, duplicate `RequestClassification`, three classifier failures, review allowed and refused; intake quarantine without a classifier call, duplicate `QuarantineAtIntake` with the same `commandId` or another one, `RequestClassification` ignored after it, intake quarantine ignored during a classification, acceptance and archiving of a message quarantined at intake.
 - Escalation: stories for escalation turned off, for the second model that accepts, confirms the doubt or fails, for the first model's solicitation and relevance rules that still apply, for the classification quota reached and for a failed reservation. Through the built Worker, with two test Workers whose second classifier differs from the first or is identical to it: no escalation without a second classifier or with the same one, one more slot on the day's counter for an escalation, no second call at the quota, a single second call for two escalations that target the last slot; concurrent reservations and day change through the adapter. Second classifier returned by the settings route, switch disabled and choice kept in Playwright.
 - Decoding of Jev and OpenAI Decisions answers, including invalid answers.
