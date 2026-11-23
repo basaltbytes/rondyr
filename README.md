@@ -5,7 +5,7 @@
   </picture>
 </h1>
 
-<p align="center">A self-hosted form backend for your website that filters spam and runs in your own Cloudflare account.</p>
+<p align="center">A self-hosted form backend for your website that filters spam with classifier models, all running in your own Cloudflare account.</p>
 
 <p align="center">
   <img alt="Status: pre-alpha" src="https://img.shields.io/badge/status-pre--alpha-red">
