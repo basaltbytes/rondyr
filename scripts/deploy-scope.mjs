@@ -23,7 +23,7 @@ export const workerPackage = "rondyr";
  */
 const workerFiles = [
   /^apps\/rondyr\//u,
-  /^docs\/brand\/rondyr(?:-mark)?\.svg$/u,
+  /^docs\/brand\/rondyr(?:-mark|-favicon)?\.svg$/u,
   /^wrangler\.json$/u,
   /^pnpm-lock\.yaml$/u,
   /^pnpm-workspace\.yaml$/u,
