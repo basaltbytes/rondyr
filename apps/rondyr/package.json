@@ -30,6 +30,8 @@
   "dependencies": {
     "@alchemy.run/domain": "catalog:",
     "@base-ui/react": "catalog:",
+    "@tanstack/react-query": "catalog:",
+    "@tanstack/react-router": "catalog:",
     "better-auth": "catalog:",
     "class-variance-authority": "catalog:",
     "cn": "catalog:",
@@ -53,6 +55,7 @@
     "@rolldown/plugin-babel": "catalog:",
     "@rondyr/tsconfig": "workspace:*",
     "@tailwindcss/vite": "catalog:",
+    "@tanstack/router-plugin": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

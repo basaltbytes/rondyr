@@ -15,7 +15,7 @@ export const webImportDirectionRule = defineRule({
     const check = (node: ESTree.Node) => {
       if (node.type !== "Literal" || typeof node.value !== "string") return;
       const filename = context.filename;
-      const marker = `${sep}dashboard${sep}src${sep}`;
+      const marker = `${sep}src${sep}dashboard${sep}`;
       const start = filename.lastIndexOf(marker);
       if (start < 0) return;
       const root = filename.slice(0, start + marker.length);

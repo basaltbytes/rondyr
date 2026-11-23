@@ -34,7 +34,7 @@ export const ntfy = defineConnector({
 Then:
 
 1. List it in `catalog.ts`, in `ConnectorType` and in `catalog`. The type check fails while one of the two is missing.
-2. Add its texts to both locale files of the dashboard, under `inbox.connectors.types.<type>`: `about`, and a `label` and a `hint` per setting. `pnpm test` fails while a setting has no text in one language.
+2. Add its texts to both locale files of the dashboard, `apps/rondyr/src/dashboard/locales/en/translation.json` and `…/fr/translation.json`, under `inbox.connectors.types.<type>`: `about`, and a `label` and a `hint` per setting. `pnpm test` fails while a setting has no text in one language (`apps/rondyr/src/dashboard/lib/connector-texts.test.ts`).
 3. Test `request` as the other connectors do (`discord.test.ts`): it is a pure function, so a test needs no network and no double.
 4. Document the service in [docs/connectors.md](./connectors.md), for the person who sets it up.
 

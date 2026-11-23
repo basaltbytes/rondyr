@@ -1,7 +1,7 @@
 {
   "$schema": "./apps/rondyr/node_modules/wrangler/config-schema.json",
   "name": "rondyr",
-  "main": "./apps/rondyr/src/worker.ts",
+  "main": "./apps/rondyr/src/worker/worker.ts",
   "compatibility_date": "2026-11-02",
   "compatibility_flags": ["nodejs_compat", "new_module_registry"],
   "workers_dev": true,

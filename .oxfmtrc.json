@@ -14,6 +14,7 @@
     ".scratchpad/**",
     "apps/rondyr/database/migrations/**",
     "pnpm-lock.yaml",
-    "**/worker-configuration.d.ts"
+    "**/worker-configuration.d.ts",
+    "apps/rondyr/src/dashboard/route-tree.gen.ts"
   ]
 }

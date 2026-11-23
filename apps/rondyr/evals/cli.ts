@@ -175,7 +175,7 @@ function explain(failure: Effect.Error<typeof program>) {
       );
     case "UnsupportedGatewayOptions":
       return Option.some(
-        `src/adapters/ai/gateway.ts sets options that the REST transport cannot send: ${failure.options.join(", ")}.`,
+        `src/worker/adapters/ai/gateway.ts sets options that the REST transport cannot send: ${failure.options.join(", ")}.`,
       );
     default:
       return Option.none();
