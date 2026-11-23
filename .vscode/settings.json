@@ -1,5 +1,6 @@
 {
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "oxc.oxc-vscode",
-  "typescript.useTsgo": true
+  "typescript.useTsgo": true,
+  "i18n-ally.localesPaths": ["apps/rondyr/dashboard/src/locales"]
 }
