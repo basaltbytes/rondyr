@@ -76,8 +76,10 @@ function FormList({ section, forms, shown, adding, collapsed, onPick }: FormList
                     aria-current={active ? "true" : undefined}
                     onClick={() => onPick(form.publicId)}
                     className={cn(
-                      "grid w-full grid-cols-1 gap-1 px-4 py-3 text-start transition-colors duration-150 ease-out",
-                      active ? "bg-accent" : "hover:bg-muted",
+                      "grid w-full grid-cols-1 gap-1 border-l-3 px-4 py-3 text-start transition-colors duration-150 ease-out",
+                      active
+                        ? "border-l-primary bg-primary/10"
+                        : "border-l-transparent hover:bg-muted",
                     )}
                   >
                     <span className="line-clamp-2 text-sm font-medium wrap-anywhere">

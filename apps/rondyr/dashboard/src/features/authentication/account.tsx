@@ -61,7 +61,10 @@ export function AccountMenu({ email }: AccountProps) {
   return (
     <SidebarMenu>
       {failed && (
-        <li role="alert" className="px-2.5 text-xs text-pretty text-destructive">
+        <li
+          role="alert"
+          className="rounded-md bg-destructive px-2.5 py-1 text-xs text-pretty text-destructive-foreground"
+        >
           {t("authentication.signOut.failed")}
         </li>
       )}
@@ -79,7 +82,7 @@ export function AccountMenu({ email }: AccountProps) {
           >
             <span
               aria-hidden="true"
-              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-card text-xs font-semibold text-foreground uppercase shadow-raised"
+              className="flex size-8 shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground uppercase"
             >
               {email.slice(0, 1)}
             </span>

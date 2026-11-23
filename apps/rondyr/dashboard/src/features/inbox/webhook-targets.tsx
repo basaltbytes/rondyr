@@ -152,7 +152,7 @@ export function WebhookTargets({ inboxId, form }: WebhookTargetsProps) {
                   components={{ code: <code className="font-mono wrap-anywhere" /> }}
                 />
               </p>
-              <code className="rounded-md bg-card px-3 py-2 font-mono text-sm wrap-anywhere">
+              <code className="rounded-md bg-card px-4 py-2.5 font-mono text-sm wrap-anywhere">
                 {issued.secret}
               </code>
               <div className="flex flex-wrap gap-2">

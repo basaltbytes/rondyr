@@ -68,8 +68,8 @@ export function OrganizationSwitcher({
           >
             <OrganizationMark name={inbox.name} />
             <SidebarMenuLabel>
-              <span className="block truncate text-foreground">{inbox.name}</span>
-              <span className="block truncate text-xs font-normal text-muted-foreground tabular-nums">
+              <span className="block truncate text-sidebar-foreground">{inbox.name}</span>
+              <span className="block truncate text-xs font-normal text-sidebar-foreground/70 tabular-nums">
                 {t("inbox.organizations.forms", { count: inbox.forms.length })}
               </span>
             </SidebarMenuLabel>

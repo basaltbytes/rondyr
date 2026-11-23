@@ -108,7 +108,7 @@ export function Sidebar({ label, children }: SidebarProps) {
   if (isMobile) {
     return (
       <Sheet open={openMobile} onOpenChange={setOpenMobile}>
-        <SheetContent data-slot="sidebar" data-mobile="true">
+        <SheetContent surface="sidebar" data-slot="sidebar" data-mobile="true">
           <SheetTitle className="sr-only">{label}</SheetTitle>
           {children}
         </SheetContent>
@@ -122,7 +122,7 @@ export function Sidebar({ label, children }: SidebarProps) {
       data-state={collapsed ? "collapsed" : "expanded"}
       aria-label={label}
       className={cn(
-        "flex h-dvh shrink-0 flex-col bg-background hairline-r text-foreground",
+        "flex h-dvh shrink-0 flex-col bg-sidebar hairline-r border-sidebar-border text-sidebar-foreground",
         collapsed ? "w-14" : "w-60",
       )}
     >
@@ -213,7 +213,7 @@ export function SidebarGroupLabel({ className, children, ...props }: ComponentPr
     <p
       data-slot="sidebar-group-label"
       className={cn(
-        "flex h-8 items-center px-2 text-xs font-medium tracking-wider text-muted-foreground uppercase",
+        "flex h-8 items-center px-2.5 text-xs font-medium tracking-wider text-sidebar-foreground/60 uppercase",
         className,
       )}
       {...props}
@@ -274,15 +274,16 @@ export function SidebarMenuButton({
       data-slot="sidebar-menu-button"
       aria-current={active === true ? "page" : undefined}
       className={cn(
-        "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none disabled:pointer-events-none disabled:opacity-50",
+        "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none focus-visible:outline-sidebar-ring disabled:pointer-events-none disabled:opacity-50",
         nested === true ? "font-normal" : "font-medium",
         size === "lg" ? "h-12" : "h-10 pointer-coarse:h-11",
-        collapsed ? "justify-center px-0" : "px-2.5",
+        collapsed ? "justify-center px-0" : "px-3",
         hasAction === true && !collapsed && "pr-8 pointer-coarse:pr-11",
         active === true
-          ? "bg-card text-foreground shadow-raised"
-          : "hover:bg-accent hover:text-foreground data-popup-open:bg-accent data-popup-open:text-foreground",
-        active !== true && (activeWithin === true ? "text-foreground" : "text-muted-foreground"),
+          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs"
+          : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground",
+        active !== true &&
+          (activeWithin === true ? "text-sidebar-foreground" : "text-sidebar-foreground/75"),
         className,
       )}
       {...props}
@@ -310,7 +311,7 @@ export function SidebarMenuAction({ className, type, ...props }: ComponentProps<
       type={type ?? "button"}
       data-slot="sidebar-menu-action"
       className={cn(
-        "absolute top-0 right-0 flex size-10 items-center justify-end rounded-md pr-2 text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground pointer-coarse:size-11 pointer-coarse:justify-center pointer-coarse:pr-0",
+        "absolute top-0 right-0 flex size-10 items-center justify-end rounded-md pr-2 text-sidebar-foreground/70 transition-colors duration-150 ease-out hover:text-sidebar-foreground focus-visible:outline-sidebar-ring pointer-coarse:size-11 pointer-coarse:justify-center pointer-coarse:pr-0",
         className,
       )}
       {...props}
@@ -323,7 +324,10 @@ export function SidebarMenuSub({ className, ...props }: ComponentProps<"ul">) {
   return (
     <ul
       data-slot="sidebar-menu-sub"
-      className={cn("mt-0.5 ml-4.5 flex min-w-0 flex-col gap-0.5 hairline-l pl-2", className)}
+      className={cn(
+        "mt-0.5 ml-4.5 flex min-w-0 flex-col gap-0.5 hairline-l border-sidebar-border pl-2",
+        className,
+      )}
       {...props}
     />
   );

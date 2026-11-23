@@ -1,12 +1,15 @@
 import { cn } from "cn";
 import type { ComponentProps } from "react";
 
-/** A raised group of related settings. Depth comes from the shadow token, not a border. */
+/** A raised group of related settings. */
 export function Card({ className, ...props }: ComponentProps<"section">) {
   return (
     <section
       data-slot="card"
-      className={cn("flex flex-col gap-4 rounded-xl bg-card py-5 shadow-raised", className)}
+      className={cn(
+        "flex flex-col gap-4 rounded-xl border bg-card py-6 text-card-foreground shadow-sm",
+        className,
+      )}
       {...props}
     />
   );
@@ -17,7 +20,7 @@ export function CardHeader({ className, ...props }: ComponentProps<"div">) {
     <div
       data-slot="card-header"
       className={cn(
-        "grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-5 has-data-[slot=card-action]:grid-cols-[1fr_auto]",
+        "grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto]",
         className,
       )}
       {...props}
@@ -58,5 +61,5 @@ export function CardAction({ className, ...props }: ComponentProps<"div">) {
 }
 
 export function CardContent({ className, ...props }: ComponentProps<"div">) {
-  return <div data-slot="card-content" className={cn("grid gap-4 px-5", className)} {...props} />;
+  return <div data-slot="card-content" className={cn("grid gap-4 px-6", className)} {...props} />;
 }

@@ -31,7 +31,7 @@ export function DropdownMenuContent({
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           className={cn(
-            "max-h-(--available-height) w-(--anchor-width) min-w-72 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-sm text-foreground shadow-popover outline-hidden transition duration-150 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-100 data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:data-ending-style:scale-100 motion-reduce:data-starting-style:scale-100",
+            "max-h-(--available-height) w-(--anchor-width) min-w-72 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border bg-popover p-2 text-sm text-popover-foreground shadow-popover outline-hidden transition duration-150 ease-out data-ending-style:scale-95 data-ending-style:opacity-0 data-ending-style:duration-100 data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:data-ending-style:scale-100 motion-reduce:data-starting-style:scale-100",
             className,
           )}
           {...props}
@@ -61,7 +61,7 @@ export function DropdownMenuItem({ className, ...props }: MenuPrimitive.Item.Pro
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
       className={cn(
-        "flex min-h-10 cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-foreground/8 pointer-coarse:min-h-11",
+        "flex min-h-10 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-muted data-highlighted:text-foreground pointer-coarse:min-h-11",
         className,
       )}
       {...props}
@@ -73,7 +73,7 @@ export function DropdownMenuSeparator({ className, ...props }: MenuPrimitive.Sep
   return (
     <MenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn("-mx-1 my-1 h-px bg-border", className)}
+      className={cn("-mx-2 my-1 h-px bg-border", className)}
       {...props}
     />
   );
@@ -93,7 +93,7 @@ export function DropdownMenuRadioItem({
     <MenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       className={cn(
-        "flex min-h-10 cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-foreground/8 pointer-coarse:min-h-11",
+        "flex min-h-10 cursor-default items-center gap-2 rounded-md px-3 py-1.5 text-sm outline-hidden select-none data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-muted data-highlighted:text-foreground pointer-coarse:min-h-11",
         className,
       )}
       {...props}

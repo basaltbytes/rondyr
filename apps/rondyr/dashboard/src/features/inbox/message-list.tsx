@@ -33,8 +33,8 @@ function MessageRow({ submission, active, showStatus, now, onOpen }: MessageRowP
       aria-current={active ? "true" : undefined}
       onClick={onOpen}
       className={cn(
-        "grid w-full grid-cols-1 gap-1 px-4 py-3 text-start transition-colors duration-150 ease-out",
-        active ? "bg-accent" : "hover:bg-muted",
+        "grid w-full grid-cols-1 gap-1 border-l-3 px-4 py-3 text-start transition-colors duration-150 ease-out",
+        active ? "border-l-primary bg-primary/10" : "border-l-transparent hover:bg-muted",
       )}
     >
       <span className="flex items-baseline justify-between gap-3">
@@ -220,7 +220,7 @@ export function MessageList({
               onClick={onAllForms}
             >
               <span className="truncate">{formName}</span>
-              <X aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+              <X aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />
             </Button>
             <span className="flex-1" />
           </>

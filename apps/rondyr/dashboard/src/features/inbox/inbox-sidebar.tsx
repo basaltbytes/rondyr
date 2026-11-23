@@ -173,7 +173,14 @@ export function InboxSidebar({
                     <SidebarMenuLabel>{label}</SidebarMenuLabel>
                     {total !== null && (
                       <SidebarMenuBadge>
-                        <span className={cn(key === "quarantined" && total > 0 && "text-warning")}>
+                        <span
+                          className={cn(
+                            key === "quarantined" &&
+                              total > 0 &&
+                              !(open && !onFormRow) &&
+                              "rounded-full bg-sidebar-primary px-1.5 py-0.5 text-sidebar-primary-foreground",
+                          )}
+                        >
                           {total}
                         </span>
                       </SidebarMenuBadge>
@@ -211,7 +218,7 @@ export function InboxSidebar({
                               <>
                                 <CirclePause
                                   aria-hidden="true"
-                                  className="size-3.5 shrink-0 text-muted-foreground"
+                                  className="size-3.5 shrink-0 opacity-70"
                                 />
                                 <span className="sr-only">
                                   {t("inbox.forms.statuses.suspended")}
@@ -221,7 +228,10 @@ export function InboxSidebar({
                             <SidebarMenuBadge>
                               <span
                                 className={cn(
-                                  key === "quarantined" && inForm > 0 && "text-warning",
+                                  key === "quarantined" &&
+                                    inForm > 0 &&
+                                    !(open && form === part.publicId) &&
+                                    "rounded-full bg-sidebar-primary px-1.5 py-0.5 text-sidebar-primary-foreground",
                                 )}
                               >
                                 {inForm}

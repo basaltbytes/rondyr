@@ -152,7 +152,7 @@ export function FormSettings({ inboxId, form, onChanged }: FormSettingsProps) {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap items-center gap-3">
-            <code className="min-w-0 flex-1 basis-64 rounded-md bg-muted px-3 py-2 font-mono text-sm wrap-anywhere">
+            <code className="min-w-0 flex-1 basis-64 rounded-md bg-muted px-4 py-2.5 font-mono text-sm wrap-anywhere">
               {publicUrl}
             </code>
             <Button

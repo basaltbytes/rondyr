@@ -35,9 +35,9 @@ function IssuedToken({ token, onHide }: { token: Redacted.Redacted<string>; onHi
   }
 
   return (
-    <section className="grid gap-2 rounded-md border p-3">
+    <section className="grid gap-2 rounded-md border p-4">
       <output className="text-sm">{t("inbox.apiTokens.issued")}</output>
-      <code className="rounded-md bg-muted px-3 py-2 text-sm wrap-anywhere">
+      <code className="rounded-md bg-muted px-4 py-2.5 text-sm wrap-anywhere">
         {Redacted.value(token)}
       </code>
       <div className="flex flex-wrap gap-2">

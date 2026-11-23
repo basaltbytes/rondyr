@@ -90,7 +90,7 @@ function WidgetSnippet({ siteKey }: { readonly siteKey: string }) {
   return (
     <div className="grid justify-items-start gap-2">
       <p className="text-sm text-muted-foreground">{t("inbox.forms.turnstile.embed")}</p>
-      <pre className="w-full min-w-0 overflow-x-auto rounded-md bg-muted p-3 text-xs">
+      <pre className="w-full min-w-0 overflow-x-auto rounded-md bg-muted px-4 py-3 text-xs">
         <code>{snippet}</code>
       </pre>
       <div className="flex flex-wrap items-center gap-2">

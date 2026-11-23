@@ -8,16 +8,18 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default:
+          "border border-border bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
         // A filled secondary button: it stays visible on a card and on the page.
-        outline: "bg-muted text-foreground shadow-raised hover:bg-accent",
-        ghost: "text-muted-foreground hover:bg-accent hover:text-foreground",
+        outline:
+          "border border-border bg-muted text-foreground shadow-xs hover:bg-accent hover:text-accent-foreground",
+        ghost: "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
       },
       size: {
         // 40px with a mouse, 44px under a finger.
-        default: "h-10 px-3.5 pointer-coarse:h-11",
+        default: "h-10 px-4 pointer-coarse:h-11",
         // Looks 32px; the pseudo-element keeps the target at 40px.
-        sm: "relative h-8 px-2.5 before:absolute before:inset-x-0 before:-inset-y-1 pointer-coarse:h-11",
+        sm: "relative h-8 px-3 before:absolute before:inset-x-0 before:-inset-y-1 pointer-coarse:h-11",
         icon: "size-10 pointer-coarse:size-11",
       },
     },

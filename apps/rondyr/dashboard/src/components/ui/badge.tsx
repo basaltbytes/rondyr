@@ -4,13 +4,13 @@ import type { VariantProps } from "class-variance-authority";
 import type { ComponentProps } from "react";
 
 const badgeVariants = cva(
-  "inline-flex h-5.5 shrink-0 items-center gap-1.5 rounded-full px-2 text-xs font-medium whitespace-nowrap",
+  "inline-flex h-5.5 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium whitespace-nowrap",
   {
     variants: {
       variant: {
-        neutral: "bg-muted text-muted-foreground",
-        warning: "bg-warning-subtle text-warning",
-        success: "bg-success-subtle text-success",
+        neutral: "border-border bg-muted text-muted-foreground",
+        warning: "border-warning/30 bg-warning-subtle text-warning",
+        success: "border-success/30 bg-success-subtle text-success",
       },
     },
     defaultVariants: { variant: "neutral" },

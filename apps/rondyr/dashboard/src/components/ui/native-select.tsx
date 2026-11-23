@@ -10,7 +10,7 @@ export function NativeSelect({ className, ...props }: ComponentProps<"select">) 
     <select
       data-slot="native-select"
       className={cn(
-        "h-10 w-full min-w-0 rounded-md border border-input bg-card px-3 py-1 text-base transition-colors duration-150 ease-out disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive pointer-fine:text-sm pointer-coarse:h-11",
+        "h-10 w-full min-w-0 rounded-md border border-border bg-input px-4 py-1 text-base transition-colors duration-150 ease-out disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive pointer-fine:text-sm pointer-coarse:h-11",
         className,
       )}
       {...props}
