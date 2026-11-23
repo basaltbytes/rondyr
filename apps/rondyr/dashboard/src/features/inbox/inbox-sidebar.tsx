@@ -31,6 +31,7 @@ import {
   SidebarMenu,
   SidebarMenuBadge,
   SidebarMenuButton,
+  SidebarMenuIcon,
   SidebarMenuItem,
   SidebarMenuLabel,
   useSidebar,
@@ -129,7 +130,9 @@ export function InboxSidebar({
             tooltip={t(`inbox.sections.${key}`)}
             onClick={() => open({ at: "settings", section: key })}
           >
-            <Icon aria-hidden="true" className="size-4 shrink-0" />
+            <SidebarMenuIcon>
+              <Icon aria-hidden="true" className="size-4" />
+            </SidebarMenuIcon>
             <SidebarMenuLabel>{t(`inbox.sections.${key}`)}</SidebarMenuLabel>
           </SidebarMenuButton>
         </SidebarMenuItem>
@@ -148,7 +151,9 @@ export function InboxSidebar({
                   setOpenMobile(false);
                 }}
               >
-                <ChevronLeft aria-hidden="true" className="size-4 shrink-0" />
+                <SidebarMenuIcon>
+                  <ChevronLeft aria-hidden="true" className="size-4" />
+                </SidebarMenuIcon>
                 <SidebarMenuLabel>
                   <span className="block truncate text-sidebar-foreground">
                     {t("inbox.navigation.settings")}
@@ -184,7 +189,9 @@ export function InboxSidebar({
                     tooltip={t("operations.title")}
                     onClick={() => open({ at: "settings", section: "operations" })}
                   >
-                    <Activity aria-hidden="true" className="size-4 shrink-0" />
+                    <SidebarMenuIcon>
+                      <Activity aria-hidden="true" className="size-4" />
+                    </SidebarMenuIcon>
                     <SidebarMenuLabel>{t("operations.title")}</SidebarMenuLabel>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -208,7 +215,7 @@ export function InboxSidebar({
   return (
     <Sidebar label={t("inbox.navigation.label")}>
       <SidebarHeader>
-        <div className={cn("flex", collapsed ? "justify-center" : "px-1")}>
+        <div className={cn("flex", collapsed ? "justify-center" : "pl-1.5")}>
           <ProductLogo compact={collapsed} />
         </div>
         <OrganizationSwitcher
@@ -238,7 +245,9 @@ export function InboxSidebar({
                       setOpenMobile(false);
                     }}
                   >
-                    <Icon aria-hidden="true" className="size-4 shrink-0" />
+                    <SidebarMenuIcon>
+                      <Icon aria-hidden="true" className="size-4" />
+                    </SidebarMenuIcon>
                     <SidebarMenuLabel>{label}</SidebarMenuLabel>
                     {total !== null && (
                       <SidebarMenuBadge>
@@ -247,7 +256,7 @@ export function InboxSidebar({
                             key === "quarantined" &&
                               total > 0 &&
                               !active &&
-                              "rounded-full bg-sidebar-primary px-1.5 py-0.5 text-sidebar-primary-foreground",
+                              "flex h-5 min-w-5 items-center justify-center rounded-full bg-sidebar-primary px-1.5 text-sidebar-primary-foreground",
                           )}
                         >
                           {total}
@@ -271,7 +280,7 @@ export function InboxSidebar({
                   type="button"
                   aria-label={t("inbox.forms.newTitle")}
                   aria-current={page?.at === "newForm" ? "page" : undefined}
-                  className="relative flex size-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/70 transition-colors duration-150 ease-out before:absolute before:-inset-1 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-sidebar-ring aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-foreground pointer-coarse:size-11 pointer-coarse:before:hidden"
+                  className="relative flex size-8 shrink-0 items-center justify-center mr-1.5 rounded-md text-sidebar-foreground/70 transition-colors duration-150 ease-out before:absolute before:-inset-1 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-sidebar-ring aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-foreground pointer-coarse:mr-0 pointer-coarse:size-11 pointer-coarse:before:hidden"
                   onClick={() => open({ at: "newForm" })}
                 >
                   <Plus aria-hidden="true" className="size-4" />
@@ -286,13 +295,15 @@ export function InboxSidebar({
                     tooltip={form.name}
                     onClick={() => open({ at: "form", publicId: form.publicId })}
                   >
-                    <FormEmoji form={form} />
+                    <SidebarMenuIcon>
+                      <FormEmoji form={form} />
+                    </SidebarMenuIcon>
                     <SidebarMenuLabel>{form.name}</SidebarMenuLabel>
-                    {form.status === "suspended" && !collapsed && (
-                      <>
-                        <CirclePause aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />
+                    {form.status === "suspended" && (
+                      <SidebarMenuBadge>
+                        <CirclePause aria-hidden="true" className="size-3.5 opacity-70" />
                         <span className="sr-only">{t("inbox.forms.statuses.suspended")}</span>
-                      </>
+                      </SidebarMenuBadge>
                     )}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -310,7 +321,9 @@ export function InboxSidebar({
                   tooltip={t("inbox.navigation.settings")}
                   onClick={() => open({ at: "settings", section: firstSettings })}
                 >
-                  <Settings aria-hidden="true" className="size-4 shrink-0" />
+                  <SidebarMenuIcon>
+                    <Settings aria-hidden="true" className="size-4" />
+                  </SidebarMenuIcon>
                   <SidebarMenuLabel>{t("inbox.navigation.settings")}</SidebarMenuLabel>
                 </SidebarMenuButton>
               </SidebarMenuItem>
