@@ -153,7 +153,7 @@ const list = Effect.fn("NotificationTargets.list")(function* (form: FormScope) {
       db
         .prepare(`
       SELECT f.id FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
-      WHERE m.user_id = ?1 AND f.organization_id = ?2 AND f.public_id = ?3
+      WHERE m.user_id = ?1 AND f.organization_id = ?2 AND f.public_id = ?3 AND m.role = 'admin'
     `)
         .bind(form.userId, form.organizationId, form.formPublicId),
       db
@@ -161,7 +161,7 @@ const list = Effect.fn("NotificationTargets.list")(function* (form: FormScope) {
       SELECT ${targetColumns} FROM notification_targets t
         JOIN forms f ON f.id = t.form_id AND f.organization_id = t.organization_id
         JOIN organization_members m ON m.organization_id = t.organization_id
-      WHERE m.user_id = ?1 AND t.organization_id = ?2 AND f.public_id = ?3 AND ${listedTypes}
+      WHERE m.user_id = ?1 AND t.organization_id = ?2 AND f.public_id = ?3 AND m.role = 'admin' AND ${listedTypes}
       ORDER BY t.created_at, t.id
     `)
         .bind(form.userId, form.organizationId, form.formPublicId),
@@ -196,7 +196,7 @@ const createWebhook = Effect.fn("NotificationTargets.createWebhook")(function* (
     INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, active, created_at)
     SELECT ?1, f.organization_id, f.id, 'webhook', ?2, 1, ?3
     FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
-    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6
+    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6 AND m.role = 'admin'
     RETURNING ${returnedColumns}
   `)
       .bind(id, configuration, now, form.userId, form.organizationId, form.formPublicId)
@@ -210,7 +210,8 @@ const createWebhook = Effect.fn("NotificationTargets.createWebhook")(function* (
 const scopedTarget = `
   t.id = ?1 AND t.organization_id = ?2
   AND EXISTS (
-    SELECT 1 FROM organization_members m WHERE m.organization_id = t.organization_id AND m.user_id = ?3
+    SELECT 1 FROM organization_members m
+    WHERE m.organization_id = t.organization_id AND m.user_id = ?3 AND m.role = 'admin'
   )
 `;
 
@@ -273,7 +274,7 @@ const createEmail = Effect.fn("NotificationTargets.createEmail")(function* (
     INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, active, created_at)
     SELECT ?1, f.organization_id, f.id, 'email', ?2, 1, ?3
     FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
-    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6
+    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6 AND m.role = 'admin'
     RETURNING ${returnedColumns}
   `)
         .bind(id, configuration, now, form.userId, form.organizationId, form.formPublicId),
@@ -355,7 +356,7 @@ const createConnector = Effect.fn("NotificationTargets.createConnector")(functio
     INSERT INTO notification_targets (id, organization_id, form_id, type, configuration, active, created_at)
     SELECT ?1, f.organization_id, f.id, ?7, ?2, 1, ?3
     FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
-    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6
+    WHERE m.user_id = ?4 AND f.organization_id = ?5 AND f.public_id = ?6 AND m.role = 'admin'
     RETURNING ${returnedColumns}
   `)
       .bind(

@@ -49,6 +49,7 @@ export function OrganizationSwitcher({ organizations, organization }: Organizati
   const { t } = useTranslation();
   const navigate = useNavigate();
   const router = useRouter();
+  const canCreate = organizations.some(({ role }) => role === "admin");
   const preloadOrganization = (organizationId: string) => {
     if (organizationId === organization.id) return;
     void router
@@ -56,6 +57,7 @@ export function OrganizationSwitcher({ organizations, organization }: Organizati
       .catch(() => undefined);
   };
   const preloadNewOrganization = () => {
+    if (!canCreate) return;
     void router.preloadRoute({ to: "/organizations/new" }).catch(() => undefined);
   };
   return (
@@ -104,22 +106,26 @@ export function OrganizationSwitcher({ organizations, organization }: Organizati
                 ))}
               </DropdownMenuRadioGroup>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onMouseEnter={preloadNewOrganization}
-              onFocus={preloadNewOrganization}
-              onClick={() =>
-                void navigate({
-                  to: "/organizations/new",
-                  state: { organizationId: organization.id },
-                })
-              }
-            >
-              <span className="flex size-(--sidebar-rail) shrink-0 items-center justify-center rounded-md bg-muted">
-                <Plus aria-hidden="true" className="size-4" />
-              </span>
-              {t("inbox.sections.organization")}
-            </DropdownMenuItem>
+            {canCreate && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onMouseEnter={preloadNewOrganization}
+                  onFocus={preloadNewOrganization}
+                  onClick={() =>
+                    void navigate({
+                      to: "/organizations/new",
+                      state: { organizationId: organization.id },
+                    })
+                  }
+                >
+                  <span className="flex size-(--sidebar-rail) shrink-0 items-center justify-center rounded-md bg-muted">
+                    <Plus aria-hidden="true" className="size-4" />
+                  </span>
+                  {t("inbox.sections.organization")}
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

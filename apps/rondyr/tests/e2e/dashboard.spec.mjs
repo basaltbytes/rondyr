@@ -1504,6 +1504,19 @@ test.describe("addresses", () => {
     await expect(reviewer.getByRole("heading", { name: t("inbox.sections.members") })).toHaveCount(
       0,
     );
+    await reviewer
+      .getByRole("button", { name: t("inbox.organizations.switcher", { name: organizationName }) })
+      .click();
+    await expect(
+      reviewer.getByRole("menuitem", { name: t("inbox.sections.organization") }),
+    ).toHaveCount(0);
+    await reviewer.goto(`${dashboardOrigin}/organizations/new`);
+    await expect(reviewer).toHaveURL(
+      new RegExp(
+        `^${RegExp.escape(`${dashboardOrigin}/o/${organizationId}/messages`)}(?:\\?|$)`,
+        "u",
+      ),
+    );
     await context.close();
   });
 
@@ -1525,6 +1538,9 @@ test.describe("addresses", () => {
     await createOrganization(page);
     await openSettings(page, t("inbox.sections.members"));
     await page.getByRole("textbox", { name: t("inbox.members.email") }).fill("other@example.test");
+    await page
+      .getByRole("combobox", { name: t("inbox.members.role"), exact: true })
+      .selectOption("admin");
     await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
     const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
     // The other account joins, then creates an organization that the owner is not part of.

@@ -1,7 +1,11 @@
 import { Context, Effect, Option, Schema } from "effect";
 
 import type { IntakeReason } from "../../domain/submissions/classification.ts";
-import type { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
+import type {
+  OrganizationId,
+  SubmissionId,
+  UserId,
+} from "../../domain/submissions/submission.id.ts";
 import type { StorageUnavailable } from "./storage.ts";
 
 /** Times of one publication attempt, in milliseconds since the epoch. */
@@ -31,8 +35,9 @@ export interface DueEvents {
   readonly stuck: ReadonlyArray<SubmissionId>;
 }
 
-/** A submission of an organization, as a member asks for it. */
+/** A submission of an organization, as an admin asks for it. */
 export interface StuckScope {
+  readonly userId: typeof UserId.Type;
   readonly organizationId: OrganizationId;
   readonly submissionId: SubmissionId;
 }

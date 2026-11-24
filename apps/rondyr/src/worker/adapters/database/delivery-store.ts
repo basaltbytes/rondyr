@@ -297,12 +297,12 @@ const finish = Effect.fn("DeliveryStore.finish")(function* (
   );
 });
 
-// The delivery belongs to the submission, in an organization of the account.
+// The delivery belongs to the submission, in an organization where the account is an admin.
 const scopedDelivery = `
   d.id = ?1 AND d.submission_id = ?2
   AND EXISTS (
     SELECT 1 FROM submissions s JOIN organization_members m ON m.organization_id = s.organization_id
-    WHERE s.id = d.submission_id AND s.organization_id = ?3 AND m.user_id = ?4
+    WHERE s.id = d.submission_id AND s.organization_id = ?3 AND m.user_id = ?4 AND m.role = 'admin'
   )
 `;
 

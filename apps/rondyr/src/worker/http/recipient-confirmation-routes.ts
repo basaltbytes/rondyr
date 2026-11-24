@@ -10,10 +10,20 @@ import {
   ConfirmationRequestError,
   ConfirmRecipient,
 } from "../../domain/deliveries/recipient-confirmation.ts";
+import { Authentication } from "../ports/authentication.ts";
 import { RecipientConfirmations } from "../ports/recipient-confirmations.ts";
+import { enforceClientRateLimit, rateLimitedResponse } from "./client-rate-limit.ts";
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const errorJson = HttpServerResponse.schemaJson(ConfirmationRequestError);
+
+/** Refuse a request from another site: Authentication checks its origin. */
+const sameOrigin = Effect.gen(function* () {
+  const auth = yield* Authentication;
+  const incoming = yield* HttpServerRequest.HttpServerRequest;
+  const request = yield* HttpServerRequest.toWeb(incoming);
+  yield* auth.userId(request);
+});
 
 /**
  * Confirm a recipient with the secret of its link, from the public page of
@@ -21,6 +31,8 @@ const errorJson = HttpServerResponse.schemaJson(ConfirmationRequestError);
  * organization nor the form.
  */
 const confirm = Effect.gen(function* () {
+  yield* enforceClientRateLimit("recipient-confirmation");
+  yield* sameOrigin;
   const { token } = yield* HttpServerRequest.schemaBodyJson(ConfirmRecipient);
   const confirmations = yield* RecipientConfirmations;
   yield* confirmations.confirm(token);
@@ -28,6 +40,9 @@ const confirm = Effect.gen(function* () {
 }).pipe(
   Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(4)),
   Effect.catchTags({
+    AuthOriginRefused: () =>
+      Effect.succeed(HttpServerResponse.empty({ status: 403, ...jsonOptions })),
+    ClientRateLimited: () => rateLimitedResponse,
     ConfirmationNotFound: () =>
       errorJson({ error: "confirmation-invalid" }, { status: 404, ...jsonOptions }),
     SchemaError: () => Effect.succeed(HttpServerResponse.empty({ status: 400, ...jsonOptions })),

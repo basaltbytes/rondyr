@@ -167,6 +167,7 @@ export class RondyrClient {
       return await this.#fetch(new URL(path, this.#origin).href, {
         ...init,
         headers,
+        redirect: "manual",
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
@@ -181,7 +182,10 @@ export class RondyrClient {
     timeoutMs = attemptTimeoutMs,
   ): Promise<T> {
     const response = await this.#request(path, { method }, timeoutMs);
-    if (!response.ok) throw new RondyrError(failureOf(response.status));
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new RondyrError(failureOf(response.status));
+    }
     const parsed = schema.safeParse(await response.json().catch(() => null));
     if (!parsed.success) throw new RondyrError("unexpected");
     return parsed.data;
@@ -215,6 +219,7 @@ export class RondyrClient {
           method: "POST",
           headers,
           body: submissionBody(fields, turnstile?.token),
+          redirect: "manual",
           signal: AbortSignal.timeout(attemptTimeoutMs),
         },
       );

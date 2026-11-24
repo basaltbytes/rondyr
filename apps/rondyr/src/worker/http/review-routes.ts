@@ -98,6 +98,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => errorResponse(401),
         AuthOriginRefused: () => errorResponse(403),
+        OrganizationCreationDenied: () => errorResponse(403),
         PermissionDenied: () => errorResponse(403),
         SubmissionNotFound: () => errorResponse(404),
         SubmissionNotReviewable: () => errorResponse(409),
@@ -128,7 +129,7 @@ const organizationList = Effect.gen(function* () {
   );
 });
 
-/** Any signed-in account can create an organization, and becomes its admin. */
+/** The first organization, or another organization created by an admin of an existing one. */
 const create = Effect.gen(function* () {
   const userId = yield* signedInAccount();
   const input = yield* HttpServerRequest.schemaBodyJson(SetupInbox);

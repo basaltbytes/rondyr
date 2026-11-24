@@ -144,11 +144,19 @@ const markHandedOff = Effect.fn("Outbox.markHandedOff")(function* (
 });
 
 const retryStuck = Effect.fn("Outbox.retryStuck")(function* ({
+  userId,
   organizationId,
   submissionId,
 }: StuckScope) {
   const db = yield* database;
-  const inOrganization = `submission_id = ? AND submission_id IN (SELECT id FROM submissions WHERE organization_id = ?)`;
+  const inOrganization = `
+    submission_id = ?1
+    AND submission_id IN (SELECT id FROM submissions WHERE organization_id = ?2)
+    AND EXISTS (
+      SELECT 1 FROM organization_members
+      WHERE user_id = ?3 AND organization_id = ?2 AND role = 'admin'
+    )
+  `;
   // The event becomes due at once, as if intake had just stored it.
   const [retried, state] = yield* d1(() =>
     db.batch([
@@ -159,13 +167,13 @@ const retryStuck = Effect.fn("Outbox.retryStuck")(function* ({
     WHERE ${inOrganization} AND stuck_at IS NOT NULL AND handed_off_at IS NULL
     RETURNING submission_id
   `)
-        .bind(submissionId, organizationId),
+        .bind(submissionId, organizationId, userId),
       db
         .prepare(`
     SELECT stuck_at IS NOT NULL AND handed_off_at IS NULL AS stuck FROM outbox_events
     WHERE ${inOrganization}
   `)
-        .bind(submissionId, organizationId),
+        .bind(submissionId, organizationId, userId),
     ]),
   );
   if ((retried?.results.length ?? 0) > 0) return;

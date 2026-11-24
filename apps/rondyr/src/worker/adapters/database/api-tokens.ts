@@ -30,7 +30,8 @@ const hashToken = Effect.fnUntraced(function* (token: Redacted.Redacted<string>)
 
 const unreadable = () => StorageUnavailable.make();
 const columns = "id, name, token_suffix AS suffix, created_at AS createdAt";
-const membership = "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2";
+const membership =
+  "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2 AND role = 'admin'";
 const readToken = Schema.decodeUnknownEffect(ApiTokenSummary);
 const readTokens = Schema.decodeUnknownEffect(ApiTokenList);
 const readPrincipal = Schema.decodeUnknownEffect(ApiTokenPrincipal);

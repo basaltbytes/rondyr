@@ -14,6 +14,7 @@ import {
 } from "./core/declared-forms.ts";
 import { SubmittedData } from "./core/fields.ts";
 import { submissionBody } from "./core/rondyr-client.ts";
+import { checkDeclaredRateLimit, type RateLimitHost } from "./declared-rate-limit.ts";
 import type { EnqueueInput } from "./enqueue.ts";
 
 export const DeclaredPost = z.object({
@@ -42,6 +43,7 @@ type DeclaredAnswer = z.infer<typeof DeclaredAnswer>;
 const accepted = { success: true, message: "Submitted successfully." } satisfies DeclaredAnswer;
 const invalid = (code: string, message: string, errors?: z.infer<typeof FieldError>[]) =>
   ({ success: false, code, message, errors }) satisfies DeclaredAnswer;
+const rateLimited = invalid("RATE_LIMITED", "Too many submissions. Please try again later.");
 
 interface PreparedSubmission {
   readonly answer: DeclaredAnswer;
@@ -114,7 +116,17 @@ export async function receiveDeclaredPost(
   post: z.infer<typeof DeclaredPost>,
   visitorIp: string | null,
   queue: (entry: EnqueueInput) => Promise<void>,
+  rateLimit?: { readonly host: RateLimitHost; readonly now?: number },
 ): Promise<DeclaredAnswer> {
+  if (form !== undefined && rateLimit !== undefined) {
+    const allowed = await checkDeclaredRateLimit(
+      rateLimit.host,
+      form.slug,
+      visitorIp,
+      rateLimit.now,
+    );
+    if (!allowed) return rateLimited;
+  }
   const { answer, entry } = prepareDeclaredSubmission(form, post, visitorIp);
   if (entry !== undefined) await queue(entry).catch(() => queue(entry));
   return answer;

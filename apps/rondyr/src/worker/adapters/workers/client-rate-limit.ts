@@ -49,17 +49,15 @@ export function rateLimitedClient(address: string) {
  * Cloudflare location and approximate, as Cloudflare documents.
  */
 export const clientRateLimitLive = Layer.succeed(ClientRateLimit, {
-  admit: Effect.fn("ClientRateLimit.admit")(function* (publicId: string, clientAddress: string) {
+  admit: Effect.fn("ClientRateLimit.admit")(function* (scope: string, clientAddress: string) {
     const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
-    const key = `${publicId}:${rateLimitedClient(clientAddress)}`;
+    const key = `${scope}:${rateLimitedClient(clientAddress)}`;
     return yield* Effect.tryPromise({
       try: () => env.CLIENT_RATE_LIMIT.limit({ key }),
       catch: () => RateLimitUnavailable.make(),
     }).pipe(
       Effect.map(({ success }) => success),
-      Effect.tapError(() =>
-        Effect.logWarning("Client rate limit unavailable; submission admitted"),
-      ),
+      Effect.tapError(() => Effect.logWarning("Client rate limit unavailable; request admitted")),
       Effect.orElseSucceed(() => true),
     );
   }),

@@ -141,8 +141,8 @@ it.live(
       const form = forms[0];
       if (form === undefined) return assert.fail("Expected the contact form");
       const reviewer = yield* addMember(id, admin, "reviewer@example.test", "reviewer");
-      const outsider = yield* seedAccount("outsider", "outsider@example.test");
-      yield* createInbox("Outsider organization", outsider);
+      const other = yield* createInbox("Outsider organization", admin);
+      const outsider = yield* addMember(other.id, admin, "outsider@example.test", "admin");
       const routes = administrationRoutes(id, form.publicId);
 
       const asReviewer = yield* statusesOf(routes, reviewer);
@@ -727,5 +727,95 @@ it.live("lists the active API tokens of each member, which its removal revokes",
         ["token-owner@example.test", 2],
       ],
     );
+  }),
+);
+
+it.live(
+  "revokes sessions when removing a member from their last organization, and keeps sessions when another remains",
+  () =>
+    Effect.gen(function* () {
+      const admin = yield* signIn;
+      const first = yield* createInbox("Last org first", admin);
+      const second = yield* createInbox("Last org second", admin);
+      const solo = yield* addMember(first.id, admin, "solo-member@example.test", "reviewer");
+      const multi = yield* addMember(first.id, admin, "multi-member@example.test", "reviewer");
+      const secondInvite = yield* invite(second.id, admin, "multi-member@example.test", "reviewer");
+      const joinedSecond = yield* call(
+        "POST",
+        "/api/invitations/accept",
+        { token: secondInvite.token },
+        multi,
+      );
+      assert.strictEqual(joinedSecond.status, 200);
+
+      const listed = yield* call(
+        "GET",
+        `/api/organizations/${first.id}/members`,
+        undefined,
+        admin,
+      ).pipe(Effect.flatMap(json), Effect.flatMap(readMembers));
+      const userIdOf = (email: string) =>
+        listed.members.find((member) => member.email === email)?.userId ?? assert.fail(email);
+
+      const removedSolo = yield* call(
+        "DELETE",
+        `/api/organizations/${first.id}/members/${userIdOf("solo-member@example.test")}`,
+        undefined,
+        admin,
+      );
+      const removedMulti = yield* call(
+        "DELETE",
+        `/api/organizations/${first.id}/members/${userIdOf("multi-member@example.test")}`,
+        undefined,
+        admin,
+      );
+      assert.deepEqual([removedSolo.status, removedMulti.status], [204, 204]);
+
+      const soloAfter = yield* call("GET", "/api/organizations", undefined, solo);
+      assert.strictEqual(soloAfter.status, 401);
+
+      const multiAfter = yield* call("GET", "/api/organizations", undefined, multi);
+      assert.strictEqual(multiAfter.status, 200);
+      const multiInboxes = yield* json(multiAfter).pipe(Effect.flatMap(readInboxes));
+      assert.deepEqual(
+        multiInboxes.map(({ id }) => id),
+        [second.id],
+      );
+
+      // Even after signing back in, an account with no admin role cannot create an organization.
+      const soloAgain = yield* signInAs("solo-member@example.test");
+      const createAttempt = yield* call(
+        "POST",
+        "/api/organizations",
+        { organizationName: "Unauthorized org", formName: "Contact", businessContext: "" },
+        soloAgain,
+      );
+      assert.strictEqual(createAttempt.status, 403);
+    }),
+);
+
+it.live("rate-limits invitation read and accept requests per client IP", () =>
+  Effect.gen(function* () {
+    const token = "a".repeat(43);
+    const readResponses = yield* Effect.forEach(Array.from({ length: 11 }), () =>
+      call("POST", "/api/invitations/read", { token }, { "cf-connecting-ip": "198.51.100.21" }),
+    );
+    const readLimited = readResponses.find(({ status }) => status === 429);
+    assert.isDefined(readLimited);
+    assert.strictEqual(readLimited?.headers.get("retry-after"), "60");
+    assert.strictEqual(readLimited?.headers.get("cache-control"), "no-store");
+
+    const acceptResponses = yield* Effect.forEach(Array.from({ length: 11 }), () =>
+      call(
+        "POST",
+        "/api/invitations/accept",
+        { token, name: "Guesser", password },
+        { "cf-connecting-ip": "198.51.100.22" },
+      ),
+    );
+    const acceptLimited = acceptResponses.find(({ status }) => status === 429);
+    assert.isDefined(acceptLimited);
+    assert.strictEqual(acceptLimited?.headers.get("retry-after"), "60");
+    assert.strictEqual(acceptLimited?.headers.get("cache-control"), "no-store");
   }),
 );

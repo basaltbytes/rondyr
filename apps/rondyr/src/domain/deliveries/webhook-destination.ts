@@ -97,40 +97,51 @@ function localHostname(host: string) {
   return localSuffixes.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
 }
 
-function refusal(
-  url: URL,
-  workerHost: Option.Option<string>,
-): DestinationRefusalReason | undefined {
+function refusal(url: URL, workerHosts: ReadonlySet<string>): DestinationRefusalReason | undefined {
   if (url.protocol !== "https:") return "not-https";
   if (url.username !== "" || url.password !== "") return "credentials";
   if (url.port !== "") return "custom-port";
   const host = hostOf(url);
   const v6 = parseIpv6(host);
-  if (v6 !== undefined) return reservedIpv6(v6) ? "reserved-address" : undefined;
+  if (v6 !== undefined) {
+    if (reservedIpv6(v6)) return "reserved-address";
+    return workerHosts.has(host) ? "worker-origin" : undefined;
+  }
+  if (host === "" || host.startsWith(".") || host.endsWith(".") || host.includes("..")) {
+    return "invalid-url";
+  }
   const v4 = parseIpv4(host);
   if (v4 !== undefined) {
-    return reservedIpv4.some((range) => inRange(v4, range)) ? "reserved-address" : undefined;
+    if (reservedIpv4.some((range) => inRange(v4, range))) return "reserved-address";
+    return workerHosts.has(host) ? "worker-origin" : undefined;
   }
   if (localHostname(host)) return "local-hostname";
-  if (Option.contains(workerHost, host)) return "worker-origin";
+  if (workerHosts.has(host)) return "worker-origin";
   return undefined;
+}
+
+function workerHostsOf(workerOrigins: Option.Option<string> | ReadonlyArray<string>) {
+  const origins = Option.isOption(workerOrigins) ? Option.toArray(workerOrigins) : workerOrigins;
+  const hosts = new Set<string>();
+  for (const origin of origins) {
+    if (!URL.canParse(origin)) continue;
+    hosts.add(hostOf(new URL(origin)));
+  }
+  return hosts;
 }
 
 /**
  * Accept an HTTPS URL on the default port, with no credentials, whose host is
  * neither a local name, nor an IP literal in a reserved range, nor the host of
- * `workerOrigin`. A hostname that resolves to a private address is not detected.
+ * any origin in `workerOrigins`. A hostname that resolves to a private address
+ * is not detected.
  */
 export function parseWebhookUrl(
   input: string,
-  workerOrigin: Option.Option<string>,
+  workerOrigins: Option.Option<string> | ReadonlyArray<string>,
 ): Result.Result<WebhookUrl, DestinationRefusalReason> {
   if (input.length > maxUrlLength || !URL.canParse(input)) return Result.fail("invalid-url");
-  const workerHost = workerOrigin.pipe(
-    Option.filter((origin) => URL.canParse(origin)),
-    Option.map((origin) => hostOf(new URL(origin))),
-  );
   const url = new URL(input);
-  const reason = refusal(url, workerHost);
+  const reason = refusal(url, workerHostsOf(workerOrigins));
   return reason === undefined ? Result.succeed(WebhookUrl.make(url.href)) : Result.fail(reason);
 }

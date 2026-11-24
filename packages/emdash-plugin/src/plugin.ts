@@ -140,6 +140,7 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
               async (entry) => {
                 await queueSubmission(ctx, entry);
               },
+              { host: ctx },
             );
           },
         },

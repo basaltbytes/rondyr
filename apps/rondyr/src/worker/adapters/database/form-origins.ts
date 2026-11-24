@@ -20,7 +20,7 @@ const summary = (row: typeof OriginRow.Type) =>
 // ?1 is the account, ?2 the organization and ?3 the public ID of the form.
 const scopedForm = `
   SELECT f.id FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
-  WHERE m.user_id = ?1 AND f.organization_id = ?2 AND f.public_id = ?3
+  WHERE m.user_id = ?1 AND f.organization_id = ?2 AND f.public_id = ?3 AND m.role = 'admin'
 `;
 
 const list = Effect.fn("FormOrigins.list")(function* (form: FormScope) {

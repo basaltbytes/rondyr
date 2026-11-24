@@ -133,7 +133,7 @@ const admitSetupAttempt = Effect.fn("Authentication.admitSetupAttempt")(function
 ) {
   // Cloudflare sets the header on every request; only a local run goes without it.
   const client = request.headers.get("cf-connecting-ip");
-  if (client === null) return true;
+  if (client === null || client === "") return true;
   const env = yield* bindings;
   return yield* Effect.tryPromise({
     try: () => env.CLIENT_RATE_LIMIT.limit({ key: `setup:${rateLimitedClient(client)}` }),

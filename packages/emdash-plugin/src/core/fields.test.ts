@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { autoReplyMessage } from "./auto-reply.ts";
 import {
   flattenFields,
   formatNotification,
   formLayout,
+  isPlainEmail,
   replyToAddress,
   type FormLayout,
 } from "./fields.ts";
@@ -103,12 +105,74 @@ describe("formatNotification", () => {
     expect(subject).toBe("New submission: Classes");
     expect(text).toContain("email: a@b.co");
   });
+
+  it("strips control characters and line separators from the subject and intro line", () => {
+    const dirty = "Contact\r\nBcc: attacker@evil.com\u0000\u007f\u0085\u2028Line\u2029End";
+    const { subject, text } = formatNotification(null, dirty, { name: "Ada" }, "t");
+    expect(subject).toBe("New submission: Contact Bcc: attacker@evil.com Line End");
+    expect(text.split("\n")[0]).toBe(
+      'New submission for "Contact Bcc: attacker@evil.com Line End"',
+    );
+  });
+
+  it("caps long subjects at 150 characters with an ellipsis", () => {
+    const longName = "A".repeat(200);
+    const { subject } = formatNotification(null, longName, { name: "Ada" }, "t");
+    expect(subject.length).toBe(150);
+    expect(subject.endsWith("…")).toBe(true);
+    expect(subject.startsWith("New submission: ")).toBe(true);
+  });
+});
+
+describe("isPlainEmail", () => {
+  it("accepts bare ASCII email addresses", () => {
+    for (const valid of [
+      "ada@example.com",
+      "ada.lovelace+tag@sub.example.co.uk",
+      "a@b.co",
+      "user_1-2!#$%&'*+/=?^`{|}~@example.test",
+      "user@xn--bcher-kva.example",
+    ]) {
+      expect(isPlainEmail(valid)).toBe(true);
+    }
+  });
+
+  it("rejects header injection, display names, quotes, control chars and invalid hostnames", () => {
+    for (const invalid of [
+      "Ada <ada@example.com>",
+      '"ada"@example.com',
+      "ada@example.com\r\nBcc: evil@example.com",
+      "ada\n@example.com",
+      "ada\u0000@example.com",
+      "ada,bob@example.com",
+      "ada;bob@example.com",
+      "(comment)ada@example.com",
+      " ada@example.com",
+      "ada@example.com ",
+      "ada@localhost",
+      "ada@127.0.0.1",
+      ".ada@example.com",
+      "ada.@example.com",
+      "ada..b@example.com",
+      "ada@-example.com",
+      "ada@example-.com",
+      `${"a".repeat(65)}@example.com`,
+      `ada@${"a".repeat(64)}.com`,
+      `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(63)}.com`,
+    ]) {
+      expect(isPlainEmail(invalid)).toBe(false);
+    }
+  });
 });
 
 describe("replyToAddress", () => {
   it("takes the first valid email field, then a field named email", () => {
     expect(replyToAddress(layout, { email: "ada@example.com" })).toBe("ada@example.com");
     expect(replyToAddress(layout, { email: "Ada <ada@example.com>" })).toBeNull();
+    expect(
+      replyToAddress(layout, { email: "ada@example.com\r\nBcc: evil@example.com" }),
+    ).toBeNull();
+    expect(replyToAddress(layout, { email: '"ada"@example.com' })).toBeNull();
     expect(replyToAddress(null, { email: "ada@example.com" })).toBe("ada@example.com");
     expect(replyToAddress(null, {})).toBeNull();
   });
@@ -127,5 +191,25 @@ describe("replyToAddress", () => {
     expect(replyToAddress(quote, { office: "office@example.com" })).toBe("office@example.com");
     // The first filled field decides; a value that isn't a plain address gives no Reply-To.
     expect(replyToAddress(quote, { ...both, contact: "ada@example.com," })).toBeNull();
+  });
+});
+
+describe("autoReplyMessage", () => {
+  const reply = { subject: "Thanks", text: "We got your message." };
+
+  it("accepts a plain ASCII address and rejects header-injection or display-name addresses", () => {
+    expect(autoReplyMessage(reply, layout, { email: "ada@example.com" })).toEqual({
+      to: "ada@example.com",
+      ...reply,
+    });
+    for (const bad of [
+      "Ada <ada@example.com>",
+      '"ada"@example.com',
+      "ada@example.com\r\nBcc: evil@example.com",
+      "ada\u0007@example.com",
+      "ada,bob@example.com",
+    ]) {
+      expect(autoReplyMessage(reply, layout, { email: bad })).toBeNull();
+    }
   });
 });

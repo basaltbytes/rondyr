@@ -213,6 +213,7 @@
       "firstFormPlaceholder": "Contact",
       "submit": "Créer l’organisation",
       "pending": "Création en cours…",
+      "forbidden": "Seul un administrateur d’une organisation existante peut en créer une nouvelle.",
       "failed": "La boîte n’a pas pu être créée. Vérifiez les champs et réessayez."
     },
     "business": {

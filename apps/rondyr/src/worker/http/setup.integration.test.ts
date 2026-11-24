@@ -87,6 +87,28 @@ describe("first-run setup", () => {
     }),
   );
 
+  it.effect("refuses an oversized body on setup", () =>
+    Effect.gen(function* () {
+      const oversized = yield* encodeJson({ ...owner, name: "a".repeat(9_000) });
+      const response = yield* Effect.promise(() =>
+        env.TEST_WORKER.fetch(`${testOrigin}/api/setup`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${testSetupToken}`,
+            "content-type": "application/json",
+            "cf-connecting-ip": "198.51.100.12",
+            origin: testOrigin,
+          },
+          body: oversized,
+        }),
+      );
+      assert.strictEqual(response.status, 413);
+      assert.strictEqual(response.headers.get("cache-control"), "no-store");
+      const state = yield* setupState(env.TEST_WORKER);
+      assert.strictEqual(state, "open");
+    }),
+  );
+
   it.effect("creates the owner with the setup token, then closes", () =>
     Effect.gen(function* () {
       const created = yield* claim(testSetupToken, "198.51.100.8");
@@ -149,6 +171,23 @@ describe("origin without BETTER_AUTH_URL", () => {
       assert.strictEqual(plainHttp.status, 503);
       const customPort = yield* signIn("https://forms.example.test:8443/api/auth/sign-in/email");
       assert.strictEqual(customPort.status, 503);
+    }),
+  );
+
+  it.effect("refuses an oversized body on sign-in and sign-out", () =>
+    Effect.gen(function* () {
+      const oversized = yield* encodeJson({ email: owner.email, password: "p".repeat(9_000) });
+      const signInResponse = yield* derived("https://forms.example.test/api/auth/sign-in/email", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: oversized,
+      });
+      const signOutResponse = yield* derived("https://forms.example.test/api/auth/sign-out", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: oversized,
+      });
+      assert.deepEqual([signInResponse.status, signOutResponse.status], [413, 413]);
     }),
   );
 });

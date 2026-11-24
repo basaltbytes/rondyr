@@ -18,6 +18,7 @@ import { Authentication } from "../ports/authentication.ts";
 import { BackgroundTasks } from "../ports/background-tasks.ts";
 import { EmailSender } from "../ports/email-sender.ts";
 import { PasswordResets, type IssuedPasswordReset } from "../ports/password-resets.ts";
+import { enforceClientRateLimit, rateLimitedResponse } from "./client-rate-limit.ts";
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const errorJson = HttpServerResponse.schemaJson(PasswordResetRequestError);
@@ -31,6 +32,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       if (error === undefined) return empty(503);
       return Effect.catchTags(Effect.fail(error.error), {
         AuthOriginRefused: () => empty(403),
+        ClientRateLimited: () => rateLimitedResponse,
         EmailProviderMissing: () =>
           errorJson({ error: "email-provider-missing" }, { status: 503, ...jsonOptions }),
         PasswordResetNotFound: () =>
@@ -85,6 +87,7 @@ const sendLink = Effect.fnUntraced(function* (
  * time tells who has an account.
  */
 const request = Effect.gen(function* () {
+  yield* enforceClientRateLimit("password-reset-request");
   const origin = yield* sameOrigin;
   const input = yield* HttpServerRequest.schemaBodyJson(RequestPasswordReset, {
     onExcessProperty: "error",
@@ -110,6 +113,7 @@ const request = Effect.gen(function* () {
 
 /** Choose a new password with the secret of a link. The secret travels in the body. */
 const complete = Effect.gen(function* () {
+  yield* enforceClientRateLimit("password-reset-complete");
   yield* sameOrigin;
   const input = yield* HttpServerRequest.schemaBodyJson(CompletePasswordReset, {
     onExcessProperty: "error",

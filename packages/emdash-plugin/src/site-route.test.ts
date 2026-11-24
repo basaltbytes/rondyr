@@ -68,6 +68,35 @@ interface PostedForm {
   >;
 }
 
+function streamOf(size: number) {
+  let remaining = size;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (remaining <= 0) {
+        controller.close();
+        return;
+      }
+      const next = Math.min(remaining, 8192);
+      remaining -= next;
+      controller.enqueue(new Uint8Array(next).fill(0x61));
+    },
+  });
+}
+
+function streamedPost(
+  contentType: string,
+  body: ReadableStream<Uint8Array>,
+  origin = site,
+): Request {
+  const init: RequestInit & { duplex: "half" } = {
+    method: "POST",
+    headers: { origin, "content-type": contentType },
+    body,
+    duplex: "half",
+  };
+  return new Request(`${site}/api/form`, init);
+}
+
 function jsonPost(body: PostedForm, origin: string | null = site) {
   const headers = new Headers({ "content-type": "application/json" });
   if (origin !== null) headers.set("origin", origin);
@@ -298,6 +327,188 @@ describe("the site route", () => {
       files: { cv: { filename: "cv.pdf", contentType: "application/pdf", bytes: btoa("%PDF") } },
     });
     expect(calls[2]?.body["fields"]).toEqual({ name: "Ada", topics: "Pottery, Glazing" });
+  });
+
+  it("encodes multipart attachments larger than one base64 chunk cleanly", async () => {
+    const { locals, calls } = emdash({
+      "emdash-forms/submit": accepted,
+      "emdash-forms/definition": defined,
+      "rondyr/enqueue": queued,
+    });
+    const raw = new Uint8Array(70_000);
+    for (let index = 0; index < raw.length; index += 1) raw[index] = index % 256;
+    const form = new FormData();
+    form.set("formId", "contact");
+    form.set("name", "Ada");
+    form.set("cv", new File([raw], "large.bin", { type: "application/octet-stream" }));
+    const request = new Request(`${site}/api/form`, {
+      method: "POST",
+      headers: { origin: site },
+      body: form,
+    });
+    const response = await submit(request, locals);
+    expect(response.status).toBe(303);
+    const files = z.object({ cv: z.object({ bytes: z.string() }) }).parse(calls[0]?.body["files"]);
+    const decoded = Uint8Array.from(atob(files.cv.bytes), (char) => char.charCodeAt(0));
+    expect(decoded).toEqual(raw);
+  });
+
+  it("rejects oversized requests in forms-plugin mode via Content-Length and chunked streams", async () => {
+    const { locals, calls } = emdash({});
+    const tooLargeHeader = new Request(`${site}/api/form`, {
+      method: "POST",
+      headers: {
+        origin: site,
+        "content-type": "application/json",
+        "content-length": String(10 * 1024 * 1024 + 1),
+      },
+      body: "{}",
+    });
+    const fastReject = await submit(tooLargeHeader, locals);
+    expect(fastReject.status).toBe(413);
+    expect(fastReject.headers.get("cache-control")).toBe("private, no-store");
+    expect(await fastReject.json()).toEqual({
+      success: false,
+      error: { code: "PAYLOAD_TOO_LARGE", message: "Submission is too large." },
+    });
+
+    const chunk = new Uint8Array(1024 * 1024);
+    let sentChunks = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (sentChunks >= 11) {
+          controller.close();
+          return;
+        }
+        sentChunks += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const chunkedJson = streamedPost("application/json", stream);
+    const streamedReject = await submit(chunkedJson, locals);
+    expect(streamedReject.status).toBe(413);
+    expect(streamedReject.headers.get("cache-control")).toBe("private, no-store");
+    expect(await streamedReject.json()).toEqual({
+      success: false,
+      error: { code: "PAYLOAD_TOO_LARGE", message: "Submission is too large." },
+    });
+
+    let formChunks = 0;
+    const formStream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (formChunks >= 11) {
+          controller.close();
+          return;
+        }
+        formChunks += 1;
+        controller.enqueue(chunk);
+      },
+    });
+    const chunkedForm = streamedPost("application/x-www-form-urlencoded", formStream);
+    const formReject = await submit(chunkedForm, locals);
+    expect(formReject.status).toBe(303);
+    expect(formReject.headers.get("location")).toBe("/?status=error");
+    expect(formReject.headers.get("cache-control")).toBe("private, no-store");
+    expect(calls).toEqual([]);
+  });
+
+  it("enforces the 32 KiB body cap in declared mode for Content-Length and chunked streams", async () => {
+    const { locals: baseLocals, calls } = emdash({});
+    const declaredLocals = {
+      emdash: {
+        ...baseLocals.emdash,
+        getPublicPluginRouteMeta: () => ({ public: true }),
+      },
+    };
+    const overLimit = 32 * 1024 + 1;
+
+    const headerRequest = new Request(`${site}/api/form`, {
+      method: "POST",
+      headers: {
+        origin: site,
+        "content-type": "application/json",
+        "content-length": String(overLimit),
+      },
+      body: "{}",
+    });
+    const headerResponse = await handleSubmission(
+      { request: headerRequest, url: new URL(headerRequest.url), locals: declaredLocals },
+      token,
+    );
+    expect(headerResponse.status).toBe(413);
+    expect(headerResponse.headers.get("cache-control")).toBe("private, no-store");
+    expect(await headerResponse.json()).toEqual({
+      success: false,
+      error: { code: "PAYLOAD_TOO_LARGE", message: "Submission is too large." },
+    });
+
+    const chunkedJson = streamedPost("application/json", streamOf(overLimit));
+    const chunkedJsonResponse = await handleSubmission(
+      { request: chunkedJson, url: new URL(chunkedJson.url), locals: declaredLocals },
+      token,
+    );
+    expect(chunkedJsonResponse.status).toBe(413);
+    expect(chunkedJsonResponse.headers.get("cache-control")).toBe("private, no-store");
+    expect(await chunkedJsonResponse.json()).toEqual({
+      success: false,
+      error: { code: "PAYLOAD_TOO_LARGE", message: "Submission is too large." },
+    });
+
+    const chunkedForm = streamedPost("application/x-www-form-urlencoded", streamOf(overLimit));
+    const chunkedFormResponse = await handleSubmission(
+      { request: chunkedForm, url: new URL(chunkedForm.url), locals: declaredLocals },
+      token,
+    );
+    expect(chunkedFormResponse.status).toBe(303);
+    expect(chunkedFormResponse.headers.get("location")).toBe("/?status=error");
+    expect(chunkedFormResponse.headers.get("cache-control")).toBe("private, no-store");
+    expect(calls).toEqual([]);
+  });
+
+  it("maps RATE_LIMITED in declared mode to HTTP 429 with Retry-After for JSON and error redirect for forms", async () => {
+    const { locals: baseLocals } = emdash({
+      "rondyr/declared/submit": () => ({
+        success: true,
+        data: {
+          success: false,
+          code: "RATE_LIMITED",
+          message: "Too many submissions. Please try again later.",
+        },
+      }),
+    });
+    const declaredLocals = {
+      emdash: {
+        ...baseLocals.emdash,
+        getPublicPluginRouteMeta: () => ({ public: true }),
+      },
+    };
+    const jsonRequest = jsonPost({ formId: "contact", data: { name: "Ada" } });
+    const jsonResponse = await handleSubmission(
+      { request: jsonRequest, url: new URL(jsonRequest.url), locals: declaredLocals },
+      token,
+    );
+    expect(jsonResponse.status).toBe(429);
+    expect(jsonResponse.headers.get("retry-after")).toBe("60");
+    expect(jsonResponse.headers.get("cache-control")).toBe("private, no-store");
+    expect(await jsonResponse.json()).toEqual({
+      success: false,
+      error: { code: "RATE_LIMITED", message: "Too many submissions. Please try again later." },
+    });
+
+    const formRequest = new Request(`${site}/api/form`, {
+      method: "POST",
+      headers: { origin: site },
+      body: new URLSearchParams({ formId: "contact", _return: "/contact", _block: "contact" }),
+    });
+    const formResponse = await handleSubmission(
+      { request: formRequest, url: new URL(formRequest.url), locals: declaredLocals },
+      token,
+    );
+    expect(formResponse.status).toBe(303);
+    expect(formResponse.headers.get("location")).toBe(
+      "/contact?form=contact&status=error#contact-status",
+    );
+    expect(formResponse.headers.get("cache-control")).toBe("private, no-store");
   });
 });
 

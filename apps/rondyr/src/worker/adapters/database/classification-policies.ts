@@ -36,7 +36,8 @@ const stageClassifiers = Effect.gen(function* () {
   return { classifier, escalationClassifier: second === classifier ? undefined : second };
 });
 
-const membership = "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2";
+const membership =
+  "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2 AND role = 'admin'";
 const scopedPolicy = `
   SELECT (SELECT policy FROM organization_classification_policies WHERE organization_id = ?2)
     AS policy WHERE EXISTS (${membership})

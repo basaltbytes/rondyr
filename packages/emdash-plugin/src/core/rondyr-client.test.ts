@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { networkFailure, RondyrClient } from "./rondyr-client.ts";
+import { networkFailure, RondyrClient, RondyrError } from "./rondyr-client.ts";
 
 const token = `rdr_${"C".repeat(43)}`;
 
@@ -34,5 +34,42 @@ describe("RondyrClient.submit", () => {
     );
     const result = await client.submit("public-id", { message: "Private text" }, "key");
     expect(result).toEqual({ status: null, reason: "network" });
+  });
+
+  it("passes redirect: manual and returns a 3xx status without following redirects", async () => {
+    const redirects: (RequestRedirect | undefined)[] = [];
+    const client = new RondyrClient(
+      async (_url, init) => {
+        redirects.push(init?.redirect);
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://other.example.com/steal" },
+        });
+      },
+      "https://rondyr.example.com",
+      token,
+    );
+    const result = await client.submit("public-id", { message: "Hello" }, "key");
+    expect(redirects).toEqual(["manual"]);
+    expect(result).toEqual({ status: 302, submissionId: null });
+  });
+});
+
+describe("RondyrClient API calls", () => {
+  it("passes redirect: manual and rejects 3xx responses as unexpected", async () => {
+    const redirects: (RequestRedirect | undefined)[] = [];
+    const client = new RondyrClient(
+      async (_url, init) => {
+        redirects.push(init?.redirect);
+        return new Response(null, {
+          status: 307,
+          headers: { location: "https://other.example.com/steal" },
+        });
+      },
+      "https://rondyr.example.com",
+      token,
+    );
+    await expect(client.organization()).rejects.toEqual(new RondyrError("unexpected"));
+    expect(redirects).toEqual(["manual"]);
   });
 });

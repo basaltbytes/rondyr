@@ -1,10 +1,15 @@
-import { Context, Effect } from "effect";
+import { Context, Effect, Schema } from "effect";
 
 import type { RetentionPeriods } from "../../domain/organizations/retention.ts";
 import type { SubmissionNotFound } from "../../domain/submissions/submission.rejection.ts";
 import type { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
 import type { OrganizationScope } from "./organization-directory.ts";
 import type { StorageUnavailable } from "./storage.ts";
+
+export class SubmissionRetentionNotFound extends Schema.TaggedError<
+  SubmissionRetentionNotFound,
+  { readonly brand: unique symbol }
+>()("SubmissionRetentionNotFound", {}) {}
 
 /**
  * The messages of one organization that one of its retention periods covers:
@@ -32,11 +37,11 @@ export class SubmissionRetention extends Context.Service<
     ) => Effect.Effect<void, SubmissionNotFound | StorageUnavailable>;
     readonly periods: (
       scope: OrganizationScope,
-    ) => Effect.Effect<RetentionPeriods, StorageUnavailable>;
+    ) => Effect.Effect<RetentionPeriods, SubmissionRetentionNotFound | StorageUnavailable>;
     readonly savePeriods: (
       scope: OrganizationScope,
       periods: RetentionPeriods,
-    ) => Effect.Effect<RetentionPeriods, StorageUnavailable>;
+    ) => Effect.Effect<RetentionPeriods, SubmissionRetentionNotFound | StorageUnavailable>;
     /** The lanes that have a retention period at `now`, by organization. */
     readonly retentionLanes: (
       now: number,

@@ -53,6 +53,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         AuthOriginRefused: () => empty(403),
         PermissionDenied: () => empty(403),
         OrganizationNotFound: () => empty(404),
+        SubmissionRetentionNotFound: () => empty(404),
         SubmissionNotFound: () => empty(404),
         SchemaError: () => empty(400),
         HttpServerError: () => empty(400),

@@ -297,7 +297,8 @@ const remove = Effect.fn("Members.remove")(function* (
   const now = yield* Clock.currentTimeMillis;
   const key = [scope.userId, scope.organizationId, member] as const;
   // A removed member knows the API tokens it created and the links it issued:
-  // the same transaction revokes them, so none of them keeps the access.
+  // the same transaction revokes them, and ends its sessions once it belongs to
+  // no organization.
   const [before, removed] = yield* d1(() =>
     db.batch([
       db.prepare(refusal).bind(...key),
@@ -319,6 +320,12 @@ const remove = Effect.fn("Members.remove")(function* (
       `)
         .bind(...key, now),
       db.prepare(withdrawInvitations).bind(...key, now),
+      db
+        .prepare(`
+        DELETE FROM auth_sessions
+        WHERE user_id = ?3 AND NOT EXISTS (SELECT 1 FROM organization_members WHERE user_id = ?3)
+      `)
+        .bind(...key),
     ]),
   );
   const deleted = yield* decodeIds(removed?.results).pipe(Effect.mapError(unreadable));

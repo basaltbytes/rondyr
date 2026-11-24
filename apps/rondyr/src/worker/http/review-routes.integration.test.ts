@@ -58,7 +58,13 @@ it.live("keeps intake atomic when the outbox write fails", () =>
     assert.strictEqual(count, 0);
   }).pipe(
     Effect.ensuring(
-      Effect.promise(() => env.DB.prepare("DROP TRIGGER IF EXISTS reject_outbox").run()),
+      Effect.promise(() =>
+        env.DB.batch([
+          env.DB.prepare("DROP TRIGGER IF EXISTS reject_outbox"),
+          env.DB.prepare("DELETE FROM forms WHERE id = 'atomic-form'"),
+          env.DB.prepare("DELETE FROM organizations WHERE id = 'atomic-org'"),
+        ]),
+      ),
     ),
   ),
 );

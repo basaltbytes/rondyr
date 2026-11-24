@@ -49,7 +49,7 @@ const list = Effect.gen(function* () {
 const retry = Effect.gen(function* () {
   const scope = yield* HttpRouter.schemaPathParams(SubmissionPath);
   const { userId } = yield* authorize(scope.organizationId, "retry-stuck-submissions");
-  yield* retryStuckSubmission(scope);
+  yield* retryStuckSubmission({ ...scope, userId });
   const store = yield* OperationsStore;
   const stuck = yield* store.stuck(userId, scope.organizationId);
   return yield* stuckJson(stuck, jsonOptions);

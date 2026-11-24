@@ -200,8 +200,17 @@ it.live(
       const form = forms[0];
       if (form === undefined) return assert.fail("Expected the contact form");
       const reviewer = yield* addMember(id, owner, "route-reviewer@example.test", "reviewer");
-      const outsider = yield* seedAccount("route-outsider", "route-outsider@example.test");
-      yield* createInbox("Route outsider", outsider);
+      const outsiderOrg = yield* createInbox("Route outsider", owner);
+      const outsider = yield* addMember(
+        outsiderOrg.id,
+        owner,
+        "route-outsider@example.test",
+        "admin",
+      );
+      const unprivileged = yield* seedAccount(
+        "route-unprivileged",
+        "route-unprivileged@example.test",
+      );
       const created = yield* call(
         "POST",
         `/api/organizations/${id}/api-tokens`,
@@ -292,6 +301,18 @@ it.live(
         call("POST", reclassify, undefined, headers).pipe(Effect.map(({ status }) => status)),
       );
       assert.deepEqual(reclassified, [404, 404, 403]);
+
+      // Once an organization exists, only an account that is already an admin of
+      // an organization may create another one.
+      const createdByRoles = yield* Effect.forEach([reviewer, unprivileged, outsider], (headers) =>
+        call(
+          "POST",
+          "/api/organizations",
+          { organizationName: "Attempted org", formName: "Contact", businessContext: "" },
+          headers,
+        ).pipe(Effect.map(({ status }) => status)),
+      );
+      assert.deepEqual(createdByRoles, [403, 403, 201]);
     }),
   60_000,
 );

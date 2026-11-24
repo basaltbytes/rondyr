@@ -1,5 +1,5 @@
 import { applyD1Migrations } from "cloudflare:test";
-import { env } from "cloudflare:workers";
+import { env, withEnv } from "cloudflare:workers";
 import { assert, beforeAll, it } from "@effect/vitest";
 import { Clock, Context, DateTime, Effect, Layer, Option, Redacted, Result, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
@@ -21,6 +21,8 @@ import { DeliveryScheduler } from "../../domain/submissions/delivery-scheduler.e
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
 import { OrganizationId, SubmissionId, UserId } from "../../domain/submissions/submission.id.ts";
 import { DeliveryQueue } from "../ports/delivery-queue.ts";
+import type { DeliveryStore } from "../ports/delivery-store.ts";
+import type { NotificationProvider } from "../ports/notification-provider.ts";
 import { NotificationTargets, type FormScope } from "../ports/notification-targets.ts";
 import {
   consumeDeliveries,
@@ -365,6 +367,38 @@ it.effect("checks the stored URL and secret again before each send", () => {
       ],
     );
     const requests = yield* receivedUnder("/t/stale/");
+    assert.deepEqual(requests, []);
+  });
+  return withServices(layer, scenario);
+});
+
+it.effect("refuses a stored webhook targeting the configured BETTER_AUTH_URL", () => {
+  const { layer } = services();
+  const submissionId = SubmissionId.make("5a0c1d2e-3f40-4152-8a6b-7c8d9e0f1a08");
+  const scenario = Effect.gen(function* () {
+    const form = yield* seedForm("self-origin", [submissionId]);
+    const targets = yield* NotificationTargets;
+    yield* targets.createWebhook(
+      form,
+      webhookUrl("https://rondyr-self.example.test/t/self-origin/ok"),
+    );
+    yield* deliverAccepted(form, submissionId);
+
+    const context = yield* Effect.context<DeliveryStore | NotificationProvider>();
+    const run = Effect.runPromiseWith(context);
+    yield* Effect.promise(() =>
+      Promise.resolve(
+        withEnv({ ...env, BETTER_AUTH_URL: "https://rondyr-self.example.test" }, () =>
+          run(consume(submissionId)),
+        ),
+      ),
+    );
+    const rows = yield* deliveriesOf(submissionId);
+    assert.deepEqual(
+      rows.map(({ status, last_error }) => [status, last_error]),
+      [["failed", "The webhook URL is refused: worker-origin."]],
+    );
+    const requests = yield* receivedUnder("/t/self-origin/");
     assert.deepEqual(requests, []);
   });
   return withServices(layer, scenario);
