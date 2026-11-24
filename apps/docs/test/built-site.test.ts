@@ -97,22 +97,16 @@ test("indexes every page for search", () => {
 
 /**
  * The site documents Rondyr for people who deploy their own copy, so it never shows the
- * address of the maintainers' instance: the host of architecture.md's `**Production:**`
- * line, and the one it has had since the first deployment.
+ * address of the maintainers' instance.
  */
-const maintainerHosts = new Set(["rondyr.basaltbytes.com"]);
+const maintainerHosts = ["rondyr.basaltbytes.com"];
 
 test("contains no address of the maintainers' instance", () => {
-  const source = readFileSync(repositoryPath("architecture.md"), "utf8");
-  const address = /\*\*Production:\*\*\s*`([^`]+)`/u.exec(source)?.[1];
-  if (address !== undefined) maintainerHosts.add(new URL(address).host);
   const files = readdirSync(dist, { recursive: true, encoding: "utf8" }).filter((file) =>
     /\.(html|xml|json|js|css|txt|md)$/u.test(file),
   );
   const found = files.flatMap((file) =>
-    [...maintainerHosts]
-      .filter((host) => built(file).includes(host))
-      .map((host) => `${file}: ${host}`),
+    maintainerHosts.filter((host) => built(file).includes(host)).map((host) => `${file}: ${host}`),
   );
   assert.deepEqual(
     found,
@@ -141,7 +135,6 @@ test("links pages to each other by route, with the page title for a file name", 
 
 test("links contributor material to GitHub from the contributing page", () => {
   const links = hrefs(builtPage("/contributing/"));
-  assert.ok(links.includes("https://github.com/basaltbytes/rondyr/blob/main/architecture.md"));
   assert.ok(links.includes("https://github.com/basaltbytes/rondyr/blob/main/CONTRIBUTING.md"));
   assert.ok(links.includes("https://github.com/basaltbytes/rondyr/blob/main/AGENTS.md"));
   assert.ok(

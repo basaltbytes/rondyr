@@ -36,7 +36,6 @@ const workerFiles = [
 /** Documentation and agent instructions that do not require a Worker deploy. */
 const documentationFiles = [
   /^README\.md$/u,
-  /^architecture\.md$/u,
   /^AGENTS\.md$/u,
   /^CONTRIBUTING\.md$/u,
   /^docs\//u,

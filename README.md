@@ -83,7 +83,6 @@ For custom domains, updates, and deploying from a fork with Alchemy and GitHub A
 Contributor documentation stays in this repository:
 
 - [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/local-development.md](./docs/local-development.md) for local setup, tests, and pull requests
-- [architecture.md](./architecture.md) for the technical design
 - [docs/evaluation.md](./docs/evaluation.md) for classifier evaluation on labeled corpora
 - [docs/operations.md](./docs/operations.md) for the operations runbook
 - [AGENTS.md](./AGENTS.md) for coding and writing rules

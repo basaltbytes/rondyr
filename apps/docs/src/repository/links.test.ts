@@ -12,7 +12,7 @@ import { remarkRepositoryLinks, resolveLink } from "./links.ts";
 
 const repository = fixtureRepository(
   new Map([
-    ["architecture.md", "# Rondyr: technical architecture\n\n## 5. Intelligent classification\n"],
+    ["CONTRIBUTING.md", "# Contributing\n\n## Pull requests\n"],
     ["README.md", "# Rondyr\n\n## Quick start\n"],
     ["LICENSE", "AGPL\n"],
     ["docs/deployment.md", "# Deployment\n\n## Fresh account checklist\n"],
@@ -41,10 +41,10 @@ test("sends a link to another page to its route, with the anchor", () => {
 
 test("sends a link to another file of the repository to GitHub", () => {
   assert.deepEqual(
-    resolveLink("../architecture.md#5-intelligent-classification", "docs/webhooks.md", false, root),
+    resolveLink("../CONTRIBUTING.md#pull-requests", "docs/webhooks.md", false, root),
     {
       kind: "rewritten",
-      url: `${github}/blob/main/architecture.md#5-intelligent-classification`,
+      url: `${github}/blob/main/CONTRIBUTING.md#pull-requests`,
     },
   );
   assert.deepEqual(resolveLink("./examples/verify-webhook.ts", "docs/webhooks.md", false, root), {
@@ -120,7 +120,7 @@ test("rewrites the links of a page and shows page titles instead of file names",
       "[verify-webhook.ts](./examples/verify-webhook.ts)",
       "[ref][deploy]",
       "",
-      "[deploy]: ../architecture.md",
+      "[deploy]: ../CONTRIBUTING.md",
     ].join("\n"),
   );
   assert.deepEqual(links, [

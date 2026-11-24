@@ -1,6 +1,6 @@
 # Rondyr
 
-Rondyr is a self-hosted form backend on Cloudflare. Read [architecture.md](architecture.md) before changing public contracts, the data model or the processing of submissions. The README describes what the repository can already run, and [docs/deployment.md](docs/deployment.md) describes deployment.
+Rondyr is a self-hosted form backend on Cloudflare. The code and its tests are the source of truth for the design: no separate architecture document is kept. The README describes what the repository can already run, and [docs/deployment.md](docs/deployment.md) describes deployment.
 
 ## Code
 
@@ -10,7 +10,7 @@ Rondyr is a self-hosted form backend on Cloudflare. Read [architecture.md](archi
 - Use Effect 4 and Effect Schema for business logic, errors and data boundaries. Compose the layers at the Worker's entry point. Keep files in kebab-case, except where a tool's convention or a generated file says otherwise.
 - Migrations belong to development tooling and to deployment. Version Drizzle migrations and snapshots in `apps/rondyr/database/migrations`.
 - For intake, a `202` response means the submission and its outbox event were persisted atomically. Consumers must tolerate duplicated events.
-- Write everything in English: code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions. Older issues are still in French; do not add French text to them.
+- Write everything in English: code, comments, commit messages, the README, `docs/`, issues, and pull request titles and descriptions. Older issues are still in French; do not add French text to them.
 - Write in English first everything a user of the product reads: dashboard text, the confirmation page, emails, script prompts. The dashboard, the confirmation page and the emails also exist in French: a dashboard text is an i18next key present in `apps/rondyr/src/dashboard/locales/en` and `apps/rondyr/src/dashboard/locales/fr`, never a string in a component.
 
 ## Working on an issue
