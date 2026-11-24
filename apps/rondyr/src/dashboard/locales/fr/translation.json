@@ -112,6 +112,7 @@
       "honeypot": "Champ piège rempli",
       "repetition": "Envois répétés",
       "turnstile-failed": "Échec de la vérification Turnstile",
+      "blocked-term": "Mot ou expression bloqué",
       "quota": "Plafond quotidien de classification atteint"
     },
     "deliveries": {
@@ -181,6 +182,7 @@
       "forms": "Formulaires",
       "destinations": "Destinations",
       "origins": "Origines autorisées",
+      "blockedTerms": "Mots bloqués",
       "domains": "Domaines de l’organisation",
       "classification": "Classification",
       "apiTokens": "Jetons d’API",
@@ -306,6 +308,7 @@
       "accept": "Accepter",
       "acceptAndSend": "Accepter et envoyer",
       "reclassify": "Relancer l’analyse",
+      "matchedTerm": "Correspond à « {{term}} »",
       "analyzing": "Le filtre analyse ce message. Actualisez la liste pour voir son classement.",
       "nothingToReview": "Rien à vérifier",
       "noOpenMessage": "Aucun message ouvert",
@@ -497,7 +500,7 @@
       "submissions": "Plafond quotidien de soumissions",
       "classifications": "Plafond quotidien de classifications",
       "junk": "Indésirables arrêtés à l’entrée",
-      "junkHint": "Les messages qui remplissent le champ piège, échouent à Turnstile ou répètent des envois précédents sont mis en quarantaine et comptent ici, pas dans le plafond de soumissions. Leur plafond quotidien est le même nombre. Une fois ce plafond atteint, Rondyr les refuse jusqu’à minuit UTC et accepte toujours les autres messages.",
+      "junkHint": "Les messages qui remplissent le champ piège, échouent à Turnstile, répètent des envois précédents ou contiennent un mot bloqué sont mis en quarantaine et comptent ici, pas dans le plafond de soumissions. Leur plafond quotidien est le même nombre. Une fois ce plafond atteint, Rondyr les refuse jusqu’à minuit UTC et accepte toujours les autres messages.",
       "used": "{{used}} sur {{limit}} utilisés",
       "saving": "Enregistrement des plafonds…",
       "saved": "Plafonds enregistrés.",
@@ -561,6 +564,29 @@
       "problems": {
         "notAdded": "L’origine n’a pas pu être ajoutée. Réessayez.",
         "notRemoved": "L’origine n’a pas pu être retirée. Réessayez."
+      }
+    },
+    "blockedTerms": {
+      "label": "Mots bloqués du formulaire {{name}}",
+      "description": "Les messages contenant l’un de ces mots, expressions, domaines ou adresses e-mail entiers passent en quarantaine sans analyse. La recherche ignore la casse, les accents et la ponctuation. Jusqu’à {{limit}} entrées.",
+      "empty": "Aucun mot bloqué. Ajoutez jusqu’à {{limit}} mots, expressions, domaines ou adresses e-mail pour mettre les messages correspondants à vérifier sans analyse.",
+      "organizationDescription": "S’applique à tous les formulaires de cette organisation. Les messages contenant l’un de ces mots, expressions, domaines ou adresses e-mail entiers passent en quarantaine sans analyse. La recherche ignore la casse, les accents et la ponctuation. Jusqu’à {{limit}} entrées.",
+      "organizationEmpty": "Aucun mot bloqué pour cette organisation.",
+      "loading": "Chargement des mots bloqués…",
+      "loadFailed": "Impossible de charger les mots bloqués.",
+      "term": "Mot, expression, domaine ou adresse bloqué",
+      "placeholder": "article invité, spam.example",
+      "add": "Ajouter le mot",
+      "removeLabel": "Retirer {{term}}",
+      "limit": "Ce formulaire a déjà {{limit}} mots bloqués. Retirez-en un avant d’en ajouter un autre.",
+      "organizationLimit": "Cette organisation a déjà {{limit}} mots bloqués. Retirez-en un avant d’en ajouter un autre.",
+      "refusals": {
+        "empty": "Saisissez au moins une lettre ou un chiffre.",
+        "tooLong": "Utilisez au plus {{max}} caractères."
+      },
+      "problems": {
+        "notAdded": "Le mot bloqué n’a pas pu être ajouté. Réessayez.",
+        "notRemoved": "Le mot bloqué n’a pas pu être retiré. Réessayez."
       }
     },
     "destinations": {

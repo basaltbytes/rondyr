@@ -5,6 +5,7 @@ import { allows } from "@rondyr/organizations/member-role";
 import { NotFoundPage } from "~/components/not-found-page";
 import { FormDestinations } from "~/features/destinations/form-destinations";
 import { FormPage } from "~/features/forms/form-page";
+import { blockedTermsQuery } from "~/lib/api/blocked-terms";
 import { destinationsQuery } from "~/lib/api/destinations";
 import { originsQuery } from "~/lib/api/origins";
 import { requirePermission } from "~/routes/-layout/organization-access";
@@ -32,6 +33,9 @@ export const Route = createFileRoute("/_signed-in/o/$organizationId/forms/$publi
       .query(destinationsQuery(organizationId, publicId))
       .catch(() => undefined);
     void context.queryClient.query(originsQuery(organizationId, publicId)).catch(() => undefined);
+    void context.queryClient
+      .query(blockedTermsQuery(organizationId, publicId))
+      .catch(() => undefined);
   },
   component: Form,
 });

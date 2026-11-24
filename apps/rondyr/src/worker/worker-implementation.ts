@@ -17,6 +17,7 @@ import { apiTokensLive } from "./adapters/database/api-tokens.ts";
 import { classificationPoliciesLive } from "./adapters/database/classification-policies.ts";
 import { deliveryHistoryLive } from "./adapters/database/delivery-history.ts";
 import { deliveryStoreLive } from "./adapters/database/delivery-store.ts";
+import { formBlockedTermsLive } from "./adapters/database/form-blocked-terms.ts";
 import { formOriginsLive } from "./adapters/database/form-origins.ts";
 import { formsLive } from "./adapters/database/forms.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
@@ -65,6 +66,7 @@ const services = Layer.mergeAll(
   recipientConfirmationsLive,
   submissionExportsLive,
   submissionRetentionLive,
+  formBlockedTermsLive,
   formOriginsLive,
   formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,

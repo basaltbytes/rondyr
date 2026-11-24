@@ -20,6 +20,7 @@ import { messageCountsQuery } from "~/lib/api/messages";
 import { countsOfForm, totalOf } from "~/lib/folder-counts";
 
 import { AllowedOrigins } from "./allowed-origins.tsx";
+import { BlockedTerms } from "./blocked-terms.tsx";
 import { EmojiPicker, emojiOf } from "~/components/form-emoji";
 import { CopyButton, Field, SavingInput } from "./form-field.tsx";
 import { attempt, FormFailureNote } from "./form-problems.tsx";
@@ -294,6 +295,13 @@ export function FormPage({ organizationId, form, destinations }: FormPageProps) 
           {destinations}
           <AllowedOrigins
             key={`origins-${form.publicId}`}
+            organizationId={organizationId}
+            form={form}
+          />
+        </div>
+        <div className="mt-10">
+          <BlockedTerms
+            key={`blocked-terms-${form.publicId}`}
             organizationId={organizationId}
             form={form}
           />

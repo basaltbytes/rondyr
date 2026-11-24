@@ -170,3 +170,17 @@ export function CardListSkeleton({ label }: { readonly label: string }) {
     </div>
   );
 }
+
+/** Skeleton for a wrapping list of removable chips, sized like one row of them. */
+export function ChipListSkeleton({ label }: { readonly label: string }) {
+  return (
+    <div>
+      <output className="sr-only">{label}</output>
+      <div aria-hidden="true" className="flex flex-wrap gap-1.5">
+        <Skeleton className="h-9 w-20 pointer-coarse:h-11" />
+        <Skeleton className="h-9 w-32 pointer-coarse:h-11" />
+        <Skeleton className="h-9 w-24 pointer-coarse:h-11" />
+      </div>
+    </div>
+  );
+}

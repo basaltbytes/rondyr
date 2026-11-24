@@ -1,6 +1,6 @@
 # Fight spam
 
-Rondyr filters every message automatically with a classifier model (Jev or OpenAI Decisions), never deleting a real inquiry on a model's guess. To block bots before they even reach the classifier, layer three quick settings on your form: a business description, a honeypot field, and Cloudflare Turnstile.
+Rondyr filters every message automatically with a classifier model (Jev or OpenAI Decisions), never deleting a real inquiry on a model's guess. To stop bots and repeat spam patterns before they reach the classifier, layer four settings: a business description, a honeypot field, Cloudflare Turnstile, and blocked words.
 
 ## 1. Describe your business
 
@@ -53,6 +53,21 @@ Rondyr removes the Turnstile token before saving the message. Submissions with a
 
 If Cloudflare's verification service has a brief outage, Rondyr doesn't block real visitors; messages fall back to normal AI classification. Each time you open a form's page, Rondyr re-checks your saved Turnstile secret key with Cloudflare and warns you under **Turnstile** if the widget was deleted or the key stopped working.
 
+## 4. Block words, phrases, and domains
+
+If a recurring spam wave keeps using the same phrase, domain, or sender address, add it to a blocked list so matching messages skip the AI classifier.
+
+- **One form:** open your form from **Forms** in the sidebar and add entries under **Blocked words**.
+- **All forms in an organization:** open **Settings → Blocked words**.
+
+Each list accepts up to 100 entries of up to 100 characters. Words, multi-word phrases, domains (such as `spam.example`), and full email addresses all work. Rondyr checks every field value on whole-word boundaries, ignoring case, accents, and punctuation:
+
+- `societe` matches `société`, and `casino` matches `cásino`.
+- `seo` does not match `museo`, and a phrase never matches across two separate fields.
+- `spam.example` matches `promo@spam.example` and `https://spam.example/offer`.
+
+When a message matches either the form's list or the organization's list, Rondyr returns the normal confirmation page or redirect (revealing nothing to the sender), skips the AI classifier, and places the message in **To review** labeled **Blocked word or phrase**. Admins opening the message in the inbox see which current list entry matched, making it easy to spot a term that caught a real inquiry.
+
 ## Repeat detection
 
 Rondyr automatically spots repetitive spam across all forms in your organization over a rolling 30-day window. If Rondyr already received at least 2 earlier submissions with the same message content, or 3 from the same `email` address, new repeats skip the AI classifier and go straight to **To review** labeled **Repeated submissions**. A single accidental double-click stays under both limits.
@@ -83,4 +98,4 @@ Even without extra configuration, Rondyr enforces built-in caps to keep spam wav
 - **30 submissions per minute per form** across all visitors.
 - **Daily organization quotas** under **Settings → Daily quotas** (default: 2,000 submissions, 1,000 AI classifications, and 2,000 junk submissions caught at intake per UTC day).
 
-Junk caught at intake (honeypot, failed Turnstile, or repeated submissions) counts against its own daily allowance rather than your regular submission limit, so a bot wave can't block real visitors. Once your daily AI classification quota is full, real submissions are still accepted by your form and placed in **To review** labeled **Daily classification quota reached** instead of being lost. See [Costs and limits](./costs.md#control-spending-with-daily-quotas) for adjusting these limits.
+Junk caught at intake (honeypot, failed Turnstile, repeated submissions, or blocked words) counts against its own daily allowance rather than your regular submission limit, so a bot wave can't block real visitors. Once your daily AI classification quota is full, real submissions are still accepted by your form and placed in **To review** labeled **Daily classification quota reached** instead of being lost. See [Costs and limits](./costs.md#control-spending-with-daily-quotas) for adjusting these limits.

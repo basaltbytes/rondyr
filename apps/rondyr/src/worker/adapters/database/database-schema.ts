@@ -89,6 +89,34 @@ export const formOrigins = sqliteTable(
   (table) => [primaryKey({ columns: [table.formId, table.origin] })],
 );
 
+// Normalized words, phrases, domains or addresses that quarantine a form's submissions at intake.
+export const formBlockedTerms = sqliteTable(
+  "form_blocked_terms",
+  {
+    formId: text("form_id")
+      .notNull()
+      .references(() => forms.id, { onDelete: "cascade" }),
+    // Normalized by parseBlockedTerm: NFKD without combining marks, lowercase, single spaces.
+    term: text().notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.formId, table.term] })],
+);
+
+// Normalized words, phrases, domains or addresses that quarantine submissions across an organization.
+export const organizationBlockedTerms = sqliteTable(
+  "organization_blocked_terms",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // Normalized by parseBlockedTerm: NFKD without combining marks, lowercase, single spaces.
+    term: text().notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.organizationId, table.term] })],
+);
+
 export const organizationMembers = sqliteTable(
   "organization_members",
   {

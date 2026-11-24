@@ -7,6 +7,7 @@ export type SettingsSection =
   | "retention"
   | "classification"
   | "domains"
+  | "blockedTerms"
   | "quotas"
   | "operations";
 

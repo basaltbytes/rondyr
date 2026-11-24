@@ -2,6 +2,7 @@ import { Layer } from "effect";
 
 import { apiTokenRoutes } from "./api-token-routes.ts";
 import { authenticationRoutes } from "./authentication.ts";
+import { blockedTermRoutes } from "./blocked-term-routes.ts";
 import { classificationPolicyRoutes } from "./classification-policy-routes.ts";
 import { deliveryRoutes } from "./delivery-routes.ts";
 import { formRoutes } from "./form-routes.ts";
@@ -33,6 +34,7 @@ export const routes = Layer.mergeAll(
   reviewRoutes,
   targetRoutes,
   originRoutes,
+  blockedTermRoutes,
   organizationDomainRoutes,
   organizationQuotaRoutes,
   classificationPolicyRoutes,

@@ -55,6 +55,7 @@ export const IntakeReason = Schema.Literals([
   "honeypot",
   "repetition",
   "turnstile-failed",
+  "blocked-term",
   "quota",
 ]);
 export type IntakeReason = typeof IntakeReason.Type;
