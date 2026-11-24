@@ -2,8 +2,8 @@ import { assert, it } from "@effect/vitest";
 import { ConfigProvider, Context, Effect, Layer, Ref, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
-import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
-import { scoreWithJev } from "../src/adapters/ai/jev.ts";
+import { aiGatewayOptions } from "../src/worker/adapters/ai/gateway.ts";
+import { scoreWithJev } from "../src/worker/adapters/ai/jev.ts";
 import { classifierInput } from "../src/domain/submissions/classifier-input.ts";
 import {
   type UnsupportedGatewayOptions,

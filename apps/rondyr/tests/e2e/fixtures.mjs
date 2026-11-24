@@ -12,11 +12,11 @@ import {
   testSetupToken,
 } from "../integration/auth-fixture.ts";
 import { externalWorkers, workersAiBinding } from "../integration/external-workers.ts";
-import en from "../../dashboard/src/locales/en/translation.json" with { type: "json" };
-import fr from "../../dashboard/src/locales/fr/translation.json" with { type: "json" };
+import en from "../../src/dashboard/locales/en/translation.json" with { type: "json" };
+import fr from "../../src/dashboard/locales/fr/translation.json" with { type: "json" };
 
 // The texts of the dashboard, from the files that the dashboard ships and with
-// the options of dashboard/src/lib/i18n.ts, so a test names an element and
+// the options of src/dashboard/lib/i18n.ts, so a test names an element and
 // states an expected text as the page renders them.
 const i18n = createInstance();
 await i18n.init({

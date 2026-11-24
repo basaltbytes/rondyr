@@ -39,7 +39,7 @@ The queue consumer picks the message up a few seconds later. Locally there is no
 
 ## Checks
 
-The repository is a pnpm workspace. `apps/rondyr/` is the Worker and its dashboard, `packages/emdash-plugin/` the EmDash plugin, and `tooling/` the lint rules and the shared TypeScript settings. Dependency versions are in the catalog of `pnpm-workspace.yaml`. Run the commands from the root; they run in each package.
+The repository is a pnpm workspace. `apps/rondyr/` is the Worker and its dashboard, `packages/emdash-plugin/` the EmDash plugin, and `tooling/` the lint rules and the shared TypeScript settings. In `apps/rondyr/src/`, `domain/` has the rules that the Worker and the dashboard share, `worker/` the code that runs in workerd, and `dashboard/` the React app; a new file of `dashboard/routes/` is a new address, and `pnpm dev` adds it to `dashboard/route-tree.gen.ts`. Dependency versions are in the catalog of `pnpm-workspace.yaml`. Run the commands from the root; they run in each package.
 
 ```sh
 pnpm check         # lint, format, types, tests in workerd and Node, Knip, migrations, for every package
@@ -48,4 +48,4 @@ pnpm deploy:dry    # build, validate the bundle with Wrangler, check its size bu
 
 CI runs both commands without Cloudflare credentials, and runs `pnpm test:e2e`, which ends with the dev-server check that `pnpm --filter rondyr test:dev` also runs. The check starts `pnpm dev` on a database of its own, creates the owner, posts a submission, and fails if the queue consumer leaves it `received`. The tests build the Worker first and run it in workerd with D1, the queues, and the Durable Objects emulated. The tests of the classifier evaluation harness in `apps/rondyr/evals/` run in Node; `pnpm evaluate --dry evals/corpus/synthetic.jsonl` runs it without credentials, and [docs/evaluation.md](./evaluation.md) covers real runs. [CONTRIBUTING.md](../CONTRIBUTING.md) covers the dashboard browser tests and pull requests.
 
-After a schema change in `apps/rondyr/src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `apps/rondyr/database/migrations`. `pnpm dev:alchemy` runs the Alchemy stack locally with its own state and D1 database, as an alternative to `pnpm dev`.
+After a schema change in `apps/rondyr/src/worker/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `apps/rondyr/database/migrations`. `pnpm dev:alchemy` runs the Alchemy stack locally with its own state and D1 database, as an alternative to `pnpm dev`.

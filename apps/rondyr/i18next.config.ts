@@ -3,14 +3,14 @@ import { defineConfig } from "i18next-cli";
 export default defineConfig({
   locales: ["en", "fr"],
   extract: {
-    input: ["dashboard/src/**/*.{ts,tsx}"],
-    ignore: ["dashboard/src/**/*.test.ts"],
-    output: "dashboard/src/locales/{{language}}/{{namespace}}.json",
+    input: ["src/dashboard/**/*.{ts,tsx}"],
+    ignore: ["src/dashboard/**/*.test.ts", "src/dashboard/vitest.config.ts"],
+    output: "src/dashboard/locales/{{language}}/{{namespace}}.json",
     defaultNS: "translation",
     // The files keep the order of the screens, not the alphabet.
     sort: false,
     // French has a plural form that English lacks. Both files keep the same keys,
-    // because the type check in dashboard/src/lib/i18n.ts compares them.
+    // because the type check in src/dashboard/lib/i18n.ts compares them.
     allPluralForms: true,
     // The last part of these keys is a value that the API returns or that the
     // state of a component holds, so the extractor cannot list them from the code.

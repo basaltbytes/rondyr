@@ -4,6 +4,7 @@ import { parseEnv } from "node:util";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { unreachableChunksPlugin } from "alchemy/Bundle/UnreachableChunksPlugin";
 import { defineConfig } from "vite";
@@ -44,6 +45,7 @@ export default defineConfig(({ command }) => ({
                   test: /node_modules\/(?:better-auth|@better-auth|better-call|@better-fetch|nanostores)\//,
                 },
                 { name: "i18n", test: /node_modules\/(?:i18next|react-i18next)\// },
+                { name: "tanstack", test: /node_modules\/@tanstack\// },
               ],
             },
           },
@@ -52,6 +54,15 @@ export default defineConfig(({ command }) => ({
     },
   },
   plugins: [
+    // The routes of the dashboard are the files of src/dashboard/routes. The plugin writes
+    // their tree to route-tree.gen.ts and loads the component of each route on its own.
+    tanstackRouter({
+      target: "react",
+      routesDirectory: "./src/dashboard/routes",
+      generatedRouteTree: "./src/dashboard/route-tree.gen.ts",
+      autoCodeSplitting: true,
+      plugin: { vite: { environmentName: "client" } },
+    }),
     react(),
     tailwindcss(),
     babel({

@@ -1,0 +1,355 @@
+import { applyD1Migrations } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import { assert, beforeAll, it, vi } from "@effect/vitest";
+import { Clock, Context, Deferred, Effect, Fiber, Layer, Option, Schema } from "effect";
+import { FetchHttpClient } from "effect/http";
+
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
+import { submissionIntakeLive } from "../adapters/database/intake.ts";
+import { outboxLive } from "../adapters/database/outbox.ts";
+import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
+import { turnstileVerifierLive } from "../adapters/workers/siteverify.ts";
+import { SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { ClassificationQueue, QueueUnavailable } from "../ports/classification-queue.ts";
+import { SubmissionIntake } from "../ports/intake.ts";
+import {
+  maxPublications,
+  publishPendingSubmissions,
+  publishSubmission,
+} from "./submission-outbox.ts";
+
+const contact = { email: "customer@example.test", message: "Is there room in the pottery class?" };
+const verifier = turnstileVerifierLive.pipe(
+  Layer.provide([secretCipherLive, FetchHttpClient.layer]),
+);
+const adapters = Layer.mergeAll(
+  submissionIntakeLive.pipe(Layer.provide(verifier)),
+  outboxLive,
+  classificationQueueLive,
+);
+const OutboxRow = Schema.Struct({
+  lease_until: Schema.Int,
+  published_at: Schema.NullOr(Schema.Int),
+  handed_off_at: Schema.NullOr(Schema.Int),
+  publication_count: Schema.Int,
+  stuck_at: Schema.NullOr(Schema.Int),
+});
+const readRow = Schema.decodeUnknownEffect(OutboxRow);
+const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));
+
+beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
+
+const seedForm = (name: string) =>
+  Effect.promise(() =>
+    env.DB.batch([
+      env.DB.prepare("INSERT INTO organizations (id, name) VALUES (?, ?)").bind(
+        `${name}-org`,
+        name,
+      ),
+      env.DB.prepare(
+        "INSERT INTO forms (id, organization_id, public_id, name) VALUES (?, ?, ?, ?)",
+      ).bind(`${name}-form`, `${name}-org`, name, name),
+    ]),
+  );
+
+const outboxRow = Effect.fnUntraced(function* (submissionId: SubmissionId) {
+  const row = yield* Effect.promise(() =>
+    env.DB.prepare(
+      "SELECT lease_until, published_at, handed_off_at, publication_count, stuck_at FROM outbox_events WHERE submission_id = ?",
+    )
+      .bind(submissionId)
+      .first(),
+  );
+  return yield* readRow(row);
+});
+
+// One ClassificationRequested event followed by the quarantine decision, since
+// workerd has no Workers AI binding.
+const waitForOneClassification = (submissionId: SubmissionId) =>
+  Effect.promise(() =>
+    vi.waitFor(
+      () =>
+        env.DB.prepare("SELECT status, version FROM submission_inbox WHERE submission_id = ?")
+          .bind(submissionId)
+          .first()
+          .then((row) => {
+            assert.deepEqual(row, { status: "quarantined", version: 2 });
+          }),
+      { timeout: 15_000, interval: 100 },
+    ),
+  );
+
+/** The real queue, with a record of the submissions sent through it. */
+const recording = (queue: ClassificationQueue["Service"], sent: Array<SubmissionId>) =>
+  ClassificationQueue.of({
+    send: (submissionIds) =>
+      Effect.andThen(
+        queue.send(submissionIds),
+        Effect.sync(() => {
+          sent.push(...submissionIds);
+        }),
+      ),
+  });
+
+it.live(
+  "leaves a failed direct publication to the cron once its lease expires",
+  () =>
+    Effect.gen(function* () {
+      const services = yield* Layer.build(adapters);
+      const queue = Context.get(services, ClassificationQueue);
+      yield* seedForm("outbox-failed");
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
+        "outbox-failed",
+        contact,
+        Option.none(),
+      );
+
+      const failure = yield* publishSubmission(submissionId).pipe(
+        Effect.provideService(ClassificationQueue, {
+          send: () => Effect.fail(QueueUnavailable.make()),
+        }),
+        Effect.provideContext(services),
+        Effect.flip,
+      );
+      assert.strictEqual(failure._tag, "QueueUnavailable");
+      const now = yield* Clock.currentTimeMillis;
+      const leased = yield* outboxRow(submissionId);
+      assert.isNull(leased.published_at);
+      assert.isAbove(leased.lease_until, now);
+
+      const sent: Array<SubmissionId> = [];
+      const cron = publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, recording(queue, sent)),
+        Effect.provideContext(services),
+      );
+      yield* cron;
+      assert.notInclude(sent, submissionId);
+
+      yield* Effect.promise(() =>
+        env.DB.prepare("UPDATE outbox_events SET lease_until = 1 WHERE submission_id = ?")
+          .bind(submissionId)
+          .run(),
+      );
+      yield* cron;
+      assert.include(sent, submissionId);
+      const published = yield* outboxRow(submissionId);
+      assert.isNumber(published.published_at);
+      assert.strictEqual(published.lease_until, 0);
+      yield* waitForOneClassification(submissionId);
+    }),
+  30_000,
+);
+
+it.live(
+  "publishes on intake, then the cron skips the published event",
+  () =>
+    Effect.gen(function* () {
+      const services = yield* Layer.build(adapters);
+      const queue = Context.get(services, ClassificationQueue);
+      yield* seedForm("outbox-direct");
+      const response = yield* Effect.promise(() =>
+        env.TEST_WORKER.fetch(new URL("/f/outbox-direct", origin), {
+          method: "POST",
+          body: new URLSearchParams(contact),
+        }),
+      );
+      assert.strictEqual(response.status, 202);
+      const body = yield* Effect.promise(() => response.json());
+      const { "submission-id": submissionId } = yield* readAccepted(body);
+
+      yield* Effect.promise(() =>
+        vi.waitFor(
+          () =>
+            env.DB.prepare("SELECT published_at FROM outbox_events WHERE submission_id = ?")
+              .bind(submissionId)
+              .first("published_at")
+              .then((publishedAt) => {
+                assert.isNumber(publishedAt);
+              }),
+          { timeout: 5_000, interval: 50 },
+        ),
+      );
+      const sent: Array<SubmissionId> = [];
+      yield* publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, recording(queue, sent)),
+        Effect.provideContext(services),
+      );
+      assert.notInclude(sent, submissionId);
+      yield* waitForOneClassification(submissionId);
+    }),
+  30_000,
+);
+
+it.live(
+  "keeps the cron away from an event that the direct path has leased",
+  () =>
+    Effect.gen(function* () {
+      const services = yield* Layer.build(adapters);
+      const queue = Context.get(services, ClassificationQueue);
+      yield* seedForm("outbox-lease");
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
+        "outbox-lease",
+        contact,
+        Option.none(),
+      );
+
+      const sending = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const direct: Array<SubmissionId> = [];
+      const blocked = ClassificationQueue.of({
+        send: (submissionIds) =>
+          Deferred.succeed(sending, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.andThen(recording(queue, direct).send(submissionIds)),
+          ),
+      });
+      const publication = yield* publishSubmission(submissionId).pipe(
+        Effect.provideService(ClassificationQueue, blocked),
+        Effect.provideContext(services),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(sending);
+
+      const cron: Array<SubmissionId> = [];
+      yield* publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, recording(queue, cron)),
+        Effect.provideContext(services),
+      );
+      assert.notInclude(cron, submissionId);
+
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(publication);
+      assert.deepEqual(direct, [submissionId]);
+      const published = yield* outboxRow(submissionId);
+      assert.isNumber(published.published_at);
+      yield* waitForOneClassification(submissionId);
+    }),
+  30_000,
+);
+
+it.live(
+  "stops republishing an event after twelve publications without a hand-off",
+  () =>
+    Effect.gen(function* () {
+      const services = yield* Layer.build(adapters);
+      const queue = Context.get(services, ClassificationQueue);
+      yield* seedForm("outbox-stuck");
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
+        "outbox-stuck",
+        contact,
+        Option.none(),
+      );
+
+      // The queue loses this submission's messages, as if no consumer could hand it
+      // off, and delivers the others.
+      const sent: Array<SubmissionId> = [];
+      const losing = ClassificationQueue.of({
+        send: (submissionIds) => {
+          const delivered = submissionIds.filter((id) => id !== submissionId);
+          return Effect.andThen(
+            delivered.length === 0 ? Effect.void : queue.send(delivered),
+            Effect.sync(() => {
+              sent.push(...submissionIds);
+            }),
+          );
+        },
+      });
+      const cron = publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, losing),
+        Effect.provideContext(services),
+      );
+      // Five minutes after a publication, the event is due again.
+      const republishLater = Effect.promise(() =>
+        env.DB.prepare("UPDATE outbox_events SET published_at = 1 WHERE submission_id = ?")
+          .bind(submissionId)
+          .run(),
+      );
+
+      assert.strictEqual(maxPublications, 12);
+      for (let publication = 1; publication <= maxPublications; publication += 1) {
+        if (publication > 1) yield* republishLater;
+        yield* cron;
+        const row = yield* outboxRow(submissionId);
+        assert.strictEqual(row.publication_count, publication);
+        assert.isNull(row.stuck_at);
+      }
+      assert.strictEqual(sent.filter((id) => id === submissionId).length, maxPublications);
+
+      yield* republishLater;
+      const before = yield* Clock.currentTimeMillis;
+      yield* cron;
+      const stuck = yield* outboxRow(submissionId);
+      assert.isAtLeast(stuck.stuck_at ?? 0, before);
+      assert.strictEqual(stuck.publication_count, maxPublications);
+      assert.isNull(stuck.handed_off_at);
+
+      // Neither the Cron nor the direct path publishes a stuck event again.
+      yield* cron;
+      yield* publishSubmission(submissionId).pipe(
+        Effect.provideService(ClassificationQueue, losing),
+        Effect.provideContext(services),
+      );
+      assert.strictEqual(sent.filter((id) => id === submissionId).length, maxPublications);
+      const kept = yield* Effect.promise(() =>
+        env.DB.prepare("SELECT COUNT(*) AS count FROM submissions WHERE id = ?")
+          .bind(submissionId)
+          .first("count"),
+      );
+      assert.strictEqual(kept, 1);
+    }),
+  30_000,
+);
+
+it.live(
+  "counts no publication while the queue is down, so an outage makes no event stuck",
+  () =>
+    Effect.gen(function* () {
+      const services = yield* Layer.build(adapters);
+      const queue = Context.get(services, ClassificationQueue);
+      yield* seedForm("outbox-outage");
+      const { submissionId } = yield* Context.get(services, SubmissionIntake).receive(
+        "outbox-outage",
+        contact,
+        Option.none(),
+      );
+      const down = publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, {
+          send: () => Effect.fail(QueueUnavailable.make()),
+        }),
+        Effect.provideContext(services),
+        Effect.flip,
+      );
+      // A failed publication keeps the lease for a minute; the next Cron pass after it
+      // tries again.
+      const expireLease = Effect.promise(() =>
+        env.DB.prepare("UPDATE outbox_events SET lease_until = 1 WHERE submission_id = ?")
+          .bind(submissionId)
+          .run(),
+      );
+
+      for (let pass = 1; pass <= maxPublications + 1; pass += 1) {
+        yield* expireLease;
+        const failure = yield* down;
+        assert.strictEqual(failure._tag, "QueueUnavailable");
+        const row = yield* outboxRow(submissionId);
+        assert.strictEqual(row.publication_count, 0);
+        assert.isNull(row.published_at);
+        assert.isNull(row.stuck_at);
+      }
+
+      // Once the queue is back, the next pass publishes the event and counts it.
+      const sent: Array<SubmissionId> = [];
+      yield* expireLease;
+      yield* publishPendingSubmissions().pipe(
+        Effect.provideService(ClassificationQueue, recording(queue, sent)),
+        Effect.provideContext(services),
+      );
+      assert.include(sent, submissionId);
+      const published = yield* outboxRow(submissionId);
+      assert.strictEqual(published.publication_count, 1);
+      assert.isNull(published.stuck_at);
+      yield* waitForOneClassification(submissionId);
+    }),
+  30_000,
+);

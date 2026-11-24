@@ -14,7 +14,7 @@ pnpm deploy:dry    # build, validate the bundle with Wrangler, check its size bu
 
 Run them from the repository root: the root scripts run in each workspace package (`apps/rondyr`, `packages/emdash-plugin`, `tooling/*`). Both commands must pass before you open a pull request; CI runs them again. [docs/local-development.md](./docs/local-development.md) covers the local setup, which needs no Cloudflare account.
 
-After a schema change in `apps/rondyr/src/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `apps/rondyr/database/migrations` with its snapshot.
+After a schema change in `apps/rondyr/src/worker/adapters/database`, run `pnpm db:generate --name your-migration-name`, read the generated SQL, and commit the new folder in `apps/rondyr/database/migrations` with its snapshot.
 
 A new dependency goes into the `catalog:` of `pnpm-workspace.yaml` with an exact version, and the package's manifest references it as `catalog:`. The `dependencies` and `peerDependencies` of `packages/emdash-plugin` are the exception: sites install the plugin from outside the workspace, so they keep real version ranges.
 
@@ -38,7 +38,7 @@ CI runs the suite in the **Dashboard browser tests** job. To inspect a failed te
 - Work on a branch. In the Basaltbytes repository, a push to `main` deploys production and applies the D1 migrations.
 - Keep one issue per pull request, and reference it with `Closes #n` when the pull request meets every acceptance criterion of the issue, or `Refs #n` with the list of what is missing.
 - Add tests for the behavior you change. Integration tests run in workerd against the built Worker and don't mock modules.
-- Write code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions in English. Some older issues are in French. The dashboard text, the confirmation page, and the emails are written in English first and also exist in French: a dashboard text is a key in both `apps/rondyr/dashboard/src/locales/en` and `apps/rondyr/dashboard/src/locales/fr`.
+- Write code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions in English. Some older issues are in French. The dashboard text, the confirmation page, and the emails are written in English first and also exist in French: a dashboard text is a key in both `apps/rondyr/src/dashboard/locales/en` and `apps/rondyr/src/dashboard/locales/fr`.
 
 ## License of contributions
 

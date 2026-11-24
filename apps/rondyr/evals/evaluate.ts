@@ -1,7 +1,7 @@
 import { Duration, Effect, Option, Ref, Schema } from "effect";
 
 import { ClassificationFailed } from "../src/domain/submissions/classifier.external.ts";
-import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
+import { aiGatewayOptions } from "../src/worker/adapters/ai/gateway.ts";
 import type { ClassifierInput } from "../src/domain/submissions/classifier-input.ts";
 import { ResultCache, ScoredCall, Usage, cacheKey, inputDigest } from "./cache.ts";
 import { type ClassifierName, classifiers } from "./classifiers.ts";
@@ -67,7 +67,7 @@ export class UnexpectedModel extends Schema.TaggedError<
   requested: Schema.String,
 }) {}
 
-// The Worker gives a classifier call 12 seconds (src/adapters/ai/classifier.ts) and a submission
+// The Worker gives a classifier call 12 seconds (src/worker/adapters/ai/classifier.ts) and a submission
 // three attempts (src/domain/submissions/classify-submission.saga.ts).
 const callTimeout = "12 seconds";
 const attemptBudget = 3;
@@ -239,7 +239,7 @@ const evaluateClassifier = Effect.fn("Evaluation.classifier")(function* (
 
 /**
  * Scores every entry of the corpus with each classifier, through the adapters of the Worker and
- * the gateway options of src/adapters/ai/gateway.ts.
+ * the gateway options of src/worker/adapters/ai/gateway.ts.
  */
 export const evaluate = Effect.fn("Evaluation.run")(function* (
   corpus: Corpus,

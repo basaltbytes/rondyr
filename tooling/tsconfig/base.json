@@ -181,7 +181,7 @@
         "overrides": [
           {
             "include": [
-              "../../apps/rondyr/dashboard/src/**/*",
+              "../../apps/rondyr/src/dashboard/**/*",
               "../../docs/examples/**/*",
               "../../apps/rondyr/vite.config.ts",
               "../../apps/rondyr/vitest.config.ts",

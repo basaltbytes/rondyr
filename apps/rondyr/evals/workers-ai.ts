@@ -1,8 +1,8 @@
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
-import type { scoreWithJev } from "../src/adapters/ai/jev.ts";
-import type { scoreWithOpenAi } from "../src/adapters/ai/openai-decisions.ts";
+import type { scoreWithJev } from "../src/worker/adapters/ai/jev.ts";
+import type { scoreWithOpenAi } from "../src/worker/adapters/ai/openai-decisions.ts";
 import { ClassifierInput } from "../src/domain/submissions/classifier-input.ts";
 
 type JevBinding = Parameters<typeof scoreWithJev>[0];
@@ -65,7 +65,7 @@ export class WorkersAi extends Context.Service<
  * The AI Gateway options of `env.AI.run`, as the `cf-aig-*` headers of the REST API
  * (https://developers.cloudflare.com/ai-gateway/usage/rest-api/#per-request-configuration).
  * An option without a known header is refused, so that a privacy option added to
- * src/adapters/ai/gateway.ts is never dropped silently.
+ * src/worker/adapters/ai/gateway.ts is never dropped silently.
  */
 export function gatewayHeaders(options: AiOptions) {
   const { gateway, ...others } = options;

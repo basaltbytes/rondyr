@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { aiGatewayOptions } from "../src/adapters/ai/gateway.ts";
+import { aiGatewayOptions } from "../src/worker/adapters/ai/gateway.ts";
 import {
   ClassificationPolicy,
   ClassificationThresholds,
