@@ -33,6 +33,16 @@ The suite builds the dashboard and Worker, applies the D1 migrations to a fresh 
 
 CI runs the suite in the **Dashboard browser tests** job. To inspect a failed test's trace, run `pnpm --filter rondyr exec playwright show-trace <path-to-trace.zip>` with the trace from `apps/rondyr/test-results/`.
 
+## Documentation screenshots
+
+After a change of the dashboard's look, take the images of `docs/screenshots` again:
+
+```sh
+pnpm screenshots
+```
+
+The script builds the Worker, runs it in workerd with the fixtures of the browser tests, fills it with the pottery studio that the documentation shows, and writes the thirteen WebP files. It needs the Chromium of the browser tests and no credentials. Read the images before you commit them: a screen that changed may need a new alternative text where the documentation shows it.
+
 ## Pull requests
 
 - Work on a branch. In the Basaltbytes repository, a push to `main` deploys production and applies the D1 migrations.

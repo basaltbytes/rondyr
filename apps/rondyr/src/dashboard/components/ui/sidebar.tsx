@@ -124,7 +124,7 @@ export function Sidebar({ label, children }: SidebarProps) {
       aria-label={label}
       className={cn(
         "flex h-dvh shrink-0 flex-col bg-sidebar hairline-r border-sidebar-border text-sidebar-foreground",
-        collapsed ? "w-14" : "w-60",
+        collapsed ? "w-(--sidebar-collapsed-width)" : "w-60",
       )}
     >
       {children}
@@ -217,7 +217,7 @@ export function SidebarGroupLabel({ className, children, ...props }: ComponentPr
     <p
       data-slot="sidebar-group-label"
       className={cn(
-        "flex h-8 items-center px-3 text-xs font-medium tracking-wider text-sidebar-foreground/60 uppercase",
+        "flex h-8 items-center pr-3 pl-(--sidebar-icon-edge) text-xs font-medium tracking-wider text-sidebar-foreground/60 uppercase",
         className,
       )}
       {...props}
@@ -259,19 +259,20 @@ interface MenuRowProps {
 /**
  * A row of 40px, 44px under a finger. Its weight never changes: the current
  * page is told by its surface, so the labels do not shift. The row starts with
- * a mark of 32px, a `SidebarMenuIcon` or an avatar, so every label starts on
- * the same line and no mark moves when the sidebar collapses.
+ * a mark in the rail, a `SidebarMenuIcon` or an avatar, so every label starts
+ * on the same line and no mark moves when the sidebar collapses. The lengths of
+ * the rail and of the trail are the `--sidebar-*` variables of dashboard.css.
  */
 function menuRowClass(
   { active, activeWithin, hasAction, nested, size }: MenuRowProps,
   collapsed: boolean,
 ) {
   return cn(
-    "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none focus-visible:outline-sidebar-ring disabled:pointer-events-none disabled:opacity-50",
+    "flex w-full items-center gap-(--sidebar-gap) overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none focus-visible:outline-sidebar-ring disabled:pointer-events-none disabled:opacity-50",
     nested === true ? "font-normal" : "font-medium",
     size === "lg" ? "h-12" : "h-10 pointer-coarse:h-11",
-    collapsed ? "justify-center px-0" : "pr-3 pl-1",
-    hasAction === true && !collapsed && "pr-8 pointer-coarse:pr-11",
+    collapsed ? "justify-center px-0" : "pr-(--sidebar-trail-offset) pl-(--sidebar-rail-offset)",
+    hasAction === true && !collapsed && "pr-(--sidebar-trail-edge) pointer-coarse:pr-11",
     active === true
       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs"
       : "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground data-popup-open:bg-sidebar-accent data-popup-open:text-sidebar-accent-foreground",
@@ -373,7 +374,7 @@ export function SidebarMenuAction({ className, type, ...props }: ComponentProps<
       type={type ?? "button"}
       data-slot="sidebar-menu-action"
       className={cn(
-        "absolute top-0 right-0 flex size-10 items-center justify-end rounded-md pr-3.5 text-sidebar-foreground/70 transition-colors duration-150 ease-out hover:text-sidebar-foreground focus-visible:outline-sidebar-ring pointer-coarse:size-11 pointer-coarse:justify-center pointer-coarse:pr-0",
+        "absolute top-0 right-0 flex size-10 items-center justify-end rounded-md pr-(--sidebar-trail-icon-edge) text-sidebar-foreground/70 transition-colors duration-150 ease-out hover:text-sidebar-foreground focus-visible:outline-sidebar-ring pointer-coarse:size-11 pointer-coarse:justify-center pointer-coarse:pr-0",
         className,
       )}
       {...props}
@@ -395,12 +396,12 @@ export function SidebarMenuSub({ className, ...props }: ComponentProps<"ul">) {
   );
 }
 
-/** The icon of a menu button, centered in the 32px that an avatar fills. */
+/** The icon of a menu button, centered in the rail that an avatar fills. */
 export function SidebarMenuIcon({ className, ...props }: ComponentProps<"span">) {
   return (
     <span
       data-slot="sidebar-menu-icon"
-      className={cn("flex size-8 shrink-0 items-center justify-center", className)}
+      className={cn("flex size-(--sidebar-rail) shrink-0 items-center justify-center", className)}
       {...props}
     />
   );
@@ -418,18 +419,25 @@ export function SidebarMenuLabel({ className, ...props }: ComponentProps<"span">
   );
 }
 
+interface SidebarMenuBadgeProps extends ComponentProps<"span"> {
+  /** A count that asks for attention, on a pill that fills the trail. */
+  readonly highlighted?: boolean;
+}
+
 /**
- * A count or a mark at the end of a menu button, centered in a box of 20px so
+ * A count or a mark at the end of a menu button, centered in the trail so
  * the ends of the rows share an axis. Its digits have equal width.
  */
-export function SidebarMenuBadge({ className, ...props }: ComponentProps<"span">) {
+export function SidebarMenuBadge({ highlighted, className, ...props }: SidebarMenuBadgeProps) {
   const { collapsed } = useSidebar();
   if (collapsed) return null;
   return (
     <span
       data-slot="sidebar-menu-badge"
       className={cn(
-        "flex h-5 min-w-5 shrink-0 items-center justify-center text-xs tabular-nums",
+        "flex h-(--sidebar-trail) min-w-(--sidebar-trail) shrink-0 items-center justify-center text-xs tabular-nums",
+        highlighted === true &&
+          "rounded-full bg-sidebar-primary px-1.5 text-sidebar-primary-foreground",
         className,
       )}
       {...props}

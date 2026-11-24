@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "node scripts/dev-demo.mjs",
     "dev:alchemy": "pnpm build && alchemy dev --config alchemy-run.ts --stage local",
     "build": "vite build",
     "start": "vite preview",
@@ -22,6 +23,7 @@
     "test": "pnpm build && vitest run",
     "test:e2e": "pnpm build && playwright test && node scripts/dev-server-check.mjs",
     "test:dev": "node scripts/dev-server-check.mjs",
+    "screenshots": "pnpm build && node scripts/screenshots.mjs",
     "doctor": "node scripts/doctor.mjs",
     "evaluate": "node evals/cli.ts",
     "i18n:check": "i18next-cli lint && i18next-cli extract --ci --dry-run",
