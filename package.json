@@ -41,6 +41,7 @@
     "typecheck": "pnpm --recursive --sequential --if-present run typecheck",
     "test": "pnpm --recursive --sequential --if-present run test",
     "test:e2e": "pnpm --filter rondyr run test:e2e",
+    "screenshots": "pnpm --filter rondyr run screenshots",
     "test:lint": "pnpm --filter @rondyr/oxlint run test",
     "test:scripts": "node --test \"scripts/*.test.mjs\" \"apps/rondyr/scripts/*.test.mjs\"",
     "knip": "knip",
