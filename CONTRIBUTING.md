@@ -46,7 +46,7 @@ The script builds the Worker, runs it in workerd with the fixtures of the browse
 ## Pull requests
 
 - Work on a branch. In the Basaltbytes repository, a push to `main` deploys production and applies the D1 migrations.
-- Keep one issue per pull request, and reference it with `Closes #n` when the pull request meets every acceptance criterion of the issue, or `Refs #n` with the list of what is missing.
+- A pull request does not need an issue. When it works on one, keep one issue per pull request, and reference it with `Closes #n` when the pull request meets every acceptance criterion of the issue, or `Refs #n` with the list of what is missing.
 - Add tests for the behavior you change. Integration tests run in workerd against the built Worker and don't mock modules.
 - Write code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions in English. Some older issues are in French. The dashboard text, the confirmation page, and the emails are written in English first and also exist in French: a dashboard text is a key in both `apps/rondyr/src/dashboard/locales/en` and `apps/rondyr/src/dashboard/locales/fr`.
 
