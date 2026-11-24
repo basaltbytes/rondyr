@@ -3,6 +3,7 @@ import { RotateCw } from "lucide-react";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { CardListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { Button } from "~/components/ui/button";
 import { retryStuckMutation, stuckSubmissionsQuery } from "~/lib/api/operations";
@@ -54,9 +55,7 @@ export function StuckSubmissions({ organizationId }: StuckSubmissionsProps) {
           onRetry={() => void query.refetch()}
         />
       )}
-      {query.isPending && (
-        <output className="text-muted-foreground">{t("operations.stuck.loading")}</output>
-      )}
+      {query.isPending && <CardListSkeleton label={t("operations.stuck.loading")} />}
       {retryFailed && (
         <p role="alert" className="text-destructive">
           {t("operations.stuck.retryFailed")}

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, Outlet } from "@tanstack/react-router";
 
-import { PagePending } from "~/components/page-pending";
+import { AppShellSkeleton } from "~/components/page-pending";
 import { SignOutButton } from "~/features/authentication/sign-out-button";
 import { OrganizationsUnavailable } from "~/features/organization/organizations-unavailable";
 import { messageCountsQuery } from "~/lib/api/messages";
@@ -15,6 +15,7 @@ import { OrganizationShell } from "~/routes/-layout/organization-shell";
  * that the account is not a member of shows the page of an unknown address.
  */
 export const Route = createFileRoute("/_signed-in/o/$organizationId")({
+  pendingComponent: AppShellSkeleton,
   beforeLoad: async ({ context, params }) => ({
     organization: await organizationOf(context.queryClient, params.organizationId),
   }),
@@ -46,7 +47,7 @@ function OrganizationLayout() {
       />
     );
   }
-  if (organizations.data === undefined) return <PagePending />;
+  if (organizations.data === undefined) return <AppShellSkeleton />;
   const organization = organizations.data.find(({ id }) => id === organizationId);
   // The account left the organization while it was open.
   if (organization === undefined) return <Navigate to="/" replace />;

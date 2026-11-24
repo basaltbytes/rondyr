@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 
-import { SearchText } from "@rondyr/contracts/inbox";
+import { minSearchLength, SearchText } from "@rondyr/contracts/inbox";
 
 /** A folder of the sidebar: the messages of one status, or all of them. */
 export type Folder = "quarantined" | "accepted" | "archived" | "all";
@@ -52,4 +52,23 @@ export function messagesSearch(
     ...(form !== null && { form }),
     ...(search !== null && { q: search }),
   };
+}
+
+export type SearchTransition =
+  | { readonly action: "unchanged" }
+  | { readonly action: "clear" }
+  | { readonly action: "too-short"; readonly clearActive: boolean }
+  | { readonly action: "search"; readonly query: string };
+
+/** Decides what an input value does relative to the currently active search text. */
+export function searchTransition(input: string, activeSearch: string | null): SearchTransition {
+  const trimmed = input.trim();
+  if (trimmed === "") {
+    return activeSearch === null ? { action: "unchanged" } : { action: "clear" };
+  }
+  if (trimmed.length < minSearchLength) {
+    return { action: "too-short", clearActive: activeSearch !== null };
+  }
+  if (trimmed === activeSearch) return { action: "unchanged" };
+  return { action: "search", query: trimmed };
 }

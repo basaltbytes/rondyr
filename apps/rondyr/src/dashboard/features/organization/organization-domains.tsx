@@ -8,6 +8,7 @@ import {
   type OrganizationDomainList,
 } from "@rondyr/organizations/organization-domain";
 
+import { CardListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -146,9 +147,7 @@ export function OrganizationDomains({ organizationId }: OrganizationDomainsProps
                 onRetry={() => void domains.refetch()}
               />
             )}
-            {domains.isPending && (
-              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
-            )}
+            {domains.isPending && <CardListSkeleton label={t("common.loading")} />}
             {domains.isSuccess && (
               <DomainList organizationId={organizationId} domains={domains.data} />
             )}

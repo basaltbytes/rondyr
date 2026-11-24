@@ -1,6 +1,6 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 
-import { MessageReader } from "~/features/messages/message-reader";
+import { MessageReader, MessageReaderSkeleton } from "~/features/messages/message-reader";
 import { deliveriesQuery } from "~/lib/api/deliveries";
 import { messageListQuery, messageQuery } from "~/lib/api/messages";
 import { statusOf } from "~/lib/api/request";
@@ -11,6 +11,7 @@ import { useOrganization } from "~/routes/-layout/organization-context";
  * until the full fields arrive; a message that the list does not have waits for them.
  */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/messages/$submissionId")({
+  pendingComponent: MessageReaderSkeleton,
   loaderDeps: ({ search }) => search,
   loader: async ({ context, params, deps }) => {
     const { queryClient } = context;
