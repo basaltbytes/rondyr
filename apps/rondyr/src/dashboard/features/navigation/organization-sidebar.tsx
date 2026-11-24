@@ -86,7 +86,7 @@ export function OrganizationSidebar({
   return (
     <Sidebar label={t("inbox.navigation.label")}>
       <SidebarHeader>
-        <div className={cn("flex", collapsed ? "justify-center" : "pl-1.5")}>
+        <div className={cn("flex", collapsed ? "justify-center" : "pl-(--sidebar-logo-edge)")}>
           <ProductLogo compact={collapsed} />
         </div>
         <OrganizationSwitcher organizations={organizations} organization={organization} />
@@ -116,17 +116,8 @@ export function OrganizationSidebar({
                     </SidebarMenuIcon>
                     <SidebarMenuLabel>{label}</SidebarMenuLabel>
                     {total !== null && (
-                      <SidebarMenuBadge>
-                        <span
-                          className={cn(
-                            key === "quarantined" &&
-                              total > 0 &&
-                              !active &&
-                              "flex h-5 min-w-5 items-center justify-center rounded-full bg-sidebar-primary px-1.5 text-sidebar-primary-foreground",
-                          )}
-                        >
-                          {total}
-                        </span>
+                      <SidebarMenuBadge highlighted={key === "quarantined" && total > 0 && !active}>
+                        {total}
                       </SidebarMenuBadge>
                     )}
                   </SidebarMenuLink>
@@ -147,7 +138,7 @@ export function OrganizationSidebar({
                   params={{ organizationId }}
                   aria-label={t("inbox.forms.newTitle")}
                   aria-current={page.at === "newForm" ? "page" : undefined}
-                  className="relative flex size-8 shrink-0 items-center justify-center mr-1.5 rounded-md text-sidebar-foreground/70 transition-colors duration-150 ease-out before:absolute before:-inset-1 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-sidebar-ring aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-foreground pointer-coarse:mr-0 pointer-coarse:size-11 pointer-coarse:before:hidden"
+                  className="relative flex size-8 shrink-0 items-center justify-center mr-(--sidebar-trail-button-edge) rounded-md text-sidebar-foreground/70 transition-colors duration-150 ease-out before:absolute before:-inset-1 hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:outline-sidebar-ring aria-[current=page]:bg-sidebar-accent aria-[current=page]:text-sidebar-foreground pointer-coarse:mr-(--sidebar-trail-touch-edge) pointer-coarse:size-11 pointer-coarse:before:hidden"
                   onClick={close}
                 >
                   <Plus aria-hidden="true" className="size-4" />

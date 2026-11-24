@@ -32,7 +32,7 @@ function OrganizationMark({ name }: OrganizationMarkProps) {
   return (
     <span
       aria-hidden="true"
-      className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground"
+      className="flex size-(--sidebar-rail) shrink-0 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground"
     >
       {initialsOf(name)}
     </span>
@@ -98,7 +98,7 @@ export function OrganizationSwitcher({ organizations, organization }: Organizati
                 })
               }
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+              <span className="flex size-(--sidebar-rail) shrink-0 items-center justify-center rounded-md bg-muted">
                 <Plus aria-hidden="true" className="size-4" />
               </span>
               {t("inbox.sections.organization")}

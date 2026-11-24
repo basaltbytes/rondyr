@@ -223,6 +223,48 @@
   --tracking-widest: calc(var(--tracking-normal) + 0.1em);
 }
 
+/*
+ * The two axes of the sidebar. A row starts with a mark in the rail, an avatar
+ * that fills it or an icon of 1rem centered in it, and ends with a count or a
+ * mark centered in the trail. Every other position of the sidebar is derived
+ * from these five lengths, so changing one moves all that lines up with it.
+ */
+:root {
+  /* The width of the rail, and the size of an avatar. */
+  --sidebar-rail: 2rem;
+  /* From the start of a row to the rail. */
+  --sidebar-rail-offset: 0.25rem;
+  /* From the rail to the text of the row. */
+  --sidebar-gap: 0.625rem;
+  /* The size of the box at the end of a row. */
+  --sidebar-trail: 1.25rem;
+  /* From the trail to the end of the row. */
+  --sidebar-trail-offset: 0.75rem;
+
+  /* The left edge of an icon in the rail, where the title of a group starts. */
+  --sidebar-icon-edge: calc(var(--sidebar-rail-offset) + (var(--sidebar-rail) - 1rem) / 2);
+  /* Puts the mark of the logo, whose center is 0.875rem into its image, on the axis of the rail. */
+  --sidebar-logo-edge: calc(var(--sidebar-rail-offset) + var(--sidebar-rail) / 2 - 0.875rem);
+  /*
+   * The collapsed sidebar: the rail between its offsets and the 0.5rem of padding, then
+   * the rule at its end, so no mark moves when the sidebar collapses.
+   */
+  --sidebar-collapsed-width: calc(
+    1rem + 2 * var(--sidebar-rail-offset) + var(--sidebar-rail) + var(--hairline)
+  );
+  /* The room that a row leaves at its end for a control placed over the trail. */
+  --sidebar-trail-edge: calc(var(--sidebar-trail-offset) + var(--sidebar-trail));
+  /* From the end of a row to an icon of 1rem centered in the trail. */
+  --sidebar-trail-icon-edge: calc(var(--sidebar-trail-offset) + (var(--sidebar-trail) - 1rem) / 2);
+  /* The margin that centers a button of 2rem, 2.75rem under a finger, on the axis of the trail. */
+  --sidebar-trail-button-edge: calc(
+    var(--sidebar-trail-offset) - (2rem - var(--sidebar-trail)) / 2
+  );
+  --sidebar-trail-touch-edge: calc(
+    var(--sidebar-trail-offset) - (2.75rem - var(--sidebar-trail)) / 2
+  );
+}
+
 @utility hairline-t {
   border-top-width: var(--hairline);
 }

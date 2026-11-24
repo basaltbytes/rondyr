@@ -62,7 +62,7 @@ export function AccountMenu({ email, onSignedOut }: AccountMenuProps) {
           >
             <span
               aria-hidden="true"
-              className="flex size-8 shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground uppercase"
+              className="flex size-(--sidebar-rail) shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground uppercase"
             >
               {email.slice(0, 1)}
             </span>
