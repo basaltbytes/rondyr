@@ -5,7 +5,6 @@ import {
   type OrganizationClassificationPolicy,
 } from "@rondyr/organizations/organization-classification-policy";
 
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, request, requestJson } from "./request.ts";
 
 export type OrganizationClassificationSettings = typeof OrganizationClassificationSettings.Type;
@@ -30,10 +29,8 @@ export function saveClassificationMutation(organizationId: string) {
         override === null ? { method: "DELETE" } : { method: "PUT", json: override },
       ),
     onSuccess: (_response, override, _context, { client }) =>
-      client.setQueryData(
-        classificationQuery(organizationId).queryKey,
-        (settings) => (settings === undefined ? undefined : { ...settings, override }),
-        keepReadTime(client, classificationQuery(organizationId).queryKey),
+      client.setQueryData(classificationQuery(organizationId).queryKey, (settings) =>
+        settings === undefined ? undefined : { ...settings, override },
       ),
   });
 }

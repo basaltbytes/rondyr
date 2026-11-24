@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import { ChevronsUpDown, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -48,6 +48,16 @@ interface OrganizationSwitcherProps {
 export function OrganizationSwitcher({ organizations, organization }: OrganizationSwitcherProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const router = useRouter();
+  const preloadOrganization = (organizationId: string) => {
+    if (organizationId === organization.id) return;
+    void router
+      .preloadRoute({ to: "/o/$organizationId/messages", params: { organizationId } })
+      .catch(() => undefined);
+  };
+  const preloadNewOrganization = () => {
+    void router.preloadRoute({ to: "/organizations/new" }).catch(() => undefined);
+  };
   return (
     <SidebarMenu>
       <SidebarMenuItem>
@@ -82,7 +92,12 @@ export function OrganizationSwitcher({ organizations, organization }: Organizati
                 }
               >
                 {organizations.map(({ id, name }) => (
-                  <DropdownMenuRadioItem key={id} value={id}>
+                  <DropdownMenuRadioItem
+                    key={id}
+                    value={id}
+                    onMouseEnter={() => preloadOrganization(id)}
+                    onFocus={() => preloadOrganization(id)}
+                  >
                     <OrganizationMark name={name} />
                     <span className="min-w-0 flex-1 wrap-anywhere">{name}</span>
                   </DropdownMenuRadioItem>
@@ -91,6 +106,8 @@ export function OrganizationSwitcher({ organizations, organization }: Organizati
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
+              onMouseEnter={preloadNewOrganization}
+              onFocus={preloadNewOrganization}
               onClick={() =>
                 void navigate({
                   to: "/organizations/new",

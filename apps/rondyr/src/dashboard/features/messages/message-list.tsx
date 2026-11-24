@@ -32,7 +32,7 @@ import {
 import type { Organization } from "~/lib/api/organizations";
 import { countsOfForm, formsOfFolder, totalOf, type FolderForm } from "~/lib/folder-counts";
 import { useFormats } from "~/lib/i18n";
-import type { Folder, MessagesSearch } from "~/lib/messages-search";
+import { messagesSearch, type Folder, type MessagesSearch } from "~/lib/messages-search";
 
 import { excerptOf, listDay, senderOf, subjectOf } from "./message-preview.ts";
 
@@ -211,10 +211,11 @@ interface FormChipsProps {
   readonly forms: readonly FolderForm[];
   readonly form: ManagedForm["publicId"] | null;
   readonly onForm: (form: ManagedForm["publicId"] | null) => void;
+  readonly onPrefetchForm: (form: ManagedForm["publicId"] | null) => void;
 }
 
 /** The forms of the folder, an emoji, a name and a count each. One of them narrows the list. */
-function FormChips({ forms, form, onForm }: FormChipsProps) {
+function FormChips({ forms, form, onForm, onPrefetchForm }: FormChipsProps) {
   const { t } = useTranslation();
   return (
     <nav
@@ -225,6 +226,8 @@ function FormChips({ forms, form, onForm }: FormChipsProps) {
         type="button"
         aria-pressed={form === null}
         className={chip(form === null)}
+        onMouseEnter={() => onPrefetchForm(null)}
+        onFocus={() => onPrefetchForm(null)}
         onClick={() => onForm(null)}
       >
         {t("inbox.list.forms.all")}
@@ -235,6 +238,8 @@ function FormChips({ forms, form, onForm }: FormChipsProps) {
           type="button"
           aria-pressed={part.publicId === form}
           className={chip(part.publicId === form)}
+          onMouseEnter={() => onPrefetchForm(part.publicId)}
+          onFocus={() => onPrefetchForm(part.publicId)}
           onClick={() => onForm(part.publicId)}
         >
           <FormEmoji form={part} className="text-sm" />
@@ -349,7 +354,21 @@ export function MessageList({ organization, search, openId, onForm, onSearch }: 
           <RefreshCw aria-hidden="true" className="size-4" />
         </Button>
       </header>
-      {folderForms.length > 0 && <FormChips forms={folderForms} form={form} onForm={onForm} />}
+      {folderForms.length > 0 && (
+        <FormChips
+          forms={folderForms}
+          form={form}
+          onForm={onForm}
+          onPrefetchForm={(next) => {
+            if (next === form) return;
+            void queryClient
+              .infiniteQuery(
+                messageListQuery(organization.id, messagesSearch(folder, next, searchText)),
+              )
+              .catch(() => undefined);
+          }}
+        />
+      )}
       <SearchBar key={searchText ?? ""} search={searchText} onSearch={onSearch} />
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         {list.isError && (

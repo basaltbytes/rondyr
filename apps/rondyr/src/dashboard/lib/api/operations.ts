@@ -6,7 +6,6 @@ import {
   StuckSubmissions,
 } from "@rondyr/contracts/operations-status";
 
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, requestJson, statusOf } from "./request.ts";
 
 export type OperationsStatus = typeof OperationsStatus.Type;
@@ -65,7 +64,7 @@ export function retryStuckMutation(organizationId: string) {
     onSuccess: async (stuck, _submission, _context, { client }) => {
       const stuckKey = stuckSubmissionsQuery(organizationId).queryKey;
       if (stuck === null) await client.invalidateQueries({ queryKey: stuckKey });
-      else client.setQueryData(stuckKey, stuck, keepReadTime(client, stuckKey));
+      else client.setQueryData(stuckKey, stuck);
       await client.invalidateQueries({ queryKey: operationsQuery.queryKey });
     },
   });

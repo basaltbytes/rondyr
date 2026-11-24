@@ -15,11 +15,9 @@ import { OrganizationShell, useOpenCreatedOrganization } from "~/routes/-layout/
  */
 export const Route = createFileRoute("/_signed-in/organizations/new")({
   staticData: { sidebar: { at: "organization" } },
-  loader: ({ context }) =>
-    context.queryClient.query({ ...organizationsQuery, staleTime: "static" }).then(
-      () => undefined,
-      () => undefined,
-    ),
+  loader: ({ context }) => {
+    void context.queryClient.query(organizationsQuery).catch(() => undefined);
+  },
   component: NewOrganizationPage,
 });
 

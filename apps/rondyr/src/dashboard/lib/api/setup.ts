@@ -11,6 +11,7 @@ export const setupQuery = queryOptions({
     const { state } = await requestJson("/api/setup", SetupStatus, { signal, cache: "no-store" });
     return state;
   },
+  staleTime: 0,
 });
 
 interface Owner {

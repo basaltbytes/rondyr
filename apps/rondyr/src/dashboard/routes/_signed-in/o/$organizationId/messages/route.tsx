@@ -17,13 +17,11 @@ export const Route = createFileRoute("/_signed-in/o/$organizationId/messages")({
   staticData: { sidebar: { at: "messages" } },
   validateSearch: Schema.toStandardSchemaV1(MessagesSearch),
   loaderDeps: ({ search }) => search,
-  loader: ({ context, params, deps }) =>
-    context.queryClient
-      .infiniteQuery({ ...messageListQuery(params.organizationId, deps), staleTime: "static" })
-      .then(
-        () => undefined,
-        () => undefined,
-      ),
+  loader: ({ context, params, deps }) => {
+    void context.queryClient
+      .infiniteQuery(messageListQuery(params.organizationId, deps))
+      .catch(() => undefined);
+  },
   // The settings go back to the list that was shown before them.
   onEnter: ({ params, search }) => rememberMessages(params.organizationId, search),
   onStay: ({ params, search }) => rememberMessages(params.organizationId, search),
@@ -35,8 +33,7 @@ function Messages() {
   const organization = useOrganization();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { submissionId } = useParams({ strict: false });
-  const openId = submissionId ?? null;
+  const openId = useParams({ strict: false, select: (params) => params.submissionId ?? null });
   const { folder } = search;
   const form = search.form ?? null;
   const text = search.q ?? null;

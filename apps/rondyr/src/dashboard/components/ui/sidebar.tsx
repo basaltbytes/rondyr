@@ -58,11 +58,14 @@ export function SidebarProvider({ className, children, ...props }: ComponentProp
 
   function toggleSidebar() {
     if (isMobile) {
-      setOpenMobile(!openMobile);
+      setOpenMobile((current) => !current);
       return;
     }
-    storeOpen(!open);
-    setOpen(!open);
+    setOpen((current) => {
+      const next = !current;
+      storeOpen(next);
+      return next;
+    });
   }
 
   // oxlint-disable-next-line rondyr/no-unreasoned-effect -- Listens to the window's keyboard for the sidebar shortcut.
@@ -70,11 +73,19 @@ export function SidebarProvider({ className, children, ...props }: ComponentProp
     function onKeyDown(event: KeyboardEvent) {
       if (event.key.toLowerCase() !== shortcutKey || !(event.metaKey || event.ctrlKey)) return;
       event.preventDefault();
-      toggleSidebar();
+      if (isMobile) {
+        setOpenMobile((current) => !current);
+        return;
+      }
+      setOpen((current) => {
+        const next = !current;
+        storeOpen(next);
+        return next;
+      });
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+  }, [isMobile]);
 
   return (
     <SidebarContext

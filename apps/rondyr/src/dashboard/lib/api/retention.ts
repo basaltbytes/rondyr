@@ -2,7 +2,6 @@ import { mutationOptions, queryOptions } from "@tanstack/react-query";
 
 import { RetentionPeriods } from "@rondyr/organizations/retention";
 
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, requestJson } from "./request.ts";
 
 export type { RetentionPeriods };
@@ -23,10 +22,6 @@ export function saveRetentionMutation(organizationId: string) {
     mutationFn: (periods: RetentionPeriods) =>
       requestJson(path(organizationId), RetentionPeriods, { method: "PUT", json: periods }),
     onSuccess: (periods, _sent, _context, { client }) =>
-      client.setQueryData(
-        retentionQuery(organizationId).queryKey,
-        periods,
-        keepReadTime(client, retentionQuery(organizationId).queryKey),
-      ),
+      client.setQueryData(retentionQuery(organizationId).queryKey, periods),
   });
 }

@@ -3,7 +3,6 @@ import { Schema } from "effect";
 
 import { FormOrigin, OriginRequestError } from "@rondyr/forms/allowed-origin";
 
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, refusalOf, request, requestJson } from "./request.ts";
 
 export type FormOrigin = typeof FormOrigin.Type;
@@ -38,13 +37,10 @@ export function addOriginMutation(organizationId: string, publicId: string) {
         refusal: OriginRequestError,
       }),
     onSuccess: (added, _origin, _context, { client }) =>
-      client.setQueryData(
-        originsQuery(organizationId, publicId).queryKey,
-        (origins) =>
-          origins === undefined || origins.some((item) => item.origin === added.origin)
-            ? origins
-            : [...origins, added],
-        keepReadTime(client, originsQuery(organizationId, publicId).queryKey),
+      client.setQueryData(originsQuery(organizationId, publicId).queryKey, (origins) =>
+        origins === undefined || origins.some((item) => item.origin === added.origin)
+          ? origins
+          : [...origins, added],
       ),
   });
 }
@@ -58,10 +54,8 @@ export function removeOriginMutation(organizationId: string, publicId: string) {
         refusal: OriginRequestError,
       }),
     onSuccess: (_response, origin, _context, { client }) =>
-      client.setQueryData(
-        originsQuery(organizationId, publicId).queryKey,
-        (origins) => origins?.filter((item) => item.origin !== origin),
-        keepReadTime(client, originsQuery(organizationId, publicId).queryKey),
+      client.setQueryData(originsQuery(organizationId, publicId).queryKey, (origins) =>
+        origins?.filter((item) => item.origin !== origin),
       ),
   });
 }

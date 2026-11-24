@@ -161,7 +161,11 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
   const format = useFormats();
   const queryClient = useQueryClient();
   const organizationId = organization.id;
-  const list = useInfiniteQuery(messageListQuery(organizationId, search));
+  // MessageList owns keeping the list fresh; opening a message must not refetch every page.
+  const list = useInfiniteQuery({
+    ...messageListQuery(organizationId, search),
+    refetchOnMount: false,
+  });
   const { data: counts } = useQuery(messageCountsQuery(organizationId));
   // A list entry has long values cut short. The decision does not wait for the full ones.
   const detail = useQuery(messageQuery(organizationId, submissionId));
