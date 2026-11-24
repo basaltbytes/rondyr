@@ -296,17 +296,35 @@ const remove = Effect.fn("Members.remove")(function* (
   const db = yield* database;
   const now = yield* Clock.currentTimeMillis;
   const key = [scope.userId, scope.organizationId, member] as const;
+  // ?3 is the member. It can be removed when it belongs to the organization, the
+  // acting account is still its admin, and it is not the last admin.
+  const removable = `
+    SELECT 1 FROM organization_members target
+    WHERE target.organization_id = ?2 AND target.user_id = ?3 AND EXISTS (${actor})
+      AND (target.role <> 'admin' OR (${admins}) > 1)
+  `;
   // A removed member knows the API tokens it created and the links it issued:
   // the same transaction revokes them, and ends its sessions once it belongs to
-  // no organization.
-  const [before, removed] = yield* d1(() =>
+  // no organization. The sessions go first, under the guard of the removal and
+  // while the membership still exists: a D1 batch runs as one transaction, so
+  // they go exactly when the next statement removes the member, and never for a
+  // call that removes nobody, such as one naming an account of no organization.
+  const [before, , removed] = yield* d1(() =>
     db.batch([
       db.prepare(refusal).bind(...key),
       db
         .prepare(`
+        DELETE FROM auth_sessions
+        WHERE user_id = ?3 AND EXISTS (${removable})
+          AND NOT EXISTS (
+            SELECT 1 FROM organization_members WHERE user_id = ?3 AND organization_id <> ?2
+          )
+      `)
+        .bind(...key),
+      db
+        .prepare(`
         DELETE FROM organization_members
-        WHERE organization_id = ?2 AND user_id = ?3 AND EXISTS (${actor})
-          AND (role <> 'admin' OR (${admins}) > 1)
+        WHERE organization_id = ?2 AND user_id = ?3 AND EXISTS (${removable})
         RETURNING user_id AS id
       `)
         .bind(...key),
@@ -320,12 +338,6 @@ const remove = Effect.fn("Members.remove")(function* (
       `)
         .bind(...key, now),
       db.prepare(withdrawInvitations).bind(...key, now),
-      db
-        .prepare(`
-        DELETE FROM auth_sessions
-        WHERE user_id = ?3 AND NOT EXISTS (SELECT 1 FROM organization_members WHERE user_id = ?3)
-      `)
-        .bind(...key),
     ]),
   );
   const deleted = yield* decodeIds(removed?.results).pipe(Effect.mapError(unreadable));

@@ -107,29 +107,26 @@ it("accepts public HTTPS destinations and normalizes them", () => {
   assert.isTrue(Result.isSuccess(parseWebhookUrl("https://rondyr.example.com/", Option.none())));
 });
 
-it("refuses destinations matching any of multiple worker origins including IP literals", () => {
-  const origins = [
-    "https://rondyr.example.com",
-    "https://Rondyr.Workers.Dev.",
-    "https://8.8.8.8",
-    "https://[2606:4700:4700::1111]",
-    "not-an-origin",
-  ];
-  const refused = [
-    "https://rondyr.example.com/hook",
-    "https://RONDYR.WORKERS.DEV/hook",
-    "https://rondyr.workers.dev./hook",
-    "https://8.8.8.8/hook",
-    "https://[2606:4700:4700::1111]/hook",
+it("refuses the worker's own origin whatever its spelling, an IP literal included", () => {
+  const cases: ReadonlyArray<readonly [origin: string, url: string]> = [
+    ["https://Rondyr.Workers.Dev.", "https://RONDYR.WORKERS.DEV/hook"],
+    ["https://rondyr.workers.dev", "https://rondyr.workers.dev./hook"],
+    ["https://8.8.8.8", "https://8.8.8.8/hook"],
+    ["https://[2606:4700:4700::1111]", "https://[2606:4700:4700::1111]/hook"],
   ];
   assert.deepEqual(
-    refused.map((url) =>
-      Result.match(parseWebhookUrl(url, origins), {
+    cases.map(([origin, url]) =>
+      Result.match(parseWebhookUrl(url, Option.some(origin)), {
         onSuccess: () => "accepted",
         onFailure: (reason) => reason,
       }),
     ),
-    refused.map(() => "worker-origin"),
+    cases.map(() => "worker-origin"),
   );
-  assert.isTrue(Result.isSuccess(parseWebhookUrl("https://hooks.example.com/ok", origins)));
+});
+
+it("ignores a worker origin that does not parse", () => {
+  assert.isTrue(
+    Result.isSuccess(parseWebhookUrl("https://hooks.example.com/ok", Option.some("not-an-origin"))),
+  );
 });

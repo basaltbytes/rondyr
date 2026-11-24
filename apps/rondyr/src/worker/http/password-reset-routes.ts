@@ -87,8 +87,9 @@ const sendLink = Effect.fnUntraced(function* (
  * time tells who has an account.
  */
 const request = Effect.gen(function* () {
-  yield* enforceClientRateLimit("password-reset-request");
+  // The origin first, so that another site cannot use up a visitor's quota.
   const origin = yield* sameOrigin;
+  yield* enforceClientRateLimit("password-reset-request");
   const input = yield* HttpServerRequest.schemaBodyJson(RequestPasswordReset, {
     onExcessProperty: "error",
   });
@@ -113,8 +114,8 @@ const request = Effect.gen(function* () {
 
 /** Choose a new password with the secret of a link. The secret travels in the body. */
 const complete = Effect.gen(function* () {
-  yield* enforceClientRateLimit("password-reset-complete");
   yield* sameOrigin;
+  yield* enforceClientRateLimit("password-reset-complete");
   const input = yield* HttpServerRequest.schemaBodyJson(CompletePasswordReset, {
     onExcessProperty: "error",
   });

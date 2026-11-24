@@ -1,7 +1,11 @@
 import { mutationOptions, queryOptions } from "@tanstack/react-query";
 import { Schema } from "effect";
 
-import { InboxOrganizationWithForms, SetupInbox } from "@rondyr/contracts/inbox-setup";
+import {
+  InboxOrganizationWithForms,
+  OrganizationCreation,
+  SetupInbox,
+} from "@rondyr/contracts/inbox-setup";
 
 import { request, requestJson } from "./request.ts";
 
@@ -16,6 +20,16 @@ const decodeSetup = Schema.decodeUnknownSync(SetupInbox);
 export const organizationsQuery = queryOptions({
   queryKey: ["organizations"],
   queryFn: ({ signal }) => requestJson(path, Organizations, { signal }),
+});
+
+/**
+ * Whether the signed-in account may create an organization: on the first run of the
+ * instance, or as an admin of an existing organization. The Worker decides.
+ */
+export const organizationCreationQuery = queryOptions({
+  queryKey: ["organization-creation"],
+  queryFn: ({ signal }) =>
+    requestJson("/api/organization-creation", OrganizationCreation, { signal }),
 });
 
 /** Creates an organization and its first form, from the fields of the creation form. */

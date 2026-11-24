@@ -13,6 +13,7 @@ import {
 } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
+  callFromOtherSite,
   createInbox,
   json,
   signIn,
@@ -23,7 +24,7 @@ import {
   OrganizationMembers,
 } from "../../domain/organizations/members.ts";
 import { InboxOrganizationWithForms } from "../../domain/submissions/inbox-setup.ts";
-import { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationId, SubmissionId, UserId } from "../../domain/submissions/submission.id.ts";
 import { membersLive } from "../adapters/database/members.ts";
 import { Members } from "../ports/members.ts";
 
@@ -791,7 +792,129 @@ it.live(
         soloAgain,
       );
       assert.strictEqual(createAttempt.status, 403);
+      // The dashboard learns it before offering a form that would fail.
+      const soloCreation = yield* call("GET", "/api/organization-creation", undefined, soloAgain);
+      const adminCreation = yield* call("GET", "/api/organization-creation", undefined, admin);
+      const answers = yield* Effect.all([json(soloCreation), json(adminCreation)]);
+      assert.deepEqual(
+        [soloCreation.status, soloCreation.headers.get("cache-control")],
+        [200, "no-store"],
+      );
+      assert.deepEqual(answers, [{ allowed: false }, { allowed: true }]);
     }),
+);
+
+/** The sessions that D1 keeps for an account. */
+const sessionsOf = (userId: string) =>
+  Effect.promise(() =>
+    env.DB.prepare("SELECT count(*) AS total FROM auth_sessions WHERE user_id = ?")
+      .bind(userId)
+      .first("total"),
+  );
+
+it.live("keeps the sessions of an account that a removal does not remove", () =>
+  Effect.gen(function* () {
+    const admin = yield* signIn;
+    const { id } = yield* createInbox("Removal of a stranger", admin);
+    const elsewhere = yield* createInbox("Stranger's organization", admin);
+    yield* seedAccount("no-organization", "no-organization@example.test");
+    const member = yield* seedAccount("other-organization", "other-organization@example.test");
+    const { token } = yield* invite(
+      elsewhere.id,
+      admin,
+      "other-organization@example.test",
+      "reviewer",
+    );
+    const joined = yield* call("POST", "/api/invitations/accept", { token }, member);
+    assert.strictEqual(joined.status, 200);
+
+    const noOrganization = yield* call(
+      "DELETE",
+      `/api/organizations/${id}/members/no-organization`,
+      undefined,
+      admin,
+    );
+    const otherOrganization = yield* call(
+      "DELETE",
+      `/api/organizations/${id}/members/other-organization`,
+      undefined,
+      admin,
+    );
+
+    const sessions = yield* Effect.all([
+      sessionsOf("no-organization"),
+      sessionsOf("other-organization"),
+    ]);
+
+    assert.deepEqual([noOrganization.status, otherOrganization.status], [404, 404]);
+    assert.deepEqual(sessions, [1, 1]);
+  }),
+);
+
+it.live("keeps the sessions of the last member when a reviewer's removal is refused", () =>
+  Effect.gen(function* () {
+    const admin = yield* signIn;
+    const { id } = yield* createInbox("Refused removal", admin);
+    const target = yield* seedAccount("refused-removal", "refused-removal@example.test");
+    const { token } = yield* invite(id, admin, "refused-removal@example.test", "reviewer");
+    const joined = yield* call("POST", "/api/invitations/accept", { token }, target);
+    assert.strictEqual(joined.status, 200);
+    const reviewer = yield* seedAccount("refusing-reviewer", "refusing-reviewer@example.test");
+    const second = yield* invite(id, admin, "refusing-reviewer@example.test", "reviewer");
+    const reviewerJoined = yield* call(
+      "POST",
+      "/api/invitations/accept",
+      { token: second.token },
+      reviewer,
+    );
+    assert.strictEqual(reviewerJoined.status, 200);
+    // The adapter runs past the route's check, as for a request that started before a demotion.
+    const scope = {
+      userId: UserId.make("refusing-reviewer"),
+      organizationId: OrganizationId.make(id),
+    };
+
+    const outcome = yield* withMembers(
+      Effect.gen(function* () {
+        const store = yield* Members;
+        return yield* Effect.flip(store.remove(scope, UserId.make("refused-removal")));
+      }),
+    );
+
+    const sessions = yield* sessionsOf("refused-removal");
+
+    assert.strictEqual(outcome._tag, "NotAnAdmin");
+    assert.strictEqual(sessions, 1);
+  }),
+);
+
+it.live("does not count a request from another site against the client's invitation limit", () =>
+  Effect.gen(function* () {
+    const token = "e".repeat(43);
+    const readClient = { "cf-connecting-ip": "203.0.113.73" };
+    const acceptClient = { "cf-connecting-ip": "203.0.113.74" };
+    const acceptance = { token, name: "Visitor", password };
+
+    const crossSiteReads = yield* Effect.forEach(Array.from({ length: 6 }), () =>
+      callFromOtherSite("/api/invitations/read", { token }, readClient),
+    );
+    const crossSiteAcceptances = yield* Effect.forEach(Array.from({ length: 6 }), () =>
+      callFromOtherSite("/api/invitations/accept", acceptance, acceptClient),
+    );
+    const read = yield* call("POST", "/api/invitations/read", { token }, readClient);
+    const accept = yield* call("POST", "/api/invitations/accept", acceptance, acceptClient);
+
+    assert.deepEqual(
+      crossSiteReads.map(({ status }) => status),
+      [403, 403, 403, 403, 403, 403],
+    );
+    assert.deepEqual(
+      crossSiteAcceptances.map(({ status }) => status),
+      [403, 403, 403, 403, 403, 403],
+    );
+    assert.strictEqual(read.status, 404);
+    assert.strictEqual(accept.status, 404);
+  }),
 );
 
 it.live("rate-limits invitation read and accept requests per client IP", () =>

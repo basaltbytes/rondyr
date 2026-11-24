@@ -7,7 +7,11 @@ import {
 } from "effect/http";
 
 import { apiTokenRole } from "../../domain/organizations/member-role.ts";
-import { InboxOrganizationWithForms, SetupInbox } from "../../domain/submissions/inbox-setup.ts";
+import {
+  InboxOrganizationWithForms,
+  OrganizationCreation,
+  SetupInbox,
+} from "../../domain/submissions/inbox-setup.ts";
 import {
   InboxFilter,
   InboxPage,
@@ -138,6 +142,14 @@ const create = Effect.gen(function* () {
   return HttpServerResponse.empty({ status: 201, ...jsonOptions });
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
 
+/** Whether the account may create an organization, so the dashboard offers the form only then. */
+const creation = Effect.gen(function* () {
+  const userId = yield* signedInAccount();
+  const directory = yield* OrganizationDirectory;
+  const allowed = yield* directory.mayCreate(userId);
+  return yield* HttpServerResponse.schemaJson(OrganizationCreation)({ allowed }, jsonOptions);
+});
+
 const list = Effect.gen(function* () {
   const client = yield* reviewClient;
   const { after, form, q, ...input } = yield* HttpRouter.schemaParams(ListParams);
@@ -224,6 +236,7 @@ const review = Effect.gen(function* () {
 export const reviewRoutes = Layer.mergeAll(
   HttpRouter.add("GET", organizationPath, withErrors(organizationList)),
   HttpRouter.add("POST", organizationPath, withErrors(create)),
+  HttpRouter.add("GET", "/api/organization-creation", withErrors(creation)),
   HttpRouter.add("GET", submissionsPath, withErrors(list)),
   HttpRouter.add("GET", countsPath, withErrors(counts)),
   HttpRouter.add("GET", detailPath, withErrors(detail)),

@@ -122,6 +122,35 @@ describe("first-run setup", () => {
       assert.strictEqual(again.status, 404);
     }),
   );
+
+  it.effect("lets the owner create the first organization of the instance", () =>
+    Effect.gen(function* () {
+      const credentials = yield* encodeJson({ email: owner.email, password: owner.password });
+      const signIn = yield* Effect.promise(() =>
+        env.TEST_WORKER.fetch(`${testOrigin}/api/auth/sign-in/email`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: testOrigin },
+          body: credentials,
+        }),
+      );
+      assert.strictEqual(signIn.status, 200);
+      const cookie = signIn.headers
+        .getSetCookie()
+        .map((value) => value.split(";", 1)[0])
+        .join("; ");
+
+      const creation = yield* Effect.promise(() =>
+        env.TEST_WORKER.fetch(`${testOrigin}/api/organization-creation`, {
+          headers: { cookie, origin: testOrigin },
+        }),
+      );
+
+      const answer = yield* Effect.promise(() => creation.json());
+
+      assert.strictEqual(creation.status, 200);
+      assert.deepEqual(answer, { allowed: true });
+    }),
+  );
 });
 
 describe("origin without BETTER_AUTH_URL", () => {

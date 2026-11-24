@@ -7,8 +7,8 @@ import {
   checkDeclaredRateLimit,
   declaredRateLimitMax,
   declaredRateLimitWindowMs,
-  hashClientIp,
   normalizeClientIp,
+  purgeDeclaredRateLimits,
 } from "./declared-rate-limit.ts";
 import { DeclaredPost, receiveDeclaredPost } from "./declared-submission.ts";
 import { enqueue } from "./enqueue.ts";
@@ -68,7 +68,7 @@ describe("normalizeClientIp", () => {
 describe("checkDeclaredRateLimit", () => {
   const start = Date.UTC(2026, 10, 24, 12);
 
-  it("allows 5 requests in a window, blocks the 6th, and resets in the next window", async () => {
+  it("allows 5 requests in a window, blocks the 6th, and counts again in the next window", async () => {
     const kv = new MemoryKv();
     const { host } = memoryHost();
     const ctx = { kv, log: host.log };
@@ -79,20 +79,55 @@ describe("checkDeclaredRateLimit", () => {
     }
     expect(await checkDeclaredRateLimit(ctx, "contact", ip, start + 10_000)).toBe(false);
 
-    // Raw IP never appears in KV keys or values.
-    const serialized = JSON.stringify([...kv.rows.rows.entries()]);
-    expect(serialized).not.toContain(ip);
-    expect(serialized).toContain(await hashClientIp(ip));
-    expect(kv.rows.rows.size).toBe(1);
-
     // A separate form keeps its own bucket.
     expect(await checkDeclaredRateLimit(ctx, "newsletter", ip, start + 10_000)).toBe(true);
 
-    // After 60 seconds, the window resets in place without adding new keys.
     expect(
       await checkDeclaredRateLimit(ctx, "contact", ip, start + declaredRateLimitWindowMs),
     ).toBe(true);
-    expect(kv.rows.rows.size).toBe(2);
+  });
+
+  it("stores neither the IP nor its plain SHA-256 in KV", async () => {
+    const kv = new MemoryKv();
+    const { host } = memoryHost();
+    const ip = "203.0.113.42";
+    const plainSha256 = "17af1cf3d1b5332c53349fc789abdc853bbeea7ed33eff727ff794ab741ccac9";
+
+    await checkDeclaredRateLimit({ kv, log: host.log }, "contact", ip, start);
+
+    const serialized = JSON.stringify([...kv.rows.rows.entries()]);
+    expect(serialized).not.toContain(ip);
+    expect(serialized).not.toContain(plainSha256);
+  });
+
+  it("hashes the same visitor differently on two sites", async () => {
+    const { host } = memoryHost();
+    const first = new MemoryKv();
+    const second = new MemoryKv();
+
+    await checkDeclaredRateLimit({ kv: first, log: host.log }, "contact", "203.0.113.42", start);
+    await checkDeclaredRateLimit({ kv: second, log: host.log }, "contact", "203.0.113.42", start);
+
+    const counterKeys = (kv: MemoryKv) =>
+      [...kv.rows.rows.keys()].filter((key) => key.startsWith("declared:rl:"));
+    expect(counterKeys(first)).toHaveLength(1);
+    expect(counterKeys(second)).toHaveLength(1);
+    expect(counterKeys(first)).not.toEqual(counterKeys(second));
+  });
+
+  it("keeps the site's hash key across requests, so a visitor keeps one counter", async () => {
+    const kv = new MemoryKv();
+    const { host } = memoryHost();
+    const ctx = { kv, log: host.log };
+
+    await checkDeclaredRateLimit(ctx, "contact", "203.0.113.42", start);
+    const keyAfterFirst = await kv.get("state:declared-rate-limit-key");
+    await checkDeclaredRateLimit(ctx, "contact", "203.0.113.42", start + 1_000);
+
+    expect(await kv.get("state:declared-rate-limit-key")).toBe(keyAfterFirst);
+    expect([...kv.rows.rows.values()]).toContainEqual(
+      expect.objectContaining({ data: { count: 2 } }),
+    );
   });
 
   it("groups IPv6 clients by their /64 prefix", async () => {
@@ -111,7 +146,9 @@ describe("checkDeclaredRateLimit", () => {
     expect(
       await checkDeclaredRateLimit(ctx, "contact", "2001:db8:abcd:0002::1", start + 5_000),
     ).toBe(true);
-    expect(kv.rows.rows.size).toBe(2);
+    expect([...kv.rows.rows.keys()].filter((key) => key.startsWith("declared:rl:"))).toHaveLength(
+      2,
+    );
   });
 
   it("skips rate limiting when cf-connecting-ip is absent or blank", async () => {
@@ -130,7 +167,7 @@ describe("checkDeclaredRateLimit", () => {
     const { host, lines } = memoryHost();
     const ip = "198.51.100.77";
     const brokenKv = {
-      getVersioned: async () => {
+      getVersioned: async (): Promise<never> => {
         throw new RangeError(`KV unavailable for ${ip}`);
       },
       compareAndSet: async () => {
@@ -152,6 +189,57 @@ describe("checkDeclaredRateLimit", () => {
       },
     ]);
     expect(JSON.stringify(lines)).not.toContain(ip);
+  });
+});
+
+describe("purgeDeclaredRateLimits", () => {
+  const start = Date.UTC(2026, 10, 24, 12);
+
+  it("deletes the counters of past windows and keeps the current ones and the hash key", async () => {
+    const kv = new MemoryKv();
+    const { host } = memoryHost();
+    const ctx = { kv, log: host.log };
+    await checkDeclaredRateLimit(ctx, "contact", "203.0.113.42", start);
+    await checkDeclaredRateLimit(ctx, "contact", "198.51.100.7", start + 30_000);
+    await checkDeclaredRateLimit(ctx, "contact", "203.0.113.42", start + declaredRateLimitWindowMs);
+
+    const purged = await purgeDeclaredRateLimits(ctx, start + declaredRateLimitWindowMs + 1_000);
+
+    expect(purged).toBe(2);
+    expect([...kv.rows.rows.keys()]).toEqual([
+      "state:declared-rate-limit-key",
+      expect.stringMatching(/^declared:rl:\d+:contact:[0-9a-f]{64}$/u),
+    ]);
+  });
+
+  it("deletes a counter key that does not carry a window number", async () => {
+    const kv = new MemoryKv();
+    const { host } = memoryHost();
+    await kv.set("declared:rl:contact:0123", { windowStart: start, count: 1 });
+
+    expect(await purgeDeclaredRateLimits({ kv, log: host.log }, start)).toBe(1);
+    expect(kv.rows.rows.size).toBe(0);
+  });
+
+  it("logs only the error name when KV fails", async () => {
+    const { host, lines } = memoryHost();
+    const brokenKv = {
+      list: async (): Promise<never> => {
+        throw new RangeError("KV unavailable");
+      },
+      delete: async (): Promise<never> => {
+        throw new RangeError("KV unavailable");
+      },
+    };
+
+    expect(await purgeDeclaredRateLimits({ kv: brokenKv, log: host.log }, start)).toBe(0);
+    expect(lines).toEqual([
+      {
+        level: "warn",
+        message: "Declared form rate limit counters could not be purged",
+        data: { error: "RangeError" },
+      },
+    ]);
   });
 });
 

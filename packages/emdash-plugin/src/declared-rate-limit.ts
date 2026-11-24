@@ -1,8 +1,18 @@
 import { z } from "astro/zod";
 import type { PluginContext } from "emdash";
 
+/**
+ * Counter keys are `declared:rl:<window>:<form slug>:<client hash>`, where
+ * `<window>` is the number of the fixed 60-second window since the epoch. A
+ * request only ever writes the key of the current window, so a key of an
+ * earlier window is never written again and the cron deletes it without a
+ * conditional write.
+ */
 const rateLimitPrefix = "declared:rl:";
+/** The site's random HMAC key for client hashes, created on first use. */
+const hashKeyName = "state:declared-rate-limit-key";
 const casAttempts = 5;
+const purgeBatch = 50;
 const hexGroup = /^[0-9a-fA-F]{1,4}$/u;
 const decimalOctet = /^(?:0|[1-9]\d{0,2})$/u;
 const encoder = new TextEncoder();
@@ -10,19 +20,28 @@ const encoder = new TextEncoder();
 /** Maximum submissions allowed per (form, client) in one fixed window. */
 export const declaredRateLimitMax = 5;
 
-/** Fixed window duration for declared-mode per-IP rate limiting (60 seconds). */
+/** Fixed window duration for declared-mode per-client rate limiting (60 seconds). */
 export const declaredRateLimitWindowMs = 60_000;
 
-const RateLimitWindow = z.object({
-  windowStart: z.number().int(),
-  count: z.number().int().min(1),
-});
-type RateLimitWindow = z.infer<typeof RateLimitWindow>;
+const RateLimitCount = z.object({ count: z.number().int().min(1) });
+type RateLimitCount = z.infer<typeof RateLimitCount>;
+
+const HashKey = z.string().regex(/^[0-9a-f]{64}$/u);
 
 export interface RateLimitHost {
   readonly kv: Pick<PluginContext["kv"], "getVersioned" | "compareAndSet">;
   readonly log: Pick<PluginContext["log"], "warn">;
 }
+
+export interface RateLimitPurgeHost {
+  readonly kv: Pick<PluginContext["kv"], "list" | "delete">;
+  readonly log: Pick<PluginContext["log"], "warn">;
+}
+
+const toHex = (bytes: Uint8Array) =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+const windowOf = (now: number) => Math.floor(now / declaredRateLimitWindowMs);
 
 function parseIpv4Pair(part: string): [number, number] | null {
   const octets = part.split(".");
@@ -107,11 +126,36 @@ export function normalizeClientIp(raw: string): string {
   return `${prefix}::/64`;
 }
 
-/** SHA-256 hex digest of the normalized client IP, so raw visitor IPs are never stored in KV. */
-export async function hashClientIp(raw: string): Promise<string> {
+/**
+ * The site's HMAC key for client hashes: 32 random bytes kept in the plugin's
+ * KV, created by the first request that needs it. Concurrent first requests
+ * agree on one value through the conditional write.
+ */
+async function siteHashKey(kv: RateLimitHost["kv"]): Promise<CryptoKey> {
+  for (let attempt = 0; attempt < casAttempts; attempt += 1) {
+    const stored = await kv.getVersioned<unknown>(hashKeyName);
+    const parsed = HashKey.safeParse(stored?.value);
+    const hex = parsed.success ? parsed.data : toHex(crypto.getRandomValues(new Uint8Array(32)));
+    if (!parsed.success) {
+      const written = await kv.compareAndSet(hashKeyName, stored?.revision ?? null, hex);
+      if (!written.applied) continue;
+    }
+    const bytes = Uint8Array.from(hex.match(/../gu) ?? [], (pair) => Number.parseInt(pair, 16));
+    return crypto.subtle.importKey("raw", bytes, { name: "HMAC", hash: "SHA-256" }, false, [
+      "sign",
+    ]);
+  }
+  throw new Error("The rate limit key kept changing");
+}
+
+/**
+ * HMAC-SHA-256 of the normalized client IP under the site's own key. A plain
+ * hash of an IPv4 address is reversed by trying every address; without the
+ * key, the stored hash says nothing about the address.
+ */
+async function hashClientIp(key: CryptoKey, raw: string): Promise<string> {
   const normalized = normalizeClientIp(raw);
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(normalized)));
-  return Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return toHex(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(normalized))));
 }
 
 /**
@@ -125,20 +169,15 @@ export async function checkDeclaredRateLimit(
   now = Date.now(),
 ): Promise<boolean> {
   if (visitorIp === null || visitorIp.trim() === "") return true;
-  const clientHash = await hashClientIp(visitorIp);
-  const key = `${rateLimitPrefix}${formSlug}:${clientHash}`;
   try {
+    const clientHash = await hashClientIp(await siteHashKey(ctx.kv), visitorIp);
+    const key = `${rateLimitPrefix}${windowOf(now)}:${formSlug}:${clientHash}`;
     for (let attempt = 0; attempt < casAttempts; attempt += 1) {
       const current = await ctx.kv.getVersioned<unknown>(key);
-      const parsed = RateLimitWindow.safeParse(current?.value);
-      const active =
-        parsed.success &&
-        parsed.data.windowStart <= now &&
-        now - parsed.data.windowStart < declaredRateLimitWindowMs;
-      if (active && parsed.data.count >= declaredRateLimitMax) return false;
-      const next: RateLimitWindow = active
-        ? { windowStart: parsed.data.windowStart, count: parsed.data.count + 1 }
-        : { windowStart: now, count: 1 };
+      const parsed = RateLimitCount.safeParse(current?.value);
+      const count = parsed.success ? parsed.data.count : 0;
+      if (count >= declaredRateLimitMax) return false;
+      const next: RateLimitCount = { count: count + 1 };
       const result = await ctx.kv.compareAndSet(key, current?.revision ?? null, next);
       if (result.applied) return true;
     }
@@ -151,5 +190,35 @@ export async function checkDeclaredRateLimit(
       error: error instanceof Error ? error.name : "unknown",
     });
     return true;
+  }
+}
+
+/**
+ * Delete the counters of every window before the current one. The plugin's
+ * cron runs this every minute, so a counter outlives its window by about a
+ * minute. A key whose window is not a number is not one this version writes,
+ * and goes too. A failure is logged by name and waits for the next run.
+ */
+export async function purgeDeclaredRateLimits(
+  ctx: RateLimitPurgeHost,
+  now = Date.now(),
+): Promise<number> {
+  const current = windowOf(now);
+  try {
+    const expired = (await ctx.kv.list(rateLimitPrefix))
+      .map(({ key }) => key)
+      .filter((key) => {
+        const window = key.slice(rateLimitPrefix.length).split(":", 1)[0] ?? "";
+        return !/^\d+$/u.test(window) || Number(window) < current;
+      });
+    for (let index = 0; index < expired.length; index += purgeBatch) {
+      await Promise.all(expired.slice(index, index + purgeBatch).map((key) => ctx.kv.delete(key)));
+    }
+    return expired.length;
+  } catch (error) {
+    ctx.log.warn("Declared form rate limit counters could not be purged", {
+      error: error instanceof Error ? error.name : "unknown",
+    });
+    return 0;
   }
 }

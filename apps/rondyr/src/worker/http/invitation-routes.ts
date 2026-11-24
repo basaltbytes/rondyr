@@ -55,10 +55,14 @@ const currentAccount = Effect.gen(function* () {
   return user === null ? null : yield* Schema.decodeEffect(UserId)(user);
 });
 
-/** The link's secret travels in the body, never in a URL that a log would keep. */
+/**
+ * The link's secret travels in the body, never in a URL that a log would keep.
+ * The origin is checked before the client is counted, so that another site
+ * cannot use up a visitor's quota.
+ */
 const read = Effect.gen(function* () {
-  yield* enforceClientRateLimit("invitation-read");
   yield* currentAccount;
+  yield* enforceClientRateLimit("invitation-read");
   const { token } = yield* HttpServerRequest.schemaBodyJson(ReadInvitation);
   const members = yield* Members;
   const summary = yield* members.readInvitation(token);
@@ -66,8 +70,8 @@ const read = Effect.gen(function* () {
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(4)));
 
 const accept = Effect.gen(function* () {
-  yield* enforceClientRateLimit("invitation-accept");
   const account = yield* currentAccount;
+  yield* enforceClientRateLimit("invitation-accept");
   const input = yield* HttpServerRequest.schemaBodyJson(AcceptInvitation, {
     onExcessProperty: "error",
   });

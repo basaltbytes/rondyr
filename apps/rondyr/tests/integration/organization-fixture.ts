@@ -27,6 +27,21 @@ export const call = Effect.fnUntraced(function* (
   return yield* Effect.promise(() => worker.fetch(url, { method, headers, body }));
 });
 
+/** Send a JSON request with the `Origin` of another site, as its page could with a no-cors `fetch`. */
+export const callFromOtherSite = Effect.fnUntraced(function* (
+  path: string,
+  data: Schema.Json,
+  extra?: HeadersInit,
+) {
+  const headers = new Headers(extra);
+  headers.set("origin", "https://attacker.example");
+  headers.set("content-type", "application/json");
+  const body = yield* encode(data);
+  return yield* Effect.promise(() =>
+    env.TEST_WORKER.fetch(new URL(path, origin), { method: "POST", headers, body }),
+  );
+});
+
 export const signIn = Effect.runSync(
   Effect.cached(
     Effect.gen(function* () {

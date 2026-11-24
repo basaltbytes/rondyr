@@ -1167,6 +1167,64 @@ test("count the API tokens of a member before removing it, and confirm before st
   ).toHaveCount(0);
 });
 
+test("a member removed from its only organization is told to ask for an invitation", async ({
+  dashboard: page,
+  browser,
+  dashboardOrigin,
+}) => {
+  await createOrganization(page);
+  await openSettings(page, t("inbox.sections.members"));
+  const removed = { name: "Removed reviewer", email: "removed-reviewer@example.test" };
+  const password = "playwright-removed-reviewer-password";
+  await page.getByRole("textbox", { name: t("inbox.members.email") }).fill(removed.email);
+  await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
+  const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
+
+  const context = await browser.newContext();
+  const invited = await context.newPage();
+  await invited.goto(link);
+  await invited.getByRole("textbox", { name: t("invitation.name") }).fill(removed.name);
+  await invited.getByLabel(t("invitation.password")).fill(password);
+  await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
+  await expect(
+    invited.getByRole("button", {
+      name: t("inbox.organizations.switcher", { name: organizationName }),
+      exact: true,
+    }),
+  ).toBeVisible();
+
+  await page.reload();
+  await reopenSettings(page, t("inbox.sections.members"));
+  await page
+    .getByRole("button", { name: t("inbox.members.removeLabel", { name: removed.name }) })
+    .click();
+  await page
+    .getByRole("alertdialog", { name: t("inbox.members.confirmTitle") })
+    .getByRole("button", { name: t("inbox.members.confirm"), exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: t("inbox.members.removeLabel", { name: removed.name }) }),
+  ).toHaveCount(0);
+
+  // The removal ended the member's sessions: it signs in again where the dashboard opens.
+  await invited.goto(dashboardOrigin);
+  await invited
+    .getByRole("textbox", { name: t("authentication.signIn.email") })
+    .fill(removed.email);
+  await invited.getByLabel(t("authentication.signIn.password")).fill(password);
+  await invited
+    .getByRole("button", { name: t("authentication.signIn.submit"), exact: true })
+    .click();
+  await expect(invited.getByText(t("inbox.noOrganization.title"), { exact: true })).toBeVisible();
+  await expect(
+    invited.getByRole("textbox", { name: t("inbox.setup.organization"), exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    invited.getByRole("button", { name: t("authentication.signOut.submit") }),
+  ).toBeVisible();
+  await context.close();
+});
+
 test("reset a forgotten password from the sign-in screen", async ({
   page,
   dashboardOrigin,

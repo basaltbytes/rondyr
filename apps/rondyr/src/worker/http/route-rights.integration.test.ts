@@ -57,6 +57,7 @@ const rights: ReadonlyArray<RouteRights> = [
   { route: "POST /api/recipient-confirmations", access: "public" },
   { route: "GET /api/organizations", access: "account", token: true },
   { route: "POST /api/organizations", access: "account" },
+  { route: "GET /api/organization-creation", access: "account" },
   { route: "GET /api/operations", access: "account" },
   { route: "GET /api/organizations/:organizationId/submissions", access: "review", token: true },
   {

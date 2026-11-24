@@ -31,8 +31,9 @@ const sameOrigin = Effect.gen(function* () {
  * organization nor the form.
  */
 const confirm = Effect.gen(function* () {
-  yield* enforceClientRateLimit("recipient-confirmation");
+  // The origin first, so that another site cannot use up a visitor's quota.
   yield* sameOrigin;
+  yield* enforceClientRateLimit("recipient-confirmation");
   const { token } = yield* HttpServerRequest.schemaBodyJson(ConfirmRecipient);
   const confirmations = yield* RecipientConfirmations;
   yield* confirmations.confirm(token);

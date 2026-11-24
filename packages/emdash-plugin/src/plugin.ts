@@ -8,6 +8,7 @@ import {
 } from "emdash";
 
 import { matchesCredential, enqueueCredential } from "./core/hop.ts";
+import { purgeDeclaredRateLimits } from "./declared-rate-limit.ts";
 import { DeclaredPost, receiveDeclaredPost } from "./declared-submission.ts";
 import { RondyrError, SubmissionStatus, type Organization } from "./core/rondyr-client.ts";
 import { siteKeyReader, siteKeyTimeoutMs } from "./core/site-keys.ts";
@@ -109,7 +110,13 @@ export function createPlugin(input: RondyrOptions): ResolvedPlugin {
       },
       cron: {
         handler: async (event, ctx) => {
-          if (event.name === deliverTask) await sendDue(ctx, options, rondyrSecrets().token);
+          if (event.name !== deliverTask) return;
+          try {
+            await sendDue(ctx, options, rondyrSecrets().token);
+          } finally {
+            // Expired rate limit counters of the declared forms. A failure is logged, never thrown.
+            await purgeDeclaredRateLimits(ctx);
+          }
         },
       },
     },

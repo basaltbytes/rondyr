@@ -12,6 +12,7 @@ import {
 } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
+  callFromOtherSite,
   createInbox,
   json,
   signIn,
@@ -242,5 +243,38 @@ it.live("rate-limits password reset request and complete endpoints per client IP
     assert.isDefined(completeLimited);
     assert.strictEqual(completeLimited?.headers.get("retry-after"), "60");
     assert.strictEqual(completeLimited?.headers.get("cache-control"), "no-store");
+  }),
+);
+
+it.live("does not count a request from another site against the client's reset limit", () =>
+  Effect.gen(function* () {
+    const requestClient = { "cf-connecting-ip": "203.0.113.71" };
+    const completeClient = { "cf-connecting-ip": "203.0.113.72" };
+    const reset = { token: "d".repeat(43), password: newPassword };
+
+    const crossSiteRequests = yield* Effect.forEach(Array.from({ length: 6 }), () =>
+      callFromOtherSite("/api/password-resets", { email: "nobody@example.test" }, requestClient),
+    );
+    const crossSiteCompletions = yield* Effect.forEach(Array.from({ length: 6 }), () =>
+      callFromOtherSite("/api/password-resets/complete", reset, completeClient),
+    );
+    const request = yield* call(
+      "POST",
+      "/api/password-resets",
+      { email: "nobody@example.test" },
+      requestClient,
+    );
+    const complete = yield* call("POST", "/api/password-resets/complete", reset, completeClient);
+
+    assert.deepEqual(
+      crossSiteRequests.map(({ status }) => status),
+      [403, 403, 403, 403, 403, 403],
+    );
+    assert.deepEqual(
+      crossSiteCompletions.map(({ status }) => status),
+      [403, 403, 403, 403, 403, 403],
+    );
+    assert.strictEqual(request.status, 202);
+    assert.strictEqual(complete.status, 404);
   }),
 );

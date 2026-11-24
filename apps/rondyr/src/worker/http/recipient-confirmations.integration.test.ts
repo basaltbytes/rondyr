@@ -7,6 +7,7 @@ import { Clock, Effect, Schema } from "effect";
 import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
 import {
   call,
+  callFromOtherSite,
   createInbox,
   json,
   signIn,
@@ -442,5 +443,23 @@ it.live("refuses a cross-origin confirmation request and rate-limits per client 
     assert.isDefined(limited);
     assert.strictEqual(limited?.headers.get("retry-after"), "60");
     assert.strictEqual(limited?.headers.get("cache-control"), "no-store");
+  }),
+);
+
+it.live("does not count a request from another site against the client's confirmation limit", () =>
+  Effect.gen(function* () {
+    const client = { "cf-connecting-ip": "203.0.113.75" };
+    const token = "f".repeat(43);
+
+    const crossSite = yield* Effect.forEach(Array.from({ length: 6 }), () =>
+      callFromOtherSite("/api/recipient-confirmations", { token }, client),
+    );
+    const sameSite = yield* call("POST", "/api/recipient-confirmations", { token }, client);
+
+    assert.deepEqual(
+      crossSite.map(({ status }) => status),
+      [403, 403, 403, 403, 403, 403],
+    );
+    assert.strictEqual(sameSite.status, 404);
   }),
 );
