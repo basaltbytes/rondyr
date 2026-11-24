@@ -7,7 +7,11 @@ import {
 } from "effect/http";
 
 import { apiTokenRole } from "../../domain/organizations/member-role.ts";
-import { InboxOrganizationWithForms, SetupInbox } from "../../domain/submissions/inbox-setup.ts";
+import {
+  InboxOrganizationWithForms,
+  OrganizationCreation,
+  SetupInbox,
+} from "../../domain/submissions/inbox-setup.ts";
 import {
   InboxFilter,
   InboxPage,
@@ -98,6 +102,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       return Effect.catchTags(Effect.fail(error.error), {
         ReviewUnauthorized: () => errorResponse(401),
         AuthOriginRefused: () => errorResponse(403),
+        OrganizationCreationDenied: () => errorResponse(403),
         PermissionDenied: () => errorResponse(403),
         SubmissionNotFound: () => errorResponse(404),
         SubmissionNotReviewable: () => errorResponse(409),
@@ -128,7 +133,7 @@ const organizationList = Effect.gen(function* () {
   );
 });
 
-/** Any signed-in account can create an organization, and becomes its admin. */
+/** The first organization, or another organization created by an admin of an existing one. */
 const create = Effect.gen(function* () {
   const userId = yield* signedInAccount();
   const input = yield* HttpServerRequest.schemaBodyJson(SetupInbox);
@@ -136,6 +141,14 @@ const create = Effect.gen(function* () {
   yield* directory.create(userId, input);
   return HttpServerResponse.empty({ status: 201, ...jsonOptions });
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(8)));
+
+/** Whether the account may create an organization, so the dashboard offers the form only then. */
+const creation = Effect.gen(function* () {
+  const userId = yield* signedInAccount();
+  const directory = yield* OrganizationDirectory;
+  const allowed = yield* directory.mayCreate(userId);
+  return yield* HttpServerResponse.schemaJson(OrganizationCreation)({ allowed }, jsonOptions);
+});
 
 const list = Effect.gen(function* () {
   const client = yield* reviewClient;
@@ -223,6 +236,7 @@ const review = Effect.gen(function* () {
 export const reviewRoutes = Layer.mergeAll(
   HttpRouter.add("GET", organizationPath, withErrors(organizationList)),
   HttpRouter.add("POST", organizationPath, withErrors(create)),
+  HttpRouter.add("GET", "/api/organization-creation", withErrors(creation)),
   HttpRouter.add("GET", submissionsPath, withErrors(list)),
   HttpRouter.add("GET", countsPath, withErrors(counts)),
   HttpRouter.add("GET", detailPath, withErrors(detail)),

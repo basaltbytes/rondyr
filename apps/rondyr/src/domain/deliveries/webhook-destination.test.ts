@@ -49,13 +49,24 @@ it("refuses each class of unsafe destination", () => {
     ["https://255.255.255.255/", "reserved-address"],
     // The URL parser turns these spellings of 127.0.0.1 into the dotted form.
     ["https://2130706433/", "reserved-address"],
+    ["https://0x7f000001/", "reserved-address"],
     ["https://0x7f.1/", "reserved-address"],
+    ["https://0177.0.0.1/", "reserved-address"],
     ["https://127.1/", "reserved-address"],
+    ["https://127.0.0.1./", "reserved-address"],
+    // Empty DNS labels and repeated trailing dots are refused rather than bypassing checks.
+    ["https://localhost../hook", "invalid-url"],
+    ["https://rondyr.example.com../hook", "invalid-url"],
+    ["https://127.0.0.1../hook", "invalid-url"],
+    ["https://.example.com/hook", "invalid-url"],
+    ["https://example..com/hook", "invalid-url"],
     // IPv6: unspecified, loopback, IPv4-mapped, NAT64, unique local, link-local,
     // multicast, Teredo, documentation, 6to4.
     ["https://[::]/", "reserved-address"],
     ["https://[::1]/", "reserved-address"],
     ["https://[::ffff:127.0.0.1]/", "reserved-address"],
+    ["https://[::ffff:7f00:1]/", "reserved-address"],
+    ["https://[0:0:0:0:0:ffff:127.0.0.1]/", "reserved-address"],
     ["https://[::ffff:8.8.8.8]/", "reserved-address"],
     ["https://[64:ff9b::a00:1]/", "reserved-address"],
     ["https://[fd00::1]/", "reserved-address"],
@@ -94,4 +105,28 @@ it("accepts public HTTPS destinations and normalizes them", () => {
   );
   // Without a configured origin, only the other rules apply.
   assert.isTrue(Result.isSuccess(parseWebhookUrl("https://rondyr.example.com/", Option.none())));
+});
+
+it("refuses the worker's own origin whatever its spelling, an IP literal included", () => {
+  const cases: ReadonlyArray<readonly [origin: string, url: string]> = [
+    ["https://Rondyr.Workers.Dev.", "https://RONDYR.WORKERS.DEV/hook"],
+    ["https://rondyr.workers.dev", "https://rondyr.workers.dev./hook"],
+    ["https://8.8.8.8", "https://8.8.8.8/hook"],
+    ["https://[2606:4700:4700::1111]", "https://[2606:4700:4700::1111]/hook"],
+  ];
+  assert.deepEqual(
+    cases.map(([origin, url]) =>
+      Result.match(parseWebhookUrl(url, Option.some(origin)), {
+        onSuccess: () => "accepted",
+        onFailure: (reason) => reason,
+      }),
+    ),
+    cases.map(() => "worker-origin"),
+  );
+});
+
+it("ignores a worker origin that does not parse", () => {
+  assert.isTrue(
+    Result.isSuccess(parseWebhookUrl("https://hooks.example.com/ok", Option.some("not-an-origin"))),
+  );
 });

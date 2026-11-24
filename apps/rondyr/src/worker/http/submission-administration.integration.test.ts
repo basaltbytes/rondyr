@@ -4,6 +4,7 @@ import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Clock, Effect, Exit, Layer, Schema } from "effect";
 
 import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { addMember } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
   createInbox,
@@ -13,9 +14,9 @@ import {
 import { submissionRetentionLive } from "../adapters/database/submission-retention.ts";
 import { dayMillis } from "../../domain/organizations/retention.ts";
 import { InboxPage } from "../../domain/submissions/inbox.ts";
-import { SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationId, SubmissionId, UserId } from "../../domain/submissions/submission.id.ts";
 import { purgeExpiredSubmissions, purgeOnTheHour } from "../jobs/retention-purge.ts";
-import type { SubmissionRetention } from "../ports/submission-retention.ts";
+import { SubmissionRetention } from "../ports/submission-retention.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
@@ -764,5 +765,52 @@ it.live("refuses search export, deletion and retention of another organization",
     const kept = yield* countIn("submissions", "id", id ?? "");
     assert.strictEqual(kept, 1);
     assert.strictEqual(origin, "https://rondyr.test");
+  }),
+);
+
+it.live("enforces admin role in the retention D1 adapter past route authorization", () =>
+  Effect.gen(function* () {
+    const admin = yield* signIn;
+    const own = yield* createInbox("Retention defense in depth", admin);
+    yield* addMember(own.id, admin, "retention-reviewer@example.test", "reviewer");
+    const reviewerId = yield* Effect.promise(() =>
+      env.DB.prepare("SELECT id FROM auth_users WHERE email = ?")
+        .bind("retention-reviewer@example.test")
+        .first<string>("id"),
+    );
+    if (reviewerId === null) return assert.fail("Expected reviewer user");
+    const [id] = yield* seed(own.id, own.forms[0]?.publicId ?? "", [
+      { fields: { message: "kept message" }, receivedAt: 1, status: "accepted" },
+    ]);
+    if (id === undefined) return assert.fail("Expected seeded submission");
+    const scope = {
+      userId: UserId.make(reviewerId),
+      organizationId: OrganizationId.make(own.id),
+    };
+
+    const failures = yield* withRetention(
+      Effect.gen(function* () {
+        const retention = yield* SubmissionRetention;
+        return yield* Effect.all([
+          Effect.flip(retention.periods(scope)),
+          Effect.flip(retention.savePeriods(scope, { accepted: 1, quarantine: 1 })),
+          Effect.flip(retention.remove(scope, SubmissionId.make(id))),
+        ]);
+      }),
+    );
+
+    assert.deepEqual(
+      failures.map(({ _tag }) => _tag),
+      ["SubmissionRetentionNotFound", "SubmissionRetentionNotFound", "SubmissionNotFound"],
+    );
+    const kept = yield* countIn("submissions", "id", id);
+    assert.strictEqual(kept, 1);
+    const reread = yield* call(
+      "GET",
+      `/api/organizations/${own.id}/retention`,
+      undefined,
+      admin,
+    ).pipe(Effect.flatMap(json));
+    assert.deepEqual(reread, { accepted: null, quarantine: null });
   }),
 );

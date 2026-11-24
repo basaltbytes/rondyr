@@ -36,7 +36,7 @@ Rondyr works on its `workers.dev` address right away, and you can attach your ow
 2. Enter the hostname you want to use, such as `forms.example.com`. Cloudflare creates the DNS record and TLS certificate, which takes a few minutes.
 3. Open the new HTTPS address and sign in again (sessions don't carry over between hostnames).
 
-To lock sign-in to that single address so the `workers.dev` URL stops accepting logins, add a variable named `BETTER_AUTH_URL` set to your full HTTPS origin (for example `https://forms.example.com`, with no trailing slash or path) under **Settings → Variables and Secrets**. Invitation, password reset, and email confirmation links use whichever address you are signed in on.
+To lock sign-in to that single address so the `workers.dev` URL stops accepting logins, add a variable named `BETTER_AUTH_URL` set to your full HTTPS origin (for example `https://forms.example.com`, with no trailing slash or path) under **Settings → Variables and Secrets**, and disable the `workers.dev` route under **Settings → Domains & Routes**. Setting `BETTER_AUTH_URL` also ensures outbound webhook deliveries refuse the Worker's own hostname, and disabling `workers.dev` prevents a second hostname from reaching the same Worker. Invitation, password reset, and email confirmation links use whichever address you are signed in on.
 
 ## Optional settings
 

@@ -22,7 +22,7 @@ Pending invitations stay listed under **Invite someone**, where an admin can can
 
 ## Roles
 
-Each member has one role per organization. A single account can belong to several organizations with different roles in each, and any signed-in user can create a new organization (becoming its admin).
+Each member has one role per organization. A single account can belong to several organizations with different roles in each, and an admin of any organization can create a new one (becoming its admin). On a new instance, the first account creates the first organization. An account that belongs to no organization, for example after its removal from the last one, cannot create one: the dashboard tells it to ask an admin for an invitation.
 
 | Role | Permissions |
 | --- | --- |
@@ -39,7 +39,7 @@ Keep three rules in mind before making changes:
 - **Stepping down.** If you switch your own role from Admin to Reviewer, Rondyr asks you to confirm, because only another admin can promote you back.
 - **API tokens and pending invitations.** Removing a member immediately revokes every API token they created in that organization and cancels any pending invitations they sent. Before you confirm, Rondyr tells you how many active tokens will stop working, so you can give affected websites or scripts a token created by another admin first. Demoting an admin to reviewer cancels their pending invitations, while their existing API tokens keep working.
 
-Removing a member removes them from the organization only; their account still exists, and an admin can invite them again later.
+Removing a member removes them from the organization only; their account still exists, and an admin can invite them again later. When it was their last organization, Rondyr also signs them out on every device.
 
 ## Reset a forgotten password
 

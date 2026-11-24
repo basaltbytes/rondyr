@@ -141,6 +141,10 @@ it.live("manages the forms of the account's organizations and refuses other orga
       { name: "" },
       { name: "   " },
       { name: "n".repeat(101) },
+      { name: "Classes\r\nBcc: evil@example.test" },
+      { name: "Classes\n" },
+      { name: "Classes\r" },
+      { name: "Classes\u2028line" },
       { name: 42 },
       { name: "Classes", businessContext: "c".repeat(2001) },
       { name: "Classes", emoji: "" },
@@ -214,10 +218,16 @@ it.live("manages the forms of the account's organizations and refuses other orga
       ],
     );
     const invalidEdits = yield* Effect.forEach(
-      [{}, { name: "" }, { name: "n".repeat(101) }, { businessContext: "c".repeat(2001) }],
+      [
+        {},
+        { name: "" },
+        { name: "n".repeat(101) },
+        { name: "Courses\r\nInjected" },
+        { businessContext: "c".repeat(2001) },
+      ],
       (body) => call("PATCH", lesson, body, headers),
     );
-    assert.deepEqual(invalidEdits.map(statusOf), [400, 400, 400, 400]);
+    assert.deepEqual(invalidEdits.map(statusOf), [400, 400, 400, 400, 400]);
 
     // The emoji changes alone, a flag and a joined sequence included, and the other edits keep it.
     const emojis = yield* Effect.forEach(

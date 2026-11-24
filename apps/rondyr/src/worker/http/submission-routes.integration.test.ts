@@ -448,6 +448,35 @@ it.live("answers an HTML form posted from a French browser with the French page"
   }),
 );
 
+it.live("sets CSP and X-Frame-Options headers on the HTML confirmation page", () =>
+  Effect.gen(function* () {
+    yield* seedForm("confirmation-headers");
+
+    const answer = yield* send("confirmation-headers", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        accept: "text/html",
+      },
+      body: "message=Hello",
+    });
+
+    assert.strictEqual(answer.status, 202);
+    assert.strictEqual(answer.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.strictEqual(
+      answer.headers.get("content-security-policy"),
+      "default-src 'none'; frame-ancestors 'none'",
+    );
+    assert.strictEqual(answer.headers.get("x-frame-options"), "DENY");
+    assert.strictEqual(answer.headers.get("x-content-type-options"), "nosniff");
+    assert.strictEqual(answer.headers.get("referrer-policy"), "no-referrer");
+    assert.strictEqual(
+      answer.headers.get("strict-transport-security"),
+      "max-age=31536000; includeSubDomains",
+    );
+  }),
+);
+
 it.live("sends the CORS headers with each error status of the intake", () =>
   Effect.gen(function* () {
     yield* seedForm("cors-errors");

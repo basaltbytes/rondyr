@@ -4,8 +4,10 @@ import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { hashPassword } from "better-auth/crypto";
 import { Clock, Effect, Schema } from "effect";
 
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
 import {
   call,
+  callFromOtherSite,
   createInbox,
   json,
   signIn,
@@ -26,6 +28,7 @@ const readEmailTarget = Schema.decodeUnknownEffect(EmailTarget);
 const readTargets = Schema.decodeUnknownEffect(Schema.Array(DestinationTarget));
 const readTest = Schema.decodeUnknownEffect(TargetTestResult);
 const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 let clients = 0;
 
@@ -44,6 +47,10 @@ const otherAdmin = Effect.fnUntraced(function* (id: string) {
         INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password, created_at, updated_at)
         VALUES (?, ?, ?, 'credential', ?, ?, ?)
       `).bind(id, id, id, hash, now, now),
+      env.DB.prepare("INSERT INTO organizations (id, name) VALUES (?, ?)").bind(`${id}-seed`, id),
+      env.DB.prepare(
+        "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
+      ).bind(`${id}-seed`, id),
     ]),
   );
   clients += 1;
@@ -400,4 +407,59 @@ it.live(
       assert.lengthOf(delivered, 0);
     }),
   40_000,
+);
+
+it.live("refuses a cross-origin confirmation request and rate-limits per client IP", () =>
+  Effect.gen(function* () {
+    const admin = yield* signIn;
+    yield* emailDestination("Cross-site confirmation", admin, ["cross-site@example.test"]);
+    const token = yield* confirmationToken("cross-site@example.test");
+
+    const body = yield* encodeJson({ token });
+    const crossOrigin = yield* Effect.promise(() =>
+      env.TEST_WORKER.fetch(new URL("/api/recipient-confirmations", origin), {
+        method: "POST",
+        headers: { origin: "https://attacker.example", "content-type": "application/json" },
+        body,
+      }),
+    );
+    assert.strictEqual(crossOrigin.status, 403);
+    const confirmedAt = yield* Effect.promise(() =>
+      env.DB.prepare("SELECT confirmed_at FROM email_recipient_confirmations WHERE address = ?")
+        .bind("cross-site@example.test")
+        .first("confirmed_at"),
+    );
+    assert.isNull(confirmedAt);
+
+    const responses = yield* Effect.forEach(Array.from({ length: 11 }), () =>
+      call(
+        "POST",
+        "/api/recipient-confirmations",
+        { token: "c".repeat(43) },
+        { "cf-connecting-ip": "198.51.100.41" },
+      ),
+    );
+    const limited = responses.find(({ status }) => status === 429);
+    assert.isDefined(limited);
+    assert.strictEqual(limited?.headers.get("retry-after"), "60");
+    assert.strictEqual(limited?.headers.get("cache-control"), "no-store");
+  }),
+);
+
+it.live("does not count a request from another site against the client's confirmation limit", () =>
+  Effect.gen(function* () {
+    const client = { "cf-connecting-ip": "203.0.113.75" };
+    const token = "f".repeat(43);
+
+    const crossSite = yield* Effect.forEach(Array.from({ length: 6 }), () =>
+      callFromOtherSite("/api/recipient-confirmations", { token }, client),
+    );
+    const sameSite = yield* call("POST", "/api/recipient-confirmations", { token }, client);
+
+    assert.deepEqual(
+      crossSite.map(({ status }) => status),
+      [403, 403, 403, 403, 403, 403],
+    );
+    assert.strictEqual(sameSite.status, 404);
+  }),
 );

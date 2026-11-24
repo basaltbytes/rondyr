@@ -106,10 +106,17 @@ function refusal(
   if (url.port !== "") return "custom-port";
   const host = hostOf(url);
   const v6 = parseIpv6(host);
-  if (v6 !== undefined) return reservedIpv6(v6) ? "reserved-address" : undefined;
+  if (v6 !== undefined) {
+    if (reservedIpv6(v6)) return "reserved-address";
+    return Option.contains(workerHost, host) ? "worker-origin" : undefined;
+  }
+  if (host === "" || host.startsWith(".") || host.endsWith(".") || host.includes("..")) {
+    return "invalid-url";
+  }
   const v4 = parseIpv4(host);
   if (v4 !== undefined) {
-    return reservedIpv4.some((range) => inRange(v4, range)) ? "reserved-address" : undefined;
+    if (reservedIpv4.some((range) => inRange(v4, range))) return "reserved-address";
+    return Option.contains(workerHost, host) ? "worker-origin" : undefined;
   }
   if (localHostname(host)) return "local-hostname";
   if (Option.contains(workerHost, host)) return "worker-origin";
@@ -119,7 +126,8 @@ function refusal(
 /**
  * Accept an HTTPS URL on the default port, with no credentials, whose host is
  * neither a local name, nor an IP literal in a reserved range, nor the host of
- * `workerOrigin`. A hostname that resolves to a private address is not detected.
+ * `workerOrigin`, be it a name or an IP literal. A hostname that resolves to a
+ * private address is not detected.
  */
 export function parseWebhookUrl(
   input: string,

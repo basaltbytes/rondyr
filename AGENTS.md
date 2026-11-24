@@ -17,7 +17,7 @@ Rondyr is a self-hosted form backend on Cloudflare. Read [architecture.md](archi
 
 The GitHub issues are the roadmap. There are few of them and each one is large: an issue is delivered whole, in one pull request.
 
-- One issue per branch and per PR. Write `Closes #n` only if every acceptance criterion is met; otherwise `Refs #n` and the list of what is missing.
+- A PR does not need an issue. When it delivers one: one issue per branch and per PR. Write `Closes #n` only if every acceptance criterion is met; otherwise `Refs #n` and the list of what is missing.
 - What turns out to be missing or weak along the way is fixed in the same PR. Do not open a follow-up issue and do not leave a "known limitation" note for something within reach.
 - Do not push to `main` and do not deploy: a push to `main` deploys production and applies the D1 migrations.
 - One Drizzle migration per issue, generated at the end with `pnpm db:generate --name …`. Read the SQL. Never rebuild `forms` or `submissions`: on D1, dropping the table would delete the rows of the linked tables in cascade. Another branch may carry a migration at the same time; yours is regenerated on top of `main` when the PR merges.

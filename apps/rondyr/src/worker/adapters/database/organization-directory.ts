@@ -13,6 +13,7 @@ import { InboxOrganization } from "../../../domain/submissions/inbox.ts";
 import { InboxUnavailable } from "../../../domain/submissions/submission.rejection.ts";
 import type { OrganizationId, UserId } from "../../../domain/submissions/submission.id.ts";
 import {
+  OrganizationCreationDenied,
   OrganizationDirectory,
   OrganizationDomainLimit,
   OrganizationDomainNotFound,
@@ -36,6 +37,22 @@ const decodeDomainList = Schema.decodeUnknownEffect(
 const decodeDomainRows = Schema.decodeUnknownEffect(
   Schema.Array(Schema.Struct({ domain: OrganizationDomain })),
 );
+const decodeCreatedOrganization = Schema.decodeUnknownEffect(
+  Schema.Array(Schema.Struct({ id: Schema.String })),
+);
+const decodeAllowed = Schema.decodeUnknownEffect(
+  Schema.Struct({ allowed: Schema.Literals([0, 1]) }),
+);
+
+/**
+ * Who may create an organization, with the account as the parameter `account`:
+ * anyone signed in while the instance has none (its first run), then only an
+ * admin of an existing organization. `create` and `mayCreate` both use it.
+ */
+const creationAllowed = (account: string) => `
+  NOT EXISTS (SELECT 1 FROM organizations)
+  OR EXISTS (SELECT 1 FROM organization_members WHERE user_id = ${account} AND role = 'admin')
+`;
 
 const organizationsFor = Effect.fn("OrganizationDirectory.organizationsFor")(function* (
   userId: typeof UserId.Type,
@@ -115,28 +132,51 @@ const create = Effect.fn("OrganizationDirectory.create")(function* (
   const organizationId = SecureRandom.uuidV4Unsafe();
   const formId = SecureRandom.uuidV4Unsafe();
   const publicId = SecureRandom.uuidV4Unsafe();
-  yield* d1(() =>
+  const [inserted] = yield* d1(() =>
     db.batch([
       db
-        .prepare("INSERT INTO organizations (id, name) VALUES (?, ?)")
-        .bind(organizationId, input.organizationName),
+        .prepare(`
+        INSERT INTO organizations (id, name)
+        SELECT ?1, ?2 WHERE ${creationAllowed("?3")}
+        RETURNING id
+      `)
+        .bind(organizationId, input.organizationName, userId),
       db
-        .prepare(
-          "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
-        )
+        .prepare(`
+        INSERT INTO organization_members (organization_id, user_id, role)
+        SELECT ?1, ?2, 'admin' WHERE EXISTS (SELECT 1 FROM organizations WHERE id = ?1)
+      `)
         .bind(organizationId, userId),
       db
         .prepare(`
-      INSERT INTO forms (id, organization_id, public_id, name, business_context)
-      VALUES (?, ?, ?, ?, ?)
-    `)
+        INSERT INTO forms (id, organization_id, public_id, name, business_context)
+        SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM organizations WHERE id = ?2)
+      `)
         .bind(formId, organizationId, publicId, input.formName, input.businessContext || null),
     ]),
+  ).pipe(Effect.mapError(unavailable));
+  const created = yield* decodeCreatedOrganization(inserted?.results ?? []).pipe(
+    Effect.mapError(unavailable),
   );
+  if (created.length === 0) return yield* OrganizationCreationDenied.make();
+});
+
+const mayCreate = Effect.fn("OrganizationDirectory.mayCreate")(function* (
+  userId: typeof UserId.Type,
+) {
+  const db = yield* database;
+  const row = yield* d1(() =>
+    db
+      .prepare(`SELECT (${creationAllowed("?1")}) AS allowed`)
+      .bind(userId)
+      .first(),
+  );
+  const { allowed } = yield* decodeAllowed(row);
+  return allowed === 1;
 }, Effect.mapError(unavailable));
 
 // ?1 is the account and ?2 the organization in every domain statement.
-const membership = `SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2`;
+const membership = `SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2 AND role = 'admin'`;
 const scopedDomains = `
   SELECT (
     SELECT json_group_array(domain) FROM organization_domains WHERE organization_id = ?2
@@ -209,6 +249,7 @@ export const organizationDirectoryLive = Layer.succeed(OrganizationDirectory, {
   formsOf,
   inboxFor,
   create,
+  mayCreate,
   listDomains,
   addDomain,
   removeDomain,

@@ -352,7 +352,12 @@ const receive = Effect.gen(function* () {
       {
         status: 202,
         contentType: "text/html; charset=utf-8",
-        headers: { ...headers, "content-language": language },
+        headers: {
+          ...headers,
+          "content-language": language,
+          "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+          "x-frame-options": "DENY",
+        },
       },
     );
   }

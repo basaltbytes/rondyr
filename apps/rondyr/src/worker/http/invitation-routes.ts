@@ -16,6 +16,7 @@ import {
 import { UserId } from "../../domain/submissions/submission.id.ts";
 import { Authentication } from "../ports/authentication.ts";
 import { Members } from "../ports/members.ts";
+import { enforceClientRateLimit, rateLimitedResponse } from "./client-rate-limit.ts";
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const errorJson = HttpServerResponse.schemaJson(InvitationRequestError);
@@ -32,6 +33,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
       if (error === undefined) return empty(503);
       return Effect.catchTags(Effect.fail(error.error), {
         AuthOriginRefused: () => empty(403),
+        ClientRateLimited: () => rateLimitedResponse,
         InvitationNotFound: () => refused({ error: "invitation-invalid" }, 404),
         InvitationNeedsSignIn: () => refused({ error: "sign-in-required" }, 409),
         InvitationForOtherAccount: () => refused({ error: "other-account" }, 403),
@@ -53,9 +55,14 @@ const currentAccount = Effect.gen(function* () {
   return user === null ? null : yield* Schema.decodeEffect(UserId)(user);
 });
 
-/** The link's secret travels in the body, never in a URL that a log would keep. */
+/**
+ * The link's secret travels in the body, never in a URL that a log would keep.
+ * The origin is checked before the client is counted, so that another site
+ * cannot use up a visitor's quota.
+ */
 const read = Effect.gen(function* () {
   yield* currentAccount;
+  yield* enforceClientRateLimit("invitation-read");
   const { token } = yield* HttpServerRequest.schemaBodyJson(ReadInvitation);
   const members = yield* Members;
   const summary = yield* members.readInvitation(token);
@@ -64,6 +71,7 @@ const read = Effect.gen(function* () {
 
 const accept = Effect.gen(function* () {
   const account = yield* currentAccount;
+  yield* enforceClientRateLimit("invitation-accept");
   const input = yield* HttpServerRequest.schemaBodyJson(AcceptInvitation, {
     onExcessProperty: "error",
   });

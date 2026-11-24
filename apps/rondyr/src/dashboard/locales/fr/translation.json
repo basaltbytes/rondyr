@@ -222,7 +222,12 @@
       "firstFormPlaceholder": "Contact",
       "submit": "Créer l’organisation",
       "pending": "Création en cours…",
-      "failed": "La boîte n’a pas pu être créée. Vérifiez les champs et réessayez."
+      "forbidden": "Seul un administrateur d’une organisation existante peut en créer une nouvelle.",
+      "failed": "L’organisation n’a pas pu être créée. Vérifiez les champs et réessayez."
+    },
+    "noOrganization": {
+      "title": "Vous n’appartenez à aucune organisation",
+      "description": "Votre compte n’est membre d’aucune organisation de ce Rondyr. Demandez une invitation à un administrateur d’une organisation, puis ouvrez son lien."
     },
     "business": {
       "label": "Activité de l’organisation",

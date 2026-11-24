@@ -93,7 +93,50 @@ export function flattenFields(layout: FormLayout, data: SubmittedData): FlatFiel
   return fields;
 }
 
-const Email = z.email();
+const maxEmailLength = 254;
+const maxLocalLength = 64;
+const localPart = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/u;
+const dnsLabel = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/u;
+const maxSubjectLength = 150;
+
+/**
+ * Strict bare ASCII email validator: dot-atom local part (1..64) and a DNS
+ * hostname with at least two valid labels (each 1..63, TLD not all-numeric),
+ * total length at most 254. Rejects whitespace, control characters, quotes,
+ * angle brackets, commas, semicolons and parentheses.
+ */
+export function isPlainEmail(value: string): boolean {
+  if (value.length === 0 || value.length > maxEmailLength) return false;
+  const at = value.indexOf("@");
+  if (at <= 0 || at !== value.lastIndexOf("@")) return false;
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  if (local.length > maxLocalLength || !localPart.test(local)) return false;
+  const labels = domain.split(".");
+  if (labels.length < 2) return false;
+  for (const label of labels) {
+    if (!dnsLabel.test(label)) return false;
+  }
+  const tld = labels.at(-1);
+  return tld !== undefined && tld.length >= 2 && /[A-Za-z]/u.test(tld);
+}
+
+/** Collapse control characters, Unicode line/paragraph separators and runs of whitespace to one space. */
+function singleLine(value: string): string {
+  return value
+    .replace(/[\p{Cc}\u2028\u2029]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function sanitizeSubject(value: string): string {
+  const clean = singleLine(value);
+  if (clean.length <= maxSubjectLength) return clean;
+  let end = maxSubjectLength - 1;
+  const last = clean.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${clean.slice(0, end).trimEnd()}…`;
+}
 
 /**
  * The submitter's address as the forms plugin finds it: the value of the first
@@ -121,7 +164,7 @@ export function replyToAddress(layout: FormLayout | null, fields: FlatFields): s
   const email = fields["email"];
   const value =
     submitterAddress(layout, fields) ?? (email !== undefined && email !== "" ? email : null);
-  return value !== null && Email.safeParse(value).success ? value : null;
+  return value !== null && isPlainEmail(value) ? value : null;
 }
 
 export interface Notification {
@@ -141,7 +184,7 @@ export function formatNotification(
   fields: FlatFields,
   receivedAt: string,
 ): Notification {
-  const name = layout?.name ?? formName;
+  const name = singleLine(layout?.name ?? formName);
   const lines = [`New submission for "${name}"`, ""];
   const known = new Set<string>();
   for (const field of layout?.fields ?? []) {
@@ -154,5 +197,5 @@ export function formatNotification(
     if (!known.has(field) && value !== "") lines.push(`${field}: ${value}`);
   }
   lines.push("", `Submitted at: ${receivedAt}`);
-  return { subject: `New submission: ${name}`, text: lines.join("\n") };
+  return { subject: sanitizeSubject(`New submission: ${name}`), text: lines.join("\n") };
 }

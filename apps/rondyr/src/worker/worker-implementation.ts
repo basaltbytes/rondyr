@@ -1,8 +1,14 @@
 import { Worker } from "@alchemy.run/cloudflare/Workers/Worker";
 import { isWorkerEvent } from "@alchemy.run/cloudflare/Workers/WorkerRuntime";
 import * as DomainCloudflare from "@alchemy.run/domain/Cloudflare";
-import { Effect, Layer } from "effect";
-import { FetchHttpClient, HttpRouter, HttpServer, HttpServerResponse } from "effect/http";
+import { Effect, Layer, Option } from "effect";
+import {
+  FetchHttpClient,
+  HttpRouter,
+  HttpServer,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
@@ -111,6 +117,15 @@ const consumeBatch = Effect.fn("Queue.consume")(function* (batch: MessageBatch) 
   return yield* consumeSubmissions(batch);
 });
 
+const securityHeaders = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+} as const;
+const httpsSecurityHeaders = {
+  ...securityHeaders,
+  "strict-transport-security": "max-age=31536000; includeSubDomains",
+} as const;
+
 export const workerImplementation = Effect.gen(function* () {
   const context = yield* Layer.build(services);
   const router = yield* HttpRouter.toHttpEffect(routes).pipe(Effect.provideContext(context));
@@ -126,7 +141,18 @@ export const workerImplementation = Effect.gen(function* () {
     }),
     Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 500 })),
     // The Worker answers /health, /f and /api. public/_headers covers the dashboard assets.
-    Effect.map(HttpServerResponse.setHeader("x-content-type-options", "nosniff")),
+    Effect.flatMap((response) =>
+      Effect.map(HttpServerRequest.HttpServerRequest, (request) => {
+        const https = Option.exists(
+          HttpServerRequest.toURL(request),
+          (url) => url.protocol === "https:",
+        );
+        return HttpServerResponse.setHeaders(
+          response,
+          https ? httpsSecurityHeaders : securityHeaders,
+        );
+      }),
+    ),
   );
 
   const worker = yield* Worker;

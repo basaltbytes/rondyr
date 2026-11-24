@@ -30,8 +30,8 @@ describe("sendOutcome", () => {
     }
   });
 
-  it("gives up at once on 400, 401, 403 and 404", () => {
-    for (const status of [400, 401, 403, 404]) {
+  it("gives up at once on 3xx, 400, 401, 403 and 404", () => {
+    for (const status of [301, 302, 307, 400, 401, 403, 404]) {
       expect(sendOutcome(status)).toEqual({ kind: "refused", status });
     }
   });

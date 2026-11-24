@@ -4,7 +4,11 @@ import { dayMillis, RetentionPeriods } from "../../../domain/organizations/reten
 import { SubmissionNotFound } from "../../../domain/submissions/submission.rejection.ts";
 import { OrganizationId, SubmissionId } from "../../../domain/submissions/submission.id.ts";
 import type { OrganizationScope } from "../../ports/organization-directory.ts";
-import { SubmissionRetention, type RetentionLane } from "../../ports/submission-retention.ts";
+import {
+  SubmissionRetention,
+  SubmissionRetentionNotFound,
+  type RetentionLane,
+} from "../../ports/submission-retention.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
 
@@ -35,6 +39,10 @@ const decodeLanes = Schema.decodeUnknownEffect(
   ),
 );
 
+// ?1 account, ?2 organization in every scoped statement.
+const admin =
+  "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2 AND role = 'admin'";
+
 const remove = Effect.fn("SubmissionRetention.remove")(function* (
   scope: OrganizationScope,
   submissionId: SubmissionId,
@@ -42,19 +50,18 @@ const remove = Effect.fn("SubmissionRetention.remove")(function* (
   const db = yield* database;
   const now = yield* Clock.currentTimeMillis;
   // ?1 account, ?2 organization, ?3 submission, ?4 time.
-  const member = "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2";
   const [, deleted] = yield* d1(() =>
     db.batch([
       db
         .prepare(`
         INSERT INTO submission_deletions (submission_id, organization_id, deleted_at, deleted_by, cause)
         SELECT id, organization_id, ?4, ?1, 'request' FROM submissions
-        WHERE id = ?3 AND organization_id = ?2 AND EXISTS (${member})
+        WHERE id = ?3 AND organization_id = ?2 AND EXISTS (${admin})
       `)
         .bind(scope.userId, scope.organizationId, submissionId, now),
       db
         .prepare(`
-        DELETE FROM submissions WHERE id = ?3 AND organization_id = ?2 AND EXISTS (${member})
+        DELETE FROM submissions WHERE id = ?3 AND organization_id = ?2 AND EXISTS (${admin})
         RETURNING id
       `)
         .bind(scope.userId, scope.organizationId, submissionId),
@@ -70,10 +77,11 @@ const periods = Effect.fn("SubmissionRetention.periods")(function* (scope: Organ
   const db = yield* database;
   const row = yield* d1(() =>
     db
-      .prepare(`SELECT ${columns} FROM organizations WHERE id = ?`)
-      .bind(scope.organizationId)
+      .prepare(`SELECT ${columns} FROM organizations WHERE id = ?2 AND EXISTS (${admin})`)
+      .bind(scope.userId, scope.organizationId)
       .first(),
   );
+  if (row === null) return yield* SubmissionRetentionNotFound.make();
   return yield* decodePeriods(row).pipe(Effect.mapError(unreadable));
 });
 
@@ -85,12 +93,13 @@ const savePeriods = Effect.fn("SubmissionRetention.savePeriods")(function* (
   const row = yield* d1(() =>
     db
       .prepare(`
-      UPDATE organizations SET accepted_retention_days = ?2, quarantine_retention_days = ?3
-      WHERE id = ?1 RETURNING ${columns}
+      UPDATE organizations SET accepted_retention_days = ?3, quarantine_retention_days = ?4
+      WHERE id = ?2 AND EXISTS (${admin}) RETURNING ${columns}
     `)
-      .bind(scope.organizationId, accepted, quarantine)
+      .bind(scope.userId, scope.organizationId, accepted, quarantine)
       .first(),
   );
+  if (row === null) return yield* SubmissionRetentionNotFound.make();
   return yield* decodePeriods(row).pipe(Effect.mapError(unreadable));
 });
 

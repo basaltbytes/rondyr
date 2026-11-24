@@ -1,7 +1,13 @@
 import { z } from "astro/zod";
 
 import { AutoReply } from "./auto-reply.ts";
-import { formLayout, type FlatFields, type SubmittedData, type SubmittedValue } from "./fields.ts";
+import {
+  formLayout,
+  isPlainEmail,
+  type FlatFields,
+  type SubmittedData,
+  type SubmittedValue,
+} from "./fields.ts";
 
 export const turnstileField = "cf-turnstile-response";
 
@@ -113,7 +119,6 @@ export function declaredLayout(form: DeclaredForm, language: string) {
 const checked = new Set<SubmittedValue>([true, "true", "on", "1"]);
 const unchecked = new Set<SubmittedValue>([false, "false", "off", "0"]);
 const Text = z.string().trim();
-const Email = z.email();
 const WebUrl = z.url({ protocol: /^https?$/u });
 
 function validatedValue(
@@ -142,7 +147,7 @@ function validatedValue(
   if (text === undefined) return invalid;
   switch (field.type) {
     case "email":
-      if (!Email.safeParse(text).success) return { error: "Enter a valid email address." };
+      if (!isPlainEmail(text)) return { error: "Enter a valid email address." };
       break;
     case "tel":
       if (!/^[+(\d][\d\s().-]*$/u.test(text)) return { error: "Enter a valid phone number." };

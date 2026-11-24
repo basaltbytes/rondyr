@@ -32,7 +32,7 @@ export const managedFormColumns = `
 // ?1 is the account, ?2 the organization and ?3 the public ID of the form.
 const scopedForm = `
   SELECT f.id FROM forms f JOIN organization_members m ON m.organization_id = f.organization_id
-  WHERE m.user_id = ?1 AND f.organization_id = ?2 AND f.public_id = ?3
+  WHERE m.user_id = ?1 AND f.organization_id = ?2 AND f.public_id = ?3 AND m.role = 'admin'
 `;
 
 /** The single form a statement returned, or `OrganizationFormNotFound`. */
@@ -54,7 +54,7 @@ const create = Effect.fn("Forms.create")(function* (
       .prepare(`
     INSERT INTO forms (id, organization_id, public_id, name, business_context, emoji)
     SELECT ?3, m.organization_id, ?4, ?5, ?6, ?7 FROM organization_members m
-    WHERE m.user_id = ?1 AND m.organization_id = ?2
+    WHERE m.user_id = ?1 AND m.organization_id = ?2 AND m.role = 'admin'
     RETURNING ${managedFormColumns}
   `)
       .bind(

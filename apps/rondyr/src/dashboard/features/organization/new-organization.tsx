@@ -6,6 +6,9 @@ import { FormProblem, TextAreaField, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { createOrganizationMutation } from "~/lib/api/organizations";
+import { statusOf } from "~/lib/api/request";
+
+type CreateProblem = "forbidden" | "failed";
 
 interface NewOrganizationProps {
   /** Opens the new organization, once the organizations are read again. */
@@ -16,15 +19,18 @@ interface NewOrganizationProps {
 export function NewOrganization({ onCreated }: NewOrganizationProps) {
   const { t } = useTranslation();
   const { mutateAsync: create } = useMutation(createOrganizationMutation);
-  const [failed, action, pending] = useActionState(async (_: boolean, form: FormData) => {
-    try {
-      await create(form);
-      await onCreated();
-      return false;
-    } catch {
-      return true;
-    }
-  }, false);
+  const [problem, action, pending] = useActionState(
+    async (_: CreateProblem | null, form: FormData): Promise<CreateProblem | null> => {
+      try {
+        await create(form);
+        await onCreated();
+        return null;
+      } catch (cause) {
+        return statusOf(cause) === 403 ? "forbidden" : "failed";
+      }
+    },
+    null,
+  );
   return (
     <Card>
       <CardHeader>
@@ -52,7 +58,13 @@ export function NewOrganization({ onCreated }: NewOrganizationProps) {
             maxLength={2000}
             hint={t("inbox.business.hint")}
           />
-          <FormProblem>{failed ? t("inbox.setup.failed") : null}</FormProblem>
+          <FormProblem>
+            {problem === "forbidden"
+              ? t("inbox.setup.forbidden")
+              : problem === "failed"
+                ? t("inbox.setup.failed")
+                : null}
+          </FormProblem>
           <Button type="submit" variant="default" className="justify-self-start" disabled={pending}>
             {pending ? t("inbox.setup.pending") : t("inbox.setup.submit")}
           </Button>

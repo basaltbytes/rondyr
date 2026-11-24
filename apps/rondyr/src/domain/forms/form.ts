@@ -8,7 +8,18 @@ import { TurnstileSiteKey, turnstileField } from "./turnstile.ts";
 export const FormStatus = Schema.Literals(["active", "suspended"]);
 export type FormStatus = typeof FormStatus.Type;
 
-export const FormName = Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(100));
+// C0 and C1 control characters, which include CR, LF and NEL, and the Unicode line separators.
+const controlCharacter = /[\p{Cc}\u2028\u2029]/u;
+const noControlCharacters = Schema.makeFilter<string>(
+  (name) =>
+    !controlCharacter.test(name) || "Expected a name without control characters or line breaks",
+);
+
+export const FormName = Schema.String.check(noControlCharacters).pipe(
+  Schema.decodeTo(
+    Schema.Trim.check(Schema.isMinLength(1), Schema.isMaxLength(100), noControlCharacters),
+  ),
+);
 
 /** What the organization does, given to the classifier. An empty context is stored as none. */
 export const BusinessContext = Schema.Trim.check(Schema.isMaxLength(2000));

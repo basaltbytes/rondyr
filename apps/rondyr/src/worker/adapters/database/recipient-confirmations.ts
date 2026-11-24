@@ -106,7 +106,7 @@ const requestFor = Effect.fn("RecipientConfirmations.requestFor")(function* (
       WHERE t.id = ?1 AND t.organization_id = ?2 AND t.type = 'email'
         AND EXISTS (
           SELECT 1 FROM organization_members m
-          WHERE m.organization_id = t.organization_id AND m.user_id = ?3
+          WHERE m.organization_id = t.organization_id AND m.user_id = ?3 AND m.role = 'admin'
         )
     `)
       .bind(target.targetId, target.organizationId, target.userId)

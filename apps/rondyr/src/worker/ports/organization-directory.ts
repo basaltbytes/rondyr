@@ -25,6 +25,11 @@ export class OrganizationDomainLimit extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("OrganizationDomainLimit", {}) {}
 
+export class OrganizationCreationDenied extends Schema.TaggedError<
+  OrganizationCreationDenied,
+  { readonly brand: unique symbol }
+>()("OrganizationCreationDenied", {}) {}
+
 type InboxOrganization = typeof Organization.Type;
 
 export interface OrganizationMembership extends InboxOrganization {
@@ -65,7 +70,9 @@ export class OrganizationDirectory extends Context.Service<
     readonly create: (
       userId: typeof UserId.Type,
       input: typeof SetupInbox.Type,
-    ) => Effect.Effect<void, InboxUnavailable>;
+    ) => Effect.Effect<void, InboxUnavailable | OrganizationCreationDenied>;
+    /** Whether `create` would accept the account now: the instance has no organization, or the account administers one. */
+    readonly mayCreate: (userId: typeof UserId.Type) => Effect.Effect<boolean, InboxUnavailable>;
     readonly listDomains: (
       scope: OrganizationScope,
     ) => Effect.Effect<OrganizationDomainList, DomainStorageError>;

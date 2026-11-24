@@ -10,6 +10,13 @@ export const SetupInbox = Schema.Struct({
   businessContext: BusinessContext,
 });
 
+/**
+ * The answer of `GET /api/organization-creation`: whether the signed-in account
+ * may create an organization. It may while the instance has none, and then only
+ * as an admin of an existing one.
+ */
+export const OrganizationCreation = Schema.Struct({ allowed: Schema.Boolean });
+
 /** An organization of the account, its role in it, and its forms. */
 export const InboxOrganizationWithForms = Schema.Struct({
   id: OrganizationId,

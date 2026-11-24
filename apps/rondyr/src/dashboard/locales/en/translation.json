@@ -222,7 +222,12 @@
       "firstFormPlaceholder": "Contact",
       "submit": "Create organization",
       "pending": "Creating…",
+      "forbidden": "Only an admin of an existing organization can create a new one.",
       "failed": "The organization could not be created. Check the fields and try again."
+    },
+    "noOrganization": {
+      "title": "You don’t belong to an organization",
+      "description": "Your account is not a member of any organization on this Rondyr. Ask an admin of an organization for an invitation, then open its link."
     },
     "business": {
       "label": "Business of the organization",

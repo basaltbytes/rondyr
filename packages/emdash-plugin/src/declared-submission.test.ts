@@ -90,6 +90,12 @@ describe("declared field rules", () => {
     { type: "text", value: "", message: "This field is required." },
     { type: "textarea", value: "123456", message: "Use at most 5 characters." },
     { type: "email", value: "ada", message: "Enter a valid email address." },
+    {
+      type: "email",
+      value: "ada@example.com\r\nBcc: evil@example.com",
+      message: "Enter a valid email address.",
+    },
+    { type: "email", value: "Ada <ada@example.com>", message: "Enter a valid email address." },
     { type: "tel", value: "abc", message: "Enter a valid phone number." },
     { type: "url", value: "file:///a", message: "Enter a valid HTTP or HTTPS URL." },
     { type: "select", value: "Other", message: "Choose one of the available options." },

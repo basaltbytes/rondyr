@@ -64,6 +64,40 @@ describe("Rondyr Worker", () => {
     }),
   );
 
+  it.effect("sets referrer policy on every response and HSTS only on HTTPS requests", () =>
+    Effect.gen(function* () {
+      const httpsResponses = yield* Effect.all([
+        Effect.promise(() => env.TEST_WORKER.fetch(`${origin}/health`)),
+        Effect.promise(() => env.TEST_WORKER.fetch(`${origin}/api/missing`)),
+        Effect.promise(() => env.TEST_WORKER.fetch(`${origin}/api/auth/get-session`)),
+        Effect.promise(() =>
+          env.TEST_WORKER.fetch(`${origin}/f/unknown`, {
+            method: "POST",
+            headers: { "content-type": "text/plain" },
+            body: "message",
+          }),
+        ),
+      ]);
+
+      for (const response of httpsResponses) {
+        assert.strictEqual(response.headers.get("x-content-type-options"), "nosniff");
+        assert.strictEqual(response.headers.get("referrer-policy"), "no-referrer");
+        assert.strictEqual(
+          response.headers.get("strict-transport-security"),
+          "max-age=31536000; includeSubDomains",
+        );
+      }
+
+      const plainHttp = yield* Effect.promise(() =>
+        env.TEST_WORKER.fetch("http://localhost/health"),
+      );
+      assert.strictEqual(plainHttp.status, 200);
+      assert.strictEqual(plainHttp.headers.get("x-content-type-options"), "nosniff");
+      assert.strictEqual(plainHttp.headers.get("referrer-policy"), "no-referrer");
+      assert.isNull(plainHttp.headers.get("strict-transport-security"));
+    }),
+  );
+
   it.effect("returns 404 for a missing API route", () =>
     Effect.gen(function* () {
       const response = yield* Effect.promise(() =>

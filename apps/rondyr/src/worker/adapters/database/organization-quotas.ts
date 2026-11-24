@@ -15,7 +15,8 @@ const decodeUsage = Schema.decodeUnknownEffect(
   }),
 );
 
-const member = "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2";
+const member =
+  "SELECT 1 FROM organization_members WHERE user_id = ?1 AND organization_id = ?2 AND role = 'admin'";
 const usageQuery = `
   SELECT date('now') AS day,
     json_object('submissions', o.daily_submission_limit,

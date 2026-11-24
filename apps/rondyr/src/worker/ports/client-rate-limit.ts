@@ -1,17 +1,17 @@
 import { Context, Effect } from "effect";
 
 /**
- * A limit on the submissions that one client sends to one form, counted before
- * anything is stored. It keeps a single client from filling the form's own cap.
+ * A per-client rate limit counted before work runs or rows are stored,
+ * partitioned by `scope` (a form's public ID or a public endpoint name).
  */
 export class ClientRateLimit extends Context.Service<
   ClientRateLimit,
   {
     /**
-     * Count one submission from `clientAddress`, the IP address of the client,
-     * to the form `publicId`, and tell whether the client is under its limit.
-     * A counter that cannot answer admits the submission: the form's cap still applies.
+     * Count one request from `clientAddress`, the IP address of the client,
+     * under `scope`, and tell whether the client is under its limit.
+     * A counter that cannot answer admits the request.
      */
-    readonly admit: (publicId: string, clientAddress: string) => Effect.Effect<boolean>;
+    readonly admit: (scope: string, clientAddress: string) => Effect.Effect<boolean>;
   }
 >()("rondyr/worker/ports/client-rate-limit/ClientRateLimit") {}

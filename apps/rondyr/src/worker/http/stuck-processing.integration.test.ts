@@ -6,6 +6,7 @@ import { Context, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 
 import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { addMember } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
   createInbox,
@@ -20,9 +21,10 @@ import { turnstileVerifierLive } from "../adapters/workers/siteverify.ts";
 import { CreatedApiToken } from "../../domain/organizations/api-token.ts";
 import { SubmissionDetail } from "../../domain/submissions/inbox.ts";
 import { OperationsStatus, StuckSubmissions } from "../../domain/submissions/operations-status.ts";
-import { SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { OrganizationId, SubmissionId, UserId } from "../../domain/submissions/submission.id.ts";
 import { publishPendingSubmissions } from "../jobs/submission-outbox.ts";
 import { SubmissionIntake } from "../ports/intake.ts";
+import { Outbox } from "../ports/outbox.ts";
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
@@ -455,4 +457,43 @@ it.live(
       assert.strictEqual(used, 2);
     }),
   45_000,
+);
+
+it.live("enforces admin role in the outbox D1 adapter when retrying a stuck submission", () =>
+  Effect.gen(function* () {
+    const { cookie } = yield* signIn;
+    const inbox = yield* createInbox("Stuck defense in depth", { cookie });
+    const form = inbox.forms[0];
+    if (form === undefined) return assert.fail("The new inbox should have a form");
+    yield* addMember(inbox.id, { cookie }, "stuck-reviewer@example.test", "reviewer");
+    const reviewerId = yield* Effect.promise(() =>
+      env.DB.prepare("SELECT id FROM auth_users WHERE email = ?")
+        .bind("stuck-reviewer@example.test")
+        .first<string>("id"),
+    );
+    if (reviewerId === null) return assert.fail("Expected reviewer user");
+    const submissionId = yield* stuckSubmission(form.publicId, {
+      message: "Still stuck for reviewer",
+    });
+
+    const failure = yield* Effect.scoped(
+      Effect.flatMap(Layer.build(outboxLive), (context) =>
+        Context.get(context, Outbox)
+          .retryStuck({
+            userId: UserId.make(reviewerId),
+            organizationId: OrganizationId.make(inbox.id),
+            submissionId,
+          })
+          .pipe(Effect.flip),
+      ),
+    );
+
+    assert.strictEqual(failure._tag, "StuckSubmissionNotFound");
+    const stillStuck = yield* Effect.promise(() =>
+      env.DB.prepare("SELECT stuck_at FROM outbox_events WHERE submission_id = ?")
+        .bind(submissionId)
+        .first("stuck_at"),
+    );
+    assert.isNumber(stillStuck);
+  }),
 );

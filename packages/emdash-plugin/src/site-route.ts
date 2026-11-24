@@ -15,6 +15,10 @@ const honeypotField = "_hp";
 const sameSitePath = /^\/(?![/\\])/u;
 const blockKey = /^[\w-]{1,64}$/u;
 const errorCode = /^[\w-]{1,64}$/u;
+const declaredMaxBodyBytes = 32 * 1024;
+const formsMaxBodyBytes = 10 * 1024 * 1024;
+const base64ChunkSize = 0x8000;
+const rateLimitRetryAfter = "60";
 
 /** A file as the forms plugin's `submit` takes it: base64 bytes. Rondyr never gets it. */
 const SubmittedFile = z.object({
@@ -118,21 +122,82 @@ interface Submission extends FormSubmission {
 }
 
 function base64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary);
+  const parts: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += base64ChunkSize) {
+    const chunk = bytes.subarray(offset, offset + base64ChunkSize);
+    parts.push(String.fromCharCode(...chunk));
+  }
+  return btoa(parts.join(""));
 }
 
-async function readSubmission(request: Request, declared: boolean): Promise<Submission | null> {
-  const type = request.headers.get("content-type") ?? "";
-  if (type.toLowerCase().startsWith("application/json")) {
-    const parsed = JsonBody.safeParse(await request.json().catch(() => null));
-    if (!parsed.success) return null;
-    const { formId, data, files, locale } = parsed.data;
-    return { formId, data, files: files ?? {}, locale, back: null, block: null };
+type BodyRead =
+  | { readonly ok: true; readonly bytes: Uint8Array<ArrayBuffer> }
+  | { readonly ok: false; readonly reason: "too-large" | "read-error" };
+
+async function readBoundedBody(request: Request, maxBytes: number): Promise<BodyRead> {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const length = Number(declaredLength.trim());
+    if (Number.isFinite(length) && length > maxBytes) {
+      await request.body?.cancel().catch(() => {});
+      return { ok: false, reason: "too-large" };
+    }
   }
-  const form = await request.formData().catch(() => null);
-  if (form === null) return null;
+  if (request.body === null) return { ok: true, bytes: new Uint8Array(0) };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => {});
+        return { ok: false, reason: "too-large" };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false, reason: "read-error" };
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { ok: true, bytes };
+}
+
+type SubmissionRead =
+  | { readonly kind: "ok"; readonly submission: Submission }
+  | { readonly kind: "too-large" }
+  | { readonly kind: "invalid" };
+
+async function readSubmission(request: Request, declared: boolean): Promise<SubmissionRead> {
+  const maxBytes = declared ? declaredMaxBodyBytes : formsMaxBodyBytes;
+  const body = await readBoundedBody(request, maxBytes);
+  if (!body.ok) {
+    return body.reason === "too-large" ? { kind: "too-large" } : { kind: "invalid" };
+  }
+  const headers = new Headers(request.headers);
+  headers.delete("content-length");
+  const buffered = new Request(request.url, { method: "POST", headers, body: body.bytes });
+  const type = buffered.headers.get("content-type") ?? "";
+  if (type.toLowerCase().startsWith("application/json")) {
+    const parsed = JsonBody.safeParse(await buffered.json().catch(() => null));
+    if (!parsed.success) return { kind: "invalid" };
+    const { formId, data, files, locale } = parsed.data;
+    return {
+      kind: "ok",
+      submission: { formId, data, files: files ?? {}, locale, back: null, block: null },
+    };
+  }
+  const form = await buffered.formData().catch(() => null);
+  if (form === null) return { kind: "invalid" };
   const data = new Map<string, string | string[]>();
   const files = new Map<string, SubmittedFile>();
   let formId = "";
@@ -167,8 +232,17 @@ async function readSubmission(request: Request, declared: boolean): Promise<Subm
     }
   }
   return formId === ""
-    ? null
-    : { formId, data: Object.fromEntries(data), files: Object.fromEntries(files), back, block };
+    ? { kind: "invalid" }
+    : {
+        kind: "ok",
+        submission: {
+          formId,
+          data: Object.fromEntries(data),
+          files: Object.fromEntries(files),
+          back,
+          block,
+        },
+      };
 }
 
 function pluginRequest(url: URL, path: string, body: string, headers: Headers): Request {
@@ -296,6 +370,11 @@ export interface SiteRequest {
 const invalid: FormsAnswer = {
   success: false,
   error: { code: "INVALID_REQUEST", message: "Invalid form" },
+};
+
+const payloadTooLarge: FormsAnswer = {
+  success: false,
+  error: { code: "PAYLOAD_TOO_LARGE", message: "Submission is too large." },
 };
 
 /**
@@ -482,18 +561,32 @@ export async function handleSubmission(site: SiteRequest, token: string | null) 
   if (crossSite(request, url)) {
     return new Response("Cross-site form submission", { status: 403, headers: noStore });
   }
-  const submission = await readSubmission(request, hasDeclaredForms(site.locals));
+  const read = await readSubmission(request, hasDeclaredForms(site.locals));
   const json = (request.headers.get("content-type") ?? "")
     .toLowerCase()
     .startsWith("application/json");
+  const submission = read.kind === "ok" ? read.submission : null;
   const { accepted, answer } =
-    submission === null
-      ? { accepted: false, answer: invalid }
-      : await submitSiteForm(site, submission, token);
+    read.kind === "too-large"
+      ? { accepted: false, answer: payloadTooLarge }
+      : submission === null
+        ? { accepted: false, answer: invalid }
+        : await submitSiteForm(site, submission, token);
 
   if (json) {
-    const status = accepted ? 200 : answer === queueUnavailable ? 503 : 400;
-    return Response.json(answer, { status, headers: noStore });
+    const headers = new Headers(noStore);
+    let status = 400;
+    if (accepted) {
+      status = 200;
+    } else if (answer === payloadTooLarge) {
+      status = 413;
+    } else if (!answer.success && answer.error.code === "RATE_LIMITED") {
+      status = 429;
+      headers.set("retry-after", rateLimitRetryAfter);
+    } else if (answer === queueUnavailable) {
+      status = 503;
+    }
+    return Response.json(answer, { status, headers });
   }
   const target = new URL(
     submission?.back !== null &&

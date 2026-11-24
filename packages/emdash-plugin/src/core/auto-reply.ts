@@ -1,6 +1,6 @@
 import { z } from "astro/zod";
 
-import { submitterAddress, type FlatFields, type FormLayout } from "./fields.ts";
+import { isPlainEmail, submitterAddress, type FlatFields, type FormLayout } from "./fields.ts";
 
 /**
  * The auto-reply that the forms plugin wrote for a submission of a linked
@@ -34,7 +34,7 @@ export function autoReplyMessage(
   fields: FlatFields,
 ): AutoReplyMessage | null {
   const to = submitterAddress(layout, fields);
-  if (to === null || !z.email().safeParse(to).success) return null;
+  if (to === null || !isPlainEmail(to)) return null;
   const { subject, text, html } = autoReply;
   return html === undefined ? { to, subject, text } : { to, subject, text, html };
 }
