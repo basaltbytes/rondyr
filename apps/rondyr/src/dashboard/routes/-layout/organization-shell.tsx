@@ -29,8 +29,8 @@ function useSidebarPage(): SidebarPage {
     select: (matches) =>
       matches.findLast(({ staticData }) => staticData.sidebar !== undefined)?.staticData.sidebar,
   });
-  const { publicId } = useParams({ strict: false });
-  const { folder } = useSearch({ strict: false });
+  const publicId = useParams({ strict: false, select: (params) => params.publicId });
+  const folder = useSearch({ strict: false, select: (search) => search.folder });
   if (declared === undefined || declared.at === "messages") {
     return { at: "messages", folder: folder ?? "quarantined" };
   }
@@ -71,7 +71,7 @@ export function OrganizationShell({
 }: OrganizationShellProps) {
   const { user } = useRouteContext({ from: "/_signed-in" });
   const page = useSidebarPage();
-  const { q } = useSearch({ strict: false });
+  const searchText = useSearch({ strict: false, select: (search) => search.q ?? null });
   const signedOut = useSignedOut();
   const account = <AccountMenu email={user.email} onSignedOut={signedOut} />;
   return (
@@ -89,7 +89,7 @@ export function OrganizationShell({
             organizations={organizations}
             organization={organization}
             page={page}
-            searchText={q ?? null}
+            searchText={searchText}
             account={account}
           />
         )}

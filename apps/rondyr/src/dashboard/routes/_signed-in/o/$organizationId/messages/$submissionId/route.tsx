@@ -1,6 +1,7 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 
 import { MessageReader } from "~/features/messages/message-reader";
+import { deliveriesQuery } from "~/lib/api/deliveries";
 import { messageListQuery, messageQuery } from "~/lib/api/messages";
 import { statusOf } from "~/lib/api/request";
 import { useOrganization } from "~/routes/-layout/organization-context";
@@ -17,9 +18,15 @@ export const Route = createFileRoute("/_signed-in/o/$organizationId/messages/$su
     const detail = messageQuery(organizationId, submissionId);
     const listed = queryClient
       .getQueryData(messageListQuery(organizationId, deps).queryKey)
-      ?.pages.some(({ entries }) => entries.some((entry) => entry.submissionId === submissionId));
-    if (listed === true) {
+      ?.pages.flatMap(({ entries }) => entries)
+      .find((entry) => entry.submissionId === submissionId);
+    if (listed !== undefined) {
       void queryClient.query(detail).catch(() => undefined);
+      if (listed.status === "accepted") {
+        void queryClient
+          .query(deliveriesQuery(organizationId, submissionId))
+          .catch(() => undefined);
+      }
       return;
     }
     await queryClient.query({ ...detail, staleTime: "static" }).catch((cause: unknown) => {

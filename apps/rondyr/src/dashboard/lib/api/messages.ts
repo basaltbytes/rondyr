@@ -20,7 +20,6 @@ import {
 import { countsAfterMove, countsAfterRemoval } from "~/lib/folder-counts";
 import { MessagesSearch } from "~/lib/messages-search";
 
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, request, requestJson, statusOf } from "./request.ts";
 
 /** A message in a page of the list. Its `preview` has every field, with long values cut short. */
@@ -143,19 +142,16 @@ function changeLists(
   for (const query of client.getQueryCache().findAll({ queryKey: listsKey(organizationId) })) {
     const search = decodeSearch(query.queryKey[3]);
     if (Option.isNone(search)) continue;
-    client.setQueryData<Pages>(
-      query.queryKey,
-      (pages) =>
-        pages === undefined
-          ? undefined
-          : {
-              ...pages,
-              pages: pages.pages.map((page) => ({
-                ...page,
-                entries: change(page.entries, search.value),
-              })),
-            },
-      keepReadTime(client, query.queryKey),
+    client.setQueryData<Pages>(query.queryKey, (pages) =>
+      pages === undefined
+        ? undefined
+        : {
+            ...pages,
+            pages: pages.pages.map((page) => ({
+              ...page,
+              entries: change(page.entries, search.value),
+            })),
+          },
     );
   }
 }
@@ -173,11 +169,7 @@ export function applyDecision(
   before: DecidedFrom,
   updated: SubmissionDetail,
 ) {
-  client.setQueryData(
-    messageQuery(organizationId, updated.submissionId).queryKey,
-    updated,
-    keepReadTime(client, messageQuery(organizationId, updated.submissionId).queryKey),
-  );
+  client.setQueryData(messageQuery(organizationId, updated.submissionId).queryKey, updated);
   changeLists(client, organizationId, (entries, { folder }) =>
     folder === "all" || folder === updated.status
       ? entries.map((entry) =>
@@ -187,13 +179,10 @@ export function applyDecision(
         )
       : entries.filter((entry) => entry.submissionId !== updated.submissionId),
   );
-  client.setQueryData(
-    messageCountsQuery(organizationId).queryKey,
-    (counts) =>
-      counts === undefined
-        ? undefined
-        : countsAfterMove(counts, before.formPublicId, before.status, updated.status),
-    keepReadTime(client, messageCountsQuery(organizationId).queryKey),
+  client.setQueryData(messageCountsQuery(organizationId).queryKey, (counts) =>
+    counts === undefined
+      ? undefined
+      : countsAfterMove(counts, before.formPublicId, before.status, updated.status),
   );
 }
 
@@ -240,13 +229,10 @@ export function deleteMessageMutation(organizationId: string) {
       changeLists(client, organizationId, (entries) =>
         entries.filter((entry) => entry.submissionId !== message.submissionId),
       );
-      client.setQueryData(
-        messageCountsQuery(organizationId).queryKey,
-        (counts) =>
-          counts === undefined
-            ? undefined
-            : countsAfterRemoval(counts, message.formPublicId, message.status),
-        keepReadTime(client, messageCountsQuery(organizationId).queryKey),
+      client.setQueryData(messageCountsQuery(organizationId).queryKey, (counts) =>
+        counts === undefined
+          ? undefined
+          : countsAfterRemoval(counts, message.formPublicId, message.status),
       );
       client.removeQueries({
         queryKey: messageQuery(organizationId, message.submissionId).queryKey,

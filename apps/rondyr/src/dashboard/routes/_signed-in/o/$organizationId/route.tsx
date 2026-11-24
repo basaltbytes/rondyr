@@ -18,14 +18,13 @@ export const Route = createFileRoute("/_signed-in/o/$organizationId")({
   beforeLoad: async ({ context, params }) => ({
     organization: await organizationOf(context.queryClient, params.organizationId),
   }),
-  loader: async ({ context, params, cause }) => {
+  loader: ({ context, params, cause }) => {
     // A reload, a change of organization and the first visit count the messages again.
     // A decision and a deletion move the counts in the cache, and Refresh counts again.
     if (cause === "enter") {
-      await context.queryClient.invalidateQueries({
-        queryKey: messageCountsQuery(params.organizationId).queryKey,
-        refetchType: "none",
-      });
+      void context.queryClient
+        .query({ ...messageCountsQuery(params.organizationId), staleTime: 0 })
+        .catch(() => undefined);
     }
   },
   component: OrganizationLayout,

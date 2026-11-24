@@ -11,7 +11,6 @@ import { TargetTestResult } from "@rondyr/deliveries/history";
 import { DestinationTarget, TargetRequestError } from "@rondyr/deliveries/targets";
 import { IssuedWebhookSecret, WebhookTarget } from "@rondyr/deliveries/webhook";
 
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, refusalOf, request, requestJson } from "./request.ts";
 
 /** A destination of a form: a webhook, an email destination or one of a connector. */
@@ -50,12 +49,25 @@ const destination = (
   ...segments: ReadonlyArray<string>
 ) => organizationPath(organizationId, "targets", targetId, ...segments);
 
+/** Whether any email destination still waits for a recipient to confirm their address. */
+function hasPendingRecipient(targets: ReadonlyArray<DestinationTarget> | undefined): boolean {
+  return (
+    targets?.some(
+      (target) =>
+        target.type === "email" &&
+        target.recipientStatuses.some(({ status }) => status === "pending"),
+    ) ?? false
+  );
+}
+
 /** The destinations of a form: webhooks, emails and the destinations of connectors. */
 export function destinationsQuery(organizationId: string, publicId: string) {
   return queryOptions({
     queryKey: [organizationId, "forms", publicId, "destinations"] as const,
     queryFn: ({ signal }) =>
       requestJson(formDestinations(organizationId, publicId), Destinations, { signal }),
+    // A pending recipient can confirm from their email at any time, so a revisit checks fresh.
+    staleTime: (query) => (hasPendingRecipient(query.state.data) ? 0 : 30_000),
   });
 }
 
@@ -169,16 +181,12 @@ async function changeDestination(
 function cache(client: QueryClient, organizationId: string, publicId: string) {
   return {
     add: (target: DestinationTarget) =>
-      client.setQueryData(
-        destinationsQuery(organizationId, publicId).queryKey,
-        (targets) => (targets === undefined ? undefined : [...targets, target]),
-        keepReadTime(client, destinationsQuery(organizationId, publicId).queryKey),
+      client.setQueryData(destinationsQuery(organizationId, publicId).queryKey, (targets) =>
+        targets === undefined ? undefined : [...targets, target],
       ),
     replace: (target: DestinationTarget) =>
-      client.setQueryData(
-        destinationsQuery(organizationId, publicId).queryKey,
-        (targets) => targets?.map((item) => (item.id === target.id ? target : item)),
-        keepReadTime(client, destinationsQuery(organizationId, publicId).queryKey),
+      client.setQueryData(destinationsQuery(organizationId, publicId).queryKey, (targets) =>
+        targets?.map((item) => (item.id === target.id ? target : item)),
       ),
   };
 }

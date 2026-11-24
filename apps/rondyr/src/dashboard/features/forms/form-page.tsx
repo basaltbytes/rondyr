@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Mails } from "lucide-react";
 import { useActionState, useId, useState } from "react";
 import type { ReactNode } from "react";
@@ -6,7 +7,7 @@ import { Trans, useTranslation } from "react-i18next";
 
 import { TextAreaField, TextField } from "~/components/text-field";
 import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Button, buttonVariants } from "~/components/ui/button";
 import { SidebarTrigger } from "~/components/ui/sidebar";
 import {
   changeFormMutation,
@@ -124,8 +125,6 @@ function FormStatusField({ form, onChange }: FormStatusFieldProps) {
 interface FormPageProps {
   readonly organizationId: string;
   readonly form: ManagedForm;
-  /** Open the messages of the form. */
-  readonly onMessages: () => void;
   /** Where the accepted messages of the form go, which another feature shows. */
   readonly destinations: ReactNode;
 }
@@ -135,7 +134,7 @@ interface FormPageProps {
  * at the top, edited in place; its settings as fields; then its destinations
  * and its allowed origins side by side.
  */
-export function FormPage({ organizationId, form, onMessages, destinations }: FormPageProps) {
+export function FormPage({ organizationId, form, destinations }: FormPageProps) {
   const { t } = useTranslation();
   const ids = useId();
   const [failure, setFailure] = useState<FormFailure | null>(null);
@@ -163,16 +162,17 @@ export function FormPage({ organizationId, form, onMessages, destinations }: For
   return (
     <main className="isolate min-w-0 lg:col-span-2 lg:overflow-y-auto">
       <PageBar title={form.name}>
-        <Button
-          variant="ghost"
-          size="sm"
+        <Link
+          to="/o/$organizationId/messages"
+          params={{ organizationId }}
+          search={{ folder: "all", form: form.publicId }}
           aria-label={t("inbox.forms.messages", { name: form.name })}
-          onClick={onMessages}
+          className={buttonVariants({ variant: "ghost", size: "sm" })}
         >
           <Mails aria-hidden="true" className="size-4" />
           {t("inbox.navigation.messages")}
           {messages !== null && <span className="tabular-nums">{messages}</span>}
-        </Button>
+        </Link>
       </PageBar>
       <section
         aria-label={t("inbox.forms.settings", { name: form.name })}

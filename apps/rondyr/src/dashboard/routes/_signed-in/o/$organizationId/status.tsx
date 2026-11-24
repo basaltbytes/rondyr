@@ -11,11 +11,9 @@ import { useOrganization } from "~/routes/-layout/organization-context";
 export const Route = createFileRoute("/_signed-in/o/$organizationId/status")({
   staticData: { sidebar: { at: "settings", section: "operations" } },
   beforeLoad: ({ context }) => requirePermission(context.organization, "read-operations"),
-  loader: ({ context }) =>
-    context.queryClient.query({ ...operationsQuery, staleTime: "static" }).then(
-      () => undefined,
-      () => undefined,
-    ),
+  loader: ({ context }) => {
+    void context.queryClient.query(operationsQuery).catch(() => undefined);
+  },
   component: Status,
 });
 

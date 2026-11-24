@@ -28,16 +28,10 @@ export const Route = createFileRoute("/_signed-in/o/$organizationId/forms/$publi
   },
   loader: ({ context, params }) => {
     const { organizationId, publicId } = params;
-    return Promise.all([
-      context.queryClient.query({
-        ...destinationsQuery(organizationId, publicId),
-        staleTime: "static",
-      }),
-      context.queryClient.query({ ...originsQuery(organizationId, publicId), staleTime: "static" }),
-    ]).then(
-      () => undefined,
-      () => undefined,
-    );
+    void context.queryClient
+      .query(destinationsQuery(organizationId, publicId))
+      .catch(() => undefined);
+    void context.queryClient.query(originsQuery(organizationId, publicId)).catch(() => undefined);
   },
   component: Form,
 });
@@ -45,7 +39,6 @@ export const Route = createFileRoute("/_signed-in/o/$organizationId/forms/$publi
 function Form() {
   const organization = useOrganization();
   const { publicId } = Route.useParams();
-  const navigate = Route.useNavigate();
   const form = organization.forms.find((candidate) => candidate.publicId === publicId);
   if (!allows(organization.role, "manage-forms")) {
     return (
@@ -62,13 +55,6 @@ function Form() {
       key={form.publicId}
       organizationId={organization.id}
       form={form}
-      onMessages={() =>
-        void navigate({
-          to: "/o/$organizationId/messages",
-          params: { organizationId: organization.id },
-          search: { folder: "all", form: form.publicId },
-        })
-      }
       destinations={
         <FormDestinations
           key={`destinations-${form.publicId}`}

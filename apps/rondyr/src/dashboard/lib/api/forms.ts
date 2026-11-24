@@ -11,7 +11,6 @@ import {
 import { TurnstileKeyCheck } from "@rondyr/forms/turnstile";
 
 import { organizationsQuery } from "./organizations.ts";
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, refusalOf, requestJson } from "./request.ts";
 
 export type ManagedForm = typeof ManagedForm.Type;
@@ -109,6 +108,7 @@ export function turnstileKeyQuery(organizationId: string, publicId: string) {
       );
       return state;
     },
+    staleTime: 0,
     gcTime: 0,
   });
 }
@@ -125,21 +125,18 @@ function byName(left: ManagedForm, right: ManagedForm) {
  * then leaves the cache right.
  */
 async function keepForm(client: QueryClient, organizationId: string, saved: ManagedForm) {
-  client.setQueryData(
-    organizationsQuery.queryKey,
-    (organizations) =>
-      organizations?.map((organization) =>
-        organization.id === organizationId
-          ? {
-              ...organization,
-              forms: [
-                ...organization.forms.filter(({ publicId }) => publicId !== saved.publicId),
-                saved,
-              ].toSorted(byName),
-            }
-          : organization,
-      ),
-    keepReadTime(client, organizationsQuery.queryKey),
+  client.setQueryData(organizationsQuery.queryKey, (organizations) =>
+    organizations?.map((organization) =>
+      organization.id === organizationId
+        ? {
+            ...organization,
+            forms: [
+              ...organization.forms.filter(({ publicId }) => publicId !== saved.publicId),
+              saved,
+            ].toSorted(byName),
+          }
+        : organization,
+    ),
   );
   await client.invalidateQueries({ queryKey: organizationsQuery.queryKey });
 }

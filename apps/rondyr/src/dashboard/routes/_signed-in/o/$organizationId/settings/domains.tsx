@@ -7,11 +7,9 @@ import { useOrganization } from "~/routes/-layout/organization-context";
 /** The domains of the organization. */
 export const Route = createFileRoute("/_signed-in/o/$organizationId/settings/domains")({
   staticData: { sidebar: { at: "settings", section: "domains" } },
-  loader: ({ context, params }) =>
-    context.queryClient.query({ ...domainsQuery(params.organizationId), staleTime: "static" }).then(
-      () => undefined,
-      () => undefined,
-    ),
+  loader: ({ context, params }) => {
+    void context.queryClient.query(domainsQuery(params.organizationId)).catch(() => undefined);
+  },
   component: Page,
 });
 

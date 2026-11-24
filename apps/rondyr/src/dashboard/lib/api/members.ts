@@ -12,7 +12,6 @@ import {
 import type { Language } from "~/lib/language";
 
 import { organizationsQuery } from "./organizations.ts";
-import { keepReadTime } from "./cache.ts";
 import { organizationPath, refusalOf, request, requestJson } from "./request.ts";
 
 export type { Member, OrganizationMembers };
@@ -32,6 +31,8 @@ export function membersQuery(organizationId: string) {
     queryKey: [organizationId, "members"] as const,
     queryFn: ({ signal }) =>
       requestJson(organizationPath(organizationId, "members"), OrganizationMembers, { signal }),
+    // A pending invitation can be accepted from its link at any time, so a revisit checks fresh.
+    staleTime: (query) => ((query.state.data?.invitations.length ?? 0) > 0 ? 0 : 30_000),
   });
 }
 
@@ -131,26 +132,21 @@ export function changeMembersMutation(organizationId: string, self: string | nul
   return mutationOptions({
     mutationFn: (change: MemberChange) => changeMembers(organizationId, change),
     onSuccess: async (result, _change, _context, { client }) => {
-      client.setQueryData(
-        membersQuery(organizationId).queryKey,
-        (members) => (members === undefined ? undefined : applied(members, result)),
-        keepReadTime(client, membersQuery(organizationId).queryKey),
+      client.setQueryData(membersQuery(organizationId).queryKey, (members) =>
+        members === undefined ? undefined : applied(members, result),
       );
       if (result.change !== "role" && result.change !== "remove") return;
       const member = result.change === "role" ? result.member.userId : result.member;
       if (member !== self) return;
       // The account's own role or membership changed: the organizations follow at once.
-      client.setQueryData(
-        organizationsQuery.queryKey,
-        (organizations) =>
-          result.change === "role"
-            ? organizations?.map((organization) =>
-                organization.id === organizationId
-                  ? { ...organization, role: result.member.role }
-                  : organization,
-              )
-            : organizations?.filter((organization) => organization.id !== organizationId),
-        keepReadTime(client, organizationsQuery.queryKey),
+      client.setQueryData(organizationsQuery.queryKey, (organizations) =>
+        result.change === "role"
+          ? organizations?.map((organization) =>
+              organization.id === organizationId
+                ? { ...organization, role: result.member.role }
+                : organization,
+            )
+          : organizations?.filter((organization) => organization.id !== organizationId),
       );
       await client.invalidateQueries({ queryKey: organizationsQuery.queryKey });
     },
