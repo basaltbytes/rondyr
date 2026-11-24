@@ -1,5 +1,5 @@
 // Links in the repository's Markdown are written for GitHub: `./webhooks.md#signature`,
-// `../architecture.md`, `examples/verify-webhook.ts`. On the site, a link to another page
+// `../CONTRIBUTING.md`, `examples/verify-webhook.ts`. On the site, a link to another page
 // goes to that page's route, and a link to any other file of the repository goes to the
 // file on GitHub. A link to a file that does not exist, or to a heading that a Markdown
 // file outside the site does not have, fails the build.

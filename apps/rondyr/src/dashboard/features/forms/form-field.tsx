@@ -1,5 +1,5 @@
 import { Check, Copy } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -142,16 +142,28 @@ interface CopyButtonProps {
   readonly copiedLabel: string;
 }
 
-/** Copies a text. Its icon and its name say when the text is in the clipboard. */
+/** How long the button says that the text is copied before it offers the copy again. */
+const copiedMillis = 2000;
+
+/**
+ * Copies a text. Its icon and its name say for a moment that the text is in the
+ * clipboard, then offer the copy again.
+ */
 export function CopyButton({ text, label, copiedLabel }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
+  const reset = useRef<ReturnType<typeof setTimeout>>(undefined);
   return (
     <Button
       variant="ghost"
       size="icon-sm"
       aria-label={copied ? copiedLabel : label}
       onClick={() => {
-        void navigator.clipboard.writeText(text).then(() => setCopied(true));
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          // A second copy within the moment starts the moment again.
+          clearTimeout(reset.current);
+          reset.current = setTimeout(() => setCopied(false), copiedMillis);
+        });
       }}
     >
       {copied ? (

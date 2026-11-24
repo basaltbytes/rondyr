@@ -46,7 +46,7 @@ test("refuses a page without a first-level heading", () => {
 test("serves user-facing docs/*.md at their name, and excludes contributor files", () => {
   assert.equal(documentId("docs/email.md"), "email");
   assert.equal(documentId("docs/guides/forms.md"), "guides/forms");
-  assert.equal(documentId("architecture.md"), null);
+  assert.equal(documentId("CONTRIBUTING.md"), null);
   assert.equal(documentId("docs/evaluation.md"), null);
   assert.equal(documentId("docs/local-development.md"), null);
   assert.equal(documentId("docs/operations.md"), null);
@@ -58,7 +58,7 @@ test("serves user-facing docs/*.md at their name, and excludes contributor files
 test("lists every site Markdown file under docs/ and skips contributor files", (t) => {
   const repository = fixtureRepository(
     new Map([
-      ["architecture.md", "# Architecture\n"],
+      ["CONTRIBUTING.md", "# Contributing\n"],
       ["README.md", "# Readme\n"],
       ["docs/api.md", "# API\n"],
       ["docs/evaluation.md", "# Evaluation\n"],
