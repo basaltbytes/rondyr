@@ -4,7 +4,6 @@ Rondyr is open source under the [GNU Affero General Public License v3.0](../LICE
 
 - [Contributing guide](../CONTRIBUTING.md): branch rules, workspace checks, browser tests, and pull requests.
 - [Local development](./local-development.md): run Rondyr on your machine with no Cloudflare account.
-- [Technical architecture](../architecture.md): data model, submission processing, domain rules, and design rationale.
 - [Write a connector](./writing-a-connector.md): send accepted messages to another service with one file.
 - [Classifier evaluation](./evaluation.md): replay labeled corpora to measure Jev and OpenAI Decisions thresholds.
 - [Operations runbook](./operations.md): backlog diagnostics, smoke tests, database restores, and rollbacks.

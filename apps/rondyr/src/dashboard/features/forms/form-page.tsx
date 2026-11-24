@@ -217,7 +217,7 @@ export function FormPage({ organizationId, form, destinations }: FormPageProps) 
           rows={2}
           maxLength={2000}
           disabled={saving}
-          className={`${inPlace} mt-1 field-sizing-content resize-none py-1.5 text-base text-pretty text-muted-foreground placeholder:text-muted-foreground/70 focus:text-foreground pointer-fine:text-sm`}
+          className={`${inPlace} mt-1 field-sizing-content max-w-[80ch] resize-none py-1.5 text-base text-pretty text-muted-foreground placeholder:text-muted-foreground/70 focus:text-foreground pointer-fine:text-sm`}
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
               event.currentTarget.blur();
@@ -240,7 +240,7 @@ export function FormPage({ organizationId, form, destinations }: FormPageProps) 
             }
           >
             <div className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-input py-1 pr-1 pl-4">
-              <code className="min-w-0 flex-1 font-mono text-sm wrap-anywhere">{publicUrl}</code>
+              <code className="min-w-0 flex-1 font-mono text-xs wrap-anywhere">{publicUrl}</code>
               <CopyButton
                 text={publicUrl}
                 label={t("inbox.forms.address.copy")}

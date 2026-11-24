@@ -20,7 +20,6 @@ test("skips the deployment when only the plugin package changed", () => {
 test("skips the deployment when only the documentation changed", () => {
   for (const path of [
     "README.md",
-    "architecture.md",
     "AGENTS.md",
     "CONTRIBUTING.md",
     "docs/deployment.md",

@@ -1,6 +1,6 @@
 # Write a connector
 
-A connector sends the accepted messages of a form to one outside service; [docs/connectors.md](./connectors.md) describes the three that Rondyr has, and [architecture.md](../architecture.md) the design. A connector is one file in `apps/rondyr/src/domain/deliveries/connectors/`. It declares the settings an admin types and a pure function that builds one HTTPS request from these settings and a message. Rondyr does the rest for every connector: the admin API, the form in the dashboard, the encryption of secrets, the delivery with its retries and history, and the test send.
+A connector sends the accepted messages of a form to one outside service; [docs/connectors.md](./connectors.md) describes the three that Rondyr has. A connector is one file in `apps/rondyr/src/domain/deliveries/connectors/`. It declares the settings an admin types and a pure function that builds one HTTPS request from these settings and a message. Rondyr does the rest for every connector: the admin API, the form in the dashboard, the encryption of secrets, the delivery with its retries and history, and the test send.
 
 ```ts
 import { Schema } from "effect";

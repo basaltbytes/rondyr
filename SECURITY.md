@@ -30,8 +30,6 @@ Out of scope:
 - Cloudflare, Resend, GitHub and the other services Rondyr runs on. Report their vulnerabilities to them;
 - attacks that need control of the operator's Cloudflare account or of a Worker secret.
 
-[architecture.md](architecture.md#8-defenses-and-privacy) describes the defenses in place and the trade-offs they make. Reading it first tells you whether a behavior is a finding or a documented choice.
-
 ## Supported versions
 
 Rondyr is pre-alpha and has no releases yet. Fixes land on `main`, and an instance gets them when its operator updates it ([Updates](docs/deployment.md#updates)).

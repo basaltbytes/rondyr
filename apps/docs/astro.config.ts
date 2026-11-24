@@ -9,7 +9,6 @@ import { builtLinks } from "./src/integrations/built-links.ts";
 import { rehypeDiagrams } from "./src/markdown/rehype-diagrams.ts";
 import { githubBranch, githubRepository, listDocuments } from "./src/repository/documents.ts";
 import { remarkRepositoryLinks } from "./src/repository/links.ts";
-import { remarkDropProductionLine } from "./src/repository/production-line.ts";
 import { sidebar, sidebarProblems } from "./src/sidebar.ts";
 import { siteUrl } from "./src/site-url.ts";
 
@@ -26,7 +25,7 @@ export default defineConfig({
   },
   markdown: {
     processor: unified({
-      remarkPlugins: [remarkRepositoryLinks(), remarkDropProductionLine],
+      remarkPlugins: [remarkRepositoryLinks()],
       rehypePlugins: [rehypeDiagrams],
     }),
     syntaxHighlight: { type: "shiki", excludeLangs: ["mermaid"] },

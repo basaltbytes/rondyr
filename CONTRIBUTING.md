@@ -1,6 +1,6 @@
 # Contributing
 
-The roadmap is the list of [GitHub issues](https://github.com/basaltbytes/rondyr/issues), and section 12 of [architecture.md](./architecture.md#12-order-of-work) records the order of work. Read [architecture.md](./architecture.md) before you change a public contract, the data model or the processing of submissions. Coding and writing rules are in [AGENTS.md](./AGENTS.md); they apply to people and to coding agents alike.
+The roadmap is the list of [GitHub issues](https://github.com/basaltbytes/rondyr/issues). The code and its tests are the source of truth for the design. Coding and writing rules are in [AGENTS.md](./AGENTS.md); they apply to people and to coding agents alike.
 
 To report a vulnerability, don't open an issue: follow [SECURITY.md](./SECURITY.md).
 
@@ -48,7 +48,7 @@ The script builds the Worker, runs it in workerd with the fixtures of the browse
 - Work on a branch. In the Basaltbytes repository, a push to `main` deploys production and applies the D1 migrations.
 - A pull request does not need an issue. When it works on one, keep one issue per pull request, and reference it with `Closes #n` when the pull request meets every acceptance criterion of the issue, or `Refs #n` with the list of what is missing.
 - Add tests for the behavior you change. Integration tests run in workerd against the built Worker and don't mock modules.
-- Write code, comments, commit messages, the README, `docs/`, `architecture.md`, issues, and pull request titles and descriptions in English. Some older issues are in French. The dashboard text, the confirmation page, and the emails are written in English first and also exist in French: a dashboard text is a key in both `apps/rondyr/src/dashboard/locales/en` and `apps/rondyr/src/dashboard/locales/fr`.
+- Write code, comments, commit messages, the README, `docs/`, issues, and pull request titles and descriptions in English. Some older issues are in French. The dashboard text, the confirmation page, and the emails are written in English first and also exist in French: a dashboard text is a key in both `apps/rondyr/src/dashboard/locales/en` and `apps/rondyr/src/dashboard/locales/fr`.
 
 ## License of contributions
 
