@@ -21,6 +21,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuIcon,
   SidebarMenuItem,
   SidebarMenuLabel,
   SidebarMenuLink,
@@ -79,7 +80,9 @@ export function SettingsSidebar({ organization, section, back, account }: Settin
           tooltip={t(`inbox.sections.${key}`)}
           onClick={close}
         >
-          <Icon aria-hidden="true" className="size-4 shrink-0" />
+          <SidebarMenuIcon>
+            <Icon aria-hidden="true" className="size-4" />
+          </SidebarMenuIcon>
           <SidebarMenuLabel>{t(`inbox.sections.${key}`)}</SidebarMenuLabel>
         </SidebarMenuLink>
       </SidebarMenuItem>
@@ -99,7 +102,9 @@ export function SettingsSidebar({ organization, section, back, account }: Settin
               aria-label={t("inbox.navigation.back")}
               onClick={close}
             >
-              <ChevronLeft aria-hidden="true" className="size-4 shrink-0" />
+              <SidebarMenuIcon>
+                <ChevronLeft aria-hidden="true" className="size-4" />
+              </SidebarMenuIcon>
               <SidebarMenuLabel>
                 <span className="block truncate text-sidebar-foreground">
                   {t("inbox.navigation.settings")}
@@ -137,7 +142,9 @@ export function SettingsSidebar({ organization, section, back, account }: Settin
                   tooltip={t("operations.title")}
                   onClick={close}
                 >
-                  <Activity aria-hidden="true" className="size-4 shrink-0" />
+                  <SidebarMenuIcon>
+                    <Activity aria-hidden="true" className="size-4" />
+                  </SidebarMenuIcon>
                   <SidebarMenuLabel>{t("operations.title")}</SidebarMenuLabel>
                 </SidebarMenuLink>
               </SidebarMenuItem>

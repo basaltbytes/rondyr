@@ -178,7 +178,10 @@ export function SidebarFooter({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
       data-slot="sidebar-footer"
-      className={cn("flex flex-col gap-2 p-2 pb-[env(safe-area-inset-bottom)]", className)}
+      className={cn(
+        "flex flex-col gap-2 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]",
+        className,
+      )}
       {...props}
     />
   );
@@ -214,7 +217,7 @@ export function SidebarGroupLabel({ className, children, ...props }: ComponentPr
     <p
       data-slot="sidebar-group-label"
       className={cn(
-        "flex h-8 items-center px-2.5 text-xs font-medium tracking-wider text-sidebar-foreground/60 uppercase",
+        "flex h-8 items-center px-3 text-xs font-medium tracking-wider text-sidebar-foreground/60 uppercase",
         className,
       )}
       {...props}
@@ -255,7 +258,9 @@ interface MenuRowProps {
 
 /**
  * A row of 40px, 44px under a finger. Its weight never changes: the current
- * page is told by its surface, so the labels do not shift.
+ * page is told by its surface, so the labels do not shift. The row starts with
+ * a mark of 32px, a `SidebarMenuIcon` or an avatar, so every label starts on
+ * the same line and no mark moves when the sidebar collapses.
  */
 function menuRowClass(
   { active, activeWithin, hasAction, nested, size }: MenuRowProps,
@@ -265,7 +270,7 @@ function menuRowClass(
     "flex w-full items-center gap-2.5 overflow-hidden rounded-md text-start text-sm transition-colors duration-150 ease-out select-none focus-visible:outline-sidebar-ring disabled:pointer-events-none disabled:opacity-50",
     nested === true ? "font-normal" : "font-medium",
     size === "lg" ? "h-12" : "h-10 pointer-coarse:h-11",
-    collapsed ? "justify-center px-0" : "px-3",
+    collapsed ? "justify-center px-0" : "pr-3 pl-1",
     hasAction === true && !collapsed && "pr-8 pointer-coarse:pr-11",
     active === true
       ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-xs"
@@ -368,7 +373,7 @@ export function SidebarMenuAction({ className, type, ...props }: ComponentProps<
       type={type ?? "button"}
       data-slot="sidebar-menu-action"
       className={cn(
-        "absolute top-0 right-0 flex size-10 items-center justify-end rounded-md pr-2 text-sidebar-foreground/70 transition-colors duration-150 ease-out hover:text-sidebar-foreground focus-visible:outline-sidebar-ring pointer-coarse:size-11 pointer-coarse:justify-center pointer-coarse:pr-0",
+        "absolute top-0 right-0 flex size-10 items-center justify-end rounded-md pr-3.5 text-sidebar-foreground/70 transition-colors duration-150 ease-out hover:text-sidebar-foreground focus-visible:outline-sidebar-ring pointer-coarse:size-11 pointer-coarse:justify-center pointer-coarse:pr-0",
         className,
       )}
       {...props}
@@ -390,6 +395,17 @@ export function SidebarMenuSub({ className, ...props }: ComponentProps<"ul">) {
   );
 }
 
+/** The icon of a menu button, centered in the 32px that an avatar fills. */
+export function SidebarMenuIcon({ className, ...props }: ComponentProps<"span">) {
+  return (
+    <span
+      data-slot="sidebar-menu-icon"
+      className={cn("flex size-8 shrink-0 items-center justify-center", className)}
+      {...props}
+    />
+  );
+}
+
 /** The text of a menu button. Collapsed, it stays as the button's accessible name only. */
 export function SidebarMenuLabel({ className, ...props }: ComponentProps<"span">) {
   const { collapsed } = useSidebar();
@@ -402,14 +418,20 @@ export function SidebarMenuLabel({ className, ...props }: ComponentProps<"span">
   );
 }
 
-/** A count at the end of a menu button, in digits of equal width. */
+/**
+ * A count or a mark at the end of a menu button, centered in a box of 20px so
+ * the ends of the rows share an axis. Its digits have equal width.
+ */
 export function SidebarMenuBadge({ className, ...props }: ComponentProps<"span">) {
   const { collapsed } = useSidebar();
   if (collapsed) return null;
   return (
     <span
       data-slot="sidebar-menu-badge"
-      className={cn("shrink-0 text-xs tabular-nums", className)}
+      className={cn(
+        "flex h-5 min-w-5 shrink-0 items-center justify-center text-xs tabular-nums",
+        className,
+      )}
       {...props}
     />
   );
