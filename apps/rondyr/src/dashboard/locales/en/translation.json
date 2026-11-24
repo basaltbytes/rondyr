@@ -112,6 +112,7 @@
       "honeypot": "Honeypot field filled",
       "repetition": "Repeated submissions",
       "turnstile-failed": "Turnstile verification failed",
+      "blocked-term": "Blocked word or phrase",
       "quota": "Daily classification quota reached"
     },
     "deliveries": {
@@ -181,6 +182,7 @@
       "forms": "Forms",
       "destinations": "Destinations",
       "origins": "Allowed origins",
+      "blockedTerms": "Blocked words",
       "domains": "Organization domains",
       "classification": "Classification",
       "apiTokens": "API tokens",
@@ -306,6 +308,7 @@
       "accept": "Accept",
       "acceptAndSend": "Accept and send",
       "reclassify": "Reclassify",
+      "matchedTerm": "Matched “{{term}}”",
       "analyzing": "The filter is analyzing this message. Refresh the list to see the result.",
       "nothingToReview": "Nothing to review",
       "noOpenMessage": "No message open",
@@ -497,7 +500,7 @@
       "submissions": "Daily submission limit",
       "classifications": "Daily classification limit",
       "junk": "Junk caught at intake",
-      "junkHint": "Messages that fill the honeypot field, fail Turnstile or repeat earlier ones are quarantined and count here, not against the submission limit. Their daily limit is the same number. Once it’s reached, Rondyr refuses them until midnight UTC and still accepts other messages.",
+      "junkHint": "Messages that fill the honeypot field, fail Turnstile, repeat earlier ones or contain a blocked word are quarantined and count here, not against the submission limit. Their daily limit is the same number. Once it’s reached, Rondyr refuses them until midnight UTC and still accepts other messages.",
       "used": "{{used}} of {{limit}} used",
       "saving": "Saving quotas…",
       "saved": "Quotas saved.",
@@ -561,6 +564,29 @@
       "problems": {
         "notAdded": "The origin could not be added. Try again.",
         "notRemoved": "The origin could not be removed. Try again."
+      }
+    },
+    "blockedTerms": {
+      "label": "Blocked words of the form {{name}}",
+      "description": "Messages containing any of these whole words, phrases, domains or email addresses go to review without classification. Matching ignores case, accents and punctuation. Up to {{limit}} entries.",
+      "empty": "No blocked words. Add up to {{limit}} words, phrases, domains or email addresses to send matching messages straight to review without classification.",
+      "organizationDescription": "Applies across every form in this organization. Messages containing any of these whole words, phrases, domains or email addresses go to review without classification. Matching ignores case, accents and punctuation. Up to {{limit}} entries.",
+      "organizationEmpty": "No blocked words declared for this organization.",
+      "loading": "Loading the blocked words…",
+      "loadFailed": "Could not load the blocked words.",
+      "term": "Blocked word, phrase, domain or address",
+      "placeholder": "guest post, spam.example",
+      "add": "Add word",
+      "removeLabel": "Remove {{term}}",
+      "limit": "This form already has {{limit}} blocked words. Remove one before adding another.",
+      "organizationLimit": "This organization already has {{limit}} blocked words. Remove one before adding another.",
+      "refusals": {
+        "empty": "Enter at least one letter or digit.",
+        "tooLong": "Use at most {{max}} characters."
+      },
+      "problems": {
+        "notAdded": "The blocked word could not be added. Try again.",
+        "notRemoved": "The blocked word could not be removed. Try again."
       }
     },
     "destinations": {

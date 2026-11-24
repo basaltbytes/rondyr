@@ -27,6 +27,7 @@ import { Route as SignedInOOrganizationIdMessagesIndexRouteImport } from './rout
 import { Route as SignedInOOrganizationIdMessagesSubmissionIdRouteRouteImport } from './routes/_signed-in/o/$organizationId/messages/$submissionId/route'
 import { Route as SignedInOOrganizationIdSettingsIndexRouteImport } from './routes/_signed-in/o/$organizationId/settings/index'
 import { Route as SignedInOOrganizationIdSettingsApiTokensRouteImport } from './routes/_signed-in/o/$organizationId/settings/api-tokens'
+import { Route as SignedInOOrganizationIdSettingsBlockedTermsRouteImport } from './routes/_signed-in/o/$organizationId/settings/blocked-terms'
 import { Route as SignedInOOrganizationIdSettingsClassificationRouteImport } from './routes/_signed-in/o/$organizationId/settings/classification'
 import { Route as SignedInOOrganizationIdSettingsDomainsRouteImport } from './routes/_signed-in/o/$organizationId/settings/domains'
 import { Route as SignedInOOrganizationIdSettingsMembersRouteImport } from './routes/_signed-in/o/$organizationId/settings/members'
@@ -134,6 +135,12 @@ const SignedInOOrganizationIdSettingsApiTokensRoute =
     path: '/api-tokens',
     getParentRoute: () => SignedInOOrganizationIdSettingsRouteRoute,
   } as any)
+const SignedInOOrganizationIdSettingsBlockedTermsRoute =
+  SignedInOOrganizationIdSettingsBlockedTermsRouteImport.update({
+    id: '/blocked-terms',
+    path: '/blocked-terms',
+    getParentRoute: () => SignedInOOrganizationIdSettingsRouteRoute,
+  } as any)
 const SignedInOOrganizationIdSettingsClassificationRoute =
   SignedInOOrganizationIdSettingsClassificationRouteImport.update({
     id: '/classification',
@@ -181,6 +188,7 @@ export interface FileRoutesByFullPath {
   '/o/$organizationId/messages/$submissionId': typeof SignedInOOrganizationIdMessagesSubmissionIdRouteRoute
   '/o/$organizationId/forms/new': typeof SignedInOOrganizationIdFormsNewRoute
   '/o/$organizationId/settings/api-tokens': typeof SignedInOOrganizationIdSettingsApiTokensRoute
+  '/o/$organizationId/settings/blocked-terms': typeof SignedInOOrganizationIdSettingsBlockedTermsRoute
   '/o/$organizationId/settings/classification': typeof SignedInOOrganizationIdSettingsClassificationRoute
   '/o/$organizationId/settings/domains': typeof SignedInOOrganizationIdSettingsDomainsRoute
   '/o/$organizationId/settings/members': typeof SignedInOOrganizationIdSettingsMembersRoute
@@ -202,6 +210,7 @@ export interface FileRoutesByTo {
   '/o/$organizationId/messages/$submissionId': typeof SignedInOOrganizationIdMessagesSubmissionIdRouteRoute
   '/o/$organizationId/forms/new': typeof SignedInOOrganizationIdFormsNewRoute
   '/o/$organizationId/settings/api-tokens': typeof SignedInOOrganizationIdSettingsApiTokensRoute
+  '/o/$organizationId/settings/blocked-terms': typeof SignedInOOrganizationIdSettingsBlockedTermsRoute
   '/o/$organizationId/settings/classification': typeof SignedInOOrganizationIdSettingsClassificationRoute
   '/o/$organizationId/settings/domains': typeof SignedInOOrganizationIdSettingsDomainsRoute
   '/o/$organizationId/settings/members': typeof SignedInOOrganizationIdSettingsMembersRoute
@@ -228,6 +237,7 @@ export interface FileRoutesById {
   '/_signed-in/o/$organizationId/messages/$submissionId': typeof SignedInOOrganizationIdMessagesSubmissionIdRouteRoute
   '/_signed-in/o/$organizationId/forms/new': typeof SignedInOOrganizationIdFormsNewRoute
   '/_signed-in/o/$organizationId/settings/api-tokens': typeof SignedInOOrganizationIdSettingsApiTokensRoute
+  '/_signed-in/o/$organizationId/settings/blocked-terms': typeof SignedInOOrganizationIdSettingsBlockedTermsRoute
   '/_signed-in/o/$organizationId/settings/classification': typeof SignedInOOrganizationIdSettingsClassificationRoute
   '/_signed-in/o/$organizationId/settings/domains': typeof SignedInOOrganizationIdSettingsDomainsRoute
   '/_signed-in/o/$organizationId/settings/members': typeof SignedInOOrganizationIdSettingsMembersRoute
@@ -254,6 +264,7 @@ export interface FileRouteTypes {
     | '/o/$organizationId/messages/$submissionId'
     | '/o/$organizationId/forms/new'
     | '/o/$organizationId/settings/api-tokens'
+    | '/o/$organizationId/settings/blocked-terms'
     | '/o/$organizationId/settings/classification'
     | '/o/$organizationId/settings/domains'
     | '/o/$organizationId/settings/members'
@@ -275,6 +286,7 @@ export interface FileRouteTypes {
     | '/o/$organizationId/messages/$submissionId'
     | '/o/$organizationId/forms/new'
     | '/o/$organizationId/settings/api-tokens'
+    | '/o/$organizationId/settings/blocked-terms'
     | '/o/$organizationId/settings/classification'
     | '/o/$organizationId/settings/domains'
     | '/o/$organizationId/settings/members'
@@ -300,6 +312,7 @@ export interface FileRouteTypes {
     | '/_signed-in/o/$organizationId/messages/$submissionId'
     | '/_signed-in/o/$organizationId/forms/new'
     | '/_signed-in/o/$organizationId/settings/api-tokens'
+    | '/_signed-in/o/$organizationId/settings/blocked-terms'
     | '/_signed-in/o/$organizationId/settings/classification'
     | '/_signed-in/o/$organizationId/settings/domains'
     | '/_signed-in/o/$organizationId/settings/members'
@@ -445,6 +458,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignedInOOrganizationIdSettingsApiTokensRouteImport
       parentRoute: typeof SignedInOOrganizationIdSettingsRouteRoute
     }
+    '/_signed-in/o/$organizationId/settings/blocked-terms': {
+      id: '/_signed-in/o/$organizationId/settings/blocked-terms'
+      path: '/blocked-terms'
+      fullPath: '/o/$organizationId/settings/blocked-terms'
+      preLoaderRoute: typeof SignedInOOrganizationIdSettingsBlockedTermsRouteImport
+      parentRoute: typeof SignedInOOrganizationIdSettingsRouteRoute
+    }
     '/_signed-in/o/$organizationId/settings/classification': {
       id: '/_signed-in/o/$organizationId/settings/classification'
       path: '/classification'
@@ -503,6 +523,7 @@ const SignedInOOrganizationIdMessagesRouteRouteWithChildren =
 
 interface SignedInOOrganizationIdSettingsRouteRouteChildren {
   SignedInOOrganizationIdSettingsApiTokensRoute: typeof SignedInOOrganizationIdSettingsApiTokensRoute
+  SignedInOOrganizationIdSettingsBlockedTermsRoute: typeof SignedInOOrganizationIdSettingsBlockedTermsRoute
   SignedInOOrganizationIdSettingsClassificationRoute: typeof SignedInOOrganizationIdSettingsClassificationRoute
   SignedInOOrganizationIdSettingsDomainsRoute: typeof SignedInOOrganizationIdSettingsDomainsRoute
   SignedInOOrganizationIdSettingsMembersRoute: typeof SignedInOOrganizationIdSettingsMembersRoute
@@ -515,6 +536,8 @@ const SignedInOOrganizationIdSettingsRouteRouteChildren: SignedInOOrganizationId
   {
     SignedInOOrganizationIdSettingsApiTokensRoute:
       SignedInOOrganizationIdSettingsApiTokensRoute,
+    SignedInOOrganizationIdSettingsBlockedTermsRoute:
+      SignedInOOrganizationIdSettingsBlockedTermsRoute,
     SignedInOOrganizationIdSettingsClassificationRoute:
       SignedInOOrganizationIdSettingsClassificationRoute,
     SignedInOOrganizationIdSettingsDomainsRoute:

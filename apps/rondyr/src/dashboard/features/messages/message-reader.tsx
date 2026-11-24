@@ -13,6 +13,7 @@ import {
 import { useActionState, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { findMatchedBlockedTerm } from "@rondyr/forms/blocked-term";
 import { allows } from "@rondyr/organizations/member-role";
 
 import { ErrorBoundary } from "~/components/error-boundary";
@@ -22,6 +23,7 @@ import { FormProblem } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { blockedTermsQuery, organizationBlockedTermsQuery } from "~/lib/api/blocked-terms";
 import {
   applyDecision,
   deleteMessageMutation,
@@ -227,6 +229,15 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
   const above = index < 0 ? undefined : entries[index - 1];
   const below = index < 0 ? undefined : entries[index + 1];
   const entry = detail.data ?? listed;
+  const checkBlockedTerms = entry?.reason === "blocked-term";
+  const formBlockedTerms = useQuery({
+    ...blockedTermsQuery(organizationId, entry?.formPublicId ?? ""),
+    enabled: checkBlockedTerms && allows(organization.role, "manage-forms") && entry !== undefined,
+  });
+  const orgBlockedTerms = useQuery({
+    ...organizationBlockedTermsQuery(organizationId),
+    enabled: checkBlockedTerms && allows(organization.role, "manage-settings"),
+  });
   const inFolder = counts === undefined ? null : totalOf(counts, search.folder);
   const inForm =
     counts === undefined || search.form === undefined
@@ -289,6 +300,13 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
   }
 
   const fields = detail.data?.fields ?? listed?.preview ?? {};
+  const matchedTerm =
+    entry.reason === "blocked-term"
+      ? findMatchedBlockedTerm(fields, [
+          ...(formBlockedTerms.data ?? []).map(({ term }) => term),
+          ...(orgBlockedTerms.data ?? []).map(({ term }) => term),
+        ])
+      : null;
   const detailFailed = detail.isError;
   const fromForm =
     organization.forms.length > 1
@@ -396,6 +414,11 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
               {entry.reason === null
                 ? t(`inbox.statuses.${entry.status}`)
                 : t(`status.reasons.${entry.reason}`)}
+              {matchedTerm !== null && (
+                <span className="ml-2 font-normal text-muted-foreground">
+                  {t("inbox.reader.matchedTerm", { term: matchedTerm })}
+                </span>
+              )}
               {entry.label === "off-topic" && (
                 <span className="ml-2 font-normal text-muted-foreground">
                   {t("inbox.offTopicLabel")}

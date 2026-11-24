@@ -73,7 +73,7 @@ Each run leaves a message in the test organization and uses one of its daily cla
 - `expected 202 for /f/<form>`: the form refused the submission. Check that it is active and that the organization's daily submission quota is not used up.
 - `The smoke submission was not classified within three minutes.`: follow [Queue backlog](#queue-backlog) and [Stuck processing](#stuck-processing).
 - `The smoke submission was not classified (classification-error).`: the classifier call failed. Check the `AI` binding, `RONDYR_CLASSIFIER`, and the Worker's logs.
-- `The smoke submission was not classified (honeypot).`, `(turnstile-failed)`, `(repetition)` or `(quota)`: intake quarantined the message. Remove the honeypot field or the Turnstile keys from the test form, wait for the repetition window to pass, or raise the organization's daily classification quota.
+- `The smoke submission was not classified (honeypot).`, `(turnstile-failed)`, `(repetition)`, `(blocked-term)` or `(quota)`: intake quarantined the message. Remove the honeypot field, Turnstile keys or matching blocked words from the test form, wait for the repetition window to pass, or raise the organization's daily classification quota.
 
 ## Restore D1 with Time Travel
 

@@ -2,6 +2,7 @@ import { Effect, Layer, Option, Result, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 import { Hex } from "effect/encoding";
 
+import { searchableSubmissionText } from "../../../domain/forms/blocked-term.ts";
 import { parseSuccessUrl, type SuccessUrl } from "../../../domain/forms/form.ts";
 import type { TurnstileToken } from "../../../domain/forms/turnstile.ts";
 import { junkIntakeReasons } from "../../../domain/organizations/organization-quotas.ts";
@@ -67,10 +68,12 @@ const junkReasons = junkIntakeReasons.map((reason) => `'${reason}'`).join(", ");
 // fingerprints, ?7 the repetition window, ?8 and ?9 the repetition thresholds, ?10
 // the secret that Siteverify checked the token with or NULL, and ?11 whether it
 // accepted the token. ?12 is the organization of a server intake's API token, or
-// NULL for a public request. ?13 is the idempotency key or NULL, and ?14 says
-// whether to screen for Turnstile. The organization ID is the leading column of each fingerprint
-// index and comes from the form. D1 sets the reception time so concurrent batches
-// count in transaction order, and the budget is the one of that time's UTC day.
+// NULL for a public request. ?13 is the idempotency key or NULL, ?14 says
+// whether to screen for Turnstile, and ?15 is the normalized searchable text of
+// the submission's fields for whole-word/phrase blocked-term matching. The
+// organization ID is the leading column of each fingerprint index and comes
+// from the form. D1 sets the reception time so concurrent batches count in
+// transaction order, and the budget is the one of that time's UTC day.
 const screening = `
   WITH intake_time AS (
     SELECT CAST(ROUND(unixepoch('subsec') * 1000) AS INTEGER) AS received_at
@@ -101,6 +104,17 @@ const screening = `
         THEN 'turnstile-failed'
         WHEN c.prior_same_sender >= ?8 OR c.prior_same_content >= ?9
         THEN 'repetition'
+        WHEN ?15 <> '' AND (
+          EXISTS (
+            SELECT 1 FROM form_blocked_terms bt
+            WHERE bt.form_id = c.id AND instr(?15, ' ' || bt.term || ' ') > 0
+          )
+          OR EXISTS (
+            SELECT 1 FROM organization_blocked_terms obt
+            WHERE obt.organization_id = c.organization_id AND instr(?15, ' ' || obt.term || ' ') > 0
+          )
+        )
+        THEN 'blocked-term'
         WHEN c.classification_limited THEN 'quota'
       END AS intake_reason
     FROM counted c
@@ -310,6 +324,7 @@ const runBatch = Effect.fnUntraced(function* (request: IntakeRequest) {
     content: fingerprint(keys.content),
   });
   const encoded = yield* encodeFields(fields).pipe(Effect.orDie);
+  const searchableText = searchableSubmissionText(fields);
   const requestOrigin = Option.getOrNull(request.origin);
   // The batch compares the verified ciphertext with the current configuration.
   // A key changed during verification cannot authorize admission to classification.
@@ -330,6 +345,7 @@ const runBatch = Effect.fnUntraced(function* (request: IntakeRequest) {
     server?.organizationId ?? null,
     server === undefined ? null : Option.getOrNull(server.idempotencyKey),
     server === undefined || server.turnstile !== undefined ? 1 : 0,
+    searchableText,
   ] as const;
   // The batch is one transaction, so the access row describes the state that the insert checked.
   const accessCheck = db.prepare(accessQuery).bind(...parameters);

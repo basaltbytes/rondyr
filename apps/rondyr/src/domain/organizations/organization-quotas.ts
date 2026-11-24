@@ -20,6 +20,7 @@ export const junkIntakeReasons = [
   "honeypot",
   "turnstile-failed",
   "repetition",
+  "blocked-term",
 ] as const satisfies ReadonlyArray<IntakeReason>;
 
 export const DailyQuotas = Schema.Struct({

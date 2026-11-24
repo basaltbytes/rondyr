@@ -258,6 +258,7 @@ Intake stores an intake reason in `submissions.intake_reason` when one of these 
 | Form's honeypot field filled | Quarantine, reason `honeypot`, without a classifier call |
 | Turnstile active and token missing or refused | Quarantine, reason `turnstile-failed`, without a classifier call |
 | At least 2 earlier submissions with the same content or 3 from the same sender | Quarantine, reason `repetition`, without a classifier call |
+| Any field value contains one of the form's or organization's blocked words, phrases, domains or addresses | Quarantine, reason `blocked-term`, without a classifier call |
 | Daily classification quota reached | Quarantine, reason `quota`, without a classifier call |
 
 The conditions apply in the order of the table. The repetition count covers the submissions already stored in the same organization, across all forms and statuses, within a 30-day window whose lower bound is included. A single double submission stays under both thresholds.
@@ -299,6 +300,8 @@ State is split between two stores. D1 contains the configuration, the message co
 | `organization_daily_usage` | One row per organization with the last UTC day `day` and its counters: `submissions` (stored submissions other than junk), `classifications` and `junk` (stored junk, section 8) |
 | `forms` | `id`, `organization_id`, unique `public_id`, `name`, `emoji`, `business_context`, `status` (`active` by default, or `suspended`), `success_url`, `honeypot_field`, `turnstile_site_key` (public) and `turnstile_secret` (encrypted). `emoji` and the last four fields are optional |
 | `form_origins` | `(form_id, origin)`, `created_at`. `origin` is normalized: scheme, host and optional port, without a path or a trailing slash |
+| `form_blocked_terms` | `(form_id, term)`, `created_at`. Up to 100 normalized words, phrases, domains or addresses per form (NFKD without combining marks, lowercase, single spaces between tokens) |
+| `organization_blocked_terms` | `(organization_id, term)`, `created_at`. Up to 100 normalized words, phrases, domains or addresses shared by every form of the organization |
 | `submissions` | `id` (UUID v4), `organization_id`, `form_id`, `fields` (JSON), `received_at`, `intake_reason` (optional), `sender_fingerprint` and `content_fingerprint` (optional), `prior_same_sender` and `prior_same_content`, `idempotency_key` (optional, unique per form) |
 | `submission_deletions` | `submission_id` (primary key), `organization_id`, `deleted_at`, `deleted_by` (the account, or empty for the retention period), `cause` (`request` or `retention`). No content |
 | `password_resets` | `token_hash` (SHA-256 of the link's secret, primary key), `user_id`, `created_at`, `expires_at`, `used_at` |
@@ -459,6 +462,9 @@ The dashboard uses the Better Auth session. Another program can call the review 
 | `GET /api/organizations/:organizationId/domains` | Lists the declared domains in alphabetical order |
 | `POST /api/organizations/:organizationId/domains` | Adds a domain (`{"domain":…}`). Answers `201` for a creation, `200` for a duplicate, `400` for an invalid name or `409` if the list is full |
 | `DELETE /api/organizations/:organizationId/domains?domain=…` | Removes a domain and answers `204`, or `404` if the domain is not declared |
+| `GET /api/organizations/:organizationId/blocked-terms` | Lists the organization's blocked words, phrases, domains and addresses, `[{"term", "createdAt"}]` |
+| `POST /api/organizations/:organizationId/blocked-terms` | Adds a normalized blocked term (`{"term":…}`): `201`, `200` if already listed, `400` with `{"error":"term-refused","reason":…}` (`empty` or `too-long`), or `409` with `{"error":"term-limit"}` at 100 entries |
+| `DELETE /api/organizations/:organizationId/blocked-terms?term=…` | Removes a blocked term: `204`, `404` if not listed, or `400` with `{"error":"term-refused","reason":…}` |
 | `GET /api/organizations/:organizationId/classification-policy` | Returns the classifier, the second classifier that the stage offers for escalation or `null`, the default policy and the organization's settings, or `null` if it uses the default settings |
 | `PUT /api/organizations/:organizationId/classification-policy` | Replaces the organization's settings. Accepts `thresholds`, `offTopic` and `escalation`, together or alone. Answers `204`, or `400` for an invalid setting |
 | `DELETE /api/organizations/:organizationId/classification-policy` | Restores the classifier's settings and answers `204` |
@@ -501,6 +507,9 @@ The dashboard uses the Better Auth session. Another program can call the review 
 | `GET /api/organizations/:organizationId/forms/:publicId/origins` | The form's allowed origins, `[{"origin", "createdAt"}]` |
 | `POST /api/organizations/:organizationId/forms/:publicId/origins` | Adds an origin (`{"origin":…}`): `201`, or `200` if it is already in the list |
 | `DELETE /api/organizations/:organizationId/forms/:publicId/origins?origin=…` | Removes an origin: `204`, `404` if it is not in the list, or `409` with `{"error":"origin-in-use"}` if it is the origin of the success URL |
+| `GET /api/organizations/:organizationId/forms/:publicId/blocked-terms` | The form's blocked words and phrases, `[{"term", "createdAt"}]` |
+| `POST /api/organizations/:organizationId/forms/:publicId/blocked-terms` | Adds a normalized blocked word or phrase (`{"term":…}`): `201`, `200` if already listed, `400` with `{"error":"term-refused","reason":…}` (`empty` or `too-long`), or `409` with `{"error":"term-limit"}` at 100 entries |
+| `DELETE /api/organizations/:organizationId/forms/:publicId/blocked-terms?term=…` | Removes a blocked word or phrase: `204`, `404` if not listed, or `400` with `{"error":"term-refused","reason":…}` |
 
 `GET /api/organizations` returns the forms sorted by name with `name`, `publicId`, `status`, `emoji`, `businessContext`, `successUrl`, `honeypotField` and `turnstileSiteKey`. The form routes return the updated form with the same fields. Without Turnstile, `turnstileSiteKey` is `null`. The emoji is the one the dashboard shows next to the form's name, or `null`: a request sets it to a single emoji, a flag or a joined sequence included (`FormEmoji`, in `apps/rondyr/src/domain/forms/form.ts`), and no request clears it. The name has 1 to 100 characters and the context at most 2,000, after trimming leading and trailing spaces, as when creating an organization; an invalid body answers `400`. The honeypot field name follows the intake rule for field names, after trimming leading and trailing spaces: 1 to 100 characters, with no control character or line break, and not `__proto__`, `constructor` or `prototype` (`HoneypotField`, in `apps/rondyr/src/domain/forms/form.ts`). The name `cf-turnstile-response` is reserved for the token. A refused name answers `400`.
 
@@ -540,7 +549,7 @@ Intake keeps that behaviour for a key that Siteverify no longer knows and for a 
 
 #### Daily quotas
 
-The storage quota covers all the forms of an organization. Junk is a submission that intake quarantines with the reason `honeypot`, `turnstile-failed` or `repetition` (`junkIntakeReasons` in `apps/rondyr/src/domain/organizations/organization-quotas.ts`). It has its own daily quota, equal to `daily_submission_limit` (2,000 by default), and does not count against the quota of the other submissions. A `quota` quarantine is not junk: those messages can be real, so they use the storage quota. An organization therefore stores at most twice its submission limit per UTC day.
+The storage quota covers all the forms of an organization. Junk is a submission that intake quarantines with the reason `honeypot`, `turnstile-failed`, `repetition` or `blocked-term` (`junkIntakeReasons` in `apps/rondyr/src/domain/organizations/organization-quotas.ts`). It has its own daily quota, equal to `daily_submission_limit` (2,000 by default), and does not count against the quota of the other submissions. A `quota` quarantine is not junk: those messages can be real, so they use the storage quota. An organization therefore stores at most twice its submission limit per UTC day.
 
 Before this split, a bot wave at the form's cap of 30 per minute used up the day's storage quota in about an hour, and every real visitor then got `429` until midnight UTC. Now the wave fills the junk quota; after that, junk gets `429` with `Retry-After` until midnight UTC and nothing is stored, while other submissions are accepted until their own quota is reached. Refused junk is not stored, so it no longer takes slots in the form's cap of 30 per minute either.
 

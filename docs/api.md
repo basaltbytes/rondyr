@@ -133,7 +133,7 @@ List responses return `{"entries": [...], "cursor": "..."}` (`cursor` is `null` 
 | `formPublicId`, `formName` | Form public ID and dashboard name |
 | `receivedAt` | Unix timestamp in milliseconds |
 | `status` | `received`, `classifying`, `quarantined`, `accepted`, or `archived` |
-| `reason` | `probable-spam`, `ambiguous`, `solicitation`, `low-relevance`, `classification-error`, `honeypot`, `repetition`, `turnstile-failed`, `quota`, or `null` |
+| `reason` | `probable-spam`, `ambiguous`, `solicitation`, `low-relevance`, `classification-error`, `honeypot`, `repetition`, `turnstile-failed`, `blocked-term`, `quota`, or `null` |
 | `label` | `off-topic` (for accepted off-topic messages) or `null` |
 
 ### Review route errors

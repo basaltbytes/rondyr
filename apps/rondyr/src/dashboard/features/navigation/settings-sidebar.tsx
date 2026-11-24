@@ -1,5 +1,6 @@
 import {
   Activity,
+  Ban,
   ChevronLeft,
   Gauge,
   KeyRound,
@@ -39,6 +40,7 @@ const addresses = {
   retention: "/o/$organizationId/settings/retention",
   classification: "/o/$organizationId/settings/classification",
   domains: "/o/$organizationId/settings/domains",
+  blockedTerms: "/o/$organizationId/settings/blocked-terms",
   quotas: "/o/$organizationId/settings/quotas",
   operations: "/o/$organizationId/status",
 } as const;
@@ -51,6 +53,7 @@ const organizationSettings = [
 const filteringSettings = [
   ["classification", ScanSearch],
   ["domains", Network],
+  ["blockedTerms", Ban],
   ["quotas", Gauge],
 ] as const;
 
