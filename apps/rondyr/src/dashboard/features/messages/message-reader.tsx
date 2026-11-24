@@ -415,7 +415,7 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
                 ? t(`inbox.statuses.${entry.status}`)
                 : t(`status.reasons.${entry.reason}`)}
               {matchedTerm !== null && (
-                <span className="ml-2 font-normal text-muted-foreground">
+                <span className="ml-2 font-normal wrap-anywhere text-muted-foreground">
                   {t("inbox.reader.matchedTerm", { term: matchedTerm })}
                 </span>
               )}

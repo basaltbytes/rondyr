@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { maxBlockedTermLength, maxFormBlockedTerms } from "@rondyr/forms/blocked-term";
 
-import { CardListSkeleton } from "~/components/page-pending";
+import { ChipListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -120,7 +120,7 @@ export function BlockedTerms({ organizationId, form }: BlockedTermsProps) {
           onRetry={() => void query.refetch()}
         />
       )}
-      {query.isPending && <CardListSkeleton label={t("inbox.blockedTerms.loading")} />}
+      {query.isPending && <ChipListSkeleton label={t("inbox.blockedTerms.loading")} />}
       {terms !== null && terms.length > 0 && (
         <ul aria-labelledby={title} className="flex flex-wrap gap-1.5">
           {terms.map((item) => (
@@ -132,6 +132,7 @@ export function BlockedTerms({ organizationId, form }: BlockedTermsProps) {
                   type="submit"
                   variant="ghost"
                   size="icon-sm"
+                  className="pointer-coarse:before:hidden"
                   aria-label={t("inbox.blockedTerms.removeLabel", { term: item.term })}
                   disabled={removing}
                 >
@@ -154,10 +155,17 @@ export function BlockedTerms({ organizationId, form }: BlockedTermsProps) {
             name="term"
             value={input}
             onChange={(event) => setInput(event.currentTarget.value)}
+            readOnly={adding}
             required
             maxLength={maxBlockedTermLength}
             placeholder={t("inbox.blockedTerms.placeholder")}
             autoComplete="off"
+            aria-invalid={
+              (addFailure !== null &&
+                addFailure !== "unexplained" &&
+                addFailure.error === "term-refused") ||
+              undefined
+            }
           />
           <Button type="submit" disabled={adding}>
             {t("inbox.blockedTerms.add")}

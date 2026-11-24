@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { maxBlockedTermLength, maxOrganizationBlockedTerms } from "@rondyr/forms/blocked-term";
 
-import { CardListSkeleton } from "~/components/page-pending";
+import { ChipListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -93,6 +93,7 @@ function OrganizationBlockedTermList({ organizationId, terms }: OrganizationBloc
                   type="submit"
                   variant="ghost"
                   size="icon-sm"
+                  className="pointer-coarse:before:hidden"
                   aria-label={t("inbox.blockedTerms.removeLabel", { term: item.term })}
                   disabled={busy}
                 >
@@ -175,7 +176,7 @@ export function OrganizationBlockedTerms({ organizationId }: OrganizationBlocked
                 onRetry={() => void terms.refetch()}
               />
             )}
-            {terms.isPending && <CardListSkeleton label={t("inbox.blockedTerms.loading")} />}
+            {terms.isPending && <ChipListSkeleton label={t("inbox.blockedTerms.loading")} />}
             {terms.isSuccess && (
               <OrganizationBlockedTermList organizationId={organizationId} terms={terms.data} />
             )}
