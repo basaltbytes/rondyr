@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { connectorOf, connectors } from "@rondyr/deliveries/connectors/catalog";
 
+import { CardListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { SelectField, TextAreaField, TextField } from "~/components/text-field";
 import { Badge } from "~/components/ui/badge";
@@ -323,9 +324,7 @@ export function FormDestinations({ organizationId, form }: FormDestinationsProps
           onRetry={() => void query.refetch()}
         />
       )}
-      {query.isPending && (
-        <output className="text-sm text-muted-foreground">{t("inbox.destinations.loading")}</output>
-      )}
+      {query.isPending && <CardListSkeleton label={t("inbox.destinations.loading")} />}
       {targets?.length === 0 && (
         <p className="text-xs text-pretty text-muted-foreground">{t("inbox.destinations.empty")}</p>
       )}

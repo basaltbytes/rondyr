@@ -23,6 +23,7 @@
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.54 0.21 25);
   --destructive-foreground: oklch(1 0 0);
+  --destructive-subtle: oklch(0.93 0.04 25);
   --border: oklch(0.8255 0.016 102.8419);
   --input: oklch(1 0.01 100);
   --ring: oklch(0.522 0.131 35.3);
@@ -84,6 +85,7 @@
     --accent-foreground: oklch(0.1822 0 0);
     --destructive: oklch(0.72 0.17 25);
     --destructive-foreground: oklch(0.1822 0 0);
+    --destructive-subtle: oklch(0.27 0.05 25);
     --border: oklch(0.3211 0 0);
     --input: oklch(0.2393 0 0);
     --ring: oklch(0.781 0.108 40.6);
@@ -131,6 +133,7 @@
   --accent-foreground: oklch(0.1822 0 0);
   --destructive: oklch(0.72 0.17 25);
   --destructive-foreground: oklch(0.1822 0 0);
+  --destructive-subtle: oklch(0.27 0.05 25);
   --border: oklch(0.3211 0 0);
   --input: oklch(0.2393 0 0);
   --ring: oklch(0.781 0.108 40.6);
@@ -172,6 +175,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-subtle: var(--destructive-subtle);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -294,6 +298,31 @@
 /* Field names next to their values. */
 @utility field-grid {
   grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+}
+
+/* Global top loading bar sweep, disabled when reduced motion is preferred. */
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-100%) scaleX(0.35);
+  }
+  50% {
+    transform: translateX(65%) scaleX(0.6);
+  }
+  100% {
+    transform: translateX(260%) scaleX(0.35);
+  }
+}
+
+@utility animate-loading-bar {
+  animation: loading-bar 1.3s ease-in-out infinite;
+}
+
+/* Hides the native disclosure triangle so a custom icon marks open and closed states. */
+@utility details-summary {
+  list-style: none;
+  &::-webkit-details-marker {
+    display: none;
+  }
 }
 
 @layer base {

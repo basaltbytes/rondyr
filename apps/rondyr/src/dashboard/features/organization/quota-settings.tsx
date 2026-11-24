@@ -7,6 +7,7 @@ import {
   maxDailySubmissions,
 } from "@rondyr/organizations/organization-quotas";
 
+import { CardFormSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -129,9 +130,7 @@ export function QuotaSettings({ organizationId }: QuotaSettingsProps) {
                 onRetry={() => void usage.refetch()}
               />
             )}
-            {usage.isPending && (
-              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
-            )}
+            {usage.isPending && <CardFormSkeleton label={t("common.loading")} />}
             {usage.isSuccess && <QuotaForm organizationId={organizationId} usage={usage.data} />}
           </CardContent>
         </Card>

@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useActionState, useId } from "react";
 import { useTranslation } from "react-i18next";
 
+import { CardListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -108,9 +109,7 @@ export function AllowedOrigins({ organizationId, form }: AllowedOriginsProps) {
           onRetry={() => void query.refetch()}
         />
       )}
-      {query.isPending && (
-        <output className="text-sm text-muted-foreground">{t("inbox.origins.loading")}</output>
-      )}
+      {query.isPending && <CardListSkeleton label={t("inbox.origins.loading")} />}
       {origins !== null && origins.length > 0 && (
         <ul aria-labelledby={title} className="grid grid-cols-1 gap-1.5">
           {origins.map((item) => (

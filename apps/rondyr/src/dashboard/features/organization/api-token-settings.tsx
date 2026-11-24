@@ -11,6 +11,7 @@ import {
   type CreatedApiToken,
 } from "@rondyr/organizations/api-token";
 
+import { CardListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -260,9 +261,7 @@ export function ApiTokenSettings({ organizationId }: ApiTokenSettingsProps) {
                 onRetry={() => void tokens.refetch()}
               />
             )}
-            {tokens.isPending && (
-              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
-            )}
+            {tokens.isPending && <CardListSkeleton label={t("common.loading")} />}
             {tokens.isSuccess && <TokenList organizationId={organizationId} tokens={tokens.data} />}
           </CardContent>
         </Card>

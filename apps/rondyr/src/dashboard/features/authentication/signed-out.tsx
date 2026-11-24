@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { accountPasswordLength } from "@rondyr/organizations/account";
 import { setupTokenLength } from "@rondyr/organizations/setup";
 
+import { CardFormSkeleton } from "~/components/page-pending";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
@@ -123,7 +124,13 @@ export function SignedOut({ onSignedIn }: SignedInProps) {
   const loaded = setup.isError ? "failed" : (setup.data ?? null);
 
   if (loaded === null) {
-    return <output className="text-sm text-muted-foreground">{t("session.checking")}</output>;
+    return (
+      <Card>
+        <CardContent>
+          <CardFormSkeleton label={t("session.checking")} />
+        </CardContent>
+      </Card>
+    );
   }
   // When the state cannot be read, the sign-in form still works for an existing account.
   if (loaded === "closed" || loaded === "failed") return <SignInForm onSignedIn={onSignedIn} />;

@@ -50,10 +50,11 @@ function Messages() {
             search: messagesSearch(folder, next, text),
           })
         }
-        onSearch={(next) =>
+        onSearch={(next, replace = false) =>
           void navigate({
             to: "/o/$organizationId/messages",
             search: messagesSearch(folder, form, next),
+            replace,
           })
         }
       />

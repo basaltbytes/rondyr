@@ -29,6 +29,15 @@
     "description": "Nothing is at this address, or it belongs to an organization that your account is not a member of.",
     "messages": "Go to the messages"
   },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "description": "This view could not be displayed. Try again or reload the page.",
+    "retry": "Try again",
+    "reload": "Reload page",
+    "home": "Go to the messages",
+    "sectionTitle": "This section could not be displayed.",
+    "sectionDescription": "An unexpected display error occurred here. The rest of the page stays usable."
+  },
   "sidebar": {
     "menu": "Menu",
     "toggle": "Show or hide the menu"
@@ -262,6 +271,14 @@
         "label": "Search messages",
         "placeholder": "Search the messages",
         "clear": "Clear the search",
+        "searching": "Searching…",
+        "results_one": "{{count}} result",
+        "results_many": "{{count}} results",
+        "results_other": "{{count}} results",
+        "resultsMore_one": "{{count}}+ result",
+        "resultsMore_many": "{{count}}+ results",
+        "resultsMore_other": "{{count}}+ results",
+        "cached": "cached",
         "tooShort_one": "Enter at least {{count}} character.",
         "tooShort_other": "Enter at least {{count}} characters.",
         "empty": "No message contains “{{search}}”",

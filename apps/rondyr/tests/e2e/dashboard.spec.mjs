@@ -1215,10 +1215,21 @@ test("search the messages, export the list, delete a message and keep messages 3
   await openSubmission(page, t("inbox.folders.accepted"), "Only hay in this one");
 
   const list = page.getByRole("region", { name: t("inbox.list.label") });
-  await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).fill("NEEDLE");
-  await list.getByRole("searchbox", { name: t("inbox.list.search.label") }).press("Enter");
+  const search = list.getByRole("searchbox", { name: t("inbox.list.search.label") });
+  // Typing narrows the list after the debounce without pressing Enter.
+  await search.fill("NEEDLE");
   await expect(list.getByRole("link").filter({ hasText: "The needle is here" })).toBeVisible();
   await expect(list.getByRole("link").filter({ hasText: "Only hay in this one" })).toHaveCount(0);
+  await expect(list.getByRole("status")).toContainText(
+    t("inbox.list.search.results", { count: 1 }),
+  );
+  // Clearing restores the list, and repeating the same search reads from TanStack Query's cache.
+  await list.getByRole("button", { name: t("inbox.list.search.clear") }).click();
+  await expect(list.getByRole("link").filter({ hasText: "Only hay in this one" })).toBeVisible();
+  await search.fill("NEEDLE");
+  await expect(list.getByRole("link").filter({ hasText: "The needle is here" })).toBeVisible();
+  await expect(list.getByRole("link").filter({ hasText: "Only hay in this one" })).toHaveCount(0);
+  await expect(list.getByRole("status")).toContainText(t("inbox.list.search.cached"));
   await list.getByRole("button", { name: t("inbox.list.export.label"), exact: true }).click();
   const csv = page.getByRole("menuitem", { name: t("inbox.list.export.csv") });
   const exported = await page.request.get(new URL(await csv.getAttribute("href"), endpoint).href);

@@ -10,6 +10,7 @@ import { ReadFailure } from "~/components/read-failure";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { SidebarTrigger } from "~/components/ui/sidebar";
+import { Skeleton } from "~/components/ui/skeleton";
 import { operationsQuery, refreshOperations, type OrganizationStatus } from "~/lib/api/operations";
 import { useFormats } from "~/lib/i18n";
 
@@ -147,6 +148,38 @@ function OrganizationMetrics({ organization }: OrganizationMetricsProps) {
 // The value of the sentence about the Cron, in the color of the text.
 const cronValue = <span className="font-medium text-foreground tabular-nums" />;
 
+const metricColumns = [0, 1, 2] as const;
+const metricRows = [0, 1, 2, 3] as const;
+
+function OperationsSkeleton({ label }: { readonly label: string }) {
+  return (
+    <div className="grid gap-4">
+      <output className="sr-only">{label}</output>
+      <Skeleton className="h-4 w-64 max-w-full" />
+      <Card aria-hidden="true">
+        <CardHeader>
+          <Skeleton className="h-5 w-40" />
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-x-10 gap-y-6 md:grid-cols-3">
+            {metricColumns.map((column) => (
+              <div key={column} className="grid content-start gap-2.5">
+                <Skeleton className="h-4 w-28" />
+                {metricRows.map((row) => (
+                  <div key={row} className="flex items-center justify-between gap-4 py-1">
+                    <Skeleton className="h-3.5 w-28" />
+                    <Skeleton className="h-3.5 w-8" />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 /** How the processing of every organization of the account is doing: Cron, queues and deliveries. */
 export function OperationsPanel() {
   const { t } = useTranslation();
@@ -166,14 +199,18 @@ export function OperationsPanel() {
           disabled={status.isFetching}
           onClick={() => void refreshOperations(queryClient)}
         >
-          <RefreshCw aria-hidden="true" className="size-4" />
+          <RefreshCw
+            aria-hidden="true"
+            className={cn(
+              "size-4",
+              status.isFetching && !status.isPending && "animate-spin motion-reduce:animate-none",
+            )}
+          />
         </Button>
       </header>
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         <div className="mx-auto grid max-w-4xl gap-4 px-5 py-5">
-          {status.isPending && (
-            <output className="text-sm text-muted-foreground">{t("operations.loading")}</output>
-          )}
+          {status.isPending && <OperationsSkeleton label={t("operations.loading")} />}
           {status.isError && (
             <ReadFailure
               cause={status.error}
