@@ -356,6 +356,26 @@ test("sign in, create an organization and manage its forms, then sign out", asyn
   );
 });
 
+test("copy the address of a form, then copy it again", async ({ dashboard: page, context }) => {
+  await createOrganization(page);
+  await openForm(page, formName);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const copy = page.getByRole("button", { name: t("inbox.forms.address.copy"), exact: true });
+  const copied = page.getByRole("button", { name: t("inbox.forms.address.copied"), exact: true });
+
+  await copy.click();
+  await expect(copied).toBeVisible();
+  const address = await page.evaluate(() => navigator.clipboard.readText());
+  expect(address).toMatch(/\/f\/[0-9a-f-]{36}$/u);
+
+  // The button offers the copy again after a moment, and copies again.
+  await expect(copy).toBeVisible();
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  await copy.click();
+  await expect(copied).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(address);
+});
+
 test("save Turnstile keys and copy the widget HTML from Forms", async ({
   dashboard: page,
   context,
