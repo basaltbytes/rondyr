@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { maxRetentionDays } from "@rondyr/organizations/retention";
 
+import { CardFormSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -120,9 +121,7 @@ export function RetentionSettings({ organizationId }: RetentionSettingsProps) {
                 onRetry={() => void retention.refetch()}
               />
             )}
-            {retention.isPending && (
-              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
-            )}
+            {retention.isPending && <CardFormSkeleton label={t("common.loading")} />}
             {retention.isSuccess && (
               <RetentionForm organizationId={organizationId} periods={retention.data} />
             )}

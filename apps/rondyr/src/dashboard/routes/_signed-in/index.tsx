@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, redirect } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
+import { CardFormSkeleton } from "~/components/page-pending";
 import { ProductLogo } from "~/components/product-logo";
+import { Card, CardContent } from "~/components/ui/card";
 import { SignOutButton } from "~/features/authentication/sign-out-button";
 import { NewOrganization } from "~/features/organization/new-organization";
 import { NoOrganization } from "~/features/organization/no-organization";
@@ -83,9 +85,11 @@ function FirstRun() {
         <ProductLogo size="lg" />
       </h1>
       {creation.data === undefined ? (
-        <output className="text-center text-sm text-muted-foreground">
-          {t("inbox.organizations.loading")}
-        </output>
+        <Card>
+          <CardContent>
+            <CardFormSkeleton label={t("inbox.organizations.loading")} />
+          </CardContent>
+        </Card>
       ) : (
         <>
           {creation.data.allowed ? <NewOrganization onCreated={openCreated} /> : <NoOrganization />}

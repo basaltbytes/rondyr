@@ -29,6 +29,15 @@
     "description": "Il n’y a rien à cette adresse, ou elle appartient à une organisation dont votre compte n’est pas membre.",
     "messages": "Aller aux messages"
   },
+  "errorBoundary": {
+    "title": "Une erreur est survenue",
+    "description": "Cette vue n’a pas pu s’afficher. Réessayez ou rechargez la page.",
+    "retry": "Réessayer",
+    "reload": "Recharger la page",
+    "home": "Aller aux messages",
+    "sectionTitle": "Cette section n’a pas pu s’afficher.",
+    "sectionDescription": "Une erreur d’affichage inattendue s’est produite ici. Le reste de la page reste utilisable."
+  },
   "sidebar": {
     "menu": "Menu",
     "toggle": "Afficher ou masquer le menu"
@@ -267,6 +276,14 @@
         "label": "Rechercher dans les messages",
         "placeholder": "Rechercher dans les messages",
         "clear": "Effacer la recherche",
+        "searching": "Recherche…",
+        "results_one": "{{count}} résultat",
+        "results_many": "{{count}} résultats",
+        "results_other": "{{count}} résultats",
+        "resultsMore_one": "{{count}}+ résultat",
+        "resultsMore_many": "{{count}}+ résultats",
+        "resultsMore_other": "{{count}}+ résultats",
+        "cached": "en cache",
         "tooShort_one": "Saisissez au moins {{count}} caractère.",
         "tooShort_many": "Saisissez au moins {{count}} caractères.",
         "tooShort_other": "Saisissez au moins {{count}} caractères.",

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { accountPasswordLength } from "@rondyr/organizations/account";
 
+import { CardFormSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -127,7 +128,7 @@ function Acceptance({ token, summary }: { token: string; summary: Summary }) {
   // A sign-in or a sign-out on this page changes who accepts: the page reads it again.
   const signedInOrOut = () => queryClient.resetQueries();
   if (session.isPending) {
-    return <output className="text-sm text-muted-foreground">{t("session.checking")}</output>;
+    return <CardFormSkeleton label={t("session.checking")} />;
   }
   const signedIn = session.data?.user.email ?? null;
   if (signedIn !== null && signedIn.toLowerCase() !== summary.email) {
@@ -169,7 +170,7 @@ export function InvitationAcceptance({ token }: InvitationAcceptanceProps) {
     <Card>
       {invitation.isPending && (
         <CardContent>
-          <output className="text-sm text-muted-foreground">{t("invitation.loading")}</output>
+          <CardFormSkeleton label={t("invitation.loading")} />
         </CardContent>
       )}
       {invalid && (

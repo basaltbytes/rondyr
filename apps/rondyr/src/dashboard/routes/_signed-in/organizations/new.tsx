@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, redirect, useRouterState } from "@tanstack/react-router";
 
+import { AppShellSkeleton } from "~/components/page-pending";
 import { SidebarTrigger } from "~/components/ui/sidebar";
 import { SignOutButton } from "~/features/authentication/sign-out-button";
 import { NewOrganization } from "~/features/organization/new-organization";
@@ -53,6 +54,7 @@ function NewOrganizationPage() {
       />
     );
   }
+  if (organizations.data === undefined) return <AppShellSkeleton />;
   const organization = known.find(({ id }) => id === from) ?? known[0];
   // An account without an organization creates its first one where the dashboard opens.
   if (organization === undefined) return <Navigate to="/" replace />;

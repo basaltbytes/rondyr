@@ -3,6 +3,8 @@ import { createRouter, RouterProvider } from "@tanstack/react-router";
 import { createRoot } from "react-dom/client";
 
 import "~/lib/i18n";
+import { ErrorBoundary } from "~/components/error-boundary";
+import { RouteError } from "~/components/error-page";
 import { NotFoundPage } from "~/components/not-found-page";
 import { PagePending } from "~/components/page-pending";
 import type { SidebarSection } from "~/features/navigation/sidebar-page";
@@ -61,8 +63,11 @@ const router = createRouter({
   // Every value of the dashboard's search params is a text, written as it is.
   parseSearch,
   stringifySearch,
+  defaultErrorComponent: RouteError,
   defaultNotFoundComponent: NotFoundPage,
   defaultPendingComponent: PagePending,
+  defaultPendingMs: 200,
+  defaultPendingMinMs: 200,
 });
 
 declare module "@tanstack/react-router" {
@@ -84,8 +89,10 @@ declare module "@tanstack/react-router" {
 const root = document.getElementById("root");
 if (root !== null) {
   createRoot(root).render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    </ErrorBoundary>,
   );
 }

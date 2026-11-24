@@ -76,6 +76,20 @@ export function messageListQuery(organizationId: string, search: MessagesSearch)
     },
     initialPageParam: firstPage,
     getNextPageParam: (page) => page.cursor,
+    placeholderData: (previousData, previousQuery) => {
+      // Keep the previous list visible while refining or clearing a search in the same
+      // organization, folder and form, so typing does not flash skeletons on every keystroke.
+      if (previousData === undefined || previousQuery === undefined) return undefined;
+      if (previousQuery.queryKey[0] !== organizationId || previousQuery.queryKey[2] !== "list") {
+        return undefined;
+      }
+      const previous = decodeSearch(previousQuery.queryKey[3]);
+      if (Option.isNone(previous)) return undefined;
+      if (previous.value.folder !== filter.folder || previous.value.form !== filter.form) {
+        return undefined;
+      }
+      return filter.q !== undefined || previous.value.q !== undefined ? previousData : undefined;
+    },
   });
 }
 

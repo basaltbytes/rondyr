@@ -15,10 +15,12 @@ import { useTranslation } from "react-i18next";
 
 import { allows } from "@rondyr/organizations/member-role";
 
+import { ErrorBoundary } from "~/components/error-boundary";
 import { FormEmoji } from "~/components/form-emoji";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
+import { Skeleton } from "~/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   applyDecision,
@@ -149,6 +151,55 @@ function Deletion({ organizationId, message, onDeleted }: DeletionProps) {
   );
 }
 
+/** Placeholder matching the reader toolbar and message layout while a message loads. */
+export function MessageReaderSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <>
+      <output className="sr-only">{t("common.loading")}</output>
+      <div
+        aria-hidden="true"
+        className="flex h-14 shrink-0 items-center justify-between gap-2 hairline-b px-4"
+      >
+        <div className="flex items-center gap-1.5">
+          <Skeleton className="size-7" />
+          <Skeleton className="size-7" />
+          <Skeleton className="h-3.5 w-16" />
+        </div>
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-8 w-20" />
+          <Skeleton className="h-8 w-28" />
+        </div>
+      </div>
+      <div aria-hidden="true" className="min-h-0 flex-1 lg:overflow-y-auto">
+        <div className="grid max-w-3xl gap-6 px-5 pt-6 pb-10">
+          <div className="grid gap-2.5">
+            <Skeleton className="h-3.5 w-24" />
+            <Skeleton className="h-6 w-56 max-w-full" />
+            <Skeleton className="h-3.5 w-44 max-w-full" />
+          </div>
+          <div className="grid max-w-prose gap-2.5">
+            <Skeleton className="h-4 w-48 max-w-full" />
+            <Skeleton className="h-3.5 w-full" />
+            <Skeleton className="h-3.5 w-11/12" />
+            <Skeleton className="h-3.5 w-4/5" />
+          </div>
+          <div className="grid gap-2.5 hairline-t pt-5">
+            <div className="flex items-center gap-6">
+              <Skeleton className="h-3.5 w-20" />
+              <Skeleton className="h-3.5 w-44" />
+            </div>
+            <div className="flex items-center gap-6">
+              <Skeleton className="h-3.5 w-24" />
+              <Skeleton className="h-3.5 w-52" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
 /**
  * One message. The bar on top has the place of the message in the list and the
  * decision, at the height of the list's header. Under it everything starts on
@@ -233,9 +284,7 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
         onRetry={() => void detail.refetch()}
       />
     ) : (
-      <output className="block px-5 py-6 text-sm text-muted-foreground">
-        {t("common.loading")}
-      </output>
+      <MessageReaderSkeleton />
     );
   }
 
@@ -412,11 +461,13 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
             </dl>
           )}
           {entry.status === "accepted" && (
-            <DeliveryHistory
-              organizationId={organization.id}
-              submissionId={submissionId}
-              canRetry={mayRetry}
-            />
+            <ErrorBoundary variant="section">
+              <DeliveryHistory
+                organizationId={organization.id}
+                submissionId={submissionId}
+                canRetry={mayRetry}
+              />
+            </ErrorBoundary>
           )}
         </article>
       </div>

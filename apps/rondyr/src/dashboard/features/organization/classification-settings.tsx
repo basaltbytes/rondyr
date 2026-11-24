@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { OrganizationClassificationPolicy } from "@rondyr/organizations/organization-classification-policy";
 
+import { CardFormSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, SelectField, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
@@ -201,9 +202,7 @@ export function ClassificationSettings({ organizationId }: ClassificationSetting
                 onRetry={() => void settings.refetch()}
               />
             )}
-            {settings.isPending && (
-              <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
-            )}
+            {settings.isPending && <CardFormSkeleton label={t("common.loading")} />}
             {settings.isSuccess && (
               <PolicyForm organizationId={organizationId} settings={settings.data} />
             )}

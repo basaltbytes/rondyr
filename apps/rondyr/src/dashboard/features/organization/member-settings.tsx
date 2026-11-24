@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import type { MemberRole } from "@rondyr/organizations/member-role";
 
+import { CardListSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, SelectField, TextField } from "~/components/text-field";
 import { Badge } from "~/components/ui/badge";
@@ -415,7 +416,11 @@ export function MemberSettings({ organizationId, self }: MemberSettingsProps) {
           />
         )}
         {members.isPending && (
-          <output className="text-sm text-muted-foreground">{t("common.loading")}</output>
+          <Card>
+            <CardContent>
+              <CardListSkeleton label={t("common.loading")} />
+            </CardContent>
+          </Card>
         )}
         {members.isSuccess && (
           <MemberManager
