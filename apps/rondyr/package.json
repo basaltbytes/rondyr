@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "node scripts/dev-demo.mjs",
     "dev:alchemy": "pnpm build && alchemy dev --config alchemy-run.ts --stage local",
     "build": "vite build",
     "start": "vite preview",

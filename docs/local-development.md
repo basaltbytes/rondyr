@@ -26,6 +26,16 @@ Vite prints the local URL, usually `http://localhost:5173`. Public sign-up is cl
 
 It asks for the same values and prints `First account created (HTTP 201).`. Rondyr refuses to create a second account even while the token is set, so you can leave it in `apps/rondyr/.env` or remove it. Other people join an organization through an invitation link from **Settings → Members**; see [Team and accounts](./team.md).
 
+## Demo data
+
+To look at the dashboard with something in it, start the dev server on a database of its own instead:
+
+```sh
+pnpm dev:demo
+```
+
+It needs no `apps/rondyr/.env`. The first run creates an owner account, the organization **Atelier Terre**, two active forms and a suspended one, and eight messages: five to review, two accepted and one archived. It prints the email address and the password to sign in with. The database and its generated secrets stay in `apps/rondyr/.wrangler/demo`, so the next run finds the same data; delete that folder to start again. Pass a port after `--`, as in `pnpm dev:demo -- --port 4100`.
+
 ## First submission
 
 In the dashboard, create an organization and a form, with an optional description of the business. Open the form from **Forms** in the sidebar to copy its submission address, then post to it:
