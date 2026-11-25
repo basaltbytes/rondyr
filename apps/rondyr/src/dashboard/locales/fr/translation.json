@@ -162,27 +162,204 @@
     }
   },
   "verification": {
-    "label": "Détails de vérification du message",
-    "title": "Vérification",
-    "badges": {
-      "accepted-automatic": "Accepté automatiquement",
-      "accepted-manual": "Accepté manuellement",
-      "stopped-at-intake": "Bloqué à la réception",
-      "flagged-by-ai": "Signalé par l’IA",
-      "analysis-failed": "Analyse échouée",
-      "archived": "Archivé",
+    "label": "Filtrage du message",
+    "title": "Filtrage",
+    "verdicts": {
+      "acceptedAutomatic": "Accepté automatiquement par {{classifier}}",
+      "nothingFired": "Aucun contrôle ne l’a mis de côté.",
+      "offTopic": "Étiqueté hors sujet : peu de lien avec votre activité ({{score}}).",
+      "acceptedManual": "Accepté par {{actor}}",
+      "byHand": "Décision prise à la main.",
+      "byHandAfter": "Décision prise à la main. Il avait été mis de côté ({{reason}}).",
+      "archived": "Archivé par {{actor}}",
+      "archivedGeneric": "Archivé",
+      "notDelivered": "Le message n’a pas été transmis.",
+      "archivedAfter": "Il avait été mis de côté ({{reason}}) et n’a pas été transmis.",
+      "queued": "En attente d’analyse",
+      "queuedDetail": "Aucun contrôle à la réception ne l’a mis de côté. Il attend le filtre IA dans la file.",
+      "stuck": "Bloqué dans la file",
+      "stuckDetail_one": "La transmission au filtre IA s’est arrêtée après {{count}} tentative. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
+      "stuckDetail_many": "La transmission au filtre IA s’est arrêtée après {{count}} tentatives. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
+      "stuckDetail_other": "La transmission au filtre IA s’est arrêtée après {{count}} tentatives. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
       "analyzing": "Analyse en cours",
-      "queued": "En file d’attente",
-      "stuck": "Bloqué dans la file"
+      "analyzingDetail": "Aucun contrôle à la réception ne l’a mis de côté. Le filtre IA l’analyse en ce moment.",
+      "atIntake": "Mis de côté dès la réception, sans analyse IA.",
+      "sameContent_one": "Même texte déjà reçu {{count}} fois en {{days}} jours",
+      "sameContent_many": "Même texte déjà reçu {{count}} fois en {{days}} jours",
+      "sameContent_other": "Même texte déjà reçu {{count}} fois en {{days}} jours",
+      "sameSender_one": "{{count}} envoi précédent de la même adresse en {{days}} jours",
+      "sameSender_many": "{{count}} envois précédents de la même adresse en {{days}} jours",
+      "sameSender_other": "{{count}} envois précédents de la même adresse en {{days}} jours",
+      "sameSenderToo_one": "Et {{count}} envoi précédent de la même adresse.",
+      "sameSenderToo_many": "Et {{count}} envois précédents de la même adresse.",
+      "sameSenderToo_other": "Et {{count}} envois précédents de la même adresse.",
+      "honeypot": "Le champ piège était rempli",
+      "honeypotDetail": "Le champ caché « {{field}} » contenait du texte. Les visiteurs ne le voient pas ; seuls les robots le remplissent.",
+      "turnstile": "Turnstile a refusé l’envoi",
+      "blockedTerm": "Contient « {{term}} »",
+      "blockedTermDetail": "Mot bloqué de la {{scope}}. Mis de côté dès la réception, sans analyse IA.",
+      "quota": "Plafond quotidien de classification atteint",
+      "quotaDetail": "{{used}} classifications sur {{limit}} étaient utilisées ce jour-là. Le message attend votre décision.",
+      "waitsForYou": "Le message attend votre décision.",
+      "classificationError": "L’analyse IA n’a pas abouti",
+      "classificationErrorDetail": "{{reason}} « Relancer l’analyse » le renvoie au filtre.",
+      "classificationErrorAttempts_one": "{{reason}} {{count}} tentative. « Relancer l’analyse » le renvoie au filtre.",
+      "classificationErrorAttempts_many": "{{reason}} {{count}} tentatives. « Relancer l’analyse » le renvoie au filtre.",
+      "classificationErrorAttempts_other": "{{reason}} {{count}} tentatives. « Relancer l’analyse » le renvoie au filtre.",
+      "classificationErrorCode_one": "{{reason}} {{count}} tentative, code d’erreur {{code}}. « Relancer l’analyse » le renvoie au filtre.",
+      "classificationErrorCode_many": "{{reason}} {{count}} tentatives, code d’erreur {{code}}. « Relancer l’analyse » le renvoie au filtre.",
+      "classificationErrorCode_other": "{{reason}} {{count}} tentatives, code d’erreur {{code}}. « Relancer l’analyse » le renvoie au filtre.",
+      "byAi": "Mis de côté par l’IA ({{reason}})",
+      "unrecordedScores": "Les scores ne sont pas enregistrés pour les messages analysés avant cette mise à jour.",
+      "probableSpam": "{{classifier}} le juge indésirable à {{score}}",
+      "ambiguous": "Doute sur un indésirable ({{score}})",
+      "solicitation": "Démarchage commercial probable ({{score}})",
+      "lowRelevance": "Peu de lien avec votre activité ({{score}})",
+      "fromThreshold": "Mis de côté à partir de {{threshold}}.",
+      "aboveThreshold": "Mis de côté au-dessus de {{threshold}}.",
+      "belowMinimum": "Mis de côté en dessous de {{threshold}}.",
+      "secondOpinionKept": "Le second avis a maintenu le doute : le message attend votre décision.",
+      "otherRules_one": "{{count}} autre règle l’aurait aussi mis de côté.",
+      "otherRules_many": "{{count}} autres règles l’auraient aussi mis de côté.",
+      "otherRules_other": "{{count}} autres règles l’auraient aussi mis de côté."
     },
-    "checkStates": {
-      "passed": "Réussi",
-      "failed": "Échoué",
-      "warning": "Avertissement",
-      "unavailable": "Indisponible (laissé passer)",
-      "skipped": "Ignoré",
-      "not-configured": "Non configuré",
-      "pending": "En cours"
+    "table": {
+      "caption": "Contrôles du filtrage de ce message",
+      "check": "Contrôle",
+      "onArrival": "À l’arrivée",
+      "intake": "Réception",
+      "ai": "Analyse IA",
+      "result": "Résultat"
+    },
+    "results": {
+      "accepted": "Accepté",
+      "quarantined": "Mis de côté",
+      "error": "Analyse échouée",
+      "pending": "En cours",
+      "archived": "Archivé"
+    },
+    "checks": {
+      "origin": {
+        "name": "Origine",
+        "allowed": "autorisée",
+        "noHeader": "sans en-tête Origin",
+        "unrestricted": "toutes acceptées",
+        "server": "envoi serveur"
+      },
+      "honeypot": {
+        "name": "Champ piège",
+        "notConfigured": "non configuré",
+        "empty": "resté vide",
+        "filled": "rempli"
+      },
+      "turnstile": {
+        "name": "Turnstile",
+        "notConfigured": "non activé",
+        "server": "envoi serveur",
+        "passed": "validé",
+        "unavailable": "non vérifié, laissé passer",
+        "refused": "refusé"
+      },
+      "sender": {
+        "name": "Même expéditeur"
+      },
+      "content": {
+        "name": "Même texte"
+      },
+      "repetitionValue": "{{value}} sur {{threshold}}",
+      "blocked": {
+        "name": "Mots bloqués",
+        "notConfigured": "aucun configuré",
+        "passed": "aucun trouvé",
+        "found": "« {{term}} »"
+      },
+      "quota": {
+        "name": "Plafond quotidien",
+        "used": "{{used}} sur {{limit}}",
+        "reached": "atteint",
+        "notChecked": "non vérifié"
+      },
+      "unrecorded": "non enregistré",
+      "notRun": "pas lancée",
+      "spam": {
+        "name": "Indésirable"
+      },
+      "escalation": {
+        "name": "Second avis · {{classifier}}",
+        "cleared": "doute levé",
+        "confirmed": "doute maintenu",
+        "skipped": "non demandé",
+        "failed": "échoué"
+      },
+      "solicitation": {
+        "name": "Démarchage commercial",
+        "notEvaluated": "non évalué"
+      },
+      "relevance": {
+        "name": "Lien avec votre activité",
+        "notConfigured": "sans description",
+        "offTopic": "{{score}} · hors sujet"
+      },
+      "classifier": {
+        "timeout": "délai dépassé",
+        "failed": "erreur"
+      }
+    },
+    "ai": {
+      "skipped": "Pas lancée : le message était déjà mis de côté. Aucune classification consommée.",
+      "queued": "En attente dans la file.",
+      "analyzing": "Analyse en cours.",
+      "unrecorded": "Scores non enregistrés pour ce message.",
+      "byAfterAttempts_one": "{{classifier}} · réussie après {{count}} tentative",
+      "byAfterAttempts_many": "{{classifier}} · réussie après {{count}} tentatives",
+      "byAfterAttempts_other": "{{classifier}} · réussie après {{count}} tentatives",
+      "signals": "Signaux transmis à l’IA : {{signals}}.",
+      "signalLinks": "liens ou HTML hors du champ principal",
+      "signalDomain": "adresse sur le domaine de votre organisation"
+    },
+    "test": {
+      "action": "Tester avec les règles actuelles",
+      "retest": "Relancer le test",
+      "running": "Test en cours…",
+      "dismiss": "Fermer le test",
+      "column": "Test",
+      "columnAt": "Test · {{time}}",
+      "notRetested": "non relancé",
+      "legendRecorded": "à l’arrivée",
+      "legendTest": "test",
+      "accepted": "Serait accepté",
+      "acceptedOffTopic": "Serait accepté, étiqueté hors sujet",
+      "stillAccepted": "Toujours accepté",
+      "stillAcceptedOffTopic": "Toujours accepté, étiqueté hors sujet",
+      "quarantined": "Serait mis de côté ({{reason}})",
+      "stillQuarantined": "Toujours mis de côté ({{reason}})",
+      "containsTerm": "contient « {{term}} »",
+      "error": "L’analyse échouerait. {{reason}}",
+      "notRechecked": "Les répétitions, le champ piège et Turnstile ne sont pas revérifiés.",
+      "dryRun": "Simulation : rien n’a changé pour ce message.",
+      "quotaReached": "Le plafond quotidien de classification est atteint : le test n’a pas pu être lancé. Réessayez demain ou augmentez le plafond dans Plafonds quotidiens.",
+      "failed": "Le test n’a pas pu être lancé. Réessayez."
+    },
+    "technical": {
+      "title": "Historique et détails techniques",
+      "submissionId": "Identifiant du message",
+      "intakeTrace": "Trace ID de réception",
+      "model": "Modèle",
+      "rulesVersion": "Version des règles",
+      "rulesVersionValue": "v{{version}}",
+      "handedOffAt": "Transmission par la file",
+      "testTrace": "Trace ID du test"
+    },
+    "timeline": {
+      "received": "Message reçu",
+      "quarantinedAtIntake": "Mis de côté à la réception ({{reason}})",
+      "classificationStarted": "Envoyé à l’analyse IA",
+      "reclassificationRequested": "Nouvelle analyse demandée par {{actor}}",
+      "quarantined": "Mis de côté pour vérification ({{reason}})",
+      "acceptedAutomatic": "Accepté automatiquement par {{classifier}}",
+      "acceptedAutomaticOffTopic": "Accepté automatiquement par {{classifier}} (Hors sujet)",
+      "acceptedManual": "Accepté manuellement par {{actor}}",
+      "archived": "Archivé par {{actor}}"
     },
     "actors": {
       "unknown": "un opérateur",
@@ -191,70 +368,10 @@
       "apiTokenOnlyName": "le jeton d’API {{name}}",
       "apiTokenNamed": "le jeton d’API {{name}} (…{{suffix}})"
     },
-    "summary": {
-      "acceptedAutomatic": "Accepté automatiquement par {{classifier}} : aucune vérification à la réception ni règle IA ne l’a mis de côté.",
-      "acceptedAutomaticOffTopic": "Accepté automatiquement par {{classifier}} et étiqueté Hors sujet selon vos réglages de classification.",
-      "acceptedManual": "Accepté manuellement par {{actor}}.",
-      "acceptedManualAfterQuarantine": "Accepté manuellement par {{actor}}. Précédemment mis de côté pour : {{reason}}.",
-      "acceptedGeneric": "Ce message a été accepté.",
-      "archived": "Archivé par {{actor}}.",
-      "archivedAfterQuarantine": "Archivé par {{actor}}. Précédemment mis de côté pour : {{reason}}.",
-      "archivedGeneric": "Ce message a été archivé.",
-      "queued": "Enregistré et en attente de traitement dans la file.",
-      "stuck": "Le traitement s’est arrêté après {{attempts}} tentatives de mise en file. Relancez-le depuis Exploitation → État une fois la cause corrigée.",
-      "analyzing": "Aucune vérification à la réception n’a mis ce message de côté. Le filtre IA l’analyse en ce moment.",
-      "repetitionBoth": "Mis de côté avant l’analyse IA : {{senderCount}} envois précédents du même expéditeur (seuil : {{senderLimit}}) et {{contentCount}} messages identiques (seuil : {{contentLimit}}) sur les {{days}} derniers jours.",
-      "repetitionContent_one": "Mis de côté avant l’analyse IA : {{count}} message identique déjà reçu sur les {{days}} derniers jours (seuil : {{limit}}).",
-      "repetitionContent_many": "Mis de côté avant l’analyse IA : {{count}} messages identiques déjà reçus sur les {{days}} derniers jours (seuil : {{limit}}).",
-      "repetitionContent_other": "Mis de côté avant l’analyse IA : {{count}} messages identiques déjà reçus sur les {{days}} derniers jours (seuil : {{limit}}).",
-      "repetitionSender_one": "Mis de côté avant l’analyse IA : {{count}} envoi précédent du même expéditeur sur les {{days}} derniers jours (seuil : {{limit}}).",
-      "repetitionSender_many": "Mis de côté avant l’analyse IA : {{count}} envois précédents du même expéditeur sur les {{days}} derniers jours (seuil : {{limit}}).",
-      "repetitionSender_other": "Mis de côté avant l’analyse IA : {{count}} envois précédents du même expéditeur sur les {{days}} derniers jours (seuil : {{limit}}).",
-      "honeypot": "Mis de côté avant l’analyse IA car le champ piège masqué « {{field}} » était rempli.",
-      "blockedTerm": "Mis de côté avant l’analyse IA car le message correspond au mot bloqué « {{term}} » ({{scope}}).",
-      "turnstileFailed": "Mis de côté avant l’analyse IA car la vérification Cloudflare Turnstile a échoué : {{cause}}",
-      "quota": "Mis de côté avant l’analyse IA car le plafond quotidien de classification est atteint ({{used}} sur {{limit}} utilisées).",
-      "classificationError": "Mis de côté car le filtre IA n’a pas pu analyser ce message : {{reason}}",
-      "quarantinedByAi": "Mis de côté par {{classifier}} pour : {{reason}}.",
-      "quarantinedGeneric": "Mis de côté pour vérification : {{reason}}.",
-      "generic": "Consultez les vérifications ci-dessous pour voir comment ce message a été traité."
-    },
-    "intake": {
-      "title": "Vérifications à la réception",
-      "legacyNotice": "Le détail des vérifications à la réception est enregistré pour les messages reçus après cette mise à jour.",
-      "originName": "Vérification de l’origine",
-      "originListedMatched": "Envoi public depuis une origine autorisée.",
-      "originListedNoHeader": "Envoi public sans en-tête Origin (autorisé par le formulaire).",
-      "originUnrestricted": "Envoi public (ce formulaire accepte toutes les origines).",
-      "originServerSkipped": "Envoi serveur par jeton d’API (vérification d’origine ignorée).",
-      "honeypotName": "Champ piège",
-      "honeypotNotConfigured": "Aucun champ piège n’est configuré sur ce formulaire.",
-      "honeypotPassed": "Le champ masqué « {{field}} » est resté vide.",
-      "honeypotFailed": "Le champ masqué « {{field}} » contenait du texte.",
-      "turnstileName": "Cloudflare Turnstile",
-      "turnstileNotConfigured": "Turnstile n’est pas activé sur ce formulaire.",
-      "turnstileServerSkipped": "Envoi serveur sans demande de vérification Turnstile.",
-      "turnstilePassed": "Jeton validé par Cloudflare Siteverify.",
-      "turnstileFailedWithCodes": "{{cause}} (codes : {{codes}})",
-      "repetitionName": "Détection des répétitions",
-      "repetitionDetail": "Même expéditeur : {{senderCount}} sur {{senderLimit}} · Même contenu : {{contentCount}} sur {{contentLimit}} ({{days}} derniers jours).",
-      "blockedName": "Mots bloqués",
-      "blockedNotConfigured": "Aucun mot bloqué n’est configuré sur ce formulaire ou cette organisation.",
-      "blockedPassed": "Aucun mot ou expression bloqué n’a correspondu.",
-      "blockedFailed": "Correspond à « {{term}} » ({{scope}}).",
-      "quotaName": "Plafond quotidien de classification",
-      "quotaPassed": "{{used}} sur {{limit}} classifications utilisées aujourd’hui.",
-      "quotaFailed": "Plafond quotidien atteint ({{used}} sur {{limit}} utilisées aujourd’hui).",
-      "quotaSkippedEarlier": "Non vérifié car une vérification précédente avait déjà mis ce message de côté."
-    },
     "turnstileCauses": {
       "missing-token": "Aucun jeton Turnstile n’était présent dans l’envoi.",
       "rejected": "Cloudflare a refusé le jeton Turnstile.",
       "key-changed": "La clé secrète Turnstile du formulaire a changé pendant la vérification."
-    },
-    "turnstileUnavailable": {
-      "siteverify": "Cloudflare Siteverify n’a pas répondu : Rondyr a laissé le message poursuivre vers la classification.",
-      "secret": "Rondyr n’a pas pu déchiffrer la clé secrète Turnstile : le message a poursuivi vers la classification."
     },
     "blockedScopes": {
       "form": "liste du formulaire",
@@ -269,103 +386,6 @@
       "upstream-error": "Le service d’IA a renvoyé une erreur.",
       "invalid-response": "Le classificateur IA a renvoyé une réponse incomplète ou illisible.",
       "reservation-unavailable": "Le plafond quotidien de classification n’a pas pu être vérifié."
-    },
-    "spamStates": {
-      "passed": "Réussi",
-      "ambiguous": "Incertain",
-      "cleared": "Levé par le 2e modèle",
-      "failed": "Indésirable probable"
-    },
-    "solicitationStates": {
-      "passed": "Réussi",
-      "failed": "Au-dessus du seuil",
-      "not-evaluated": "Non évalué"
-    },
-    "relevanceStates": {
-      "passed": "Pertinent",
-      "failed": "Sous le seuil",
-      "flagged": "Hors sujet (accepté)",
-      "not-configured": "Non configuré"
-    },
-    "ai": {
-      "title": "Analyse IA",
-      "skippedTitle": "Classificateur IA",
-      "skippedAtIntake": "Non exécuté car une vérification à la réception a déjà mis ce message de côté. Aucun quota de classification n’a été consommé.",
-      "queuedDetail": "En attente de transmission par la file vers le classificateur.",
-      "classifyingDetail": "Le filtre IA évalue actuellement ce message.",
-      "stuckDetail": "La transmission par la file s’est arrêtée après {{attempts}} tentatives (depuis le {{date}}).",
-      "classifierRun": "{{classifier}}",
-      "evaluatedBy": "Évalué par {{classifier}}",
-      "succeededOnAttempt": "Réussi à la tentative {{attempt}}",
-      "failureMeta_one": "Échoué après {{count}} tentative.",
-      "failureMeta_many": "Échoué après {{count}} tentatives.",
-      "failureMeta_other": "Échoué après {{count}} tentatives.",
-      "failureMetaWithCode_one": "Échoué après {{count}} tentative (code d’erreur {{code}}).",
-      "failureMetaWithCode_many": "Échoué après {{count}} tentatives (code d’erreur {{code}}).",
-      "failureMetaWithCode_other": "Échoué après {{count}} tentatives (code d’erreur {{code}}).",
-      "legacyNotice": "Le détail des scores est enregistré pour les messages analysés après cette mise à jour.",
-      "spamName": "Indésirable (spam)",
-      "spamDetail": "Score {{score}} · Incertain dès {{ambiguous}}, indésirable probable dès {{probable}}",
-      "solicitationName": "Démarchage commercial",
-      "solicitationDetail": "Score {{score}} · Signalé au-dessus de {{threshold}}",
-      "solicitationNotEvaluated": "Cette vérification n’était pas active lors de l’analyse du message.",
-      "relevanceName": "Lien avec votre activité",
-      "relevanceDetail": "Score {{score}} · Minimum {{threshold}}",
-      "relevanceNotConfigured": "Aucune description d’activité n’est définie sur ce formulaire.",
-      "escalationName": "Second avis ({{classifier}})",
-      "escalationClearedLabel": "Doute de spam levé",
-      "escalationClearedDetail": "Spam {{spam}} · Démarchage {{solicitation}}",
-      "escalationConfirmedLabel": "Maintenu à vérifier",
-      "escalationConfirmedDetail": "Vérification confirmée ({{reason}}, spam {{spam}}).",
-      "escalationSkippedQuota": "Ignoré car le plafond quotidien de classification est atteint.",
-      "escalationFailedDetail": "Impossible de terminer, le message reste à vérifier : {{reason}}",
-      "escalationNoScore": "n/d",
-      "signalsTitle": "Signaux transmis au classificateur",
-      "signalsUrlOrHtml": "Des liens ou du HTML apparaissaient en dehors du champ de message principal.",
-      "signalsOrganizationDomain": "L’adresse de l’expéditeur utilise un domaine de votre organisation."
-    },
-    "timeline": {
-      "title": "Historique du traitement",
-      "received": "Message reçu",
-      "classificationStarted": "Envoyé à l’analyse IA",
-      "reclassificationRequested": "Nouvelle analyse demandée par {{actor}}",
-      "quarantined": "Mis de côté pour vérification ({{reason}})",
-      "acceptedAutomatic": "Accepté automatiquement par {{classifier}}",
-      "acceptedAutomaticOffTopic": "Accepté automatiquement par {{classifier}} (Hors sujet)",
-      "acceptedManual": "Accepté manuellement par {{actor}}",
-      "archived": "Archivé par {{actor}}"
-    },
-    "technical": {
-      "title": "Détails techniques",
-      "submissionId": "Identifiant du message",
-      "intakeTrace": "Trace ID de réception",
-      "model": "Modèle",
-      "rulesVersion": "Version des règles",
-      "rulesVersionValue": "v{{version}}",
-      "handedOffAt": "Transmission par la file"
-    },
-    "previewBadges": {
-      "accepted": "Serait accepté",
-      "quarantined": "Serait mis de côté",
-      "error": "Échec de l’analyse"
-    },
-    "preview": {
-      "label": "Aperçu de la vérification à blanc",
-      "action": "Tester avec les règles actuelles",
-      "retest": "Tester à nouveau",
-      "running": "Test en cours…",
-      "dismiss": "Fermer l’aperçu",
-      "title": "Aperçu avec les règles actuelles",
-      "dryRunNote": "Simulation uniquement : l’état du message, son historique et ses livraisons n’ont pas changé. Les vérifications historiques à la réception (origine, champ piège, Turnstile et répétitions) ne sont pas relancées.",
-      "wouldAccept": "Serait accepté automatiquement par {{classifier}}.",
-      "wouldAcceptOffTopic": "Serait accepté automatiquement par {{classifier}} avec l’étiquette Hors sujet.",
-      "wouldQuarantineBlockedTerm": "Serait mis de côté avant l’analyse IA car il correspond au mot bloqué « {{term}} » ({{scope}}).",
-      "wouldQuarantineAi": "Serait mis de côté par {{classifier}} pour : {{reason}}.",
-      "wouldError": "Ne pourrait pas être analysé actuellement : {{reason}}",
-      "wasScore": "(était {{score}})",
-      "traceId": "Trace ID de l’aperçu",
-      "quotaReached": "Le plafond quotidien de classification est atteint : l’aperçu n’a pas pu être lancé. Réessayez demain ou augmentez le plafond dans Plafonds quotidiens.",
-      "failed": "L’aperçu de la vérification n’a pas pu être lancé. Réessayez."
     }
   },
   "inbox": {

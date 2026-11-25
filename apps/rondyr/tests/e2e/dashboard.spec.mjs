@@ -550,20 +550,22 @@ test("quarantine a message with a filled honeypot field and review it", async ({
   const reader = await openSubmission(page, t("inbox.folders.quarantined"), message);
   await expect(reader.getByText(t("status.reasons.honeypot"), { exact: true })).toBeVisible();
   const verification = reader.getByRole("region", { name: t("verification.label") });
-  await expect(
-    verification.getByText(t("verification.badges.stopped-at-intake"), { exact: true }),
-  ).toBeVisible();
+  await expect(verification.getByText(t("verification.verdicts.honeypot"))).toBeVisible();
   await expect(
     verification.getByText(
-      t("verification.intake.honeypotFailed", { field: externalSite.honeypotField }),
+      t("verification.verdicts.honeypotDetail", { field: externalSite.honeypotField }),
     ),
   ).toBeVisible();
-  await expect(verification.getByText(t("verification.ai.skippedAtIntake"))).toBeVisible();
+  const honeypotRow = verification
+    .getByRole("row")
+    .filter({ hasText: t("verification.checks.honeypot.name") });
+  await expect(honeypotRow).toContainText(t("verification.checks.honeypot.filled"));
+  await expect(verification.getByText(t("verification.ai.skipped"))).toBeVisible();
   // Admin can dry-run current screening rules on the message without changing its status.
-  await verification.getByRole("button", { name: t("verification.preview.action") }).click();
-  const preview = verification.getByRole("region", { name: t("verification.preview.label") });
-  await expect(preview.getByText(t("verification.preview.title"))).toBeVisible();
-  await expect(preview.getByText(t("verification.preview.dryRunNote"))).toBeVisible();
+  await verification.getByRole("button", { name: t("verification.test.action") }).click();
+  const testResult = verification.getByRole("status");
+  await expect(testResult).toContainText(t("verification.test.notRechecked"));
+  await expect(testResult).toContainText(t("verification.test.dryRun"));
   await expect(reader.getByText(t("status.reasons.honeypot"), { exact: true })).toBeVisible();
   const accept = t("inbox.reader.acceptAndSend");
   await reader.getByRole("button", { name: accept }).click();
@@ -574,14 +576,16 @@ test("quarantine a message with a filled honeypot field and review it", async ({
   await expect(accepted.getByRole("button", { name: accept })).toHaveCount(0);
   const acceptedVerification = accepted.getByRole("region", { name: t("verification.label") });
   await expect(
-    acceptedVerification.getByText(t("verification.badges.accepted-manual"), { exact: true }),
-  ).toBeVisible();
-  await expect(acceptedVerification.getByText(t("verification.timeline.title"))).toBeVisible();
-  await expect(
     acceptedVerification.getByText(
-      t("verification.intake.honeypotFailed", { field: externalSite.honeypotField }),
+      t("verification.verdicts.byHandAfter", { reason: t("status.reasons.honeypot") }),
     ),
   ).toBeVisible();
+  await expect(acceptedVerification.getByText(t("verification.technical.title"))).toBeVisible();
+  await expect(
+    acceptedVerification
+      .getByRole("row")
+      .filter({ hasText: t("verification.checks.honeypot.name") }),
+  ).toContainText(t("verification.checks.honeypot.filled"));
 });
 
 test("add destinations, confirm a recipient, send a test and retry a failed webhook", async ({
