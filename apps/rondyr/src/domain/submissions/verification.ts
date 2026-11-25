@@ -148,7 +148,6 @@ export type SubmissionEventDetail = typeof SubmissionEventDetail.Type;
 export const SubmissionTimelineEvent = Schema.Struct({
   seq: Schema.Int,
   occurredAt: Schema.Int,
-  traceId: Schema.NullOr(Schema.String),
   detail: SubmissionEventDetail,
 });
 export type SubmissionTimelineEvent = typeof SubmissionTimelineEvent.Type;

@@ -12,7 +12,9 @@ export const RepetitionCounts = Schema.Struct({
 });
 export type RepetitionCounts = typeof RepetitionCounts.Type;
 
-export const repetitionWindowMs = 30 * 24 * 60 * 60 * 1000;
+export const repetitionWindowDays = 30;
+
+export const repetitionWindowMs = repetitionWindowDays * 24 * 60 * 60 * 1000;
 
 export const repetitionThresholds = { sender: 3, content: 2 } as const;
 

@@ -130,10 +130,6 @@ export const inboxLive = Inbox.toLayer(
           "inbox.status": status,
           ...(reason !== null && { "inbox.reason": reason }),
         });
-        const traceId = yield* Effect.currentParentSpan.pipe(
-          Effect.map((span) => span.traceId),
-          Effect.orElseSucceed(() => null),
-        );
         yield* store
           .project({
             submissionId: source.id,
@@ -144,7 +140,6 @@ export const inboxLive = Inbox.toLayer(
             event: {
               eventType: detail._tag,
               occurredAt: DateTime.toEpochMillis(envelope.at),
-              traceId,
               detail,
             },
           })

@@ -45,7 +45,6 @@ const StoredDetailRow = StoredListRow.mapFields((fields) => ({
 const StoredEventRow = Schema.Struct({
   seq: Schema.Int,
   occurredAt: Schema.Int,
-  traceId: Schema.NullOr(Schema.String),
   payload: Schema.fromJsonString(SubmissionEventDetail),
   reviewerName: Schema.NullOr(Schema.String),
   apiTokenName: Schema.NullOr(Schema.String),
@@ -109,7 +108,6 @@ function hydrateEvent(row: typeof StoredEventRow.Type): SubmissionTimelineEvent 
   return {
     seq: row.seq,
     occurredAt: row.occurredAt,
-    traceId: row.traceId,
     detail,
   };
 }
@@ -140,11 +138,11 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
     const payload = yield* encodeEventDetail(event.detail).pipe(Effect.orDie);
     const insertEvent = db
       .prepare(`
-      INSERT INTO submission_events (submission_id, seq, event_type, occurred_at, trace_id, payload)
-      SELECT ?1, ?2, ?3, ?4, ?5, ?6 WHERE EXISTS (SELECT 1 FROM submissions WHERE id = ?1)
+      INSERT INTO submission_events (submission_id, seq, event_type, occurred_at, payload)
+      SELECT ?1, ?2, ?3, ?4, ?5 WHERE EXISTS (SELECT 1 FROM submissions WHERE id = ?1)
       ON CONFLICT (submission_id, seq) DO NOTHING
     `)
-      .bind(submissionId, version, event.eventType, event.occurredAt, event.traceId, payload);
+      .bind(submissionId, version, event.eventType, event.occurredAt, payload);
     yield* d1(() => db.batch([upsertInbox, insertEvent]));
   }, Effect.mapError(inboxUnavailable)),
   list: Effect.fn("Inbox.list")(
@@ -234,7 +232,7 @@ export const inboxStoreLive = Layer.succeed(InboxStore, {
           .bind(organizationId, submissionId),
         db
           .prepare(`
-        SELECT se.seq, se.occurred_at AS occurredAt, se.trace_id AS traceId, se.payload,
+        SELECT se.seq, se.occurred_at AS occurredAt, se.payload,
           COALESCE(NULLIF(trim(u.name), ''), u.email) AS reviewerName,
           t.name AS apiTokenName,
           t.token_suffix AS apiTokenSuffix

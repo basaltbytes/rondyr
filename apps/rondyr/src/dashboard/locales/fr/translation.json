@@ -192,7 +192,7 @@
       "apiTokenNamed": "le jeton d’API {{name}} (…{{suffix}})"
     },
     "summary": {
-      "acceptedAutomatic": "Accepté automatiquement par {{classifier}} après avoir réussi toutes les vérifications.",
+      "acceptedAutomatic": "Accepté automatiquement par {{classifier}} : aucune vérification à la réception ni règle IA ne l’a mis de côté.",
       "acceptedAutomaticOffTopic": "Accepté automatiquement par {{classifier}} et étiqueté Hors sujet selon vos réglages de classification.",
       "acceptedManual": "Accepté manuellement par {{actor}}.",
       "acceptedManualAfterQuarantine": "Accepté manuellement par {{actor}}. Précédemment mis de côté pour : {{reason}}.",
@@ -202,7 +202,7 @@
       "archivedGeneric": "Ce message a été archivé.",
       "queued": "Enregistré et en attente de traitement dans la file.",
       "stuck": "Le traitement s’est arrêté après {{attempts}} tentatives de mise en file. Relancez-le depuis Exploitation → État une fois la cause corrigée.",
-      "analyzing": "Toutes les vérifications à la réception ont réussi. Le filtre IA analyse ce message.",
+      "analyzing": "Aucune vérification à la réception n’a mis ce message de côté. Le filtre IA l’analyse en ce moment.",
       "repetitionBoth": "Mis de côté avant l’analyse IA : {{senderCount}} envois précédents du même expéditeur (seuil : {{senderLimit}}) et {{contentCount}} messages identiques (seuil : {{contentLimit}}) sur les {{days}} derniers jours.",
       "repetitionContent_one": "Mis de côté avant l’analyse IA : {{count}} message identique déjà reçu sur les {{days}} derniers jours (seuil : {{limit}}).",
       "repetitionContent_many": "Mis de côté avant l’analyse IA : {{count}} messages identiques déjà reçus sur les {{days}} derniers jours (seuil : {{limit}}).",
@@ -339,7 +339,6 @@
       "title": "Détails techniques",
       "submissionId": "Identifiant du message",
       "intakeTrace": "Trace ID de réception",
-      "decisionTrace": "Trace ID de décision",
       "model": "Modèle",
       "rulesVersion": "Version des règles",
       "rulesVersionValue": "v{{version}}",

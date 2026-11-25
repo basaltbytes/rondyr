@@ -230,7 +230,9 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
   const above = index < 0 ? undefined : entries[index - 1];
   const below = index < 0 ? undefined : entries[index + 1];
   const entry = detail.data ?? listed;
+  // The term shows beside the reason only while a blocked word is the reason the message waits.
   const storedBlockedTerm =
+    entry?.reason === "blocked-term" &&
     detail.data?.verification.intake?.blockedTerm._tag === "Failed"
       ? detail.data.verification.intake.blockedTerm.term
       : null;

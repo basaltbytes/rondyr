@@ -9,6 +9,7 @@ import { junkIntakeReasons } from "../../../domain/organizations/organization-qu
 import {
   repetitionKeys,
   repetitionThresholds,
+  repetitionWindowDays,
   repetitionWindowMs,
 } from "../../../domain/submissions/classifier-input.ts";
 import { SubmissionFields } from "../../../domain/submissions/submission-fields.ts";
@@ -40,7 +41,6 @@ const encodeFields = Schema.encodeEffect(Schema.fromJsonString(SubmissionFields)
 const encodeErrorCodes = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Schema.String)));
 const encodeTrace = Schema.encodeEffect(Schema.fromJsonString(IntakeTrace));
 const decodeIntakeChecks = Schema.decodeUnknownOption(Schema.fromJsonString(IntakeVerification));
-const repetitionWindowDays = Math.round(repetitionWindowMs / (24 * 60 * 60 * 1000));
 const OriginRow = Schema.Struct({
   restricted: Schema.Literals([0, 1]),
   listed: Schema.Literals([0, 1]),

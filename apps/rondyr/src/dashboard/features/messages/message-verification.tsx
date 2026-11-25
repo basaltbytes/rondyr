@@ -15,7 +15,7 @@ import type {
   ClassificationPolicy,
   ClassifierProvider,
 } from "@rondyr/contracts/classification-policy";
-import { repetitionThresholds } from "@rondyr/contracts/classifier-input";
+import { repetitionThresholds, repetitionWindowDays } from "@rondyr/contracts/classifier-input";
 import {
   evaluateClassificationChecks,
   type EventActor,
@@ -329,7 +329,7 @@ function IntakeChecksList({
               senderLimit: format.count(senderLimit),
               contentCount: format.count(verification.priorSameContent),
               contentLimit: format.count(contentLimit),
-              days: format.count(30),
+              days: format.count(repetitionWindowDays),
             })}
           />
         </ul>
@@ -909,12 +909,13 @@ function AiVerificationSection({
 
   // Waiting in outbox or actively classifying.
   if (entry.status === "received" || entry.status === "classifying") {
-    const stuckAt = verification.outbox?.stuckAt ?? null;
+    const { outbox } = verification;
+    const stuckAt = outbox?.stuckAt ?? null;
     const tone: CheckTone = stuckAt !== null ? "failed" : "pending";
     const detail =
-      stuckAt !== null
+      outbox !== null && stuckAt !== null
         ? t("verification.ai.stuckDetail", {
-            attempts: format.count(verification.outbox?.publicationCount ?? 12),
+            attempts: format.count(outbox.publicationCount),
             date: format.timestamp(stuckAt),
           })
         : entry.status === "classifying"
@@ -1149,7 +1150,6 @@ export function MessageVerification({
   const quarantinedEvent = findLastQuarantined(verification.events);
   const classificationOutcome = findLastClassificationOutcome(verification.events);
   const badge = summaryBadgeOf(entry, verification, acceptedEvent);
-  const latestTraceId = verification.events.at(-1)?.traceId ?? verification.intakeTraceId;
   const modelName =
     classificationOutcome !== undefined && classificationOutcome.detail.scores !== undefined
       ? classificationOutcome.detail.scores.model
@@ -1223,7 +1223,7 @@ export function MessageVerification({
       verification.intake?.repetition.senderThreshold ?? repetitionThresholds.sender;
     const contentLimit =
       verification.intake?.repetition.contentThreshold ?? repetitionThresholds.content;
-    const days = verification.intake?.repetition.windowDays ?? 30;
+    const days = verification.intake?.repetition.windowDays ?? repetitionWindowDays;
     const both = senderCount >= senderLimit && contentCount >= contentLimit;
     summaryText = both
       ? t("verification.summary.repetitionBoth", {
@@ -1381,12 +1381,6 @@ export function MessageVerification({
               <dd className="font-mono wrap-anywhere text-foreground">
                 {verification.intakeTraceId}
               </dd>
-            </div>
-          )}
-          {latestTraceId !== null && latestTraceId !== verification.intakeTraceId && (
-            <div className="col-span-2 grid grid-cols-subgrid">
-              <dt>{t("verification.technical.decisionTrace")}</dt>
-              <dd className="font-mono wrap-anywhere text-foreground">{latestTraceId}</dd>
             </div>
           )}
           {modelName !== null && (

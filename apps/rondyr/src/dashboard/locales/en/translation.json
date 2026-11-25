@@ -192,7 +192,7 @@
       "apiTokenNamed": "API token {{name}} (…{{suffix}})"
     },
     "summary": {
-      "acceptedAutomatic": "Accepted automatically by {{classifier}} after passing all intake and AI checks.",
+      "acceptedAutomatic": "Accepted automatically by {{classifier}}: no intake check or AI rule set it aside.",
       "acceptedAutomaticOffTopic": "Accepted automatically by {{classifier}} and labeled Off-topic according to your classification settings.",
       "acceptedManual": "Accepted manually by {{actor}}.",
       "acceptedManualAfterQuarantine": "Accepted manually by {{actor}}. Previously set aside for: {{reason}}.",
@@ -202,7 +202,7 @@
       "archivedGeneric": "This message was archived.",
       "queued": "Stored and waiting in the queue for processing.",
       "stuck": "Processing stopped after {{attempts}} queue attempts. Retry it from Operations → Status once the cause is fixed.",
-      "analyzing": "All intake checks passed. The AI filter is analyzing this message now.",
+      "analyzing": "No intake check set this message aside. The AI filter is analyzing it now.",
       "repetitionBoth": "Set aside before AI analysis: {{senderCount}} prior messages from the same sender (limit: {{senderLimit}}) and {{contentCount}} identical messages (limit: {{contentLimit}}) in the last {{days}} days.",
       "repetitionContent_one": "Set aside before AI analysis: {{count}} identical message already received in the last {{days}} days (limit: {{limit}}).",
       "repetitionContent_many": "Set aside before AI analysis: {{count}} identical messages already received in the last {{days}} days (limit: {{limit}}).",
@@ -339,7 +339,6 @@
       "title": "Technical details",
       "submissionId": "Submission ID",
       "intakeTrace": "Intake trace ID",
-      "decisionTrace": "Decision trace ID",
       "model": "Model",
       "rulesVersion": "Rules version",
       "rulesVersionValue": "v{{version}}",

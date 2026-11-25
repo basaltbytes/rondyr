@@ -19,7 +19,6 @@ import type { SubmissionEventDetail } from "./verification.ts";
 export interface ProjectedSubmissionEvent {
   readonly eventType: SubmissionEventDetail["_tag"];
   readonly occurredAt: number;
-  readonly traceId: string | null;
   readonly detail: SubmissionEventDetail;
 }
 

@@ -374,7 +374,6 @@ export const submissionEvents = sqliteTable(
     seq: integer().notNull(),
     eventType: text("event_type").notNull(),
     occurredAt: integer("occurred_at").notNull(),
-    traceId: text("trace_id"),
     payload: text().notNull(),
   },
   (table) => [primaryKey({ columns: [table.submissionId, table.seq] })],

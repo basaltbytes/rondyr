@@ -1,7 +1,7 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "10e33927-210f-4a56-b914-be81823b91e1",
+  "id": "73f7d17b-94d7-4830-be02-c14aeab538e9",
   "prevIds": [
     "9e6c1164-46ec-444a-a1df-9ad6130b6411"
   ],
@@ -1575,16 +1575,6 @@
       "name": "occurred_at",
       "type": "integer",
       "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "entityType": "columns"
-    },
-    {
-      "table": "submission_events",
-      "name": "trace_id",
-      "type": "text",
-      "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,

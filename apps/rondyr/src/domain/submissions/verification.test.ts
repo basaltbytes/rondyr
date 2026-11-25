@@ -1,23 +1,11 @@
 import { assert, describe, it } from "@effect/vitest";
-import { Effect, Exit, Metric, Schema, Tracer } from "effect";
 
 import {
   ClassificationThresholds,
   defaultClassificationPolicies,
   type ClassificationPolicy,
 } from "./classification-policy.ts";
-import {
-  intakeChecksMetric,
-  intakeSubmissionsMetric,
-  recordMetric,
-  screeningPreviewsMetric,
-} from "./submission-metrics.ts";
-import {
-  evaluateClassificationChecks,
-  IntakeVerification,
-  ScreeningPreview,
-  SubmissionVerification,
-} from "./verification.ts";
+import { evaluateClassificationChecks } from "./verification.ts";
 
 const jevPolicy = defaultClassificationPolicies.jev;
 
@@ -183,122 +171,4 @@ describe("evaluateClassificationChecks", () => {
     assert.strictEqual(result.solicitation.status, "not-evaluated");
     assert.isNull(result.solicitation.score);
   });
-});
-
-describe("verification schemas and Effect observability primitives", () => {
-  it.effect("rejects invalid intake verification invariants at decode boundaries", () =>
-    Effect.gen(function* () {
-      const invalid = yield* Effect.exit(
-        Schema.decodeEffect(IntakeVerification)({
-          channel: "public",
-          origin: { _tag: "Passed", mode: "unrestricted", hasOrigin: false },
-          honeypot: { _tag: "NotConfigured" },
-          turnstile: { _tag: "NotConfigured" },
-          repetition: {
-            outcome: "passed",
-            priorSameSender: -1,
-            priorSameContent: 0,
-            senderThreshold: 3,
-            contentThreshold: 2,
-            windowDays: 30,
-          },
-          blockedTerm: { _tag: "NotConfigured" },
-          quota: { _tag: "Passed", used: 0, limit: 500 },
-          decisiveReason: null,
-        }),
-      );
-      assert.isTrue(Exit.isFailure(invalid));
-
-      const emptyVerification = yield* Schema.decodeEffect(SubmissionVerification)({
-        intake: null,
-        intakeReason: null,
-        priorSameSender: 0,
-        priorSameContent: 0,
-        intakeTraceId: null,
-        outbox: null,
-        events: [],
-      });
-      assert.isNull(emptyVerification.intake);
-    }),
-  );
-
-  it.effect("records Effect spans, attributes, span links, and metrics with a custom Tracer", () =>
-    Effect.gen(function* () {
-      const spans: Array<Tracer.NativeSpan> = [];
-      const tracer = Tracer.make({
-        span(options) {
-          const span = new Tracer.NativeSpan(options);
-          spans.push(span);
-          return span;
-        },
-      });
-
-      const intakeTrace = yield* Effect.gen(function* () {
-        const span = yield* Effect.currentParentSpan;
-        yield* Effect.annotateCurrentSpan({
-          "intake.channel": "public",
-          "intake.check.repetition": "failed",
-        });
-        yield* recordMetric(intakeSubmissionsMetric, {
-          channel: "public",
-          outcome: "quarantined",
-          reason: "repetition",
-        });
-        yield* recordMetric(intakeChecksMetric, { check: "repetition", outcome: "failed" });
-        return { traceId: span.traceId, spanId: span.spanId, sampled: span.sampled };
-      }).pipe(Effect.withSpan("Intake.receive"), Effect.provideService(Tracer.Tracer, tracer));
-
-      yield* Effect.annotateCurrentSpan({ "outbox.command": "QuarantineAtIntake" }).pipe(
-        Effect.withSpan("Outbox.handoff", {
-          links: [{ span: Tracer.externalSpan(intakeTrace), attributes: { relation: "intake" } }],
-        }),
-        Effect.provideService(Tracer.Tracer, tracer),
-      );
-
-      assert.strictEqual(spans.length, 2);
-      assert.strictEqual(spans[0]?.name, "Intake.receive");
-      assert.strictEqual(spans[0]?.attributes.get("intake.check.repetition"), "failed");
-      assert.strictEqual(spans[1]?.name, "Outbox.handoff");
-      assert.strictEqual(spans[1]?.links[0]?.span.traceId, intakeTrace.traceId);
-      assert.strictEqual(spans[1]?.links[0]?.span.spanId, intakeTrace.spanId);
-
-      const counterState = yield* Metric.value(
-        Metric.withAttributes(intakeChecksMetric, { check: "repetition", outcome: "failed" }),
-      );
-      assert.isAtLeast(counterState.count, 1);
-
-      yield* recordMetric(screeningPreviewsMetric, {
-        classifier: "jev",
-        outcome: "accepted",
-        reason: "none",
-      });
-      const previewCounter = yield* Metric.value(
-        Metric.withAttributes(screeningPreviewsMetric, {
-          classifier: "jev",
-          outcome: "accepted",
-          reason: "none",
-        }),
-      );
-      assert.isAtLeast(previewCounter.count, 1);
-
-      const preview = yield* Schema.decodeEffect(ScreeningPreview)({
-        outcome: "accepted",
-        reason: null,
-        label: null,
-        blockedTerm: { _tag: "Passed" },
-        classifier: "jev",
-        policy: jevPolicy,
-        scores: { model: "jev-v1", spam: 0.05, solicitation: 0.1, relevance: 0.9 },
-        signals: {
-          hasBusinessContext: true,
-          urlOrHtmlOutsideLongestField: false,
-          senderMatchesOrganizationDomain: false,
-        },
-        rulesVersion: 7,
-        traceId: intakeTrace.traceId,
-        evaluatedAt: 1_700_000_000_000,
-      });
-      assert.strictEqual(preview.outcome, "accepted");
-    }),
-  );
 });

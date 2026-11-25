@@ -3,7 +3,6 @@ CREATE TABLE `submission_events` (
 	`seq` integer NOT NULL,
 	`event_type` text NOT NULL,
 	`occurred_at` integer NOT NULL,
-	`trace_id` text,
 	`payload` text NOT NULL,
 	CONSTRAINT `submission_events_pk` PRIMARY KEY(`submission_id`, `seq`),
 	CONSTRAINT `fk_submission_events_submission_id_submissions_id_fk` FOREIGN KEY (`submission_id`) REFERENCES `submissions`(`id`) ON DELETE CASCADE

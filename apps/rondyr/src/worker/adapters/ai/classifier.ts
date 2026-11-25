@@ -1,21 +1,14 @@
-import { Clock, Effect } from "effect";
+import { Effect } from "effect";
 
 import {
   ClassificationFailed,
   Classifier,
 } from "../../../domain/submissions/classifier.external.ts";
 import { classifierInput } from "../../../domain/submissions/classifier-input.ts";
-import {
-  classificationDurationMetric,
-  recordMetric,
-} from "../../../domain/submissions/submission-metrics.ts";
 import { ClassificationPolicies } from "../../ports/classification-policies.ts";
 import { OrganizationQuotas } from "../../ports/organization-quotas.ts";
 import { StoredMessages } from "../../ports/stored-messages.ts";
-import { scoreWithJev } from "./jev.ts";
-import { scoreWithOpenAi } from "./openai-decisions.ts";
-
-const providers = { jev: scoreWithJev, openai: scoreWithOpenAi };
+import { scoreMessage, workersAi } from "./scoring.ts";
 
 export const classifierLive = Classifier.toLayer(
   Effect.gen(function* () {
@@ -56,11 +49,7 @@ export const classifierLive = Classifier.toLayer(
           organizationId,
           "classification.classifier": classifier,
         });
-        const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
-        if (env.AI === undefined) {
-          yield* Effect.annotateCurrentSpan({ "classification.failureKind": "missing-ai-binding" });
-          return yield* ClassificationFailed.make({ retryable: false, kind: "missing-ai-binding" });
-        }
+        const ai = yield* workersAi;
         // An unavailable database can recover; a missing or invalid row cannot.
         const message = yield* messages.read(submissionId, organizationId).pipe(
           Effect.mapError((error) =>
@@ -76,43 +65,7 @@ export const classifierLive = Classifier.toLayer(
           message.repetition,
           message.organizationDomains,
         );
-        const signals = {
-          hasBusinessContext: input.business_context !== "",
-          urlOrHtmlOutsideLongestField: input.facts.url_or_html_outside_longest_field,
-          senderMatchesOrganizationDomain: input.facts.sender_matches_organization_domain === true,
-        };
-        yield* Effect.annotateCurrentSpan({
-          "classification.hasBusinessContext": signals.hasBusinessContext,
-          "classification.urlOrHtmlOutsideLongestField": signals.urlOrHtmlOutsideLongestField,
-          "classification.senderMatchesOrganizationDomain": signals.senderMatchesOrganizationDomain,
-        });
-        const startedAt = yield* Clock.currentTimeMillis;
-        const scores = yield* providers[classifier](env.AI, input).pipe(
-          Effect.timeoutOrElse({
-            duration: "12 seconds",
-            orElse: () =>
-              Effect.fail(ClassificationFailed.make({ retryable: true, kind: "timeout" })),
-          }),
-          Effect.tapError((error) =>
-            Effect.annotateCurrentSpan({
-              "classification.failureKind": error.kind ?? "upstream-error",
-              "classification.retryable": error.retryable,
-              ...(error.upstreamCode !== undefined && {
-                "classification.upstreamCode": error.upstreamCode,
-              }),
-            }),
-          ),
-          Effect.ensuring(
-            Effect.flatMap(Clock.currentTimeMillis, (finishedAt) =>
-              recordMetric(
-                classificationDurationMetric,
-                { classifier, mode: "live" },
-                Math.max(0, finishedAt - startedAt),
-              ),
-            ),
-          ),
-        );
-        return { ...scores, signals };
+        return yield* scoreMessage(ai, classifier, input, "live");
       }),
     };
   }),

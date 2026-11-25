@@ -1,22 +1,16 @@
 import { Clock, Effect, Layer } from "effect";
 
 import { findMatchedBlockedTerm } from "../../../domain/forms/blocked-term.ts";
-import type { ClassifierProvider } from "../../../domain/submissions/classification-policy.ts";
 import {
   classificationDecision,
   reviewReason,
   rulesVersion,
   type ClassificationFailure,
-  type ClassificationFailureKind,
   type EscalationEvaluation,
 } from "../../../domain/submissions/classification.ts";
+import { classifierInput } from "../../../domain/submissions/classifier-input.ts";
+import type { ClassificationFailed } from "../../../domain/submissions/classifier.external.ts";
 import {
-  classifierInput,
-  type ClassifierInput,
-} from "../../../domain/submissions/classifier-input.ts";
-import { ClassificationFailed } from "../../../domain/submissions/classifier.external.ts";
-import {
-  classificationDurationMetric,
   recordMetric,
   screeningPreviewsMetric,
 } from "../../../domain/submissions/submission-metrics.ts";
@@ -29,17 +23,11 @@ import { ClassificationPolicies } from "../../ports/classification-policies.ts";
 import { OrganizationQuotas } from "../../ports/organization-quotas.ts";
 import { StoredMessages } from "../../ports/stored-messages.ts";
 import { ScreeningQuotaReached, SubmissionScreening } from "../../ports/submission-screening.ts";
-import { scoreWithJev } from "./jev.ts";
-import { scoreWithOpenAi } from "./openai-decisions.ts";
+import { classifierSignals, scoreMessage, workersAi } from "./scoring.ts";
 
-const providers = { jev: scoreWithJev, openai: scoreWithOpenAi };
-
-function toFailure(
-  error: ClassificationFailed,
-  fallback: ClassificationFailureKind,
-): ClassificationFailure {
+function toFailure(error: ClassificationFailed): ClassificationFailure {
   return {
-    kind: error.kind ?? fallback,
+    kind: error.kind ?? (error.retryable ? "upstream-error" : "invalid-response"),
     retryable: error.retryable,
     attempts: 1,
     ...(error.upstreamCode !== undefined && { upstreamCode: error.upstreamCode }),
@@ -50,43 +38,6 @@ const currentTraceId = Effect.currentParentSpan.pipe(
   Effect.map((span) => span.traceId),
   Effect.orElseSucceed(() => null),
 );
-
-const scoreOnce = Effect.fn("ScreeningPreview.score")(function* (
-  classifier: ClassifierProvider,
-  input: ClassifierInput,
-) {
-  yield* Effect.annotateCurrentSpan({ "screening.classifier": classifier });
-  const { env } = yield* Effect.promise(() => import("cloudflare:workers"));
-  if (env.AI === undefined) {
-    yield* Effect.annotateCurrentSpan({ "screening.failureKind": "missing-ai-binding" });
-    return yield* ClassificationFailed.make({ retryable: false, kind: "missing-ai-binding" });
-  }
-  const startedAt = yield* Clock.currentTimeMillis;
-  return yield* providers[classifier](env.AI, input).pipe(
-    Effect.timeoutOrElse({
-      duration: "12 seconds",
-      orElse: () => Effect.fail(ClassificationFailed.make({ retryable: true, kind: "timeout" })),
-    }),
-    Effect.tapError((error) =>
-      Effect.annotateCurrentSpan({
-        "screening.failureKind": error.kind ?? "upstream-error",
-        "screening.retryable": error.retryable,
-        ...(error.upstreamCode !== undefined && {
-          "screening.upstreamCode": error.upstreamCode,
-        }),
-      }),
-    ),
-    Effect.ensuring(
-      Effect.flatMap(Clock.currentTimeMillis, (finishedAt) =>
-        recordMetric(
-          classificationDurationMetric,
-          { classifier, mode: "preview" },
-          Math.max(0, finishedAt - startedAt),
-        ),
-      ),
-    ),
-  );
-});
 
 export const submissionScreeningLive = Layer.effect(
   SubmissionScreening,
@@ -147,6 +98,42 @@ export const submissionScreeningLive = Layer.effect(
         } satisfies ScreeningPreview;
       }
 
+      const failedPreview = Effect.fnUntraced(function* (
+        failure: ClassificationFailure,
+        context: Pick<ScreeningPreview, "classifier" | "policy" | "signals">,
+      ) {
+        const evaluatedAt = yield* Clock.currentTimeMillis;
+        const traceId = yield* currentTraceId;
+        yield* Effect.annotateCurrentSpan({
+          "screening.outcome": "error",
+          "screening.failureKind": failure.kind,
+        });
+        yield* recordMetric(screeningPreviewsMetric, {
+          classifier: context.classifier ?? "unknown",
+          outcome: "error",
+          reason: failure.kind,
+        });
+        yield* Effect.logWarning("Screening preview failed", {
+          submissionId,
+          organizationId,
+          ...(context.classifier !== undefined && { classifier: context.classifier }),
+          kind: failure.kind,
+          retryable: failure.retryable,
+          ...(failure.upstreamCode !== undefined && { upstreamCode: failure.upstreamCode }),
+        });
+        return {
+          outcome: "error",
+          reason: "classification-error",
+          label: null,
+          blockedTerm,
+          ...context,
+          failure,
+          rulesVersion,
+          traceId,
+          evaluatedAt,
+        } satisfies ScreeningPreview;
+      });
+
       const resolved = yield* policies.resolve(organizationId).pipe(
         Effect.catchTags({
           StorageUnavailable: () =>
@@ -170,42 +157,29 @@ export const submissionScreeningLive = Layer.effect(
         }),
       );
 
-      if ("_tag" in resolved) {
-        const evaluatedAt = yield* Clock.currentTimeMillis;
-        const traceId = yield* currentTraceId;
-        yield* Effect.annotateCurrentSpan({
-          "screening.outcome": "error",
-          "screening.failureKind": resolved.failure.kind,
-        });
-        yield* recordMetric(screeningPreviewsMetric, {
-          classifier: "unknown",
-          outcome: "error",
-          reason: resolved.failure.kind,
-        });
-        yield* Effect.logWarning("Screening preview failed to resolve policy", {
-          submissionId,
-          organizationId,
-          kind: resolved.failure.kind,
-        });
-        return {
-          outcome: "error",
-          reason: "classification-error",
-          label: null,
-          blockedTerm,
-          failure: resolved.failure,
-          rulesVersion,
-          traceId,
-          evaluatedAt,
-        } satisfies ScreeningPreview;
-      }
+      if ("_tag" in resolved) return yield* failedPreview(resolved.failure, {});
 
       const { classifier: provider, policy, escalationClassifier } = resolved;
+      const input = classifierInput(
+        message.fields,
+        message.businessContext,
+        message.repetition,
+        message.organizationDomains,
+      );
+      const signals = classifierSignals(input);
+      yield* Effect.annotateCurrentSpan({ "screening.classifier": provider });
+      // Without Workers AI the preview cannot score: say so before spending a classification.
+      const ai = yield* Effect.result(workersAi);
+      if (ai._tag === "Failure") {
+        return yield* failedPreview(toFailure(ai.failure), {
+          classifier: provider,
+          policy,
+          signals,
+        });
+      }
       const reservation = yield* quotas.reserveClassification(organizationId);
       if (reservation === "limit-reached") {
-        yield* Effect.annotateCurrentSpan({
-          "screening.classifier": provider,
-          "screening.outcome": "quota-reached",
-        });
+        yield* Effect.annotateCurrentSpan({ "screening.outcome": "quota-reached" });
         yield* recordMetric(screeningPreviewsMetric, {
           classifier: provider,
           outcome: "quota-reached",
@@ -214,65 +188,16 @@ export const submissionScreeningLive = Layer.effect(
         return yield* ScreeningQuotaReached.make();
       }
 
-      const input = classifierInput(
-        message.fields,
-        message.businessContext,
-        message.repetition,
-        message.organizationDomains,
-      );
-      const signals = {
-        hasBusinessContext: input.business_context !== "",
-        urlOrHtmlOutsideLongestField: input.facts.url_or_html_outside_longest_field,
-        senderMatchesOrganizationDomain: input.facts.sender_matches_organization_domain === true,
-      };
-      yield* Effect.annotateCurrentSpan({
-        "screening.classifier": provider,
-        "screening.hasBusinessContext": signals.hasBusinessContext,
-        "screening.urlOrHtmlOutsideLongestField": signals.urlOrHtmlOutsideLongestField,
-        "screening.senderMatchesOrganizationDomain": signals.senderMatchesOrganizationDomain,
-      });
-
-      const primary = yield* scoreOnce(provider, input).pipe(Effect.result);
+      const primary = yield* Effect.result(scoreMessage(ai.success, provider, input, "preview"));
       if (primary._tag === "Failure") {
-        const failure = toFailure(
-          primary.failure,
-          primary.failure.retryable ? "upstream-error" : "invalid-response",
-        );
-        const evaluatedAt = yield* Clock.currentTimeMillis;
-        const traceId = yield* currentTraceId;
-        yield* Effect.annotateCurrentSpan({
-          "screening.outcome": "error",
-          "screening.failureKind": failure.kind,
-        });
-        yield* recordMetric(screeningPreviewsMetric, {
-          classifier: provider,
-          outcome: "error",
-          reason: failure.kind,
-        });
-        yield* Effect.logWarning("Screening preview failed", {
-          submissionId,
-          organizationId,
-          classifier: provider,
-          kind: failure.kind,
-          retryable: failure.retryable,
-          ...(failure.upstreamCode !== undefined && { upstreamCode: failure.upstreamCode }),
-        });
-        return {
-          outcome: "error",
-          reason: "classification-error",
-          label: null,
-          blockedTerm,
+        return yield* failedPreview(toFailure(primary.failure), {
           classifier: provider,
           policy,
           signals,
-          failure,
-          rulesVersion,
-          traceId,
-          evaluatedAt,
-        } satisfies ScreeningPreview;
+        });
       }
 
-      const scores = primary.success;
+      const { signals: _primarySignals, ...scores } = primary.success;
       let escalation: typeof EscalationEvaluation.Type | undefined;
       if (
         policy.escalation === true &&
@@ -298,24 +223,25 @@ export const submissionScreeningLive = Layer.effect(
             skipped: "quota",
           };
         } else {
-          const secondary = yield* scoreOnce(escalationClassifier, input).pipe(Effect.result);
-          escalation =
-            secondary._tag === "Success"
-              ? {
-                  classifier: escalationClassifier,
-                  rulesVersion,
-                  scores: secondary.success,
-                  attempts: 1,
-                }
-              : {
-                  classifier: escalationClassifier,
-                  rulesVersion,
-                  attempts: 1,
-                  failure: toFailure(
-                    secondary.failure,
-                    secondary.failure.retryable ? "upstream-error" : "invalid-response",
-                  ),
-                };
+          const secondary = yield* Effect.result(
+            scoreMessage(ai.success, escalationClassifier, input, "preview"),
+          );
+          if (secondary._tag === "Success") {
+            const { signals: _secondarySignals, ...secondScores } = secondary.success;
+            escalation = {
+              classifier: escalationClassifier,
+              rulesVersion,
+              scores: secondScores,
+              attempts: 1,
+            };
+          } else {
+            escalation = {
+              classifier: escalationClassifier,
+              rulesVersion,
+              attempts: 1,
+              failure: toFailure(secondary.failure),
+            };
+          }
         }
       }
 
