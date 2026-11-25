@@ -50,6 +50,20 @@ The script builds the Worker, runs it in workerd with the fixtures of the browse
 - Add tests for the behavior you change. Integration tests run in workerd against the built Worker and don't mock modules.
 - Write code, comments, commit messages, the README, `docs/`, issues, and pull request titles and descriptions in English. Some older issues are in French. The dashboard text, the confirmation page, and the emails are written in English first and also exist in French: a dashboard text is a key in both `apps/rondyr/src/dashboard/locales/en` and `apps/rondyr/src/dashboard/locales/fr`.
 
+## Releases
+
+`rondyr` (`apps/rondyr`) and `@basaltbytes/emdash-plugin-rondyr` (`packages/emdash-plugin`) are versioned independently with [Changesets](https://github.com/changesets/changesets). Internal packages (`@rondyr/docs`, `@rondyr/oxlint`, `@rondyr/tsconfig`) are ignored.
+
+When a pull request makes a user-facing change to either package, add a changeset file and commit it on the branch:
+
+```sh
+pnpm changeset
+```
+
+Pick the changed package, select `patch`, `minor`, or `major`, and write a concise summary for the release notes. Docs-only or internal tooling pull requests don't need a changeset.
+
+When pull requests with changesets merge into `main`, the **Release** workflow opens or updates a **Version Packages** pull request that bumps versions and updates each package's `CHANGELOG.md`. Merging that pull request creates the git tags and GitHub Releases (`vX.Y.Z` for Rondyr, marked as the latest release, and `@basaltbytes/emdash-plugin-rondyr@X.Y.Z` for the EmDash plugin).
+
 ## License of contributions
 
 Rondyr is licensed under the [GNU Affero General Public License v3.0](./LICENSE), and `packages/emdash-plugin` under the [MIT license](./packages/emdash-plugin/LICENSE). By opening a pull request, you agree to license your contribution under the license of the files you change.

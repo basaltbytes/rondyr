@@ -45,6 +45,8 @@ updates:
         patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
       emdash:
         patterns: ["emdash", "@emdash-cms/*", "astro"]
+      changesets:
+        patterns: ["@changesets/*"]
       lint-and-format:
         patterns: ["oxlint", "@oxlint/*", "oxfmt", "knip", "@shadcn/lint"]
       # Everything else, minor and patch versions in one pull request.
