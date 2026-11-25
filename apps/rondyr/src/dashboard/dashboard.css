@@ -317,6 +317,36 @@
   animation: loading-bar 1.3s ease-in-out infinite;
 }
 
+/* The part of a score's scale where a screening rule sets a message aside. */
+@utility hatch {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--color-warning) 0 1.5px,
+    transparent 1.5px 4.5px
+  );
+}
+
+/* A result that the person asked for arrives; with reduced motion it only fades in. */
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility animate-arrive {
+  animation: arrive 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  @media (prefers-reduced-motion: reduce) {
+    animation-name: appear;
+  }
+}
+
 /* Hides the native disclosure triangle so a custom icon marks open and closed states. */
 @utility details-summary {
   list-style: none;
