@@ -27,6 +27,7 @@ The GitHub issues are the roadmap. There are few of them and each one is large: 
 - A new setting or secret is optional at deployment: without it, the deployment succeeds and the feature concerned answers with a clear error.
 - Both classifiers stay available through `RONDYR_CLASSIFIER`. Any change to a rule or to the classifier's input is measured with `pnpm evaluate` before and after, and increments `rulesVersion`.
 - Integration tests run in workerd against the built Worker, without module mocks. External services are simulated in `apps/rondyr/vitest.config.ts` (Workers AI, webhook recipient, Resend, Siteverify). Never weaken an existing assertion and never disable a lint rule.
+- Add a changeset file in `.changeset/` (via `pnpm changeset`, or written directly as `.changeset/<kebab-name>.md` with YAML frontmatter naming `"rondyr"` and/or `"@basaltbytes/emdash-plugin-rondyr"` as `patch`, `minor`, or `major`) for every user-facing change to either package. Docs-only, test-only, and internal tooling PRs do not need a changeset. Do not bump package versions or edit `CHANGELOG.md` by hand; the **Release** workflow opens the **Version Packages** PR and publishes GitHub Releases (`vX.Y.Z` for `rondyr`, `@basaltbytes/emdash-plugin-rondyr@X.Y.Z` for the plugin).
 - The final report says what is done for each criterion, the exact results of `pnpm check` and `pnpm deploy:dry`, the decisions the issue did not settle, and what was not verified.
 
 ## Local skills
