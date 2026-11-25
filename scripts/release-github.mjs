@@ -6,7 +6,7 @@
 //   node scripts/release-github.mjs            (create missing GitHub Releases)
 //   node scripts/release-github.mjs --dry-run  (print planned releases without calling GitHub)
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -120,6 +120,22 @@ export async function publishRelease(github, release, targetCommitish) {
   return { status: "created", tag: release.tag, url: created.html_url };
 }
 
+/**
+ * Writes NDJSON `git-tag` events to `CHANGESETS_OUTPUT` so `changesets/action` v2 can
+ * populate its `published` / `published-packages` outputs without warning about a
+ * missing output file.
+ *
+ * @param {string | undefined} outputPath
+ * @param {readonly { name: string, tag: string }[]} createdReleases
+ */
+export function writeChangesetsOutput(outputPath, createdReleases) {
+  if (!outputPath) return;
+  const lines = createdReleases.map((release) =>
+    JSON.stringify({ type: "git-tag", tag: release.tag, packageName: release.name }),
+  );
+  writeFileSync(outputPath, lines.length > 0 ? `${lines.join("\n")}\n` : "", "utf8");
+}
+
 function git(args) {
   return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
@@ -172,6 +188,7 @@ async function main() {
   const planned = planReleases(rootDir);
 
   if (planned.length === 0) {
+    if (!dryRun) writeChangesetsOutput(process.env.CHANGESETS_OUTPUT, []);
     process.stdout.write("No releasable changelog entries found.\n");
     return;
   }
@@ -187,15 +204,19 @@ async function main() {
 
   const targetCommitish = process.env.GITHUB_SHA || git(["rev-parse", "HEAD"]);
   const github = githubApi();
+  const created = [];
 
   for (const release of planned) {
     const result = await publishRelease(github, release, targetCommitish);
     if (result.status === "skipped") {
       process.stdout.write(`Already released: ${result.tag}\n`);
     } else {
+      created.push({ name: release.name, tag: release.tag });
       process.stdout.write(`Created GitHub Release: ${result.tag} (${result.url})\n`);
     }
   }
+
+  writeChangesetsOutput(process.env.CHANGESETS_OUTPUT, created);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();

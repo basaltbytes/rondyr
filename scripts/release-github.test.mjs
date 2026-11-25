@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { extractReleaseNotes, planReleases, publishRelease } from "./release-github.mjs";
+import {
+  extractReleaseNotes,
+  planReleases,
+  publishRelease,
+  writeChangesetsOutput,
+} from "./release-github.mjs";
 
 const sampleChangelog = `# rondyr
 
@@ -185,4 +190,36 @@ test("creates missing releases and skips tags that already have a release", asyn
       make_latest: "true",
     },
   ]);
+});
+
+test("writes NDJSON git-tag events to CHANGESETS_OUTPUT", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rondyr-changesets-output-"));
+  try {
+    const emptyFile = join(dir, "empty.ndjson");
+    writeChangesetsOutput(emptyFile, []);
+    assert.equal(readFileSync(emptyFile, "utf8"), "");
+
+    const eventsFile = join(dir, "events.ndjson");
+    writeChangesetsOutput(eventsFile, [
+      { name: "rondyr", tag: "v0.2.0" },
+      {
+        name: "@basaltbytes/emdash-plugin-rondyr",
+        tag: "@basaltbytes/emdash-plugin-rondyr@0.1.1",
+      },
+    ]);
+    const lines = readFileSync(eventsFile, "utf8").trim().split("\n");
+    assert.deepEqual(
+      lines.map((line) => JSON.parse(line)),
+      [
+        { type: "git-tag", tag: "v0.2.0", packageName: "rondyr" },
+        {
+          type: "git-tag",
+          tag: "@basaltbytes/emdash-plugin-rondyr@0.1.1",
+          packageName: "@basaltbytes/emdash-plugin-rondyr",
+        },
+      ],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
