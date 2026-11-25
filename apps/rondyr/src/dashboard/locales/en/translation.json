@@ -105,15 +105,15 @@
   "status": {
     "reasons": {
       "probable-spam": "Probable spam",
-      "ambiguous": "Uncertain classification",
-      "low-relevance": "Unrelated to your business",
-      "solicitation": "Unsolicited sales outreach",
-      "classification-error": "Analysis unavailable",
+      "ambiguous": "Possible spam",
+      "low-relevance": "Off-topic",
+      "solicitation": "Sales outreach",
+      "classification-error": "AI analysis failed",
       "honeypot": "Honeypot field filled",
-      "repetition": "Repeated submissions",
-      "turnstile-failed": "Turnstile verification failed",
-      "blocked-term": "Blocked word or phrase",
-      "quota": "Daily classification quota reached"
+      "repetition": "Repeated messages",
+      "turnstile-failed": "Turnstile refused",
+      "blocked-term": "Blocked word",
+      "quota": "Daily limit reached"
     },
     "deliveries": {
       "pending": "Pending",
@@ -134,17 +134,17 @@
     "noOrganizations": "No organizations.",
     "organization": "Status of {{name}}",
     "queue": {
-      "title": "Classification queue",
+      "title": "AI analysis queue",
       "pending": "Pending events",
       "oldestAge": "Age of the oldest",
       "empty": "None",
       "stuck": "Stuck"
     },
     "stuck": {
-      "title": "Stuck submissions",
-      "description": "The Cron stopped publishing these submissions after 12 attempts. Their messages are stored. Once the cause is fixed, retry them one by one.",
-      "loading": "Loading the stuck submissions…",
-      "loadFailed": "The stuck submissions are unavailable. Refresh the page.",
+      "title": "Stuck messages",
+      "description": "The Cron stopped publishing these messages after 12 attempts. They are stored. Once the cause is fixed, retry them one by one.",
+      "loading": "Loading the stuck messages…",
+      "loadFailed": "The stuck messages are unavailable. Refresh the page.",
       "received": "Received {{date}}",
       "retry": "Retry",
       "retryFailed": "The retry could not be saved. Try again.",
@@ -162,28 +162,28 @@
     }
   },
   "verification": {
-    "label": "Screening of the message",
-    "title": "Screening",
+    "label": "Classification of the message",
+    "title": "Classification",
     "verdicts": {
       "acceptedAutomatic": "Accepted automatically by {{classifier}}",
-      "nothingFired": "No check set it aside.",
-      "offTopic": "Labelled off-topic: little link with your business ({{score}}).",
+      "nothingFired": "No check sent it to review.",
+      "offTopic": "Labelled Off-topic: relevance of {{score}} to your business.",
       "acceptedManual": "Accepted by {{actor}}",
       "byHand": "Decided by hand.",
-      "byHandAfter": "Decided by hand. It had been set aside ({{reason}}).",
+      "byHandAfter": "Decided by hand. It had gone to review ({{reason}}).",
       "archived": "Archived by {{actor}}",
       "archivedGeneric": "Archived",
       "notDelivered": "The message was not delivered.",
-      "archivedAfter": "It had been set aside ({{reason}}) and was not delivered.",
-      "queued": "Waiting for analysis",
-      "queuedDetail": "No reception check set it aside. It waits in the queue for the AI filter.",
+      "archivedAfter": "It had gone to review ({{reason}}) and was not delivered.",
+      "queued": "Waiting for the AI analysis",
+      "queuedDetail": "No reception check sent it to review. It waits in the queue for the AI analysis.",
       "stuck": "Stuck in the queue",
-      "stuckDetail_one": "Handing it to the AI filter stopped after {{count}} attempt. Retry it from Operations → Status once the cause is fixed.",
-      "stuckDetail_many": "Handing it to the AI filter stopped after {{count}} attempts. Retry it from Operations → Status once the cause is fixed.",
-      "stuckDetail_other": "Handing it to the AI filter stopped after {{count}} attempts. Retry it from Operations → Status once the cause is fixed.",
-      "analyzing": "Being analyzed",
-      "analyzingDetail": "No reception check set it aside. The AI filter is analyzing it now.",
-      "atIntake": "Set aside at reception, before any AI analysis.",
+      "stuckDetail_one": "Handing it to the AI analysis stopped after {{count}} attempt. Retry it from Operations → Status once the cause is fixed.",
+      "stuckDetail_many": "Handing it to the AI analysis stopped after {{count}} attempts. Retry it from Operations → Status once the cause is fixed.",
+      "stuckDetail_other": "Handing it to the AI analysis stopped after {{count}} attempts. Retry it from Operations → Status once the cause is fixed.",
+      "analyzing": "AI analysis in progress",
+      "analyzingDetail": "No reception check sent it to review. The AI analysis is running now.",
+      "atIntake": "Sent to review at reception, before any AI analysis.",
       "sameContent_one": "Same text already received {{count}} time in {{days}} days",
       "sameContent_many": "Same text already received {{count}} times in {{days}} days",
       "sameContent_other": "Same text already received {{count}} times in {{days}} days",
@@ -195,36 +195,36 @@
       "sameSenderToo_other": "And {{count}} earlier messages from the same address.",
       "honeypot": "The honeypot field was filled in",
       "honeypotDetail": "The hidden field “{{field}}” contained text. Visitors don’t see it; bots fill it in.",
-      "turnstile": "Turnstile refused the submission",
+      "turnstile": "Turnstile refused the message",
       "blockedTerm": "Contains “{{term}}”",
-      "blockedTermDetail": "Blocked word from the {{scope}}. Set aside at reception, before any AI analysis.",
-      "quota": "Daily classification quota reached",
-      "quotaDetail": "{{used}} of {{limit}} classifications were used that day. The message waits for your decision.",
+      "blockedTermDetail": "Blocked word from the {{scope}}. Sent to review at reception, before any AI analysis.",
+      "quota": "Daily AI analysis limit reached",
+      "quotaDetail": "{{used}} of {{limit}} AI analyses were used that day. The message waits for your decision.",
       "waitsForYou": "The message waits for your decision.",
-      "classificationError": "The AI analysis did not finish",
-      "classificationErrorDetail": "{{reason}} Reclassify sends it back to the filter.",
-      "classificationErrorAttempts_one": "{{reason}} {{count}} attempt. Reclassify sends it back to the filter.",
-      "classificationErrorAttempts_many": "{{reason}} {{count}} attempts. Reclassify sends it back to the filter.",
-      "classificationErrorAttempts_other": "{{reason}} {{count}} attempts. Reclassify sends it back to the filter.",
-      "classificationErrorCode_one": "{{reason}} {{count}} attempt, error code {{code}}. Reclassify sends it back to the filter.",
-      "classificationErrorCode_many": "{{reason}} {{count}} attempts, error code {{code}}. Reclassify sends it back to the filter.",
-      "classificationErrorCode_other": "{{reason}} {{count}} attempts, error code {{code}}. Reclassify sends it back to the filter.",
-      "byAi": "Set aside by the AI ({{reason}})",
+      "classificationError": "The AI analysis failed",
+      "classificationErrorDetail": "{{reason}} Use Analyze again at the top of the message.",
+      "classificationErrorAttempts_one": "{{reason}} {{count}} attempt. Use Analyze again at the top of the message.",
+      "classificationErrorAttempts_many": "{{reason}} {{count}} attempts. Use Analyze again at the top of the message.",
+      "classificationErrorAttempts_other": "{{reason}} {{count}} attempts. Use Analyze again at the top of the message.",
+      "classificationErrorCode_one": "{{reason}} {{count}} attempt, error code {{code}}. Use Analyze again at the top of the message.",
+      "classificationErrorCode_many": "{{reason}} {{count}} attempts, error code {{code}}. Use Analyze again at the top of the message.",
+      "classificationErrorCode_other": "{{reason}} {{count}} attempts, error code {{code}}. Use Analyze again at the top of the message.",
+      "byAi": "Sent to review by the AI analysis ({{reason}})",
       "unrecordedScores": "Scores are not recorded for messages analyzed before this update.",
       "probableSpam": "{{classifier}} rates it {{score}} spam",
-      "ambiguous": "Unsure whether it is spam ({{score}})",
+      "ambiguous": "{{classifier}} rates it {{score}} spam, without certainty",
       "solicitation": "Probable sales outreach ({{score}})",
-      "lowRelevance": "Little link with your business ({{score}})",
-      "fromThreshold": "Set aside from {{threshold}}.",
-      "aboveThreshold": "Set aside above {{threshold}}.",
-      "belowMinimum": "Set aside below {{threshold}}.",
+      "lowRelevance": "Relevance of {{score}} to your business",
+      "fromThreshold": "Goes to review from {{threshold}}.",
+      "aboveThreshold": "Goes to review above {{threshold}}.",
+      "belowMinimum": "Goes to review below {{threshold}}.",
       "secondOpinionKept": "The second opinion kept the doubt, so the message waits for your decision.",
-      "otherRules_one": "{{count}} other rule would also have set it aside.",
-      "otherRules_many": "{{count}} other rules would also have set it aside.",
-      "otherRules_other": "{{count}} other rules would also have set it aside."
+      "otherRules_one": "{{count}} other rule would also have sent it to review.",
+      "otherRules_many": "{{count}} other rules would also have sent it to review.",
+      "otherRules_other": "{{count}} other rules would also have sent it to review."
     },
     "table": {
-      "caption": "Checks of this message’s screening",
+      "caption": "Checks of this message’s classification",
       "check": "Check",
       "onArrival": "On arrival",
       "intake": "Reception",
@@ -233,8 +233,8 @@
     },
     "results": {
       "accepted": "Accepted",
-      "quarantined": "Set aside",
-      "error": "Analysis failed",
+      "quarantined": "To review",
+      "error": "AI analysis failed",
       "pending": "In progress",
       "archived": "Archived"
     },
@@ -261,10 +261,10 @@
         "refused": "refused"
       },
       "sender": {
-        "name": "Same sender"
+        "name": "Repeated messages · same address"
       },
       "content": {
-        "name": "Same text"
+        "name": "Repeated messages · same text"
       },
       "repetitionValue": "{{value}} of {{threshold}}",
       "blocked": {
@@ -274,7 +274,7 @@
         "found": "“{{term}}”"
       },
       "quota": {
-        "name": "Daily quota",
+        "name": "Daily limit",
         "used": "{{used}} of {{limit}}",
         "reached": "reached",
         "notChecked": "not checked"
@@ -296,7 +296,7 @@
         "notEvaluated": "not rated"
       },
       "relevance": {
-        "name": "Link with your business",
+        "name": "Relevance",
         "notConfigured": "no description",
         "offTopic": "{{score}} · off-topic"
       },
@@ -306,7 +306,7 @@
       }
     },
     "ai": {
-      "skipped": "Not run: the message was already set aside. No classification was used.",
+      "skipped": "Not run: the message had already gone to review. No AI analysis was used.",
       "queued": "Waiting in the queue.",
       "analyzing": "Analysis in progress.",
       "unrecorded": "Scores were not recorded for this message.",
@@ -331,18 +331,18 @@
       "acceptedOffTopic": "Would be accepted, labelled off-topic",
       "stillAccepted": "Still accepted",
       "stillAcceptedOffTopic": "Still accepted, labelled off-topic",
-      "quarantined": "Would be set aside ({{reason}})",
-      "stillQuarantined": "Still set aside ({{reason}})",
+      "quarantined": "Would go to review ({{reason}})",
+      "stillQuarantined": "Still to review ({{reason}})",
       "containsTerm": "contains “{{term}}”",
-      "error": "The analysis would fail. {{reason}}",
+      "error": "The AI analysis would fail. {{reason}}",
       "notRechecked": "Repetitions, the honeypot field and Turnstile are not checked again.",
       "dryRun": "Simulation: nothing changed for this message.",
-      "quotaReached": "The daily classification quota was reached, so the test could not run. Try again tomorrow or raise the quota in Daily quotas.",
+      "quotaReached": "The daily AI analysis limit is reached, so the test could not run. Try again tomorrow or raise the limit in Daily quotas.",
       "failed": "The test could not run. Try again."
     },
     "technical": {
       "title": "History and technical details",
-      "submissionId": "Submission ID",
+      "submissionId": "Message ID",
       "intakeTrace": "Intake trace ID",
       "model": "Model",
       "rulesVersion": "Rules version",
@@ -352,10 +352,10 @@
     },
     "timeline": {
       "received": "Message received",
-      "quarantinedAtIntake": "Set aside at reception ({{reason}})",
+      "quarantinedAtIntake": "Sent to review at reception ({{reason}})",
       "classificationStarted": "Sent to AI analysis",
-      "reclassificationRequested": "Reclassification requested by {{actor}}",
-      "quarantined": "Set aside for review ({{reason}})",
+      "reclassificationRequested": "New AI analysis requested by {{actor}}",
+      "quarantined": "Sent to review ({{reason}})",
       "acceptedAutomatic": "Accepted automatically by {{classifier}}",
       "acceptedAutomaticOffTopic": "Accepted automatically by {{classifier}} (Off-topic)",
       "acceptedManual": "Accepted manually by {{actor}}",
@@ -369,7 +369,7 @@
       "apiTokenNamed": "API token {{name}} (…{{suffix}})"
     },
     "turnstileCauses": {
-      "missing-token": "No Turnstile token was included in the submission.",
+      "missing-token": "The message carried no Turnstile token.",
       "rejected": "Cloudflare rejected the Turnstile token.",
       "key-changed": "The form’s Turnstile secret key changed during verification."
     },
@@ -379,13 +379,13 @@
     },
     "failures": {
       "missing-ai-binding": "Workers AI is not bound on this deployment.",
-      "policy-unavailable": "The classification settings could not be read from the database.",
-      "policy-unreadable": "The stored classification settings or classifier name are invalid.",
-      "message-unreadable": "The stored submission could not be read for analysis.",
-      "timeout": "The AI classifier timed out after 12 seconds.",
+      "policy-unavailable": "The AI analysis settings could not be read from the database.",
+      "policy-unreadable": "The stored AI analysis settings or model name are invalid.",
+      "message-unreadable": "The stored message could not be read for the AI analysis.",
+      "timeout": "The AI model did not answer within 12 seconds.",
       "upstream-error": "The AI service returned an error.",
-      "invalid-response": "The AI classifier returned an incomplete or unreadable answer.",
-      "reservation-unavailable": "The daily classification quota could not be checked."
+      "invalid-response": "The AI model returned an incomplete or unreadable answer.",
+      "reservation-unavailable": "The daily AI analysis limit could not be checked."
     }
   },
   "inbox": {
@@ -395,7 +395,7 @@
       "settings": "Settings",
       "back": "Back to the inbox",
       "organization": "Organization",
-      "filtering": "Filtering",
+      "filtering": "Classification",
       "operations": "Operations"
     },
     "folders": {
@@ -411,7 +411,7 @@
       "origins": "Allowed origins",
       "blockedTerms": "Blocked words",
       "domains": "Organization domains",
-      "classification": "Classification",
+      "classification": "AI analysis",
       "apiTokens": "API tokens",
       "quotas": "Daily quotas",
       "organization": "New organization",
@@ -460,7 +460,7 @@
     },
     "business": {
       "label": "Business of the organization",
-      "hint": "Optional. The filter uses it to judge whether a message relates to your business."
+      "hint": "Optional. The AI analysis uses it to judge whether a message relates to your business."
     },
     "list": {
       "label": "Message list",
@@ -472,11 +472,11 @@
       "empty": {
         "quarantined": {
           "title": "Nothing to review",
-          "note": "Messages that the filter sets aside appear here until you decide on them."
+          "note": "Messages to review appear here until you decide on them."
         },
         "accepted": {
           "title": "No messages",
-          "note": "Messages accepted by the filter or by you appear here."
+          "note": "Messages accepted by the classification or by you appear here."
         },
         "archived": {
           "title": "No messages",
@@ -534,9 +534,9 @@
       "archive": "Archive",
       "accept": "Accept",
       "acceptAndSend": "Accept and send",
-      "reclassify": "Reclassify",
+      "reclassify": "Analyze again",
       "matchedTerm": "Matched “{{term}}”",
-      "analyzing": "The filter is analyzing this message. Refresh the list to see the result.",
+      "analyzing": "The AI analysis of this message is running. Refresh the list to see the result.",
       "nothingToReview": "Nothing to review",
       "noOpenMessage": "No message open",
       "position": "{{position}} of {{total}}",
@@ -546,7 +546,7 @@
         "loadFailed": "Could not load the full message. Long fields are cut short.",
         "retry": "Try again"
       },
-      "waiting_zero": "The filter set no message aside.",
+      "waiting_zero": "No message to review.",
       "waiting_one": "{{count}} message waits for your decision. Open it in the list.",
       "waiting_many": "{{count}} messages wait for your decision. Open one in the list.",
       "waiting_other": "{{count}} messages wait for your decision. Open one in the list.",
@@ -554,7 +554,7 @@
         "notSaved": "The decision could not be saved. Try again.",
         "alreadyHandled": "This message was already handled.",
         "alreadyHandledRefresh": "This message was already handled. Refresh the list to see its status.",
-        "classificationQuotaReached": "The daily classification quota of this organization is used up, so the message stays here. Try again after midnight UTC, or raise the limit in Settings → Daily quotas."
+        "classificationQuotaReached": "This organization’s daily AI analysis limit is reached, so the message stays here. Try again after midnight UTC, or raise the limit in Settings → Daily quotas."
       },
       "delete": {
         "action": "Delete this message",
@@ -608,7 +608,7 @@
         "change": "Change the emoji"
       },
       "status": "Status",
-      "businessPlaceholder": "Describe the business, so the filter can tell an off-topic message.",
+      "businessPlaceholder": "Describe the business, so the AI analysis can tell an off-topic message.",
       "messages": "Messages of the form {{name}}",
       "add": "Add form",
       "address": {
@@ -635,7 +635,7 @@
         }
       },
       "honeypot": {
-        "instructions": "Add a text field with this name to your form, hidden with CSS, with <code>tabindex=\"-1\"</code> and <code>autocomplete=\"off\"</code>. Visitors leave it empty. A message that fills it goes to review without analysis.",
+        "instructions": "Add a text field with this name to your form, hidden with CSS, with <code>tabindex=\"-1\"</code> and <code>autocomplete=\"off\"</code>. Visitors leave it empty. A message that fills it goes to review without AI analysis.",
         "name": "Honeypot field name",
         "placeholder": "_hp"
       },
@@ -649,8 +649,8 @@
           "checking": "Checking the stored secret key with Cloudflare…",
           "working": "Cloudflare accepts the stored secret key.",
           "off": "Turnstile isn’t protecting this form",
-          "refused": "Cloudflare no longer recognizes the stored secret key. Rondyr can’t verify Turnstile tokens, so it sends messages that carry one to classification without the check. Copy the secret key from the widget’s settings in the Cloudflare dashboard, then save both keys again.",
-          "unreadable": "Rondyr can’t decrypt the stored secret key, which happens when RONDYR_SECRETS_KEY changes. It can’t verify Turnstile tokens, so it sends messages that carry one to classification without the check. Save both keys again.",
+          "refused": "Cloudflare no longer recognizes the stored secret key. Rondyr can’t verify Turnstile tokens, so it sends messages that carry one to the AI analysis without the check. Copy the secret key from the widget’s settings in the Cloudflare dashboard, then save both keys again.",
+          "unreadable": "Rondyr can’t decrypt the stored secret key, which happens when RONDYR_SECRETS_KEY changes. It can’t verify Turnstile tokens, so it sends messages that carry one to the AI analysis without the check. Save both keys again.",
           "unchecked": "Couldn’t check the stored secret key because Cloudflare didn’t answer. Reload the page to try again.",
           "requestFailed": "Couldn’t check the stored secret key. Reload the page to try again."
         },
@@ -683,7 +683,7 @@
       }
     },
     "domains": {
-      "description": "Declare up to {{limit}} domains for this organization. The classifier checks whether a submitted email address uses one of these domains or a subdomain.",
+      "description": "Declare up to {{limit}} domains for this organization. The AI analysis checks whether a submitted email address uses one of these domains or a subdomain.",
       "empty": "No domains declared.",
       "hostname": "Domain name",
       "placeholder": "example.com",
@@ -698,7 +698,7 @@
       "removeFailed": "Could not remove the domain. Try again."
     },
     "apiTokens": {
-      "description": "Use API tokens to read this inbox and resolve quarantined messages from another application.",
+      "description": "Use API tokens to read this inbox and resolve messages to review from another application.",
       "name": "Token name",
       "create": "Create token",
       "creating": "Creating token…",
@@ -724,10 +724,10 @@
     "quotas": {
       "description": "Limits apply across all forms in this organization and reset at midnight UTC.",
       "day": "Usage for {{day}} (UTC)",
-      "submissions": "Daily submission limit",
-      "classifications": "Daily classification limit",
-      "junk": "Junk caught at intake",
-      "junkHint": "Messages that fill the honeypot field, fail Turnstile, repeat earlier ones or contain a blocked word are quarantined and count here, not against the submission limit. Their daily limit is the same number. Once it’s reached, Rondyr refuses them until midnight UTC and still accepts other messages.",
+      "submissions": "Daily message limit",
+      "classifications": "Daily AI analysis limit",
+      "junk": "Sent to review at reception",
+      "junkHint": "Messages that fill the honeypot field, fail Turnstile, repeat earlier ones or contain a blocked word go to review and count here, not against the message limit. Their daily limit is the same number. Once it’s reached, Rondyr refuses them until midnight UTC and still accepts other messages.",
       "used": "{{used}} of {{limit}} used",
       "saving": "Saving quotas…",
       "saved": "Quotas saved.",
@@ -736,38 +736,38 @@
       "retry": "Try again"
     },
     "policy": {
-      "description": "{{classifier}} classifies submissions for this organization. Custom settings apply to new classification runs.",
+      "description": "{{classifier}} analyzes the messages of this organization. Custom settings apply to new analyses.",
       "models": {
         "jev": "Jev",
         "openai": "OpenAI Decisions"
       },
       "thresholdMode": "Thresholds",
-      "defaults": "Use classifier defaults",
+      "defaults": "Use the model’s defaults",
       "custom": "Set custom thresholds",
       "thresholds": {
         "probableSpam": "Probable spam",
-        "ambiguous": "Ambiguous spam",
+        "ambiguous": "Possible spam",
         "solicitation": "Sales outreach",
-        "lowRelevance": "Low relevance"
+        "lowRelevance": "Off-topic"
       },
       "hints": {
         "probableSpam": "A message with a spam score at or above this value goes to review as probable spam.",
-        "ambiguous": "A message with a spam score at or above this value but below the probable spam threshold goes to review; this value cannot exceed that threshold.",
+        "ambiguous": "A message with a spam score at or above this value but below the probable spam threshold goes to review as possible spam; this value cannot exceed that threshold.",
         "solicitation": "A message with a sales outreach score above this value goes to review.",
-        "lowRelevance": "A message with a relevance score below this value goes to review, or is accepted with the Off-topic label if you accept off-topic submissions."
+        "lowRelevance": "A message with a relevance score below this value is off-topic: it goes to review, or is accepted with the Off-topic label if you accept off-topic messages."
       },
-      "offTopic": "Off-topic submissions",
-      "escalation": "Use a second model for ambiguous submissions",
-      "escalationHint": "{{model}} gives ambiguous submissions a second spam score. The sales outreach and low relevance rules still apply.",
-      "escalationUnavailable": "This deployment has no second model, so ambiguous submissions go to review.",
+      "offTopic": "Off-topic messages",
+      "escalation": "Use a second model for possible spam",
+      "escalationHint": "{{model}} gives possible spam a second spam score. The sales outreach and off-topic rules still apply.",
+      "escalationUnavailable": "This deployment has no second model, so possible spam goes to review.",
       "review": "Send to review",
       "accept": "Accept with the Off-topic label",
-      "save": "Save classification settings",
+      "save": "Save the AI analysis settings",
       "saving": "Saving…",
       "saved": "Settings saved.",
-      "invalid": "Check that the thresholds are between 0 and 1 and that ambiguous spam is at or below probable spam.",
-      "saveFailed": "Could not save the classification settings. Try again.",
-      "loadFailed": "Could not load the classification settings.",
+      "invalid": "Check that the thresholds are between 0 and 1 and that possible spam is at or below probable spam.",
+      "saveFailed": "Could not save the AI analysis settings. Try again.",
+      "loadFailed": "Could not load the AI analysis settings.",
       "retry": "Try again"
     },
     "origins": {
@@ -795,9 +795,9 @@
     },
     "blockedTerms": {
       "label": "Blocked words of the form {{name}}",
-      "description": "Messages containing any of these whole words, phrases, domains or email addresses go to review without classification. Matching ignores case, accents and punctuation. Up to {{limit}} entries.",
-      "empty": "No blocked words. Add up to {{limit}} words, phrases, domains or email addresses to send matching messages straight to review without classification.",
-      "organizationDescription": "Applies across every form in this organization. Messages containing any of these whole words, phrases, domains or email addresses go to review without classification. Matching ignores case, accents and punctuation. Up to {{limit}} entries.",
+      "description": "Messages containing any of these whole words, phrases, domains or email addresses go to review without AI analysis. Matching ignores case, accents and punctuation. Up to {{limit}} entries.",
+      "empty": "No blocked words. Add up to {{limit}} words, phrases, domains or email addresses to send matching messages to review without AI analysis.",
+      "organizationDescription": "Applies across every form in this organization. Messages containing any of these whole words, phrases, domains or email addresses go to review without AI analysis. Matching ignores case, accents and punctuation. Up to {{limit}} entries.",
       "organizationEmpty": "No blocked words declared for this organization.",
       "loading": "Loading the blocked words…",
       "loadFailed": "Could not load the blocked words.",

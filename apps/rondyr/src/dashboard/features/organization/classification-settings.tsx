@@ -94,7 +94,7 @@ function PolicyForm({ organizationId, settings }: PolicyFormProps) {
         <option value="defaults">{t("inbox.policy.defaults")}</option>
         <option value="custom">{t("inbox.policy.custom")}</option>
       </SelectField>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid items-start gap-4 sm:grid-cols-2">
         {thresholdNames.map((name) => (
           <TextField
             key={name}

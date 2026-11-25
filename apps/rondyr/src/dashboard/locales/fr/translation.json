@@ -105,15 +105,15 @@
   "status": {
     "reasons": {
       "probable-spam": "Indésirable probable",
-      "ambiguous": "Classement incertain",
-      "low-relevance": "Peu lié à votre activité",
-      "solicitation": "Démarchage commercial non sollicité",
-      "classification-error": "Analyse indisponible",
+      "ambiguous": "Indésirable possible",
+      "low-relevance": "Hors sujet",
+      "solicitation": "Démarchage commercial",
+      "classification-error": "Analyse IA échouée",
       "honeypot": "Champ piège rempli",
       "repetition": "Envois répétés",
-      "turnstile-failed": "Échec de la vérification Turnstile",
-      "blocked-term": "Mot ou expression bloqué",
-      "quota": "Plafond quotidien de classification atteint"
+      "turnstile-failed": "Turnstile refusé",
+      "blocked-term": "Mot bloqué",
+      "quota": "Plafond quotidien atteint"
     },
     "deliveries": {
       "pending": "En attente",
@@ -134,17 +134,17 @@
     "noOrganizations": "Aucune organisation.",
     "organization": "État de {{name}}",
     "queue": {
-      "title": "File de classification",
+      "title": "File d’analyse IA",
       "pending": "Événements en attente",
       "oldestAge": "Âge du plus ancien",
       "empty": "Aucun",
-      "stuck": "Bloqués"
+      "stuck": "En échec"
     },
     "stuck": {
-      "title": "Soumissions bloquées",
-      "description": "Le Cron a cessé de publier ces soumissions après 12 tentatives. Leurs messages sont enregistrés. Une fois la cause corrigée, relancez-les une par une.",
-      "loading": "Chargement des soumissions bloquées…",
-      "loadFailed": "Les soumissions bloquées sont indisponibles. Actualisez la page.",
+      "title": "Messages en échec",
+      "description": "Le Cron a cessé de publier ces messages après 12 tentatives. Ils sont enregistrés. Une fois la cause corrigée, relancez-les un par un.",
+      "loading": "Chargement des messages en échec…",
+      "loadFailed": "Les messages en échec sont indisponibles. Actualisez la page.",
       "received": "Reçue le {{date}}",
       "retry": "Relancer",
       "retryFailed": "La relance n’a pas pu être enregistrée. Réessayez.",
@@ -158,32 +158,32 @@
     "lastDay": {
       "title": "Dernières 24 h",
       "received": "Messages reçus",
-      "quarantined": "Encore en quarantaine, par motif"
+      "quarantined": "Encore à vérifier, par motif"
     }
   },
   "verification": {
-    "label": "Filtrage du message",
-    "title": "Filtrage",
+    "label": "Classification du message",
+    "title": "Classification",
     "verdicts": {
       "acceptedAutomatic": "Accepté automatiquement par {{classifier}}",
-      "nothingFired": "Aucun contrôle ne l’a mis de côté.",
-      "offTopic": "Étiqueté hors sujet : peu de lien avec votre activité ({{score}}).",
+      "nothingFired": "Aucun contrôle ne l’a envoyé dans « À vérifier ».",
+      "offTopic": "Étiqueté Hors sujet : pertinence de {{score}} pour votre activité.",
       "acceptedManual": "Accepté par {{actor}}",
       "byHand": "Décision prise à la main.",
-      "byHandAfter": "Décision prise à la main. Il avait été mis de côté ({{reason}}).",
+      "byHandAfter": "Décision prise à la main. Il était dans « À vérifier » ({{reason}}).",
       "archived": "Archivé par {{actor}}",
       "archivedGeneric": "Archivé",
       "notDelivered": "Le message n’a pas été transmis.",
-      "archivedAfter": "Il avait été mis de côté ({{reason}}) et n’a pas été transmis.",
-      "queued": "En attente d’analyse",
-      "queuedDetail": "Aucun contrôle à la réception ne l’a mis de côté. Il attend le filtre IA dans la file.",
-      "stuck": "Bloqué dans la file",
-      "stuckDetail_one": "La transmission au filtre IA s’est arrêtée après {{count}} tentative. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
-      "stuckDetail_many": "La transmission au filtre IA s’est arrêtée après {{count}} tentatives. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
-      "stuckDetail_other": "La transmission au filtre IA s’est arrêtée après {{count}} tentatives. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
-      "analyzing": "Analyse en cours",
-      "analyzingDetail": "Aucun contrôle à la réception ne l’a mis de côté. Le filtre IA l’analyse en ce moment.",
-      "atIntake": "Mis de côté dès la réception, sans analyse IA.",
+      "archivedAfter": "Il était dans « À vérifier » ({{reason}}) et n’a pas été transmis.",
+      "queued": "En attente de l’analyse IA",
+      "queuedDetail": "Aucun contrôle à la réception ne l’a envoyé dans « À vérifier ». Il attend l’analyse IA dans la file.",
+      "stuck": "En échec dans la file",
+      "stuckDetail_one": "La transmission à l’analyse IA s’est arrêtée après {{count}} tentative. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
+      "stuckDetail_many": "La transmission à l’analyse IA s’est arrêtée après {{count}} tentatives. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
+      "stuckDetail_other": "La transmission à l’analyse IA s’est arrêtée après {{count}} tentatives. Relancez-la depuis Exploitation → État une fois la cause corrigée.",
+      "analyzing": "Analyse IA en cours",
+      "analyzingDetail": "Aucun contrôle à la réception ne l’a envoyé dans « À vérifier ». L’analyse IA est en cours.",
+      "atIntake": "Envoyé dans « À vérifier » dès la réception, sans analyse IA.",
       "sameContent_one": "Même texte déjà reçu {{count}} fois en {{days}} jours",
       "sameContent_many": "Même texte déjà reçu {{count}} fois en {{days}} jours",
       "sameContent_other": "Même texte déjà reçu {{count}} fois en {{days}} jours",
@@ -197,34 +197,34 @@
       "honeypotDetail": "Le champ caché « {{field}} » contenait du texte. Les visiteurs ne le voient pas ; seuls les robots le remplissent.",
       "turnstile": "Turnstile a refusé l’envoi",
       "blockedTerm": "Contient « {{term}} »",
-      "blockedTermDetail": "Mot bloqué de la {{scope}}. Mis de côté dès la réception, sans analyse IA.",
-      "quota": "Plafond quotidien de classification atteint",
-      "quotaDetail": "{{used}} classifications sur {{limit}} étaient utilisées ce jour-là. Le message attend votre décision.",
+      "blockedTermDetail": "Mot bloqué de la {{scope}}. Envoyé dans « À vérifier » dès la réception, sans analyse IA.",
+      "quota": "Plafond quotidien d’analyses IA atteint",
+      "quotaDetail": "{{used}} analyses IA sur {{limit}} étaient utilisées ce jour-là. Le message attend votre décision.",
       "waitsForYou": "Le message attend votre décision.",
-      "classificationError": "L’analyse IA n’a pas abouti",
-      "classificationErrorDetail": "{{reason}} « Relancer l’analyse » le renvoie au filtre.",
-      "classificationErrorAttempts_one": "{{reason}} {{count}} tentative. « Relancer l’analyse » le renvoie au filtre.",
-      "classificationErrorAttempts_many": "{{reason}} {{count}} tentatives. « Relancer l’analyse » le renvoie au filtre.",
-      "classificationErrorAttempts_other": "{{reason}} {{count}} tentatives. « Relancer l’analyse » le renvoie au filtre.",
-      "classificationErrorCode_one": "{{reason}} {{count}} tentative, code d’erreur {{code}}. « Relancer l’analyse » le renvoie au filtre.",
-      "classificationErrorCode_many": "{{reason}} {{count}} tentatives, code d’erreur {{code}}. « Relancer l’analyse » le renvoie au filtre.",
-      "classificationErrorCode_other": "{{reason}} {{count}} tentatives, code d’erreur {{code}}. « Relancer l’analyse » le renvoie au filtre.",
-      "byAi": "Mis de côté par l’IA ({{reason}})",
+      "classificationError": "L’analyse IA a échoué",
+      "classificationErrorDetail": "{{reason}} Utilisez « Relancer l’analyse » en haut du message.",
+      "classificationErrorAttempts_one": "{{reason}} {{count}} tentative. Utilisez « Relancer l’analyse » en haut du message.",
+      "classificationErrorAttempts_many": "{{reason}} {{count}} tentatives. Utilisez « Relancer l’analyse » en haut du message.",
+      "classificationErrorAttempts_other": "{{reason}} {{count}} tentatives. Utilisez « Relancer l’analyse » en haut du message.",
+      "classificationErrorCode_one": "{{reason}} {{count}} tentative, code d’erreur {{code}}. Utilisez « Relancer l’analyse » en haut du message.",
+      "classificationErrorCode_many": "{{reason}} {{count}} tentatives, code d’erreur {{code}}. Utilisez « Relancer l’analyse » en haut du message.",
+      "classificationErrorCode_other": "{{reason}} {{count}} tentatives, code d’erreur {{code}}. Utilisez « Relancer l’analyse » en haut du message.",
+      "byAi": "Envoyé dans « À vérifier » par l’analyse IA ({{reason}})",
       "unrecordedScores": "Les scores ne sont pas enregistrés pour les messages analysés avant cette mise à jour.",
       "probableSpam": "{{classifier}} le juge indésirable à {{score}}",
-      "ambiguous": "Doute sur un indésirable ({{score}})",
+      "ambiguous": "{{classifier}} le juge indésirable à {{score}}, sans certitude",
       "solicitation": "Démarchage commercial probable ({{score}})",
-      "lowRelevance": "Peu de lien avec votre activité ({{score}})",
-      "fromThreshold": "Mis de côté à partir de {{threshold}}.",
-      "aboveThreshold": "Mis de côté au-dessus de {{threshold}}.",
-      "belowMinimum": "Mis de côté en dessous de {{threshold}}.",
+      "lowRelevance": "Pertinence de {{score}} pour votre activité",
+      "fromThreshold": "À vérifier à partir de {{threshold}}.",
+      "aboveThreshold": "À vérifier au-dessus de {{threshold}}.",
+      "belowMinimum": "À vérifier en dessous de {{threshold}}.",
       "secondOpinionKept": "Le second avis a maintenu le doute : le message attend votre décision.",
-      "otherRules_one": "{{count}} autre règle l’aurait aussi mis de côté.",
-      "otherRules_many": "{{count}} autres règles l’auraient aussi mis de côté.",
-      "otherRules_other": "{{count}} autres règles l’auraient aussi mis de côté."
+      "otherRules_one": "{{count}} autre règle l’aurait aussi envoyé dans « À vérifier ».",
+      "otherRules_many": "{{count}} autres règles l’auraient aussi envoyé dans « À vérifier ».",
+      "otherRules_other": "{{count}} autres règles l’auraient aussi envoyé dans « À vérifier »."
     },
     "table": {
-      "caption": "Contrôles du filtrage de ce message",
+      "caption": "Contrôles de la classification de ce message",
       "check": "Contrôle",
       "onArrival": "À l’arrivée",
       "intake": "Réception",
@@ -233,8 +233,8 @@
     },
     "results": {
       "accepted": "Accepté",
-      "quarantined": "Mis de côté",
-      "error": "Analyse échouée",
+      "quarantined": "À vérifier",
+      "error": "Analyse IA échouée",
       "pending": "En cours",
       "archived": "Archivé"
     },
@@ -261,10 +261,10 @@
         "refused": "refusé"
       },
       "sender": {
-        "name": "Même expéditeur"
+        "name": "Envois répétés · même adresse"
       },
       "content": {
-        "name": "Même texte"
+        "name": "Envois répétés · même texte"
       },
       "repetitionValue": "{{value}} sur {{threshold}}",
       "blocked": {
@@ -280,7 +280,7 @@
         "notChecked": "non vérifié"
       },
       "unrecorded": "non enregistré",
-      "notRun": "pas lancée",
+      "notRun": "non lancée",
       "spam": {
         "name": "Indésirable"
       },
@@ -296,7 +296,7 @@
         "notEvaluated": "non évalué"
       },
       "relevance": {
-        "name": "Lien avec votre activité",
+        "name": "Pertinence",
         "notConfigured": "sans description",
         "offTopic": "{{score}} · hors sujet"
       },
@@ -306,7 +306,7 @@
       }
     },
     "ai": {
-      "skipped": "Pas lancée : le message était déjà mis de côté. Aucune classification consommée.",
+      "skipped": "Non lancée : le message était déjà à vérifier. Aucune analyse IA consommée.",
       "queued": "En attente dans la file.",
       "analyzing": "Analyse en cours.",
       "unrecorded": "Scores non enregistrés pour ce message.",
@@ -331,13 +331,13 @@
       "acceptedOffTopic": "Serait accepté, étiqueté hors sujet",
       "stillAccepted": "Toujours accepté",
       "stillAcceptedOffTopic": "Toujours accepté, étiqueté hors sujet",
-      "quarantined": "Serait mis de côté ({{reason}})",
-      "stillQuarantined": "Toujours mis de côté ({{reason}})",
+      "quarantined": "Serait à vérifier ({{reason}})",
+      "stillQuarantined": "Toujours à vérifier ({{reason}})",
       "containsTerm": "contient « {{term}} »",
-      "error": "L’analyse échouerait. {{reason}}",
+      "error": "L’analyse IA échouerait. {{reason}}",
       "notRechecked": "Les répétitions, le champ piège et Turnstile ne sont pas revérifiés.",
       "dryRun": "Simulation : rien n’a changé pour ce message.",
-      "quotaReached": "Le plafond quotidien de classification est atteint : le test n’a pas pu être lancé. Réessayez demain ou augmentez le plafond dans Plafonds quotidiens.",
+      "quotaReached": "Le plafond quotidien d’analyses IA est atteint : le test n’a pas pu être lancé. Réessayez demain ou relevez le plafond dans Plafonds quotidiens.",
       "failed": "Le test n’a pas pu être lancé. Réessayez."
     },
     "technical": {
@@ -352,10 +352,10 @@
     },
     "timeline": {
       "received": "Message reçu",
-      "quarantinedAtIntake": "Mis de côté à la réception ({{reason}})",
+      "quarantinedAtIntake": "Envoyé dans « À vérifier » à la réception ({{reason}})",
       "classificationStarted": "Envoyé à l’analyse IA",
-      "reclassificationRequested": "Nouvelle analyse demandée par {{actor}}",
-      "quarantined": "Mis de côté pour vérification ({{reason}})",
+      "reclassificationRequested": "Nouvelle analyse IA demandée par {{actor}}",
+      "quarantined": "Envoyé dans « À vérifier » ({{reason}})",
       "acceptedAutomatic": "Accepté automatiquement par {{classifier}}",
       "acceptedAutomaticOffTopic": "Accepté automatiquement par {{classifier}} (Hors sujet)",
       "acceptedManual": "Accepté manuellement par {{actor}}",
@@ -379,13 +379,13 @@
     },
     "failures": {
       "missing-ai-binding": "Workers AI n’est pas lié sur ce déploiement.",
-      "policy-unavailable": "Les réglages de classification n’ont pas pu être lus dans la base de données.",
-      "policy-unreadable": "Les réglages de classification ou le nom du classificateur sont invalides.",
-      "message-unreadable": "Le message enregistré n’a pas pu être lu pour l’analyse.",
-      "timeout": "Le classificateur IA n’a pas répondu dans le délai de 12 secondes.",
+      "policy-unavailable": "Les réglages de l’analyse IA n’ont pas pu être lus dans la base de données.",
+      "policy-unreadable": "Les réglages de l’analyse IA ou le nom du modèle sont invalides.",
+      "message-unreadable": "Le message enregistré n’a pas pu être lu pour l’analyse IA.",
+      "timeout": "Le modèle IA n’a pas répondu dans le délai de 12 secondes.",
       "upstream-error": "Le service d’IA a renvoyé une erreur.",
-      "invalid-response": "Le classificateur IA a renvoyé une réponse incomplète ou illisible.",
-      "reservation-unavailable": "Le plafond quotidien de classification n’a pas pu être vérifié."
+      "invalid-response": "Le modèle IA a renvoyé une réponse incomplète ou illisible.",
+      "reservation-unavailable": "Le plafond quotidien d’analyses IA n’a pas pu être vérifié."
     }
   },
   "inbox": {
@@ -395,7 +395,7 @@
       "settings": "Réglages",
       "back": "Retour aux messages",
       "organization": "Organisation",
-      "filtering": "Filtrage",
+      "filtering": "Classification",
       "operations": "Exploitation"
     },
     "folders": {
@@ -411,7 +411,7 @@
       "origins": "Origines autorisées",
       "blockedTerms": "Mots bloqués",
       "domains": "Domaines de l’organisation",
-      "classification": "Classification",
+      "classification": "Analyse IA",
       "apiTokens": "Jetons d’API",
       "quotas": "Plafonds quotidiens",
       "organization": "Nouvelle organisation",
@@ -460,7 +460,7 @@
     },
     "business": {
       "label": "Activité de l’organisation",
-      "hint": "Facultatif. Le filtre s’en sert pour juger si un message concerne votre activité."
+      "hint": "Facultatif. L’analyse IA s’en sert pour juger si un message concerne votre activité."
     },
     "list": {
       "label": "Liste des messages",
@@ -472,11 +472,11 @@
       "empty": {
         "quarantined": {
           "title": "Rien à vérifier",
-          "note": "Les messages que le filtre met de côté apparaissent ici, en attendant votre décision."
+          "note": "Les messages à vérifier apparaissent ici, en attendant votre décision."
         },
         "accepted": {
           "title": "Aucun message",
-          "note": "Les messages acceptés, par le filtre ou par vous, apparaissent ici."
+          "note": "Les messages acceptés, par la classification ou par vous, apparaissent ici."
         },
         "archived": {
           "title": "Aucun message",
@@ -536,7 +536,7 @@
       "acceptAndSend": "Accepter et envoyer",
       "reclassify": "Relancer l’analyse",
       "matchedTerm": "Correspond à « {{term}} »",
-      "analyzing": "Le filtre analyse ce message. Actualisez la liste pour voir son classement.",
+      "analyzing": "L’analyse IA de ce message est en cours. Actualisez la liste pour voir le résultat.",
       "nothingToReview": "Rien à vérifier",
       "noOpenMessage": "Aucun message ouvert",
       "position": "{{position}} sur {{total}}",
@@ -546,7 +546,7 @@
         "loadFailed": "Impossible de charger le message complet. Les champs longs sont tronqués.",
         "retry": "Réessayer"
       },
-      "waiting_zero": "Le filtre n’a mis aucun message de côté.",
+      "waiting_zero": "Aucun message à vérifier.",
       "waiting_one": "{{count}} message attend votre décision. Ouvrez-le dans la liste.",
       "waiting_many": "{{count}} messages attendent votre décision. Ouvrez-en un dans la liste.",
       "waiting_other": "{{count}} messages attendent votre décision. Ouvrez-en un dans la liste.",
@@ -554,7 +554,7 @@
         "notSaved": "La décision n’a pas pu être enregistrée. Réessayez.",
         "alreadyHandled": "Ce message a déjà été traité.",
         "alreadyHandledRefresh": "Ce message a déjà été traité. Actualisez la liste pour voir son statut.",
-        "classificationQuotaReached": "Le plafond quotidien de classifications de cette organisation est atteint : le message reste ici. Réessayez après minuit UTC, ou relevez le plafond dans Réglages → Plafonds quotidiens."
+        "classificationQuotaReached": "Le plafond quotidien d’analyses IA de cette organisation est atteint : le message reste ici. Réessayez après minuit UTC, ou relevez le plafond dans Réglages → Plafonds quotidiens."
       },
       "delete": {
         "action": "Supprimer ce message",
@@ -608,7 +608,7 @@
         "change": "Changer l’émoji"
       },
       "status": "État",
-      "businessPlaceholder": "Décrivez l’activité, pour que le filtre repère un message hors sujet.",
+      "businessPlaceholder": "Décrivez l’activité, pour que l’analyse IA repère un message hors sujet.",
       "messages": "Messages du formulaire {{name}}",
       "add": "Ajouter le formulaire",
       "address": {
@@ -635,7 +635,7 @@
         }
       },
       "honeypot": {
-        "instructions": "Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec <code>tabindex=\"-1\"</code> et <code>autocomplete=\"off\"</code> : les visiteurs le laissent vide, et un message qui le remplit est mis à vérifier sans être analysé.",
+        "instructions": "Ajoutez à votre formulaire un champ texte de ce nom, masqué par CSS, avec <code>tabindex=\"-1\"</code> et <code>autocomplete=\"off\"</code> : les visiteurs le laissent vide, et un message qui le remplit va dans « À vérifier » sans analyse IA.",
         "name": "Nom du champ piège",
         "placeholder": "_hp"
       },
@@ -649,8 +649,8 @@
           "checking": "Vérification de la clé secrète enregistrée auprès de Cloudflare…",
           "working": "Cloudflare accepte la clé secrète enregistrée.",
           "off": "Turnstile ne protège plus ce formulaire",
-          "refused": "Cloudflare ne reconnaît plus la clé secrète enregistrée. Rondyr ne peut pas vérifier les jetons Turnstile : il transmet donc à la classification, sans vérification, les messages qui en portent un. Copiez la clé secrète depuis les réglages du widget dans le tableau de bord Cloudflare, puis enregistrez de nouveau les deux clés.",
-          "unreadable": "Rondyr ne peut pas déchiffrer la clé secrète enregistrée, ce qui arrive quand RONDYR_SECRETS_KEY change. Il ne peut pas vérifier les jetons Turnstile : il transmet donc à la classification, sans vérification, les messages qui en portent un. Enregistrez de nouveau les deux clés.",
+          "refused": "Cloudflare ne reconnaît plus la clé secrète enregistrée. Rondyr ne peut pas vérifier les jetons Turnstile : il transmet donc à l’analyse IA, sans vérification, les messages qui en portent un. Copiez la clé secrète depuis les réglages du widget dans le tableau de bord Cloudflare, puis enregistrez de nouveau les deux clés.",
+          "unreadable": "Rondyr ne peut pas déchiffrer la clé secrète enregistrée, ce qui arrive quand RONDYR_SECRETS_KEY change. Il ne peut pas vérifier les jetons Turnstile : il transmet donc à l’analyse IA, sans vérification, les messages qui en portent un. Enregistrez de nouveau les deux clés.",
           "unchecked": "Impossible de vérifier la clé secrète enregistrée : Cloudflare n’a pas répondu. Rechargez la page pour réessayer.",
           "requestFailed": "Impossible de vérifier la clé secrète enregistrée. Rechargez la page pour réessayer."
         },
@@ -683,7 +683,7 @@
       }
     },
     "domains": {
-      "description": "Déclarez jusqu’à {{limit}} domaines pour cette organisation. Le classificateur vérifie si l’adresse e-mail saisie utilise l’un de ces domaines ou un sous-domaine.",
+      "description": "Déclarez jusqu’à {{limit}} domaines pour cette organisation. L’analyse IA vérifie si l’adresse e-mail saisie utilise l’un de ces domaines ou un sous-domaine.",
       "empty": "Aucun domaine déclaré.",
       "hostname": "Nom de domaine",
       "placeholder": "example.com",
@@ -698,7 +698,7 @@
       "removeFailed": "Impossible de retirer le domaine. Réessayez."
     },
     "apiTokens": {
-      "description": "Utilisez des jetons d’API pour lire cette boîte et traiter les messages en quarantaine depuis une autre application.",
+      "description": "Utilisez des jetons d’API pour lire cette boîte et traiter les messages à vérifier depuis une autre application.",
       "name": "Nom du jeton",
       "create": "Créer un jeton",
       "creating": "Création du jeton…",
@@ -724,10 +724,10 @@
     "quotas": {
       "description": "Les plafonds s’appliquent à tous les formulaires de l’organisation. Les compteurs repartent à zéro à minuit UTC.",
       "day": "Consommation du {{day}} (UTC)",
-      "submissions": "Plafond quotidien de soumissions",
-      "classifications": "Plafond quotidien de classifications",
-      "junk": "Indésirables arrêtés à l’entrée",
-      "junkHint": "Les messages qui remplissent le champ piège, échouent à Turnstile, répètent des envois précédents ou contiennent un mot bloqué sont mis en quarantaine et comptent ici, pas dans le plafond de soumissions. Leur plafond quotidien est le même nombre. Une fois ce plafond atteint, Rondyr les refuse jusqu’à minuit UTC et accepte toujours les autres messages.",
+      "submissions": "Plafond quotidien de messages",
+      "classifications": "Plafond quotidien d’analyses IA",
+      "junk": "Envoyés dans « À vérifier » à la réception",
+      "junkHint": "Les messages qui remplissent le champ piège, échouent à Turnstile, répètent des envois précédents ou contiennent un mot bloqué vont dans « À vérifier » et comptent ici, pas dans le plafond de messages. Leur plafond quotidien est le même nombre. Une fois ce plafond atteint, Rondyr les refuse jusqu’à minuit UTC et accepte toujours les autres messages.",
       "used": "{{used}} sur {{limit}} utilisés",
       "saving": "Enregistrement des plafonds…",
       "saved": "Plafonds enregistrés.",
@@ -736,38 +736,38 @@
       "retry": "Réessayer"
     },
     "policy": {
-      "description": "{{classifier}} analyse les soumissions de cette organisation. Les réglages personnalisés s’appliquent aux nouvelles analyses.",
+      "description": "{{classifier}} analyse les messages de cette organisation. Les réglages personnalisés s’appliquent aux nouvelles analyses.",
       "models": {
         "jev": "Jev",
         "openai": "OpenAI Decisions"
       },
       "thresholdMode": "Seuils",
-      "defaults": "Utiliser les réglages du classificateur",
+      "defaults": "Utiliser les réglages par défaut du modèle",
       "custom": "Personnaliser les seuils",
       "thresholds": {
-        "probableSpam": "Spam probable",
-        "ambiguous": "Spam ambigu",
+        "probableSpam": "Indésirable probable",
+        "ambiguous": "Indésirable possible",
         "solicitation": "Démarchage commercial",
-        "lowRelevance": "Faible pertinence"
+        "lowRelevance": "Hors sujet"
       },
       "hints": {
-        "probableSpam": "Un message dont le score de spam atteint ou dépasse cette valeur est mis à vérifier comme indésirable probable.",
-        "ambiguous": "Un message dont le score de spam atteint ou dépasse cette valeur, sans atteindre le seuil de spam probable, est mis à vérifier ; cette valeur ne peut pas dépasser ce seuil.",
-        "solicitation": "Un message dont le score de démarchage commercial dépasse cette valeur est mis à vérifier.",
-        "lowRelevance": "Un message dont le score de pertinence est inférieur à cette valeur est mis à vérifier, ou accepté avec l’étiquette Hors sujet si vous acceptez les soumissions hors sujet."
+        "probableSpam": "Un message dont le score d’indésirable atteint ou dépasse cette valeur va dans « À vérifier » comme indésirable probable.",
+        "ambiguous": "Un message dont le score d’indésirable atteint ou dépasse cette valeur, sans atteindre le seuil d’indésirable probable, va dans « À vérifier » comme indésirable possible ; cette valeur ne peut pas dépasser ce seuil.",
+        "solicitation": "Un message dont le score de démarchage commercial dépasse cette valeur va dans « À vérifier ».",
+        "lowRelevance": "Un message dont le score de pertinence est inférieur à cette valeur est hors sujet : il va dans « À vérifier », ou il est accepté avec l’étiquette Hors sujet si vous acceptez les messages hors sujet."
       },
-      "offTopic": "Soumissions hors sujet",
-      "escalation": "Utiliser un second modèle pour les soumissions ambiguës",
-      "escalationHint": "{{model}} attribue un second score de spam aux soumissions ambiguës. Les règles de démarchage commercial et de faible pertinence s’appliquent toujours.",
-      "escalationUnavailable": "Ce déploiement n’a pas de second modèle : les soumissions ambiguës sont mises à vérifier.",
-      "review": "Mettre en quarantaine",
+      "offTopic": "Messages hors sujet",
+      "escalation": "Utiliser un second modèle pour les indésirables possibles",
+      "escalationHint": "{{model}} attribue un second score d’indésirable aux indésirables possibles. Les règles de démarchage commercial et hors sujet s’appliquent toujours.",
+      "escalationUnavailable": "Ce déploiement n’a pas de second modèle : les indésirables possibles vont dans « À vérifier ».",
+      "review": "Envoyer dans « À vérifier »",
       "accept": "Accepter avec l’étiquette Hors sujet",
-      "save": "Enregistrer les réglages de classification",
+      "save": "Enregistrer les réglages de l’analyse IA",
       "saving": "Enregistrement…",
       "saved": "Réglages enregistrés.",
-      "invalid": "Vérifiez que les seuils sont compris entre 0 et 1 et que le seuil de spam ambigu ne dépasse pas celui de spam probable.",
-      "saveFailed": "Impossible d’enregistrer les réglages de classification. Réessayez.",
-      "loadFailed": "Impossible de charger les réglages de classification.",
+      "invalid": "Vérifiez que les seuils sont compris entre 0 et 1 et que le seuil d’indésirable possible ne dépasse pas celui d’indésirable probable.",
+      "saveFailed": "Impossible d’enregistrer les réglages de l’analyse IA. Réessayez.",
+      "loadFailed": "Impossible de charger les réglages de l’analyse IA.",
       "retry": "Réessayer"
     },
     "origins": {
@@ -795,9 +795,9 @@
     },
     "blockedTerms": {
       "label": "Mots bloqués du formulaire {{name}}",
-      "description": "Les messages contenant l’un de ces mots, expressions, domaines ou adresses e-mail entiers passent en quarantaine sans analyse. La recherche ignore la casse, les accents et la ponctuation. Jusqu’à {{limit}} entrées.",
-      "empty": "Aucun mot bloqué. Ajoutez jusqu’à {{limit}} mots, expressions, domaines ou adresses e-mail pour mettre les messages correspondants à vérifier sans analyse.",
-      "organizationDescription": "S’applique à tous les formulaires de cette organisation. Les messages contenant l’un de ces mots, expressions, domaines ou adresses e-mail entiers passent en quarantaine sans analyse. La recherche ignore la casse, les accents et la ponctuation. Jusqu’à {{limit}} entrées.",
+      "description": "Les messages contenant l’un de ces mots, expressions, domaines ou adresses e-mail entiers vont dans « À vérifier » sans analyse IA. La recherche ignore la casse, les accents et la ponctuation. Jusqu’à {{limit}} entrées.",
+      "empty": "Aucun mot bloqué. Ajoutez jusqu’à {{limit}} mots, expressions, domaines ou adresses e-mail pour envoyer les messages correspondants dans « À vérifier » sans analyse IA.",
+      "organizationDescription": "S’applique à tous les formulaires de cette organisation. Les messages contenant l’un de ces mots, expressions, domaines ou adresses e-mail entiers vont dans « À vérifier » sans analyse IA. La recherche ignore la casse, les accents et la ponctuation. Jusqu’à {{limit}} entrées.",
       "organizationEmpty": "Aucun mot bloqué pour cette organisation.",
       "loading": "Chargement des mots bloqués…",
       "loadFailed": "Impossible de charger les mots bloqués.",

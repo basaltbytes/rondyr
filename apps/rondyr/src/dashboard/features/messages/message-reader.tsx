@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { findMatchedBlockedTerm } from "@rondyr/forms/blocked-term";
 import { allows } from "@rondyr/organizations/member-role";
 
+import { ReasonLabel } from "~/components/reason-label";
 import { ErrorBoundary } from "~/components/error-boundary";
 import { FormEmoji } from "~/components/form-emoji";
 import { ReadFailure } from "~/components/read-failure";
@@ -422,19 +423,24 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
       <div className="min-h-0 flex-1 lg:overflow-y-auto">
         <article className="grid max-w-3xl gap-6 px-5 pt-6 pb-10">
           <header className="grid gap-2">
-            <p className={cn("text-sm font-medium", statusTones[entry.status])}>
-              {entry.reason === null
-                ? t(`inbox.statuses.${entry.status}`)
-                : t(`status.reasons.${entry.reason}`)}
+            <p
+              className={cn(
+                "flex flex-wrap items-baseline gap-x-2 text-sm font-medium",
+                statusTones[entry.status],
+              )}
+            >
+              {entry.reason === null ? (
+                <span>{t(`inbox.statuses.${entry.status}`)}</span>
+              ) : (
+                <ReasonLabel reason={entry.reason} />
+              )}
               {matchedTerm !== null && (
-                <span className="ml-2 font-normal wrap-anywhere text-muted-foreground">
+                <span className="font-normal wrap-anywhere text-muted-foreground">
                   {t("inbox.reader.matchedTerm", { term: matchedTerm })}
                 </span>
               )}
               {entry.label === "off-topic" && (
-                <span className="ml-2 font-normal text-muted-foreground">
-                  {t("inbox.offTopicLabel")}
-                </span>
+                <ReasonLabel reason="off-topic" className="font-normal text-muted-foreground" />
               )}
             </p>
             <div>
