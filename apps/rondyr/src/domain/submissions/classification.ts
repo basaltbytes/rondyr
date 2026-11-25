@@ -7,6 +7,35 @@ import {
   Score,
 } from "./classification-policy.ts";
 
+export const ClassificationSignals = Schema.Struct({
+  hasBusinessContext: Schema.Boolean,
+  urlOrHtmlOutsideLongestField: Schema.Boolean,
+  senderMatchesOrganizationDomain: Schema.Boolean,
+});
+export type ClassificationSignals = typeof ClassificationSignals.Type;
+
+/** Why a classification run could not produce scores. */
+export const ClassificationFailureKind = Schema.Literals([
+  "missing-ai-binding",
+  "policy-unavailable",
+  "policy-unreadable",
+  "message-unreadable",
+  "timeout",
+  "upstream-error",
+  "invalid-response",
+  "reservation-unavailable",
+]);
+export type ClassificationFailureKind = typeof ClassificationFailureKind.Type;
+
+/** Safe diagnostic summary of a failed classification or escalation attempt. */
+export const ClassificationFailure = Schema.Struct({
+  kind: ClassificationFailureKind,
+  retryable: Schema.Boolean,
+  attempts: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+  upstreamCode: Schema.optionalKey(Schema.String),
+});
+export type ClassificationFailure = typeof ClassificationFailure.Type;
+
 export const ClassificationScores = Schema.Struct({
   model: Schema.String,
   spam: Score,
@@ -18,6 +47,7 @@ export const ClassificationScores = Schema.Struct({
 export const ClassifierScores = Schema.Struct({
   ...ClassificationScores.fields,
   solicitation: Score,
+  signals: Schema.optionalKey(ClassificationSignals),
 });
 
 /**
@@ -30,6 +60,8 @@ export const EscalationEvaluation = Schema.Struct({
   rulesVersion: Schema.Int,
   scores: Schema.optionalKey(ClassificationScores),
   skipped: Schema.optionalKey(Schema.Literal("quota")),
+  attempts: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  failure: Schema.optionalKey(ClassificationFailure),
 }).check(
   Schema.makeFilter(
     ({ scores, skipped }) =>

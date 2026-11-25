@@ -17,6 +17,14 @@ export interface OutboxLease {
   readonly republishBefore: number;
 }
 
+/** Effect trace context persisted at intake to link async queue hand-off spans. */
+export const IntakeTrace = Schema.Struct({
+  traceId: Schema.String,
+  spanId: Schema.String,
+  sampled: Schema.Boolean,
+});
+export type IntakeTrace = typeof IntakeTrace.Type;
+
 /**
  * A received submission as intake stored it. `intakeReason` is set when intake
  * found a reason to quarantine it without a classifier; intake wrote it with the
@@ -25,6 +33,7 @@ export interface OutboxLease {
 export interface PendingHandoff {
   readonly organizationId: OrganizationId;
   readonly intakeReason: Option.Option<IntakeReason>;
+  readonly intakeTrace: Option.Option<IntakeTrace>;
 }
 
 /** What one Cron pass did with the due events. */

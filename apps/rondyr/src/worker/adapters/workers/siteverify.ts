@@ -58,20 +58,47 @@ export const turnstileVerifierLive = Layer.effect(
     const verify = Effect.fn("Turnstile.verify")(function* (
       ...[publicId, sealed, token, visitorIp]: Parameters<TurnstileVerifier["Service"]["verify"]>
     ) {
-      const secret = yield* cipher
-        .open(sealed, turnstileSecretOwner(publicId))
-        .pipe(Effect.mapError(() => TurnstileUnavailable.make({ source: "secret" })));
+      yield* Effect.annotateCurrentSpan({ formPublicId: publicId });
+      const secret = yield* cipher.open(sealed, turnstileSecretOwner(publicId)).pipe(
+        Effect.tapError(() =>
+          Effect.annotateCurrentSpan({
+            "turnstile.outcome": "unavailable",
+            "turnstile.unavailableSource": "secret",
+          }),
+        ),
+        Effect.mapError(() => TurnstileUnavailable.make({ source: "secret" })),
+      );
       const reply = yield* siteverify(
         client,
         Redacted.value(secret),
         Redacted.value(token),
         visitorIp,
+      ).pipe(
+        Effect.tapError(() =>
+          Effect.annotateCurrentSpan({
+            "turnstile.outcome": "unavailable",
+            "turnstile.unavailableSource": "siteverify",
+          }),
+        ),
       );
       const errors = reply["error-codes"] ?? [];
       if (errors.includes("internal-error") || errors.includes("invalid-input-secret")) {
+        yield* Effect.annotateCurrentSpan({
+          "turnstile.outcome": "unavailable",
+          "turnstile.unavailableSource": "siteverify",
+          "turnstile.errorCodes": errors.join(","),
+        });
         return yield* unavailable();
       }
-      return reply.success;
+      if (reply.success) {
+        yield* Effect.annotateCurrentSpan({ "turnstile.outcome": "passed" });
+        return { passed: true } as const;
+      }
+      yield* Effect.annotateCurrentSpan({
+        "turnstile.outcome": "rejected",
+        ...(errors.length > 0 && { "turnstile.errorCodes": errors.join(",") }),
+      });
+      return { passed: false, errorCodes: errors } as const;
     });
     const checkSecret = Effect.fn("Turnstile.checkSecret")(function* (
       secret: Redacted.Redacted<string>,

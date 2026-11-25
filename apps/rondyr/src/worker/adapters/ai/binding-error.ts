@@ -38,5 +38,9 @@ export function mapBindingError(cause: unknown) {
   // The binding can expose the upstream code at the start of Error.message.
   // Keep unknown failures retryable and never retain the upstream message.
   const code = hasMessage(cause) ? codePrefix.exec(cause.message)?.[1] : undefined;
-  return ClassificationFailed.make({ retryable: code === undefined || !permanentCodes.has(code) });
+  return ClassificationFailed.make({
+    retryable: code === undefined || !permanentCodes.has(code),
+    kind: "upstream-error",
+    ...(code !== undefined && { upstreamCode: code }),
+  });
 }

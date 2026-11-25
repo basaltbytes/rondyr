@@ -20,8 +20,10 @@ import {
   type ExportedSubmission,
 } from "../../domain/submissions/submission-export.ts";
 import { OrganizationId, SubmissionId } from "../../domain/submissions/submission.id.ts";
+import { ScreeningPreview } from "../../domain/submissions/verification.ts";
 import { SubmissionExports } from "../ports/submission-exports.ts";
 import { SubmissionRetention } from "../ports/submission-retention.ts";
+import { SubmissionScreening } from "../ports/submission-screening.ts";
 import { authorize } from "./organization-access.ts";
 
 const OrganizationPath = Schema.Struct({ organizationId: OrganizationId });
@@ -39,6 +41,10 @@ const ExportParams = OrganizationPath.mapFields((fields) => ({
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const periodsJson = HttpServerResponse.schemaJson(RetentionPeriods);
+const screeningPreviewJson = HttpServerResponse.schemaJson(ScreeningPreview);
+const quotaReached = HttpServerResponse.schemaJson(
+  Schema.Struct({ error: Schema.Literal("classification-quota-reached") }),
+);
 const encodeLine = Schema.encodeEffect(Schema.fromJsonString(ExportLine));
 const empty = (status: number) =>
   Effect.succeed(HttpServerResponse.empty({ status, ...jsonOptions }));
@@ -55,6 +61,9 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
         OrganizationNotFound: () => empty(404),
         SubmissionRetentionNotFound: () => empty(404),
         SubmissionNotFound: () => empty(404),
+        UnreadableMessage: () => empty(404),
+        ScreeningQuotaReached: () =>
+          quotaReached({ error: "classification-quota-reached" }, { status: 429, ...jsonOptions }),
         SchemaError: () => empty(400),
         HttpServerError: () => empty(400),
       }).pipe(Effect.catch(() => empty(503)));
@@ -166,11 +175,33 @@ const savePeriods = Effect.gen(function* () {
   return yield* periodsJson(periods, jsonOptions);
 }).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(4)));
 
+/**
+ * Dry-run screening of an existing submission against current saved form and
+ * organization rules. Never mutates submission state or triggers deliveries.
+ */
+const testScreening = Effect.gen(function* () {
+  const { organizationId, submissionId } = yield* HttpRouter.schemaPathParams(SubmissionPath);
+  yield* Effect.annotateCurrentSpan({ organizationId, submissionId });
+  yield* authorize(organizationId, "manage-forms");
+  const screening = yield* SubmissionScreening;
+  const result = yield* screening.preview(submissionId, organizationId);
+  yield* Effect.annotateCurrentSpan({
+    "screening.outcome": result.outcome,
+    ...(result.reason !== null && { "screening.reason": result.reason }),
+  });
+  return yield* screeningPreviewJson(result, jsonOptions);
+}).pipe(Effect.withSpan("Http.testScreening"));
+
 const organization = "/api/organizations/:organizationId";
 
 export const submissionAdministrationRoutes = Layer.mergeAll(
   HttpRouter.add("GET", `${organization}/submission-export`, withErrors(exportSubmissions)),
   HttpRouter.add("DELETE", `${organization}/submissions/:submissionId`, withErrors(remove)),
+  HttpRouter.add(
+    "POST",
+    `${organization}/submissions/:submissionId/test-screening`,
+    withErrors(testScreening),
+  ),
   HttpRouter.add("GET", `${organization}/retention`, withErrors(readPeriods)),
   HttpRouter.add("PUT", `${organization}/retention`, withErrors(savePeriods)),
 );

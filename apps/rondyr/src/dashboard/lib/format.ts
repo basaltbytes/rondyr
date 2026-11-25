@@ -7,6 +7,10 @@ function formatsFor(locale: string) {
   const timeOfDay = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" });
   const dayOfYear = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" });
   const count = new Intl.NumberFormat(locale);
+  const percent = new Intl.NumberFormat(locale, {
+    style: "percent",
+    maximumFractionDigits: 1,
+  });
   const seconds = new Intl.NumberFormat(locale, { style: "unit", unit: "second" });
   const minutes = new Intl.NumberFormat(locale, { style: "unit", unit: "minute" });
   const hours = new Intl.NumberFormat(locale, { style: "unit", unit: "hour" });
@@ -23,6 +27,8 @@ function formatsFor(locale: string) {
     /** A day without its year, such as "18 Nov". */
     dayOfYear: (at: number) => dayOfYear.format(at),
     count: (value: number) => count.format(value),
+    /** A 0..1 classifier score formatted as a locale percentage, such as "42%" or "42 %". */
+    percent: (score: number) => percent.format(score),
     /** A duration in whole seconds, minutes or hours: the largest unit that fits. */
     age(millis: number) {
       const elapsed = Math.floor(millis / 1000);

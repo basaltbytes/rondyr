@@ -16,6 +16,7 @@ import {
   SubmissionDetail,
   SubmissionStatus,
 } from "@rondyr/contracts/inbox";
+import { ScreeningPreview } from "@rondyr/contracts/verification";
 
 import { countsAfterMove, countsAfterRemoval } from "~/lib/folder-counts";
 import { MessagesSearch } from "~/lib/messages-search";
@@ -218,6 +219,24 @@ export function reviewMessageMutation(organizationId: string) {
       reviewMessage(organizationId, message.submissionId, decision),
     onSuccess: (updated, { message }, _context, { client }) =>
       applyDecision(client, organizationId, message, updated),
+  });
+}
+
+/**
+ * Dry-run screening of an existing message against the form's and organization's
+ * current saved rules. Leaves message status, history and deliveries unchanged.
+ */
+export function testScreening(organizationId: string, submissionId: string) {
+  return requestJson(
+    organizationPath(organizationId, "submissions", submissionId, "test-screening"),
+    ScreeningPreview,
+    { method: "POST" },
+  );
+}
+
+export function testScreeningMutation(organizationId: string) {
+  return mutationOptions({
+    mutationFn: (submissionId: string) => testScreening(organizationId, submissionId),
   });
 }
 

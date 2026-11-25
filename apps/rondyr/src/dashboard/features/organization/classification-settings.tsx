@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Option, Schema } from "effect";
+import type { TFunction } from "i18next";
 import { useActionState, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -21,9 +22,7 @@ const thresholdNames = ["probableSpam", "ambiguous", "solicitation", "lowRelevan
 const decodeOverride = Schema.decodeUnknownOption(OrganizationClassificationPolicy);
 type Settings = OrganizationClassificationSettings;
 type SaveResult = "saved" | "invalid" | "saveFailed" | null;
-type Translate = ReturnType<typeof useTranslation>["t"];
-
-function modelName(t: Translate, classifier: Settings["classifier"]) {
+function modelName(t: TFunction, classifier: Settings["classifier"]) {
   return classifier === "jev" ? t("inbox.policy.models.jev") : t("inbox.policy.models.openai");
 }
 

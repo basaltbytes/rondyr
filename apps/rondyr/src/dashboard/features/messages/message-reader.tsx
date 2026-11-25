@@ -41,6 +41,7 @@ import type { MessagesSearch } from "~/lib/messages-search";
 
 import { DeliveryHistory } from "./delivery-history.tsx";
 import { readMessage } from "./message-preview.ts";
+import { MessageVerification } from "./message-verification.tsx";
 
 // Color is the status of the message, and nothing else in the reader has one.
 const statusTones = {
@@ -229,14 +230,22 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
   const above = index < 0 ? undefined : entries[index - 1];
   const below = index < 0 ? undefined : entries[index + 1];
   const entry = detail.data ?? listed;
-  const checkBlockedTerms = entry?.reason === "blocked-term";
+  const storedBlockedTerm =
+    detail.data?.verification.intake?.blockedTerm._tag === "Failed"
+      ? detail.data.verification.intake.blockedTerm.term
+      : null;
+  const checkLegacyBlockedTerms =
+    entry?.reason === "blocked-term" &&
+    detail.data !== undefined &&
+    detail.data.verification.intake === null;
   const formBlockedTerms = useQuery({
     ...blockedTermsQuery(organizationId, entry?.formPublicId ?? ""),
-    enabled: checkBlockedTerms && allows(organization.role, "manage-forms") && entry !== undefined,
+    enabled:
+      checkLegacyBlockedTerms && allows(organization.role, "manage-forms") && entry !== undefined,
   });
   const orgBlockedTerms = useQuery({
     ...organizationBlockedTermsQuery(organizationId),
-    enabled: checkBlockedTerms && allows(organization.role, "manage-settings"),
+    enabled: checkLegacyBlockedTerms && allows(organization.role, "manage-settings"),
   });
   const inFolder = counts === undefined ? null : totalOf(counts, search.folder);
   const inForm =
@@ -301,12 +310,13 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
 
   const fields = detail.data?.fields ?? listed?.preview ?? {};
   const matchedTerm =
-    entry.reason === "blocked-term"
+    storedBlockedTerm ??
+    (checkLegacyBlockedTerms
       ? findMatchedBlockedTerm(fields, [
           ...(formBlockedTerms.data ?? []).map(({ term }) => term),
           ...(orgBlockedTerms.data ?? []).map(({ term }) => term),
         ])
-      : null;
+      : null);
   const detailFailed = detail.isError;
   const fromForm =
     organization.forms.length > 1
@@ -483,6 +493,15 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
               ))}
             </dl>
           )}
+          <ErrorBoundary variant="section">
+            <MessageVerification
+              organizationId={organization.id}
+              canTestScreening={allows(organization.role, "manage-forms")}
+              entry={entry}
+              detail={detail.data}
+              loading={detail.isPending}
+            />
+          </ErrorBoundary>
           {entry.status === "accepted" && (
             <ErrorBoundary variant="section">
               <DeliveryHistory

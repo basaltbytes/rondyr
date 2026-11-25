@@ -3,6 +3,7 @@ import { Effect, Layer, Option, Schema } from "effect";
 import { IntakeReason } from "../../../domain/submissions/classification.ts";
 import { OrganizationId, SubmissionId } from "../../../domain/submissions/submission.id.ts";
 import {
+  IntakeTrace,
   Outbox,
   type OutboxLease,
   type StuckScope,
@@ -18,6 +19,7 @@ const Claim = Schema.Struct({ submission_id: SubmissionId });
 const Pending = Schema.Struct({
   organization_id: OrganizationId,
   intake_reason: Schema.NullOr(IntakeReason),
+  intake_trace: Schema.NullOr(Schema.fromJsonString(IntakeTrace)),
 });
 
 const decodeClaims = Schema.decodeUnknownEffect(Schema.Array(Claim));
@@ -113,7 +115,7 @@ const pendingHandoff = Effect.fn("Outbox.pendingHandoff")(function* (submissionI
   const row = yield* d1(() =>
     db
       .prepare(`
-    SELECT organization_id, intake_reason
+    SELECT organization_id, intake_reason, intake_trace
     FROM outbox_events JOIN submissions ON submissions.id = outbox_events.submission_id
     WHERE submission_id = ? AND handed_off_at IS NULL
   `)
@@ -124,6 +126,7 @@ const pendingHandoff = Effect.fn("Outbox.pendingHandoff")(function* (submissionI
   return Option.map(Option.fromNullOr(pending), (found) => ({
     organizationId: found.organization_id,
     intakeReason: Option.fromNullOr(found.intake_reason),
+    intakeTrace: Option.fromNullOr(found.intake_trace),
   }));
 });
 
