@@ -14,6 +14,13 @@ import {
   SubmissionNotFound,
 } from "./submission.rejection.ts";
 import type { OrganizationId, SubmissionId } from "./submission.id.ts";
+import type { SubmissionEventDetail } from "./verification.ts";
+
+export interface ProjectedSubmissionEvent {
+  readonly eventType: SubmissionEventDetail["_tag"];
+  readonly occurredAt: number;
+  readonly detail: SubmissionEventDetail;
+}
 
 export interface InboxChange {
   readonly submissionId: SubmissionId;
@@ -21,6 +28,7 @@ export interface InboxChange {
   readonly status: typeof SubmissionStatus.Type;
   readonly reason: typeof InboxRow.Type.reason;
   readonly label: typeof InboxRow.Type.label;
+  readonly event?: ProjectedSubmissionEvent;
 }
 
 export class InboxStore extends Context.Service<

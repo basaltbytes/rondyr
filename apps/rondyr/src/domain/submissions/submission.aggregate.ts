@@ -16,6 +16,7 @@ import {
 } from "./request-classification.command.ts";
 import { CurrentReviewer, reviewerMay } from "./review-session.middleware.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
+import { recordMetric, reviewDecisionsMetric } from "./submission-metrics.ts";
 import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import {
   SubmissionNotFound,
@@ -83,13 +84,27 @@ export class Submission extends Domain.Aggregate(
         if (state._tag !== "Classifying") return [];
         const { organizationId } = state;
         if (result._tag === "ClassificationError") {
-          const failure = { organizationId, reason: "classification-error", rulesVersion } as const;
-          if (result.policy === undefined) return [SubmissionQuarantined.make(failure)];
-          return [SubmissionQuarantined.make({ ...failure, policy: result.policy })];
+          const failure = {
+            organizationId,
+            reason: "classification-error",
+            rulesVersion,
+            ...(result.classifier !== undefined && { classifier: result.classifier }),
+            ...(result.policy !== undefined && { policy: result.policy }),
+            ...(result.failure !== undefined && { failure: result.failure }),
+          } as const;
+          return [SubmissionQuarantined.make(failure)];
         }
-        const { scores, policy, escalation } = result;
+        const { classifier, scores, signals, policy, escalation, attempts } = result;
         const decision = classificationDecision(scores, policy, escalation);
-        const evaluation = { scores, rulesVersion, policy, ...(escalation && { escalation }) };
+        const evaluation = {
+          ...(classifier !== undefined && { classifier }),
+          scores,
+          ...(signals !== undefined && { signals }),
+          rulesVersion,
+          policy,
+          ...(escalation !== undefined && { escalation }),
+          ...(attempts !== undefined && { attempts }),
+        };
         if (decision.reason !== null) {
           return [
             SubmissionQuarantined.make({
@@ -112,12 +127,26 @@ export class Submission extends Domain.Aggregate(
       },
       ApproveSubmission: Effect.fnUntraced(function* (state) {
         const { organizationId, author } = yield* review(state);
+        const authorType = "reviewerId" in author ? "reviewer" : "api-token";
+        yield* Effect.annotateCurrentSpan({
+          organizationId,
+          "review.decision": "approve",
+          "review.authorType": authorType,
+        });
+        yield* recordMetric(reviewDecisionsMetric, { decision: "approve", author: authorType });
         return [
           SubmissionAccepted.make({ organizationId, acceptance: { _tag: "Manual", ...author } }),
         ];
       }),
       DismissSubmission: Effect.fnUntraced(function* (state) {
         const { organizationId, author } = yield* review(state);
+        const authorType = "reviewerId" in author ? "reviewer" : "api-token";
+        yield* Effect.annotateCurrentSpan({
+          organizationId,
+          "review.decision": "dismiss",
+          "review.authorType": authorType,
+        });
+        yield* recordMetric(reviewDecisionsMetric, { decision: "dismiss", author: authorType });
         return [SubmissionDismissed.make({ organizationId, ...author })];
       }),
       // Only a classifier error can be classified again: any other reason is the
@@ -127,6 +156,13 @@ export class Submission extends Domain.Aggregate(
         if ((reason ?? inboxReason) !== "classification-error") {
           return yield* SubmissionNotReclassifiable.make();
         }
+        const authorType = "reviewerId" in author ? "reviewer" : "api-token";
+        yield* Effect.annotateCurrentSpan({
+          organizationId,
+          "review.decision": "reclassify",
+          "review.authorType": authorType,
+        });
+        yield* recordMetric(reviewDecisionsMetric, { decision: "reclassify", author: authorType });
         return [ReclassificationRequested.make({ organizationId, ...author })];
       }),
     },

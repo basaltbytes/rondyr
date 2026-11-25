@@ -86,6 +86,10 @@ const rights: ReadonlyArray<RouteRights> = [
   },
   { route: "DELETE /api/organizations/:organizationId/submissions/:submissionId", ...admin },
   {
+    route: "POST /api/organizations/:organizationId/submissions/:submissionId/test-screening",
+    ...admin,
+  },
+  {
     route: "GET /api/organizations/:organizationId/submission-export",
     ...admin,
     query: "format=csv",

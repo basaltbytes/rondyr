@@ -259,6 +259,8 @@ export const submissions = sqliteTable(
     // Why intake quarantined the submission before any classifier ran, or NULL.
     // Written with the submission, so every hand-off reads the same value.
     intakeReason: text("intake_reason"),
+    // JSON-encoded IntakeVerification recorded atomically at intake, or NULL for legacy rows.
+    intakeChecks: text("intake_checks"),
     senderFingerprint: text("sender_fingerprint"),
     contentFingerprint: text("content_fingerprint"),
     priorSameSender: integer("prior_same_sender").notNull().default(0),
@@ -335,6 +337,8 @@ export const outboxEvents = sqliteTable(
     publicationCount: integer("publication_count").notNull().default(0),
     /** When the Cron stopped republishing the event. A manual retry clears it. */
     stuckAt: integer("stuck_at"),
+    /** Effect span context captured at intake so async hand-off links back to the request trace. */
+    intakeTrace: text("intake_trace"),
   },
   (table) => [
     // The Cron reads this index every minute; stuck events stay out of it until a retry.
@@ -359,6 +363,21 @@ export const submissionInbox = sqliteTable("submission_inbox", {
   reason: text(),
   label: text(),
 });
+
+/** Ordered verification and review events projected for one submission. */
+export const submissionEvents = sqliteTable(
+  "submission_events",
+  {
+    submissionId: text("submission_id")
+      .notNull()
+      .references(() => submissions.id, { onDelete: "cascade" }),
+    seq: integer().notNull(),
+    eventType: text("event_type").notNull(),
+    occurredAt: integer("occurred_at").notNull(),
+    payload: text().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.submissionId, table.seq] })],
+);
 
 export const notificationTargets = sqliteTable(
   "notification_targets",

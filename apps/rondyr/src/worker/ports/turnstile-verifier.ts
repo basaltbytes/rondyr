@@ -14,6 +14,10 @@ export class TurnstileSecretRefused extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("TurnstileSecretRefused", {}) {}
 
+export type TurnstileResult =
+  | { readonly passed: true }
+  | { readonly passed: false; readonly errorCodes: ReadonlyArray<string> };
+
 export class TurnstileVerifier extends Context.Service<
   TurnstileVerifier,
   {
@@ -22,7 +26,7 @@ export class TurnstileVerifier extends Context.Service<
       secret: SealedSecret,
       token: TurnstileToken,
       visitorIp: Option.Option<string>,
-    ) => Effect.Effect<boolean, TurnstileUnavailable>;
+    ) => Effect.Effect<TurnstileResult, TurnstileUnavailable>;
     /** Ask Siteverify whether it knows a secret key, before the key is stored. */
     readonly checkSecret: (
       secret: Redacted.Redacted<string>,

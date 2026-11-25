@@ -284,11 +284,16 @@ function serverRefusal(
  * always JSON, never a redirect or a page. An `Idempotency-Key` header makes a
  * replay answer with the first submission's ID.
  */
-const receiveFromServer = Effect.fnUntraced(function* (
+const receiveFromServer = Effect.fn("Http.serverIntake")(function* (
   request: HttpServerRequest.HttpServerRequest,
   publicId: string,
   token: ApiTokenPrincipal,
 ) {
+  yield* Effect.annotateCurrentSpan({
+    formPublicId: publicId,
+    organizationId: token.organizationId,
+    "intake.channel": "server",
+  });
   const header = request.headers["idempotency-key"];
   const idempotencyKey = header === undefined ? Option.none() : decodeIdempotencyKey(header);
   if (header !== undefined && Option.isNone(idempotencyKey)) return empty(400, {});
@@ -310,6 +315,7 @@ const receiveFromServer = Effect.fnUntraced(function* (
   );
   if (Result.isFailure(received)) return serverRefusal(received.failure);
   const { submissionId, replayed } = received.success;
+  yield* Effect.annotateCurrentSpan({ submissionId, "intake.replayed": replayed });
   if (!replayed) yield* publishNow(submissionId);
   return yield* accepted(
     { "submission-id": submissionId, status: "received" },
@@ -323,17 +329,26 @@ const receive = Effect.gen(function* () {
   const path = yield* Effect.option(HttpRouter.schemaPathParams(PublicFormPath));
   if (Option.isNone(path)) return empty(400, corsHeaders("unrestricted", origin));
   const { formId } = path.value;
+  yield* Effect.annotateCurrentSpan({ formPublicId: formId });
   const apiToken = yield* CurrentApiToken;
   if (apiToken !== null) return yield* receiveFromServer(request, formId, apiToken);
+  yield* Effect.annotateCurrentSpan({ "intake.channel": "public" });
   const read = yield* Effect.result(readFields(request));
   if (Result.isFailure(read)) return yield* refuseBody(formId, origin, read.failure.status);
   const { json, fields, token } = read.success;
   const limited = yield* limitClient(request, formId, origin);
-  if (Option.isSome(limited)) return limited.value;
+  if (Option.isSome(limited)) {
+    yield* Effect.annotateCurrentSpan({
+      "intake.outcome": "refused",
+      "intake.reason": "client-rate-limit",
+    });
+    return limited.value;
+  }
   const intake = yield* SubmissionIntake;
   const received = yield* Effect.result(intake.receive(formId, fields, origin, token));
   if (Result.isFailure(received)) return refusal(received.failure, origin);
   const { submissionId, origins, successUrl } = received.success;
+  yield* Effect.annotateCurrentSpan({ submissionId });
   yield* publishNow(submissionId);
   const headers = { "cache-control": "no-store", ...corsHeaders(origins, origin) };
   const browser =
@@ -365,7 +380,10 @@ const receive = Effect.gen(function* () {
     { "submission-id": submissionId, status: "received" },
     { status: 202, headers },
   );
-}).pipe(Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(16)));
+}).pipe(
+  Effect.withSpan("Http.intake"),
+  Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.kibibytes(16)),
+);
 
 /**
  * Answer a CORS preflight. A form accepts `POST` with a `Content-Type` header

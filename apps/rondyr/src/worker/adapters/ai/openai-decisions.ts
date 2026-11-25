@@ -59,13 +59,19 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
   message: ClassifierInput,
 ) {
   const hasContext = message.business_context !== "";
+  yield* Effect.annotateCurrentSpan({
+    "ai.classifier": "openai",
+    "ai.hasBusinessContext": hasContext,
+  });
   const spam = {
     type: "predicate",
     name: "spam",
     instructions: classifierSpamInstructions(message.facts),
   } as const;
   const input = yield* encodeInput(message).pipe(
-    Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
+    Effect.mapError(() =>
+      ClassificationFailed.make({ retryable: false, kind: "invalid-response" }),
+    ),
   );
   const response = yield* Effect.tryPromise({
     try: (signal) =>
@@ -77,7 +83,9 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
     catch: mapBindingError,
   });
   const decision = yield* decodeDecision(response).pipe(
-    Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
+    Effect.mapError(() =>
+      ClassificationFailed.make({ retryable: false, kind: "invalid-response" }),
+    ),
   );
   const { model, answers } = "result" in decision ? decision.result : decision;
   const spamScore = answers.find(({ name }) => name === "spam")?.probability;
@@ -87,11 +95,26 @@ export const scoreWithOpenAi = Effect.fn("OpenAIDecisions.score")(function* (
     solicitationScore === undefined ||
     answers.length !== (hasContext ? 3 : 2)
   ) {
-    return yield* ClassificationFailed.make({ retryable: false });
+    return yield* ClassificationFailed.make({ retryable: false, kind: "invalid-response" });
   }
   const scores = { model, spam: spamScore, solicitation: solicitationScore };
-  if (!hasContext) return scores;
+  if (!hasContext) {
+    yield* Effect.annotateCurrentSpan({
+      "ai.model": model,
+      "ai.score.spam": scores.spam,
+      "ai.score.solicitation": scores.solicitation,
+    });
+    return scores;
+  }
   const relevanceScore = answers.find(({ name }) => name === "relevance")?.probability;
-  if (relevanceScore === undefined) return yield* ClassificationFailed.make({ retryable: false });
+  if (relevanceScore === undefined) {
+    return yield* ClassificationFailed.make({ retryable: false, kind: "invalid-response" });
+  }
+  yield* Effect.annotateCurrentSpan({
+    "ai.model": model,
+    "ai.score.spam": scores.spam,
+    "ai.score.solicitation": scores.solicitation,
+    "ai.score.relevance": relevanceScore,
+  });
   return { ...scores, relevance: relevanceScore };
 });

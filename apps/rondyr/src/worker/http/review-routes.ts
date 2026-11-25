@@ -174,9 +174,17 @@ const counts = Effect.gen(function* () {
 const detail = Effect.gen(function* () {
   const client = yield* reviewClient;
   const input = yield* HttpRouter.schemaPathParams(SubmissionPath);
+  yield* Effect.annotateCurrentSpan({
+    organizationId: input.organizationId,
+    submissionId: input.submissionId,
+  });
   const submission = yield* client.GetSubmission(input);
+  yield* Effect.annotateCurrentSpan({
+    "submission.status": submission.status,
+    ...(submission.reason !== null && { "submission.reason": submission.reason }),
+  });
   return yield* HttpServerResponse.schemaJson(SubmissionDetail)(submission, jsonOptions);
-});
+}).pipe(Effect.withSpan("Http.submissionDetail"));
 
 /** The refusals of the domain model, after which a reclassification gives its slot back. */
 const refusals = new Set([
@@ -214,6 +222,11 @@ const reclassify = Effect.fnUntraced(function* (
 const review = Effect.gen(function* () {
   const client = yield* reviewClient;
   const { decision, ...input } = yield* HttpRouter.schemaPathParams(ReviewPath);
+  yield* Effect.annotateCurrentSpan({
+    organizationId: input.organizationId,
+    submissionId: input.submissionId,
+    "review.decision": decision,
+  });
   // Reading the message first answers 404 outside the account's organizations,
   // before any quota is touched.
   const { reason } = yield* client.GetSubmission(input);
@@ -224,14 +237,19 @@ const review = Effect.gen(function* () {
         ? yield* client.DismissSubmission(input.submissionId)
         : yield* reclassify(client, input, reason);
   if (receipt === null) {
+    yield* Effect.annotateCurrentSpan({ "review.outcome": "quota-reached" });
     return yield* quotaReached(
       { error: "classification-quota-reached" },
       { status: 429, ...jsonOptions },
     );
   }
   const submission = yield* client.GetSubmission(input, { atLeast: receipt });
+  yield* Effect.annotateCurrentSpan({
+    "review.outcome": "applied",
+    "submission.status": submission.status,
+  });
   return yield* HttpServerResponse.schemaJson(SubmissionDetail)(submission, jsonOptions);
-});
+}).pipe(Effect.withSpan("Http.reviewSubmission"));
 
 export const reviewRoutes = Layer.mergeAll(
   HttpRouter.add("GET", organizationPath, withErrors(organizationList)),

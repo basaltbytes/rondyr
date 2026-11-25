@@ -1,4 +1,4 @@
-import { Clock, Effect, Option, Schema } from "effect";
+import { Clock, Effect, Option, Schema, Tracer } from "effect";
 
 import { QuarantineAtIntake } from "../../domain/submissions/quarantine-at-intake.command.ts";
 import { RequestClassification } from "../../domain/submissions/request-classification.command.ts";
@@ -43,6 +43,10 @@ export const publishPendingSubmissions = Effect.fn("Outbox.publish")(function* (
   const now = yield* Clock.currentTimeMillis;
   const lease = leaseFor(now);
   const { claimed, stuck } = yield* outbox.claimDue(lease, 100, maxPublications);
+  yield* Effect.annotateCurrentSpan({
+    "outbox.claimed": claimed.length,
+    "outbox.stuck": stuck.length,
+  });
   for (const submissionId of stuck) {
     yield* Effect.logError("Outbox event stuck", {
       submissionId,
@@ -59,10 +63,12 @@ export const publishPendingSubmissions = Effect.fn("Outbox.publish")(function* (
 export const publishSubmission = Effect.fn("Outbox.publishSubmission")(function* (
   submissionId: SubmissionId,
 ) {
+  yield* Effect.annotateCurrentSpan({ submissionId });
   const outbox = yield* Outbox;
   const now = yield* Clock.currentTimeMillis;
   const lease = leaseFor(now);
   const events = yield* outbox.claim(lease, submissionId);
+  yield* Effect.annotateCurrentSpan({ "outbox.published": events.length });
   yield* publishClaimed(lease, events);
 });
 
@@ -99,20 +105,38 @@ export const consumeSubmissions = Effect.fn("Outbox.consume")(function* (batch: 
 
         // Intake stored the reason with the submission, so a redelivered message or a
         // republished event sends the same command, which the command ID deduplicates.
-        const { organizationId, intakeReason } = pending.value;
+        const { organizationId, intakeReason, intakeTrace } = pending.value;
         const commandId = `submission-received:${submissionId}`;
-        yield* Option.match(intakeReason, {
-          onNone: () =>
-            submissions.send(submissionId, RequestClassification.make({ organizationId }), {
-              commandId,
-            }),
-          onSome: (reason) =>
-            submissions.send(submissionId, QuarantineAtIntake.make({ organizationId, reason }), {
-              commandId,
-            }),
-        });
-        const now = yield* Clock.currentTimeMillis;
-        yield* outbox.markHandedOff(submissionId, now);
+        const links = Option.isSome(intakeTrace)
+          ? [{ span: Tracer.externalSpan(intakeTrace.value), attributes: { relation: "intake" } }]
+          : [];
+        const handoff = Effect.gen(function* () {
+          yield* Option.match(intakeReason, {
+            onNone: () =>
+              submissions.send(submissionId, RequestClassification.make({ organizationId }), {
+                commandId,
+              }),
+            onSome: (reason) =>
+              submissions.send(submissionId, QuarantineAtIntake.make({ organizationId, reason }), {
+                commandId,
+              }),
+          });
+          const now = yield* Clock.currentTimeMillis;
+          yield* outbox.markHandedOff(submissionId, now);
+        }).pipe(
+          Effect.withSpan("Outbox.handoff", {
+            attributes: {
+              submissionId,
+              organizationId,
+              "outbox.command": Option.isSome(intakeReason)
+                ? "QuarantineAtIntake"
+                : "RequestClassification",
+              ...(Option.isSome(intakeReason) && { "intake.reason": intakeReason.value }),
+            },
+            links,
+          }),
+        );
+        yield* handoff;
       }),
     );
     if (result._tag === "Success") {

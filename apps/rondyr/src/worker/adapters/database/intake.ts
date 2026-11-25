@@ -9,10 +9,17 @@ import { junkIntakeReasons } from "../../../domain/organizations/organization-qu
 import {
   repetitionKeys,
   repetitionThresholds,
+  repetitionWindowDays,
   repetitionWindowMs,
 } from "../../../domain/submissions/classifier-input.ts";
 import { SubmissionFields } from "../../../domain/submissions/submission-fields.ts";
+import {
+  intakeChecksMetric,
+  intakeSubmissionsMetric,
+  recordMetric,
+} from "../../../domain/submissions/submission-metrics.ts";
 import { SubmissionId } from "../../../domain/submissions/submission.id.ts";
+import { IntakeVerification } from "../../../domain/submissions/verification.ts";
 import {
   EmptySubmission,
   FormNotFound,
@@ -24,12 +31,16 @@ import {
   type OriginMatch,
   type ServerIntake,
 } from "../../ports/intake.ts";
+import { IntakeTrace } from "../../ports/outbox.ts";
 import { SealedSecret } from "../../ports/secret-cipher.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { TurnstileVerifier } from "../../ports/turnstile-verifier.ts";
 import { d1, database } from "./d1.ts";
 
 const encodeFields = Schema.encodeEffect(Schema.fromJsonString(SubmissionFields));
+const encodeErrorCodes = Schema.encodeEffect(Schema.fromJsonString(Schema.Array(Schema.String)));
+const encodeTrace = Schema.encodeEffect(Schema.fromJsonString(IntakeTrace));
+const decodeIntakeChecks = Schema.decodeUnknownOption(Schema.fromJsonString(IntakeVerification));
 const OriginRow = Schema.Struct({
   restricted: Schema.Literals([0, 1]),
   listed: Schema.Literals([0, 1]),
@@ -42,6 +53,7 @@ const AccessRow = Schema.Struct({
   honeypot_field: Schema.NullOr(Schema.String),
   quota_retry_after: Schema.NullOr(Schema.Int),
   replay_id: Schema.NullOr(SubmissionId),
+  intake_checks: Schema.NullOr(Schema.String),
 });
 const decodeAccess = Schema.decodeUnknownEffect(Schema.Array(AccessRow));
 
@@ -69,26 +81,47 @@ const junkReasons = junkIntakeReasons.map((reason) => `'${reason}'`).join(", ");
 // the secret that Siteverify checked the token with or NULL, and ?11 whether it
 // accepted the token. ?12 is the organization of a server intake's API token, or
 // NULL for a public request. ?13 is the idempotency key or NULL, ?14 says
-// whether to screen for Turnstile, and ?15 is the normalized searchable text of
-// the submission's fields for whole-word/phrase blocked-term matching. The
-// organization ID is the leading column of each fingerprint index and comes
-// from the form. D1 sets the reception time so concurrent batches count in
-// transaction order, and the budget is the one of that time's UTC day.
+// whether to screen for Turnstile, ?15 is the normalized searchable text of
+// the submission's fields for whole-word/phrase blocked-term matching, ?16 is
+// the Turnstile verification status, ?17 the JSON array of Siteverify error
+// codes or NULL, ?18 the Turnstile unavailable source or NULL, and ?19 the
+// repetition window in days.
 const screening = `
   WITH intake_time AS (
     SELECT CAST(ROUND(unixepoch('subsec') * 1000) AS INTEGER) AS received_at
   ), counted AS MATERIALIZED (
     SELECT f.id, f.organization_id, f.status, f.success_url, f.honeypot_field,
-      f.turnstile_secret, t.received_at, o.daily_submission_limit,
+      f.turnstile_secret, t.received_at, o.daily_submission_limit, o.daily_classification_limit,
       COALESCE(u.submissions, 0) AS submissions_used,
+      COALESCE(u.classifications, 0) AS classifications_used,
       COALESCE(u.junk, 0) AS junk_used,
       COALESCE(u.classifications, 0) >= o.daily_classification_limit AS classification_limited,
+      EXISTS (SELECT 1 FROM form_origins fo WHERE fo.form_id = f.id) AS origin_restricted,
+      CASE
+        WHEN f.honeypot_field IS NOT NULL
+          AND EXISTS (SELECT 1 FROM json_each(?2) WHERE key = f.honeypot_field AND value <> '')
+        THEN 1 ELSE 0
+      END AS honeypot_triggered,
       (SELECT COUNT(*) FROM submissions s
        WHERE s.organization_id = f.organization_id AND s.sender_fingerprint = ?5
          AND s.received_at BETWEEN t.received_at - ?7 AND t.received_at) AS prior_same_sender,
       (SELECT COUNT(*) FROM submissions s
        WHERE s.organization_id = f.organization_id AND s.content_fingerprint = ?6
-         AND s.received_at BETWEEN t.received_at - ?7 AND t.received_at) AS prior_same_content
+         AND s.received_at BETWEEN t.received_at - ?7 AND t.received_at) AS prior_same_content,
+      (
+        EXISTS (SELECT 1 FROM form_blocked_terms bt WHERE bt.form_id = f.id)
+        OR EXISTS (SELECT 1 FROM organization_blocked_terms obt WHERE obt.organization_id = f.organization_id)
+      ) AS has_blocked_terms,
+      (
+        SELECT bt.term FROM form_blocked_terms bt
+        WHERE bt.form_id = f.id AND ?15 <> '' AND instr(?15, ' ' || bt.term || ' ') > 0
+        ORDER BY bt.term LIMIT 1
+      ) AS matched_form_term,
+      (
+        SELECT obt.term FROM organization_blocked_terms obt
+        WHERE obt.organization_id = f.organization_id AND ?15 <> '' AND instr(?15, ' ' || obt.term || ' ') > 0
+        ORDER BY obt.term LIMIT 1
+      ) AS matched_org_term
     FROM forms f CROSS JOIN intake_time t
     JOIN organizations o ON o.id = f.organization_id
     LEFT JOIN organization_daily_usage u ON u.organization_id = f.organization_id
@@ -97,23 +130,14 @@ const screening = `
   ), screened AS (
     SELECT c.*,
       CASE
-        WHEN EXISTS (SELECT 1 FROM json_each(?2) WHERE key = c.honeypot_field AND value <> '')
+        WHEN c.honeypot_triggered = 1
         THEN 'honeypot'
         WHEN ?14 = 1 AND c.turnstile_secret IS NOT NULL
           AND (?10 IS NOT c.turnstile_secret OR ?11 = 0)
         THEN 'turnstile-failed'
         WHEN c.prior_same_sender >= ?8 OR c.prior_same_content >= ?9
         THEN 'repetition'
-        WHEN ?15 <> '' AND (
-          EXISTS (
-            SELECT 1 FROM form_blocked_terms bt
-            WHERE bt.form_id = c.id AND instr(?15, ' ' || bt.term || ' ') > 0
-          )
-          OR EXISTS (
-            SELECT 1 FROM organization_blocked_terms obt
-            WHERE obt.organization_id = c.organization_id AND instr(?15, ' ' || obt.term || ' ') > 0
-          )
-        )
+        WHEN c.matched_form_term IS NOT NULL OR c.matched_org_term IS NOT NULL
         THEN 'blocked-term'
         WHEN c.classification_limited THEN 'quota'
       END AS intake_reason
@@ -123,6 +147,59 @@ const screening = `
       CASE WHEN s.intake_reason IN (${junkReasons}) THEN s.junk_used ELSE s.submissions_used END
         < s.daily_submission_limit AS within_budget
     FROM screened s
+  )
+`;
+
+const intakeChecksJson = `
+  json_object(
+    'channel', CASE WHEN ?12 IS NULL THEN 'public' ELSE 'server' END,
+    'origin', CASE
+      WHEN ?12 IS NOT NULL THEN json_object('_tag', 'Skipped', 'reason', 'server-intake')
+      ELSE json_object(
+        '_tag', 'Passed',
+        'mode', CASE WHEN f.origin_restricted = 1 THEN 'listed' ELSE 'unrestricted' END,
+        'hasOrigin', CASE WHEN ?4 IS NOT NULL THEN json('true') ELSE json('false') END
+      )
+    END,
+    'honeypot', CASE
+      WHEN f.honeypot_field IS NULL THEN json_object('_tag', 'NotConfigured')
+      WHEN f.honeypot_triggered = 1 THEN json_object('_tag', 'Failed', 'field', f.honeypot_field)
+      ELSE json_object('_tag', 'Passed', 'field', f.honeypot_field)
+    END,
+    'turnstile', CASE
+      WHEN f.turnstile_secret IS NULL THEN json_object('_tag', 'NotConfigured')
+      WHEN ?14 = 0 THEN json_object('_tag', 'Skipped', 'reason', 'server-intake')
+      WHEN ?16 = 'no-token' THEN json_object('_tag', 'Failed', 'cause', 'missing-token')
+      WHEN ?10 IS NOT f.turnstile_secret THEN json_object('_tag', 'Failed', 'cause', 'key-changed')
+      WHEN ?16 = 'rejected' THEN CASE
+        WHEN ?17 IS NOT NULL THEN json_object('_tag', 'Failed', 'cause', 'rejected', 'errorCodes', json(?17))
+        ELSE json_object('_tag', 'Failed', 'cause', 'rejected')
+      END
+      WHEN ?16 = 'unavailable' THEN json_object('_tag', 'Unavailable', 'source', ?18)
+      ELSE json_object('_tag', 'Passed')
+    END,
+    'repetition', json_object(
+      'outcome', CASE WHEN f.prior_same_sender >= ?8 OR f.prior_same_content >= ?9 THEN 'failed' ELSE 'passed' END,
+      'priorSameSender', f.prior_same_sender,
+      'priorSameContent', f.prior_same_content,
+      'senderThreshold', ?8,
+      'contentThreshold', ?9,
+      'windowDays', ?19
+    ),
+    'blockedTerm', CASE
+      WHEN f.matched_form_term IS NOT NULL THEN json_object('_tag', 'Failed', 'term', f.matched_form_term, 'scope', 'form')
+      WHEN f.matched_org_term IS NOT NULL THEN json_object('_tag', 'Failed', 'term', f.matched_org_term, 'scope', 'organization')
+      WHEN f.has_blocked_terms = 0 THEN json_object('_tag', 'NotConfigured')
+      ELSE json_object('_tag', 'Passed')
+    END,
+    'quota', CASE
+      WHEN f.intake_reason IS NOT NULL AND f.intake_reason <> 'quota'
+        THEN json_object('_tag', 'Skipped', 'reason', 'quarantined-earlier')
+      WHEN f.classification_limited
+        THEN json_object('_tag', 'Failed', 'used', f.classifications_used, 'limit', f.daily_classification_limit)
+      ELSE json_object('_tag', 'Passed', 'used', f.classifications_used, 'limit', f.daily_classification_limit)
+    END,
+    'decisiveReason', f.intake_reason
   )
 `;
 
@@ -142,14 +219,15 @@ const accessQuery = `${screening}
     f.honeypot_field AS honeypot_field,
     CASE WHEN NOT f.within_budget THEN 86400 - unixepoch() % 86400 END AS quota_retry_after,
     (SELECT p.id FROM submissions p WHERE p.form_id = f.id AND p.idempotency_key = ?13)
-      AS replay_id
+      AS replay_id,
+    ${intakeChecksJson} AS intake_checks
   FROM budgeted f
 `;
 
 // ?1 is the submission ID.
 const insertStatement = `${screening}
   INSERT INTO submissions (
-    id, organization_id, form_id, fields, received_at, intake_reason,
+    id, organization_id, form_id, fields, received_at, intake_reason, intake_checks,
     sender_fingerprint, content_fingerprint, prior_same_sender, prior_same_content,
     idempotency_key
   )
@@ -167,6 +245,7 @@ const insertStatement = `${screening}
     END,
     f.received_at,
     f.intake_reason,
+    ${intakeChecksJson},
     ?5,
     ?6,
     f.prior_same_sender,
@@ -232,6 +311,7 @@ const readAccess = (
           honeypotField: Option.fromNullOr(row.honeypot_field),
           quotaRetryAfter: row.quota_retry_after,
           replayId: Option.fromNullOr(row.replay_id),
+          intakeChecks: Option.flatMap(Option.fromNullOr(row.intake_checks), decodeIntakeChecks),
         })),
     }),
   );
@@ -279,12 +359,23 @@ const readTurnstile = Effect.fnUntraced(function* (
   return yield* decodeTurnstileRow(row).pipe(Effect.mapError(() => StorageUnavailable.make()));
 });
 
-interface TurnstileOutcome {
-  readonly secret: SealedSecret | null;
-  readonly passed: boolean;
-}
+type TurnstileOutcome =
+  | { readonly status: "no-token"; readonly secret: null; readonly passed: false }
+  | { readonly status: "passed"; readonly secret: SealedSecret; readonly passed: true }
+  | {
+      readonly status: "rejected";
+      readonly secret: SealedSecret;
+      readonly passed: false;
+      readonly errorCodes: ReadonlyArray<string>;
+    }
+  | {
+      readonly status: "unavailable";
+      readonly secret: SealedSecret;
+      readonly passed: true;
+      readonly source: "secret" | "siteverify";
+    };
 
-const unchecked: TurnstileOutcome = { secret: null, passed: false };
+const unchecked: TurnstileOutcome = { status: "no-token", secret: null, passed: false };
 
 const verifyTurnstile = Effect.fnUntraced(function* (
   verifier: TurnstileVerifier["Service"],
@@ -292,17 +383,30 @@ const verifyTurnstile = Effect.fnUntraced(function* (
   secret: SealedSecret | null,
   token: TurnstileToken,
   visitorIp = Option.none<string>(),
-) {
+): Effect.fn.Return<TurnstileOutcome> {
   if (secret === null) return unchecked;
-  const passed = yield* verifier.verify(publicId, secret, token, visitorIp).pipe(
-    Effect.catch((error) =>
-      Effect.logWarning("Turnstile verification unavailable", {
-        publicId,
-        source: error.source,
-      }).pipe(Effect.as(true)),
-    ),
-  );
-  return { secret, passed };
+  const verified = yield* verifier.verify(publicId, secret, token, visitorIp).pipe(Effect.result);
+  if (verified._tag === "Failure") {
+    yield* Effect.logWarning("Turnstile verification unavailable", {
+      publicId,
+      source: verified.failure.source,
+    });
+    return {
+      status: "unavailable",
+      secret,
+      passed: true,
+      source: verified.failure.source,
+    };
+  }
+  if (verified.success.passed) {
+    return { status: "passed", secret, passed: true };
+  }
+  return {
+    status: "rejected",
+    secret,
+    passed: false,
+    errorCodes: verified.success.errorCodes,
+  };
 });
 
 interface IntakeRequest {
@@ -312,6 +416,79 @@ interface IntakeRequest {
   readonly turnstile: TurnstileOutcome;
   readonly server?: ServerIntake;
 }
+
+const currentIntakeTrace = Effect.currentParentSpan.pipe(
+  Effect.flatMap((span) =>
+    encodeTrace({ traceId: span.traceId, spanId: span.spanId, sampled: span.sampled }),
+  ),
+  Effect.orElseSucceed(() => null),
+);
+
+function checkOutcome(tag: string) {
+  switch (tag) {
+    case "Passed":
+      return "passed";
+    case "Failed":
+      return "failed";
+    case "Unavailable":
+      return "unavailable";
+    case "Skipped":
+      return "skipped";
+    default:
+      return "not-configured";
+  }
+}
+
+const recordIntakeObservability = Effect.fnUntraced(function* (
+  submissionId: SubmissionId,
+  publicId: string,
+  checks: IntakeVerification,
+) {
+  const outcome = checks.decisiveReason === null ? "queued" : "quarantined";
+  const reason = checks.decisiveReason ?? "none";
+  const checkStates = {
+    origin: checkOutcome(checks.origin._tag),
+    honeypot: checkOutcome(checks.honeypot._tag),
+    turnstile: checkOutcome(checks.turnstile._tag),
+    repetition: checks.repetition.outcome,
+    blockedTerm: checkOutcome(checks.blockedTerm._tag),
+    quota: checkOutcome(checks.quota._tag),
+  };
+  yield* Effect.annotateCurrentSpan({
+    submissionId,
+    formPublicId: publicId,
+    "intake.channel": checks.channel,
+    "intake.outcome": outcome,
+    "intake.reason": reason,
+    "intake.check.origin": checkStates.origin,
+    "intake.check.honeypot": checkStates.honeypot,
+    "intake.check.turnstile": checkStates.turnstile,
+    "intake.check.repetition": checkStates.repetition,
+    "intake.check.blockedTerm": checkStates.blockedTerm,
+    "intake.check.quota": checkStates.quota,
+    "intake.priorSameSender": checks.repetition.priorSameSender,
+    "intake.priorSameContent": checks.repetition.priorSameContent,
+  });
+  yield* recordMetric(intakeSubmissionsMetric, {
+    channel: checks.channel,
+    outcome,
+    reason,
+  });
+  for (const [check, checkResult] of Object.entries(checkStates)) {
+    yield* recordMetric(intakeChecksMetric, { check, outcome: checkResult });
+  }
+  yield* Effect.logInfo("Submission received", {
+    submissionId,
+    formPublicId: publicId,
+    channel: checks.channel,
+    outcome,
+    ...(checks.decisiveReason !== null && { intakeReason: checks.decisiveReason }),
+    ...(checks.blockedTerm._tag === "Failed" && { blockedTermScope: checks.blockedTerm.scope }),
+    ...(checks.turnstile._tag === "Unavailable" && {
+      turnstileUnavailableSource: checks.turnstile.source,
+    }),
+  });
+});
 
 /** Run the intake batch: one D1 round trip, after a Turnstile verification if any. */
 const runBatch = Effect.fnUntraced(function* (request: IntakeRequest) {
@@ -328,8 +505,13 @@ const runBatch = Effect.fnUntraced(function* (request: IntakeRequest) {
   const requestOrigin = Option.getOrNull(request.origin);
   // The batch compares the verified ciphertext with the current configuration.
   // A key changed during verification cannot authorize admission to classification.
-  const { secret, passed } = request.turnstile;
-  const { server } = request;
+  const { turnstile, server } = request;
+  const turnstileErrorCodes =
+    turnstile.status === "rejected" && turnstile.errorCodes.length > 0
+      ? yield* encodeErrorCodes(turnstile.errorCodes).pipe(Effect.orElseSucceed(() => null))
+      : null;
+  const turnstileUnavailableSource = turnstile.status === "unavailable" ? turnstile.source : null;
+  const intakeTrace = yield* currentIntakeTrace;
   const parameters = [
     id,
     encoded,
@@ -340,22 +522,26 @@ const runBatch = Effect.fnUntraced(function* (request: IntakeRequest) {
     repetitionWindowMs,
     repetitionThresholds.sender,
     repetitionThresholds.content,
-    secret,
-    passed ? 1 : 0,
+    turnstile.secret,
+    turnstile.passed ? 1 : 0,
     server?.organizationId ?? null,
     server === undefined ? null : Option.getOrNull(server.idempotencyKey),
     server === undefined || server.turnstile !== undefined ? 1 : 0,
     searchableText,
+    turnstile.status,
+    turnstileErrorCodes,
+    turnstileUnavailableSource,
+    repetitionWindowDays,
   ] as const;
   // The batch is one transaction, so the access row describes the state that the insert checked.
   const accessCheck = db.prepare(accessQuery).bind(...parameters);
   const insert = db.prepare(insertStatement).bind(...parameters);
   const outbox = db
     .prepare(`
-    INSERT INTO outbox_events (submission_id)
-    SELECT id FROM submissions WHERE id = ?
+    INSERT INTO outbox_events (submission_id, intake_trace)
+    SELECT id, ?2 FROM submissions WHERE id = ?1
   `)
-    .bind(id);
+    .bind(id, intakeTrace);
   const usage = db.prepare(incrementUsage).bind(id);
   const [accessResult, received] = yield* d1(() => db.batch([accessCheck, insert, outbox, usage]));
   const access = yield* Effect.result(readAccess(accessResult?.results));
@@ -369,6 +555,7 @@ interface Access {
   readonly honeypotField: Option.Option<string>;
   readonly quotaRetryAfter: number | null;
   readonly replayId: Option.Option<SubmissionId>;
+  readonly intakeChecks: Option.Option<IntakeVerification>;
 }
 
 /** Why a form that the batch found, or did not find, stored nothing. */
@@ -393,6 +580,7 @@ const receive = Effect.fn("Intake.receive")(function* (
   origin: Option.Option<string>,
   token: Option.Option<TurnstileToken> = Option.none(),
 ) {
+  yield* Effect.annotateCurrentSpan({ formPublicId: publicId, "intake.channel": "public" });
   const config = Option.isSome(token)
     ? yield* readTurnstile(publicId, Option.getOrNull(origin))
     : null;
@@ -408,7 +596,10 @@ const receive = Effect.fn("Intake.receive")(function* (
   if (stored) {
     const metadata = Option.flatten(Result.getSuccess(access));
     if (Option.isSome(metadata)) {
-      const { origins, successUrl } = metadata.value;
+      const { origins, successUrl, intakeChecks } = metadata.value;
+      if (Option.isSome(intakeChecks)) {
+        yield* recordIntakeObservability(id, publicId, intakeChecks.value);
+      }
       return { submissionId: id, origins, successUrl };
     }
     yield* Effect.logWarning("Access metadata unavailable after submission commit", {
@@ -426,9 +617,29 @@ const receive = Effect.fn("Intake.receive")(function* (
     Option.exists(access.success, ({ origins }) => origins === "unlisted") &&
     Option.isSome(origin)
   ) {
+    yield* Effect.annotateCurrentSpan({ "intake.outcome": "refused", "intake.reason": "origin" });
+    yield* recordMetric(intakeSubmissionsMetric, {
+      channel: "public",
+      outcome: "refused",
+      reason: "origin",
+    });
     return yield* OriginRefused.make();
   }
-  return yield* refuse(fields, access.success);
+  return yield* refuse(fields, access.success).pipe(
+    Effect.tapError((error) =>
+      Effect.all([
+        Effect.annotateCurrentSpan({
+          "intake.outcome": "refused",
+          "intake.reason": error._tag,
+        }),
+        recordMetric(intakeSubmissionsMetric, {
+          channel: "public",
+          outcome: "refused",
+          reason: error._tag,
+        }),
+      ]),
+    ),
+  );
 });
 
 const receiveFromServer = Effect.fn("Intake.receiveFromServer")(function* (
@@ -437,11 +648,27 @@ const receiveFromServer = Effect.fn("Intake.receiveFromServer")(function* (
   fields: typeof SubmissionFields.Type,
   intake: ServerIntake,
 ) {
+  yield* Effect.annotateCurrentSpan({
+    formPublicId: publicId,
+    organizationId: intake.organizationId,
+    "intake.channel": "server",
+  });
   const check = intake.turnstile;
-  let turnstile = unchecked;
+  let turnstile: TurnstileOutcome = unchecked;
   if (check !== undefined && Option.isSome(check.token)) {
     const config = yield* readTurnstile(publicId, null, intake);
-    if (config?.replay_id != null) return { submissionId: config.replay_id, replayed: true };
+    if (config?.replay_id != null) {
+      yield* Effect.annotateCurrentSpan({
+        submissionId: config.replay_id,
+        "intake.outcome": "replayed",
+      });
+      yield* recordMetric(intakeSubmissionsMetric, {
+        channel: "server",
+        outcome: "replayed",
+        reason: "idempotency-key",
+      });
+      return { submissionId: config.replay_id, replayed: true };
+    }
     turnstile = yield* verifyTurnstile(
       verifier,
       publicId,
@@ -457,11 +684,42 @@ const receiveFromServer = Effect.fn("Intake.receiveFromServer")(function* (
     turnstile,
     server: intake,
   });
-  if (stored) return { submissionId: id, replayed: false };
+  if (stored) {
+    const metadata = Option.flatten(Result.getSuccess(access));
+    if (Option.isSome(metadata) && Option.isSome(metadata.value.intakeChecks)) {
+      yield* recordIntakeObservability(id, publicId, metadata.value.intakeChecks.value);
+    }
+    return { submissionId: id, replayed: false };
+  }
   if (Result.isFailure(access)) return yield* access.failure;
   const replayed = Option.flatMap(access.success, ({ replayId }) => replayId);
-  if (Option.isSome(replayed)) return { submissionId: replayed.value, replayed: true };
-  return yield* refuse(fields, access.success);
+  if (Option.isSome(replayed)) {
+    yield* Effect.annotateCurrentSpan({
+      submissionId: replayed.value,
+      "intake.outcome": "replayed",
+    });
+    yield* recordMetric(intakeSubmissionsMetric, {
+      channel: "server",
+      outcome: "replayed",
+      reason: "idempotency-key",
+    });
+    return { submissionId: replayed.value, replayed: true };
+  }
+  return yield* refuse(fields, access.success).pipe(
+    Effect.tapError((error) =>
+      Effect.all([
+        Effect.annotateCurrentSpan({
+          "intake.outcome": "refused",
+          "intake.reason": error._tag,
+        }),
+        recordMetric(intakeSubmissionsMetric, {
+          channel: "server",
+          outcome: "refused",
+          reason: error._tag,
+        }),
+      ]),
+    ),
+  );
 });
 
 const matchOrigin = Effect.fn("Intake.matchOrigin")(function* (

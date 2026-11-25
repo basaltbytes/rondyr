@@ -1,8 +1,13 @@
 import * as Domain from "@alchemy.run/domain";
 import { Schema } from "effect";
 
-import { ClassificationPolicy } from "./classification-policy.ts";
-import { ClassificationScores, EscalationEvaluation } from "./classification.ts";
+import { ClassificationPolicy, ClassifierProvider } from "./classification-policy.ts";
+import {
+  ClassificationFailure,
+  ClassificationScores,
+  ClassificationSignals,
+  EscalationEvaluation,
+} from "./classification.ts";
 import { SubmissionAccepted } from "./submission-accepted.event.ts";
 import { SubmissionQuarantined } from "./submission-quarantined.event.ts";
 import { SubmissionId } from "./submission.id.ts";
@@ -14,12 +19,17 @@ export class RecordClassification extends Domain.Command(
     input: {
       result: Schema.Union([
         Schema.TaggedStruct("Scored", {
+          classifier: Schema.optionalKey(ClassifierProvider),
           scores: ClassificationScores,
+          signals: Schema.optionalKey(ClassificationSignals),
           policy: ClassificationPolicy,
           escalation: Schema.optionalKey(EscalationEvaluation),
+          attempts: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
         }),
         Schema.TaggedStruct("ClassificationError", {
+          classifier: Schema.optionalKey(ClassifierProvider),
           policy: Schema.optionalKey(ClassificationPolicy),
+          failure: Schema.optionalKey(ClassificationFailure),
         }),
       ]),
     },

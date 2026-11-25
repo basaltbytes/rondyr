@@ -11,6 +11,7 @@ import {
 } from "effect/http";
 
 import { classifierLive } from "./adapters/ai/classifier.ts";
+import { submissionScreeningLive } from "./adapters/ai/submission-screening.ts";
 import { authenticationLive } from "./adapters/authentication/better-auth.ts";
 import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
 import { apiTokensLive } from "./adapters/database/api-tokens.ts";
@@ -74,6 +75,11 @@ const services = Layer.mergeAll(
   passwordResetsLive,
   organizationQuotasLive,
   classificationPoliciesLive,
+  submissionScreeningLive.pipe(
+    Layer.provide(
+      Layer.mergeAll(storedMessagesLive, classificationPoliciesLive, organizationQuotasLive),
+    ),
+  ),
   outboxLive,
   classificationQueueLive,
   deliveries,

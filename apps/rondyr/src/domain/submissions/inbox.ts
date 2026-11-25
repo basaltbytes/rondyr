@@ -3,6 +3,7 @@ import { Schema } from "effect";
 import { QuarantineReason, SubmissionLabel } from "./classification.ts";
 import { SubmissionFields } from "./submission-fields.ts";
 import { FormId, OrganizationId, SubmissionId } from "./submission.id.ts";
+import { SubmissionVerification } from "./verification.ts";
 
 export const SubmissionStatus = Schema.Literals([
   "received",
@@ -28,6 +29,7 @@ export const InboxRow = Schema.Struct({
 export const SubmissionDetail = InboxRow.mapFields((fields) => ({
   ...fields,
   fields: SubmissionFields,
+  verification: SubmissionVerification,
 }));
 
 /** The longest field value of a list entry, in characters as a reader counts them. */

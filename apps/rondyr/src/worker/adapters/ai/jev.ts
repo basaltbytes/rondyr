@@ -60,6 +60,10 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
   state: ClassifierInput,
 ) {
   const hasContext = state.business_context !== "";
+  yield* Effect.annotateCurrentSpan({
+    "ai.classifier": "jev",
+    "ai.hasBusinessContext": hasContext,
+  });
   const spam = { type: "noul", instructions: classifierSpamInstructions(state.facts) } as const;
   const response = yield* Effect.tryPromise({
     try: (signal) =>
@@ -74,11 +78,27 @@ export const scoreWithJev = Effect.fn("Jev.score")(function* (
     catch: mapBindingError,
   });
   const { model, answers } = yield* decodeJevResponse(response).pipe(
-    Effect.mapError(() => ClassificationFailed.make({ retryable: false })),
+    Effect.mapError(() =>
+      ClassificationFailed.make({ retryable: false, kind: "invalid-response" }),
+    ),
   );
   const scores = { model, spam: answers.spam.noul, solicitation: answers.solicitation.noul };
-  if (!hasContext) return scores;
-  if (answers.relevance === undefined)
-    return yield* ClassificationFailed.make({ retryable: false });
+  if (!hasContext) {
+    yield* Effect.annotateCurrentSpan({
+      "ai.model": model,
+      "ai.score.spam": scores.spam,
+      "ai.score.solicitation": scores.solicitation,
+    });
+    return scores;
+  }
+  if (answers.relevance === undefined) {
+    return yield* ClassificationFailed.make({ retryable: false, kind: "invalid-response" });
+  }
+  yield* Effect.annotateCurrentSpan({
+    "ai.model": model,
+    "ai.score.spam": scores.spam,
+    "ai.score.solicitation": scores.solicitation,
+    "ai.score.relevance": answers.relevance.noul,
+  });
   return { ...scores, relevance: answers.relevance.noul };
 });
