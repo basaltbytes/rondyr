@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { minSearchLength } from "@rondyr/contracts/inbox";
 import { allows } from "@rondyr/organizations/member-role";
 
+import { ReasonLabel } from "~/components/reason-label";
 import { Button } from "~/components/ui/button";
 import {
   DropdownMenu,
@@ -111,15 +112,13 @@ function MessageRow({
         </span>
         <span className="flex items-center gap-2 text-xs text-muted-foreground">
           {submission.reason !== null && (
-            <span className="shrink-0 font-medium text-warning">
-              {t(`status.reasons.${submission.reason}`)}
-            </span>
+            <ReasonLabel reason={submission.reason} className="shrink-0 font-medium text-warning" />
           )}
           {showStatus && submission.reason === null && (
             <span className="shrink-0">{t(`inbox.statuses.${submission.status}`)}</span>
           )}
           {submission.label === "off-topic" && (
-            <span className="shrink-0">{t("inbox.offTopicLabel")}</span>
+            <ReasonLabel reason="off-topic" className="shrink-0" />
           )}
           <span className="truncate">{submission.formName}</span>
         </span>

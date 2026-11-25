@@ -1,11 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "cn";
 import { RefreshCw } from "lucide-react";
+import type { ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 
 import { QuarantineReason } from "@rondyr/contracts/classification";
 import { DeliveryStatus } from "@rondyr/deliveries/delivery";
 
+import { ReasonLabel } from "~/components/reason-label";
 import { ReadFailure } from "~/components/read-failure";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
@@ -26,7 +28,7 @@ const deliveryTones = {
 } as const;
 
 interface FigureProps {
-  readonly label: string;
+  readonly label: ReactNode;
   readonly value: string;
   /** The class of a value that is not zero. */
   readonly tone?: string;
@@ -125,7 +127,7 @@ function OrganizationMetrics({ organization }: OrganizationMetricsProps) {
                 return (
                   <Figure
                     key={reason}
-                    label={t(`status.reasons.${reason}`)}
+                    label={<ReasonLabel reason={reason} />}
                     value={format.count(count)}
                     tone="text-warning"
                     quiet={count === 0}

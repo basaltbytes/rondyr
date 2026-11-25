@@ -1,22 +1,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { cn } from "cn";
 import {
-  Ban,
   ChevronRight,
-  Copy,
-  EyeOff,
   FlaskConical,
-  Gauge,
   Globe,
   LoaderCircle,
-  MailWarning,
-  Megaphone,
   RotateCw,
   Scale,
-  ScanText,
-  ShieldCheck,
-  Target,
-  UserRound,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -26,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import type { ScreeningPreview } from "@rondyr/contracts/verification";
 
 import { Button } from "~/components/ui/button";
+import { reasonIcons } from "~/components/reason-label";
 import { Skeleton } from "~/components/ui/skeleton";
 import { testScreeningMutation, type InboxRow, type SubmissionDetail } from "~/lib/api/messages";
 import { statusOf } from "~/lib/api/request";
@@ -42,28 +33,24 @@ import {
 } from "./screening.ts";
 
 /** The kind of a check is its icon; its color is only for a check that fired or failed. */
+/**
+ * The kind of a check is its icon, the same as the reason it gives a message in the list
+ * and the reader. Its color is only for a check that fired or failed.
+ */
 const kindIcons = {
   origin: Globe,
-  honeypot: EyeOff,
-  turnstile: ShieldCheck,
-  sender: UserRound,
-  content: Copy,
-  blocked: Ban,
-  quota: Gauge,
-  spam: MailWarning,
+  honeypot: reasonIcons.honeypot,
+  turnstile: reasonIcons["turnstile-failed"],
+  sender: reasonIcons.repetition,
+  content: reasonIcons.repetition,
+  blocked: reasonIcons["blocked-term"],
+  quota: reasonIcons.quota,
+  spam: reasonIcons["probable-spam"],
   escalation: Scale,
-  solicitation: Megaphone,
-  relevance: Target,
-  classifier: ScanText,
+  solicitation: reasonIcons.solicitation,
+  relevance: reasonIcons["low-relevance"],
+  classifier: reasonIcons["classification-error"],
 } as const satisfies Record<CheckKind, LucideIcon>;
-
-const chipTones = {
-  flagged: "bg-warning-subtle text-warning",
-  error: "bg-destructive-subtle text-destructive",
-  accepted: "bg-success-subtle text-success",
-  pending: "bg-muted text-muted-foreground",
-  neutral: "bg-muted text-muted-foreground",
-} as const satisfies Record<VerdictTone, string>;
 
 const resultTones = {
   flagged: "text-warning",
@@ -394,8 +381,6 @@ export function MessageVerification({
   const tested = outcome !== null;
   const columns = tested ? 3 : 2;
   const { verdict, intake, ai } = screening;
-  const decisive = [...intake, ...ai].find((check) => check.kind === verdict.kind);
-  const ChipIcon = decisive === undefined ? null : kindIcons[decisive.kind];
   const testOf = (check: ScreeningCheck) =>
     check.kind === "blocked"
       ? outcome?.blocked
@@ -463,17 +448,6 @@ export function MessageVerification({
       </div>
 
       <p className="text-sm/relaxed text-pretty">
-        {decisive !== undefined && (
-          <span
-            className={cn(
-              "mr-1.5 inline-flex -translate-y-px items-center gap-1 rounded-full px-2 py-0.5 align-middle text-xs font-medium",
-              chipTones[verdict.tone],
-            )}
-          >
-            {ChipIcon !== null && <ChipIcon aria-hidden="true" className="size-3.5" />}
-            {decisive.name}
-          </span>
-        )}
         <span className="font-medium wrap-anywhere">{verdict.title}.</span>{" "}
         <span className="text-muted-foreground">{verdict.detail}</span>
       </p>

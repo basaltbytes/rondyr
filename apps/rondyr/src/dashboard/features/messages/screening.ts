@@ -689,6 +689,7 @@ function verdictOf(
       const titles = {
         "probable-spam": t("verification.verdicts.probableSpam", { classifier, score }),
         ambiguous: t("verification.verdicts.ambiguous", {
+          classifier,
           score: spam === undefined ? "" : spam.value,
         }),
         solicitation: t("verification.verdicts.solicitation", { score }),
