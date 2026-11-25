@@ -53,7 +53,7 @@ catalog:
   hast-util-to-string: 3.0.1
   i18next: 27.2.2
   i18next-cli: 1.91.3
-  knip: 6.46.1
+  knip: 6.48.0
   lucide-react: 1.76.0
   lucode-starlight: 1.0.0
   mdast-util-from-markdown: 2.1.0
