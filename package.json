@@ -49,9 +49,14 @@
     "evaluate": "pnpm --filter rondyr run evaluate",
     "i18n:check": "pnpm --filter rondyr run i18n:check",
     "i18n:extract": "pnpm --filter rondyr run i18n:extract",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "node scripts/release-github.mjs",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm test:scripts && pnpm knip && pnpm i18n:check && pnpm db:check && pnpm run doctor"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "catalog:",
+    "@changesets/cli": "catalog:",
     "@shadcn/lint": "catalog:",
     "knip": "catalog:",
     "oxfmt": "catalog:",

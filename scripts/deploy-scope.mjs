@@ -33,7 +33,7 @@ const workerFiles = [
   /^\.github\//u,
 ];
 
-/** Documentation and agent instructions that do not require a Worker deploy. */
+/** Documentation, changesets, and agent instructions that do not require a Worker deploy. */
 const documentationFiles = [
   /^README\.md$/u,
   /^AGENTS\.md$/u,
@@ -41,6 +41,7 @@ const documentationFiles = [
   /^docs\//u,
   /^\.agents\//u,
   /^\.claude\//u,
+  /^\.changeset\//u,
   /^skills-lock\.json$/u,
 ];
 

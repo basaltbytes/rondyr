@@ -27,6 +27,7 @@ test("skips the deployment when only the documentation changed", () => {
     "docs/brand/rondyr-dark-mode.svg",
     "docs/examples/verify-webhook.ts",
     ".agents/skills/effect-ts/SKILL.md",
+    ".changeset/add-blocked-terms.md",
   ]) {
     assert.equal(decide({ files: [path], packages: [root] }).deploy, false, path);
   }

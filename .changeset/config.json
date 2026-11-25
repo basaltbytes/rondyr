@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@4.0.1/schema.json",
+  "changelog": ["@changesets/changelog-github", { "repo": "basaltbytes/rondyr" }],
+  "commit": false,
+  "fixed": [],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@rondyr/docs", "@rondyr/oxlint", "@rondyr/tsconfig"],
+  "privatePackages": {
+    "version": true,
+    "tag": false
+  }
+}
