@@ -174,7 +174,7 @@ export function renderLlmsTxt(origin: string, root?: URL): string {
     "## At a glance",
     "",
     `- Category: Open-source, self-hosted form backend and spam gatekeeper (alternative to Formspree, Basin, Web3Forms, Getform, and Netlify Forms for static sites and web apps).`,
-    `- Hosting and cost: Free open-source software (AGPL-3.0; EmDash plugin MIT). Runs in your own Cloudflare account on Workers Paid ($5/month per account) with no per-form or per-submission SaaS markup.`,
+    `- Hosting and cost: Free open-source software (AGPL-3.0; EmDash plugin MIT). Runs in your own Cloudflare account (deploy and test-drive on Workers Free; Workers Paid at $5/month per account for production) with no per-form or per-submission SaaS markup.`,
     `- Deployment: One-click Deploy to Cloudflare button (${deployUrl}), or from a GitHub fork with Alchemy and GitHub Actions.`,
     `- Spam filtering: Classifier models (Jev on Workers AI by default, or OpenAI Decisions via Cloudflare AI Gateway unified billing) score spam, unsolicited sales outreach, and relevance to your business description, layered with honeypot fields, Cloudflare Turnstile, allowed origins, rate limits, and repeat detection.`,
     `- Quarantine: Doubtful messages wait in To review with a plain reason until a person accepts or archives them; real inquiries are never silently deleted.`,

@@ -26,7 +26,7 @@ export const firstRun: readonly FirstRunStep[] = [
   },
   {
     title: "Create the owner account",
-    html: "Open your new Rondyr address and create the first account with that setup token. Public sign-up stays closed; other people join your organization through an invitation link.",
+    html: "Open your new Rondyr address, enter that setup token, and register a passkey for the owner account. Public sign-up stays closed; other people join your organization through an invitation link.",
   },
   {
     title: "Connect a form",
@@ -47,8 +47,8 @@ export const faqItems: readonly FaqItem[] = [
   {
     question: "Is Rondyr free and open source?",
     answer:
-      "Yes. Rondyr is licensed under AGPL-3.0, and the EmDash plugin is MIT-licensed. You pay Cloudflare directly for Workers Paid ($5/month per account) and your email provider if you send emails, with no per-form or per-submission SaaS markup.",
-    html: 'Yes. Rondyr is licensed under <a href="/contributing/">AGPL-3.0</a>, and the <a href="/emdash/">EmDash plugin</a> is MIT-licensed. You pay Cloudflare directly for Workers Paid ($5/month per account) and your email provider if you send emails, with no per-form or per-submission SaaS markup. See <a href="/costs/">Costs and limits</a> for the full breakdown.',
+      "Yes. Rondyr is licensed under AGPL-3.0, and the EmDash plugin is MIT-licensed. You can deploy and test-drive Rondyr on Cloudflare Workers Free with one click, and upgrade to Workers Paid ($5/month per account) for production, with no per-form or per-submission SaaS markup.",
+    html: 'Yes. Rondyr is licensed under <a href="/contributing/">AGPL-3.0</a>, and the <a href="/emdash/">EmDash plugin</a> is MIT-licensed. You can deploy and test-drive Rondyr on Cloudflare Workers Free with one click, and upgrade to Workers Paid ($5/month per account) for production, with no per-form or per-submission SaaS markup. See <a href="/costs/">Costs and limits</a> for the full breakdown.',
   },
   {
     question: "What spam classifier models does Rondyr use?",
@@ -59,8 +59,8 @@ export const faqItems: readonly FaqItem[] = [
   {
     question: "Why self-host Rondyr instead of a hosted form service like Formspree or Basin?",
     answer:
-      "Every submission stays in your own Cloudflare account, never on a third-party form SaaS server. You avoid per-form or per-submission pricing tiers, get classifier-model spam and sales-pitch screening tuned to your business description, and review doubtful messages in quarantine instead of losing real leads to silent spam drops. The trade-off is running your own Cloudflare Workers Paid account.",
-    html: 'Every submission stays in your own Cloudflare account, never on a third-party form SaaS server. You avoid per-form or per-submission pricing tiers, get classifier-model spam and sales-pitch screening tuned to your business description, and review doubtful messages in quarantine instead of losing real leads to silent spam drops. The trade-off is running your own Cloudflare Workers Paid account; see <a href="/costs/">Costs and limits</a>.',
+      "Every submission stays in your own Cloudflare account, never on a third-party form SaaS server. You avoid per-form or per-submission pricing tiers, get classifier-model spam and sales-pitch screening tuned to your business description, and review doubtful messages in quarantine instead of losing real leads to silent spam drops. The trade-off is running your own Cloudflare account (Workers Free to test-drive, Workers Paid at $5/month for production).",
+    html: 'Every submission stays in your own Cloudflare account, never on a third-party form SaaS server. You avoid per-form or per-submission pricing tiers, get classifier-model spam and sales-pitch screening tuned to your business description, and review doubtful messages in quarantine instead of losing real leads to silent spam drops. The trade-off is running your own Cloudflare account (Workers Free to test-drive, Workers Paid at $5/month for production); see <a href="/costs/">Costs and limits</a>.',
   },
   {
     question: "Does Rondyr work with static sites and frameworks like Astro, Next.js, or Hugo?",
@@ -103,7 +103,7 @@ export const comparisonRows: readonly ComparisonRow[] = [
   {
     aspect: "Pricing and limits",
     rondyr:
-      "Open-source (AGPL-3.0). Pay Cloudflare Workers Paid ($5/month per account) with no per-form or per-submission SaaS markup.",
+      "Open-source (AGPL-3.0). Deploy and test-drive on Workers Free; upgrade to Workers Paid ($5/month per account) for production with no per-form or per-submission SaaS markup.",
     hosted: "Monthly tiers billed per form, per seat, or per submission cap.",
   },
   {
@@ -134,7 +134,7 @@ export const comparisonTradeoff =
 export const agentPrompt = `Deploy Rondyr for me and connect my site's form to it.
 
 1. Read https://rondyr.com/deployment/ and ask whether I want the Deploy to Cloudflare button (fastest) or Alchemy with GitHub Actions.
-2. Guide me through deploying on my Cloudflare Workers Paid account, generating a 32+ character \`RONDYR_SETUP_TOKEN\`, and creating my owner account, organization, and first form.
+2. Guide me through deploying on my Cloudflare account (Workers Free to test-drive, or Workers Paid for production), generating a 32+ character \`RONDYR_SETUP_TOKEN\`, and creating my owner account with a passkey, organization, and first form.
 3. Ask how I want accepted messages forwarded (Resend email, Cloudflare Email Sending, webhook, or the EmDash plugin) and follow the matching guide on https://rondyr.com/.
 4. Wire the form URL into my site (plain HTML, JSON fetch, or EmDash), add a honeypot field, and help me send a test message to verify it arrives.`;
 
