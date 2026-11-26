@@ -25,7 +25,7 @@ const sendLink = Effect.fnUntraced(function* (
 ) {
   const email = yield* EmailSender;
   const from = yield* email.sender;
-  const { subject, text } = confirmationEmail(
+  const { subject, html, text } = confirmationEmail(
     confirmationLink(origin, issued.token),
     issued.expiresAt,
     language,
@@ -36,6 +36,7 @@ const sendLink = Effect.fnUntraced(function* (
       to: EmailRecipients.make([issued.address]),
       replyTo: Option.none(),
       subject,
+      html,
       text,
       idempotencyKey: SecureRandom.uuidV4Unsafe(),
     })

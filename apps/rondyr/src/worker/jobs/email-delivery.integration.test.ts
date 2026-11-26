@@ -42,6 +42,7 @@ const ResendEmail = Schema.Struct({
   from: Schema.String,
   to: Schema.Array(Schema.String),
   subject: Schema.String,
+  html: Schema.String,
   text: Schema.String,
   reply_to: Schema.optionalKey(Schema.Array(Schema.String)),
 });
@@ -59,6 +60,7 @@ const readCloudflareEmails = Schema.decodeUnknownEffect(
       from: Schema.String,
       to: Schema.Array(Schema.String),
       subject: Schema.String,
+      html: Schema.String,
       text: Schema.String,
       replyTo: Schema.optionalKey(Schema.String),
     }),
@@ -245,12 +247,14 @@ it.effect("sends one plain text email with the delivery ID as its idempotency ke
     assert.strictEqual(request.headers["idempotency-key"], row?.id);
     assert.strictEqual(request.headers["user-agent"], "Rondyr-Email/1");
     assert.notProperty(request.headers, "traceparent");
+    const email = yield* readEmail(request.body);
     const json = yield* readJson(request.body);
     assert.deepEqual(json, {
       from: "forms@rondyr.test",
       to: ["mailed-team@example.com", "owner@example.com"],
       subject: "New message: Form mailed",
       reply_to: ["customer@example.test"],
+      html: email.html,
       text: [
         "New message received through the form “Form mailed”.",
         "",
@@ -269,6 +273,11 @@ it.effect("sends one plain text email with the delivery ID as its idempotency ke
         "",
       ].join("\n"),
     });
+    assert.isTrue(email.html.startsWith("<!DOCTYPE html>"));
+    assert.include(email.html, '<html lang="en" dir="ltr">');
+    assert.include(email.html, "Form mailed");
+    assert.include(email.html, "Is there room in the pottery class?");
+    assert.include(email.html, row?.id ?? "");
   });
   return withServices(services(configured), scenario);
 });
@@ -293,6 +302,7 @@ it.effect("writes in French the email of a target stored before the language set
     const email = yield* readEmail(request?.body);
 
     assert.strictEqual(email.subject, "Nouveau message : Form legacy");
+    assert.include(email.html, '<html lang="fr" dir="ltr">');
   });
   return withServices(services(configured), scenario);
 });
@@ -614,6 +624,9 @@ it.effect("retries a Cloudflare rate limit with the same email and delivery ID",
       );
       assert.include(message.text, contact.message);
       assert.include(message.text, `Delivery ID: ${first?.id}`);
+      assert.isTrue(message.html.startsWith("<!DOCTYPE html>"));
+      assert.include(message.html, contact.message);
+      assert.include(message.html, first?.id ?? "");
     }),
   );
 });

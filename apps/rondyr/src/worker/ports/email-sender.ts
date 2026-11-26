@@ -23,12 +23,13 @@ export class EmailUnavailable extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("EmailUnavailable", { summary: Schema.String }) {}
 
-/** One plain text message. Every value placed in a header is already validated. */
+/** One multipart (HTML + plain text) email. Every value placed in a header is already validated. */
 export interface EmailMessage {
   readonly from: EmailAddress;
   readonly to: EmailRecipients;
   readonly replyTo: Option.Option<EmailAddress>;
   readonly subject: string;
+  readonly html: string;
   readonly text: string;
   /**
    * The same on every attempt of a delivery, so that the provider sends the

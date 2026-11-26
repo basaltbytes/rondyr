@@ -1,5 +1,11 @@
 import { Schema } from "effect";
 
+import {
+  emailCode,
+  emailParagraph,
+  renderEmailLayout,
+  type RenderedEmail,
+} from "../deliveries/email-layout.ts";
 import { EmailLanguage } from "../deliveries/email.ts";
 import { UserId } from "../submissions/submission.id.ts";
 import { AccountEmail, AccountName, OtpCode, PasskeyId, PasskeyName } from "./account.ts";
@@ -190,21 +196,40 @@ export const PasskeyError = Schema.Union([
 const otpCopy = {
   en: {
     subject: "Your Rondyr sign-in code",
-    intro: "Use this code to sign in to your Rondyr account:",
-    expires: "This code expires in 10 minutes and works once.",
-    ignore: "If you did not ask to sign in, you can ignore this email.",
+    title: "Your sign-in code",
+    greeting: "Hello,",
+    enterCode: "Enter this code on the Rondyr sign-in page:",
+    validity:
+      "This code stays valid for 10 minutes and works once. If you did not ask for it, ignore this email.",
+    reason:
+      "You are receiving this email because someone asked for a sign-in code for your Rondyr account.",
   },
   fr: {
     subject: "Votre code de connexion Rondyr",
-    intro: "Utilisez ce code pour vous connecter à votre compte Rondyr :",
-    expires: "Ce code expire dans 10 minutes et ne sert qu’une fois.",
-    ignore: "Si vous n’avez pas demandé à vous connecter, vous pouvez ignorer cet e-mail.",
+    title: "Votre code de connexion",
+    greeting: "Bonjour,",
+    enterCode: "Saisissez ce code sur la page de connexion Rondyr :",
+    validity:
+      "Ce code reste valable 10 minutes et ne sert qu’une fois. Si vous n’avez rien demandé, ignorez cet e-mail.",
+    reason:
+      "Vous recevez cet e-mail parce qu’un code de connexion a été demandé pour votre compte Rondyr.",
   },
 } as const;
 
-/** The plain text email containing a one-time sign-in code. */
-export function emailOtpEmail(code: string, language: EmailLanguage) {
+/** The HTML and plain text email containing a one-time sign-in code. */
+export function emailOtpEmail(code: string, language: EmailLanguage): RenderedEmail {
   const words = otpCopy[language];
-  const text = [words.intro, code, words.expires, words.ignore];
-  return { subject: words.subject, text: `${text.join("\n\n")}\n` };
+  const text = [words.greeting, words.enterCode, code, words.validity, words.reason];
+  const html = renderEmailLayout({
+    language,
+    title: words.title,
+    bodyHtml: [
+      emailParagraph(words.greeting),
+      emailParagraph(words.enterCode),
+      emailCode(code),
+      emailParagraph(words.validity),
+    ],
+    reason: words.reason,
+  });
+  return { subject: words.subject, html, text: `${text.join("\n\n")}\n` };
 }

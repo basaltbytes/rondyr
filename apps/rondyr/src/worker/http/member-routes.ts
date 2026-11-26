@@ -89,7 +89,11 @@ const sendInvitation = Effect.fnUntraced(function* (
   const recipients = parseEmailRecipients([address]);
   if (Result.isFailure(recipients)) return "failed" satisfies InvitationEmail;
   const email = yield* EmailSender;
-  const { subject, text } = invitationEmail(link, expiresAt, language ?? defaultEmailLanguage);
+  const { subject, html, text } = invitationEmail(
+    link,
+    expiresAt,
+    language ?? defaultEmailLanguage,
+  );
   return yield* email.sender.pipe(
     Effect.flatMap((from) =>
       email.send({
@@ -97,6 +101,7 @@ const sendInvitation = Effect.fnUntraced(function* (
         to: recipients.success,
         replyTo: Option.none(),
         subject,
+        html,
         text,
         idempotencyKey: SecureRandom.uuidV4Unsafe(),
       }),
