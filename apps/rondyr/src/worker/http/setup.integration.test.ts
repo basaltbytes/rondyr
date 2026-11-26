@@ -621,6 +621,51 @@ describe("recovery token and custom-domain migration", () => {
         assert.strictEqual(signedIn.status, 200);
       }),
   );
+
+  it.live("returns 404 when the account disappears before recovery verification completes", () =>
+    Effect.gen(function* () {
+      const deletedId = "11111111-1111-4111-8111-111111111111";
+      const deletedEmail = "vanished@example.test";
+      const now = yield* Clock.currentTimeMillis;
+      yield* Effect.promise(() =>
+        env.DB.prepare(
+          "INSERT INTO auth_users (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)",
+        )
+          .bind(deletedId, "Vanished", deletedEmail, now, now)
+          .run(),
+      );
+      const optionsResponse = yield* postJson(
+        env.TEST_WORKER,
+        `${testOrigin}/api/auth/recovery/options`,
+        { email: deletedEmail },
+        { authorization: `Bearer ${testRecoveryToken}`, "cf-connecting-ip": "198.51.100.39" },
+      );
+      assert.strictEqual(optionsResponse.status, 200);
+      const creationOptions = yield* Effect.promise(() => optionsResponse.json()).pipe(
+        Effect.flatMap(decodeCreationOptions),
+      );
+      const { credential } = yield* Effect.promise(() =>
+        registerVirtualPasskey(creationOptions, testOrigin),
+      );
+
+      // Remove the account before recovery verification runs.
+      yield* Effect.promise(() =>
+        env.DB.prepare("DELETE FROM auth_users WHERE id = ?").bind(deletedId).run(),
+      );
+
+      const verified = yield* postJson(
+        env.TEST_WORKER,
+        `${testOrigin}/api/auth/recovery/verify`,
+        { credential, passkeyName: "Too late" },
+        { authorization: `Bearer ${testRecoveryToken}`, "cf-connecting-ip": "198.51.100.39" },
+      );
+      assert.strictEqual(verified.status, 404);
+      const orphanPasskeys = yield* Effect.promise(() =>
+        env.DB.prepare("SELECT id FROM auth_passkeys WHERE user_id = ?").bind(deletedId).all(),
+      );
+      assert.lengthOf(orphanPasskeys.results, 0);
+    }),
+  );
 });
 
 describe("account passkey management", () => {

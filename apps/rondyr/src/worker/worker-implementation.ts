@@ -12,7 +12,7 @@ import {
 
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { submissionScreeningLive } from "./adapters/ai/submission-screening.ts";
-import { authenticationLive } from "./adapters/authentication/passwordless.ts";
+import { authenticationLive } from "./adapters/authentication/authentication.ts";
 import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
 import { apiTokensLive } from "./adapters/database/api-tokens.ts";
 import { classificationPoliciesLive } from "./adapters/database/classification-policies.ts";

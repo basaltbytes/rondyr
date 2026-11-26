@@ -128,7 +128,11 @@
         "failed": "Could not update passkeys. Try again."
       },
       "unnamed": "Passkey",
-      "deleteSignsOut": "Deleting a passkey signs your account out on every other device."
+      "deleteSignsOut": "Deleting a passkey signs your account out on every other device.",
+      "deleteConfirmTitle": "Delete this passkey?",
+      "deleteConfirmDescription": "“{{name}}” will no longer sign in to your account, and your account will be signed out on every other device.",
+      "deleteConfirm": "Delete passkey",
+      "deleting": "Deleting…"
     },
     "signOut": {
       "submit": "Sign out",

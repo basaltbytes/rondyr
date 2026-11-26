@@ -1,3 +1,4 @@
+import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -65,16 +66,16 @@ interface PasskeyRowProps {
   readonly canDelete: boolean;
   readonly language: string;
   readonly onProblem: (problem: SecurityProblem | null) => void;
+  readonly onRequestDelete: (passkey: PasskeySummary) => void;
 }
 
-function PasskeyRow({ passkey, canDelete, language, onProblem }: PasskeyRowProps) {
+function PasskeyRow({ passkey, canDelete, language, onProblem, onRequestDelete }: PasskeyRowProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(passkey.name);
   // A passkey registered without a name is stored unnamed and labelled here.
   const name = passkey.name === "" ? t("authentication.security.unnamed") : passkey.name;
   const rename = useMutation(renamePasskeyMutation());
-  const remove = useMutation(deletePasskeyMutation());
 
   async function saveRename(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,15 +85,6 @@ function PasskeyRow({ passkey, canDelete, language, onProblem }: PasskeyRowProps
     try {
       await rename.mutateAsync({ id: passkey.id, name: trimmed });
       setEditing(false);
-    } catch (cause) {
-      onProblem(securityProblemOf(cause));
-    }
-  }
-
-  async function deleteCurrent() {
-    onProblem(null);
-    try {
-      await remove.mutateAsync(passkey.id);
     } catch (cause) {
       onProblem(securityProblemOf(cause));
     }
@@ -165,8 +157,8 @@ function PasskeyRow({ passkey, canDelete, language, onProblem }: PasskeyRowProps
               size="sm"
               variant="ghost"
               aria-label={t("authentication.security.deleteLabel", { name })}
-              disabled={!canDelete || remove.isPending}
-              onClick={() => void deleteCurrent()}
+              disabled={!canDelete}
+              onClick={() => onRequestDelete(passkey)}
             >
               <Trash2 aria-hidden="true" className="size-4" />
             </Button>
@@ -188,10 +180,18 @@ export function AccountSecurityDialog({ open, onOpenChange }: AccountSecurityDia
   const language = useLanguage();
   const passkeys = useQuery({ ...passkeysQuery, enabled: open });
   const add = useMutation(addPasskeyMutation());
+  const remove = useMutation(deletePasskeyMutation());
   const [newName, setNewName] = useState("");
   const [problem, setProblem] = useState<SecurityProblem | null>(null);
+  const [deleting, setDeleting] = useState<PasskeySummary | null>(null);
 
   const loaded = passkeys.data;
+  const deletingName =
+    deleting === null
+      ? ""
+      : deleting.name === ""
+        ? t("authentication.security.unnamed")
+        : deleting.name;
 
   async function addPasskey(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -204,93 +204,147 @@ export function AccountSecurityDialog({ open, onOpenChange }: AccountSecurityDia
     }
   }
 
+  async function confirmDelete(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (deleting === null) return;
+    setProblem(null);
+    try {
+      await remove.mutateAsync(deleting.id);
+      setDeleting(null);
+    } catch (cause) {
+      setDeleting(null);
+      setProblem(securityProblemOf(cause));
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent closeLabel={t("authentication.security.close")}>
-        <DialogHeader>
-          <DialogTitle>{t("authentication.security.title")}</DialogTitle>
-          <DialogDescription>{t("authentication.security.description")}</DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDeleting(null);
+          onOpenChange(nextOpen);
+        }}
+      >
+        <DialogContent closeLabel={t("authentication.security.close")}>
+          <DialogHeader>
+            <DialogTitle>{t("authentication.security.title")}</DialogTitle>
+            <DialogDescription>{t("authentication.security.description")}</DialogDescription>
+          </DialogHeader>
 
-        <section aria-label={t("authentication.security.passkeys")} className="grid gap-4">
-          <h3 className="text-sm font-medium">{t("authentication.security.passkeys")}</h3>
+          <section aria-label={t("authentication.security.passkeys")} className="grid gap-4">
+            <h3 className="text-sm font-medium">{t("authentication.security.passkeys")}</h3>
 
-          {passkeys.isPending && (
-            <div className="grid gap-2" aria-label={t("common.loading")}>
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
-            </div>
-          )}
+            {passkeys.isPending && (
+              <div className="grid gap-2" aria-label={t("common.loading")}>
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-14 w-full" />
+              </div>
+            )}
 
-          {passkeys.isError && (
-            <ReadFailure
-              cause={passkeys.error}
-              title={t("authentication.security.loadFailed")}
-              retry={t("common.retry")}
-              retrying={passkeys.isFetching}
-              onRetry={() => void passkeys.refetch()}
-            />
-          )}
+            {passkeys.isError && (
+              <ReadFailure
+                cause={passkeys.error}
+                title={t("authentication.security.loadFailed")}
+                retry={t("common.retry")}
+                retrying={passkeys.isFetching}
+                onRetry={() => void passkeys.refetch()}
+              />
+            )}
 
-          {loaded !== undefined && (
-            <>
-              {loaded.passkeys.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {t("authentication.security.empty")}
-                </p>
-              ) : (
-                <ul className="grid gap-2">
-                  {loaded.passkeys.map((item) => (
-                    <PasskeyRow
-                      key={item.id}
-                      passkey={item}
-                      canDelete={deletable(item, loaded)}
-                      language={language}
-                      onProblem={setProblem}
-                    />
-                  ))}
-                </ul>
-              )}
+            {loaded !== undefined && (
+              <>
+                {loaded.passkeys.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {t("authentication.security.empty")}
+                  </p>
+                ) : (
+                  <ul className="grid gap-2">
+                    {loaded.passkeys.map((item) => (
+                      <PasskeyRow
+                        key={item.id}
+                        passkey={item}
+                        canDelete={deletable(item, loaded)}
+                        language={language}
+                        onProblem={setProblem}
+                        onRequestDelete={setDeleting}
+                      />
+                    ))}
+                  </ul>
+                )}
 
-              {loaded.passkeys.some((item) => !deletable(item, loaded)) && (
-                <p className="text-xs text-pretty text-muted-foreground">
-                  {t("authentication.security.lastPasskeyHint")}
-                </p>
-              )}
+                {loaded.passkeys.some((item) => !deletable(item, loaded)) && (
+                  <p className="text-xs text-pretty text-muted-foreground">
+                    {t("authentication.security.lastPasskeyHint")}
+                  </p>
+                )}
 
-              {loaded.passkeys.length > 0 && (
-                <p className="text-xs text-pretty text-muted-foreground">
-                  {t("authentication.security.deleteSignsOut")}
-                </p>
-              )}
+                {loaded.passkeys.length > 0 && (
+                  <p className="text-xs text-pretty text-muted-foreground">
+                    {t("authentication.security.deleteSignsOut")}
+                  </p>
+                )}
 
-              <FormProblem>
-                {problem === null ? null : t(`authentication.security.problems.${problem}`)}
-              </FormProblem>
+                <FormProblem>
+                  {problem === null ? null : t(`authentication.security.problems.${problem}`)}
+                </FormProblem>
 
-              <form
-                onSubmit={(event) => void addPasskey(event)}
-                className="grid gap-3 border-t border-border pt-3"
-              >
-                <TextField
-                  label={t("authentication.security.newPasskeyName")}
-                  name="passkeyName"
-                  placeholder={t("authentication.security.newPasskeyPlaceholder")}
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                  maxLength={100}
-                />
-                <Button type="submit" variant="default" disabled={add.isPending}>
-                  <Plus aria-hidden="true" className="size-4" />
-                  {add.isPending
-                    ? t("authentication.security.adding")
-                    : t("authentication.security.add")}
-                </Button>
-              </form>
-            </>
-          )}
-        </section>
-      </DialogContent>
-    </Dialog>
+                <form
+                  onSubmit={(event) => void addPasskey(event)}
+                  className="grid gap-3 border-t border-border pt-3"
+                >
+                  <TextField
+                    label={t("authentication.security.newPasskeyName")}
+                    name="passkeyName"
+                    placeholder={t("authentication.security.newPasskeyPlaceholder")}
+                    value={newName}
+                    onChange={(event) => setNewName(event.target.value)}
+                    maxLength={100}
+                  />
+                  <Button type="submit" variant="default" disabled={add.isPending}>
+                    <Plus aria-hidden="true" className="size-4" />
+                    {add.isPending
+                      ? t("authentication.security.adding")
+                      : t("authentication.security.add")}
+                  </Button>
+                </form>
+              </>
+            )}
+          </section>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog.Root
+        open={deleting !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && !remove.isPending) setDeleting(null);
+        }}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-scrim" />
+          <AlertDialog.Popup className="fixed top-1/2 left-1/2 z-50 grid w-[calc(100%-2rem)] max-w-sm -translate-1/2 gap-3 rounded-lg border bg-card p-5 text-foreground shadow-popover outline-hidden">
+            <AlertDialog.Title className="text-base font-semibold">
+              {t("authentication.security.deleteConfirmTitle")}
+            </AlertDialog.Title>
+            <AlertDialog.Description className="text-sm wrap-anywhere text-pretty text-muted-foreground">
+              {t("authentication.security.deleteConfirmDescription", { name: deletingName })}
+            </AlertDialog.Description>
+            <form
+              onSubmit={(event) => void confirmDelete(event)}
+              className="flex flex-wrap justify-end gap-2"
+            >
+              <AlertDialog.Close disabled={remove.isPending} render={<Button variant="ghost" />}>
+                {t("common.cancel")}
+              </AlertDialog.Close>
+              <Button type="submit" variant="default" disabled={remove.isPending}>
+                {remove.isPending
+                  ? t("authentication.security.deleting")
+                  : t("authentication.security.deleteConfirm")}
+              </Button>
+            </form>
+          </AlertDialog.Popup>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+    </>
   );
 }

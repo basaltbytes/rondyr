@@ -1358,6 +1358,21 @@ test("add, rename, and delete passkeys from Account Security", async ({ dashboar
       name: t("authentication.security.deleteLabel", { name: "Travel laptop" }),
     })
     .click();
+  const confirmDelete = page.getByRole("alertdialog", {
+    name: t("authentication.security.deleteConfirmTitle"),
+  });
+  await expect(confirmDelete).toBeVisible();
+  await confirmDelete.getByRole("button", { name: t("common.cancel"), exact: true }).click();
+  await expect(dialog.getByText("Travel laptop", { exact: true })).toBeVisible();
+
+  await dialog
+    .getByRole("button", {
+      name: t("authentication.security.deleteLabel", { name: "Travel laptop" }),
+    })
+    .click();
+  await confirmDelete
+    .getByRole("button", { name: t("authentication.security.deleteConfirm"), exact: true })
+    .click();
   await expect(dialog.getByText("Travel laptop", { exact: true })).toHaveCount(0);
 });
 
