@@ -1,3 +1,4 @@
+import { generateRandomString, type RandomReader } from "@oslojs/crypto/random";
 import { Clock, Effect, Schema } from "effect";
 import { SecureRandom } from "effect/crypto";
 
@@ -31,16 +32,15 @@ const OtpRow = Schema.Struct({
 
 const decodeOtpRows = Schema.decodeUnknownEffect(Schema.Array(OtpRow));
 
-/** Generate an unbiased 6-digit numeric OTP code using Web Crypto CSPRNG. */
+const otpRandom: RandomReader = {
+  read(bytes) {
+    bytes.set(SecureRandom.randomBytesUnsafe(bytes.length));
+  },
+};
+
+/** Generate an unbiased 6-digit numeric OTP code via `@oslojs/crypto/random`. */
 function generateOtpCode(): string {
-  const max = 1_000_000;
-  const limit = Math.floor(0x1_0000_0000 / max) * max;
-  while (true) {
-    const bytes = SecureRandom.randomBytesUnsafe(4);
-    const view = new DataView(bytes.buffer, bytes.byteOffset, 4);
-    const value = view.getUint32(0, false);
-    if (value < limit) return String(value % max).padStart(6, "0");
-  }
+  return generateRandomString(otpRandom, "0123456789", 6);
 }
 
 export const issueEmailOtp = Effect.fn("Authentication.issueEmailOtp")(function* (
