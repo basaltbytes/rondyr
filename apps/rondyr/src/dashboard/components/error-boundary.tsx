@@ -1,3 +1,4 @@
+import { cn } from "cn";
 import { AlertTriangle, RefreshCw, RotateCcw } from "lucide-react";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 interface ErrorBoundaryProps {
   /** Full-page fallback for the root boundary, or a compact fallback for one section. */
   readonly variant?: "page" | "section";
+  /** Classes of the compact fallback, to place it where the section was. */
+  readonly className?: string;
   readonly children: ReactNode;
 }
 
@@ -53,10 +56,16 @@ function AppErrorFallback({ onRetry }: { readonly onRetry: () => void }) {
 }
 
 /** Compact fallback for an isolated section inside a larger screen. */
-function SectionErrorFallback({ onRetry }: { readonly onRetry: () => void }) {
+function SectionErrorFallback({
+  className,
+  onRetry,
+}: {
+  readonly className: string | undefined;
+  readonly onRetry: () => void;
+}) {
   const { t } = useTranslation();
   return (
-    <div role="alert" className="grid justify-items-start gap-2 hairline-t pt-4">
+    <div role="alert" className={cn("grid justify-items-start gap-2 hairline-t pt-4", className)}>
       <p className="text-sm font-medium text-destructive">{t("errorBoundary.sectionTitle")}</p>
       <p className="max-w-prose text-xs text-pretty text-muted-foreground">
         {t("errorBoundary.sectionDescription")}
@@ -88,7 +97,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   override render() {
     if (this.state.failed) {
       return this.props.variant === "section" ? (
-        <SectionErrorFallback onRetry={this.reset} />
+        <SectionErrorFallback className={this.props.className} onRetry={this.reset} />
       ) : (
         <AppErrorFallback onRetry={this.reset} />
       );

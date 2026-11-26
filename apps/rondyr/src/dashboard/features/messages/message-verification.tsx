@@ -15,8 +15,8 @@ import { useTranslation } from "react-i18next";
 
 import type { ScreeningPreview } from "@rondyr/contracts/verification";
 
-import { Button } from "~/components/ui/button";
 import { reasonIcons } from "~/components/reason-label";
+import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { testScreeningMutation, type InboxRow, type SubmissionDetail } from "~/lib/api/messages";
 import { statusOf } from "~/lib/api/request";
@@ -31,6 +31,7 @@ import {
   type Scale as ScoreScale,
   type VerdictTone,
 } from "./screening.ts";
+import { ReaderPanel } from "./reader-panels.tsx";
 
 /** The kind of a check is its icon; its color is only for a check that fired or failed. */
 /**
@@ -368,11 +369,14 @@ export function MessageVerification({
   if (detail === undefined) {
     if (!loading) return null;
     return (
-      <section aria-label={t("verification.label")} className="grid gap-3 hairline-t pt-5">
-        <Skeleton className="h-4 w-28" />
+      <ReaderPanel
+        value="classification"
+        title={t("verification.title")}
+        summary={<Skeleton className="h-3.5 w-48" />}
+      >
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-40 w-full" />
-      </section>
+      </ReaderPanel>
     );
   }
 
@@ -417,14 +421,16 @@ export function MessageVerification({
   );
 
   return (
-    <section aria-label={t("verification.label")} className="grid gap-4 hairline-t pt-5">
-      <div className="-my-1 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{t("verification.title")}</h3>
-        {canTestScreening && (
+    <ReaderPanel
+      value="classification"
+      title={t("verification.title")}
+      summary={verdict.title}
+      actions={
+        canTestScreening ? (
           <Button
             variant="ghost"
             size="sm"
-            className="-mr-3"
+            className="-mr-1"
             disabled={testing}
             onClick={() => void runTest()}
           >
@@ -444,9 +450,9 @@ export function MessageVerification({
                 ? t("verification.test.retest")
                 : t("verification.test.action")}
           </Button>
-        )}
-      </div>
-
+        ) : undefined
+      }
+    >
       <p className="text-sm/relaxed text-pretty">
         <span className="font-medium wrap-anywhere">{verdict.title}.</span>{" "}
         <span className="text-muted-foreground">{verdict.detail}</span>
@@ -460,7 +466,7 @@ export function MessageVerification({
         </p>
       )}
 
-      <div className="-mx-1 overflow-x-auto px-1">
+      <div className="-mx-2 overflow-x-auto px-2">
         <table className="w-full text-sm">
           <caption className="sr-only">{t("verification.table.caption")}</caption>
           <thead>
@@ -483,7 +489,7 @@ export function MessageVerification({
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      className="-my-2 -mr-2 size-7"
+                      className="-my-2 -mr-0.5 size-7"
                       aria-label={t("verification.test.dismiss")}
                       onClick={() => setTestState(null)}
                     >
@@ -619,6 +625,6 @@ export function MessageVerification({
           </dl>
         </div>
       </details>
-    </section>
+    </ReaderPanel>
   );
 }

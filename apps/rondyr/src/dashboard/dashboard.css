@@ -63,6 +63,8 @@
   --shadow-lg: 4px 4px 0px 0px hsl(0 0% 0% / 1), 4px 4px 6px -1px hsl(0 0% 0% / 1);
   --shadow-xl: 4px 4px 0px 0px hsl(0 0% 0% / 1), 4px 8px 10px -1px hsl(0 0% 0% / 1);
   --shadow-2xl: 4px 4px 0px 0px hsl(0 0% 0% / 2.5);
+  /* An open panel at the foot of the reader, over the message that scrolls under it. */
+  --dock-shadow: 0 -12px 24px -14px oklch(0 0 0 / 0.4);
   --tracking-normal: -0.01em;
   --spacing: 0.25rem;
 }
@@ -107,6 +109,8 @@
     --sidebar-accent-foreground: oklch(1 0 0);
     --sidebar-border: oklch(0.3211 0 0);
     --sidebar-ring: oklch(0.781 0.108 40.6);
+    /* A shadow hardly shows on a dark card: a light edge marks the top of the panel too. */
+    --dock-shadow: 0 -1px 0 0 oklch(1 0 0 / 0.08), 0 -16px 32px -12px oklch(0 0 0 / 0.85);
   }
 }
 
@@ -155,6 +159,7 @@
   --sidebar-accent-foreground: oklch(1 0 0);
   --sidebar-border: oklch(0.18 0 0);
   --sidebar-ring: oklch(0.781 0.108 40.6);
+  --dock-shadow: 0 -1px 0 0 oklch(1 0 0 / 0.08), 0 -16px 32px -12px oklch(0 0 0 / 0.85);
 }
 
 @theme inline {
@@ -218,6 +223,7 @@
   --shadow-2xl: var(--shadow-2xl);
   --shadow-raised: 0 0 0 1px var(--border), var(--shadow-sm);
   --shadow-popover: 0 0 0 1px var(--border), var(--shadow-lg);
+  --shadow-dock: var(--dock-shadow);
 
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
@@ -347,6 +353,14 @@
   }
 }
 
+/* A panel that opens and folds to the height of its content; with reduced motion it jumps. */
+@utility transition-panel-height {
+  transition: height 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+}
+
 /* Hides the native disclosure triangle so a custom icon marks open and closed states. */
 @utility details-summary {
   list-style: none;
@@ -370,6 +384,17 @@
   /* Menus, tooltips and the drawer render after the app, so they need no z-index. */
   #root {
     isolation: isolate;
+  }
+
+  /*
+   * From 64rem the app has the height of the window and only its panes scroll. Without
+   * this, a pane that reaches its end hands the scroll to the page, which bounces past
+   * the app.
+   */
+  @media (width >= 64rem) {
+    html {
+      overscroll-behavior: none;
+    }
   }
 
   body {

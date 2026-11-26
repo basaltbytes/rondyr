@@ -10,9 +10,12 @@ import { ReadFailure } from "~/components/read-failure";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
 import { deliveriesQuery, retryDeliveryMutation, type DeliveryRecord } from "~/lib/api/deliveries";
 import { statusOf } from "~/lib/api/request";
 import { useFormats } from "~/lib/i18n";
+
+import { ReaderPanel } from "./reader-panels.tsx";
 
 /** Why a retry was not applied. Each one names a message of `inbox.deliveries.problems`. */
 type RetryProblem = "noLongerFailed" | "retryNotSaved";
@@ -24,6 +27,9 @@ const statusBadges = {
   retrying: "warning",
   failed: "destructive",
 } as const;
+
+/** The statuses that the folded panel shows, the one that needs a person first. */
+const summaryOrder = ["failed", "retrying", "processing", "pending", "delivered"] as const;
 
 const outcomeTones = {
   delivered: "font-medium text-success",
@@ -105,25 +111,49 @@ export function DeliveryHistory({ organizationId, submissionId, canRetry }: Deli
     null,
   );
 
+  const summary = history.isPending ? (
+    <Skeleton className="h-3.5 w-24" />
+  ) : deliveries === null ? undefined : deliveries.length === 0 ? (
+    t("inbox.deliveries.empty")
+  ) : (
+    summaryOrder
+      .filter((status) => deliveries.some((delivery) => delivery.status === status))
+      .map((status) => (
+        <Badge key={status} variant={statusBadges[status]}>
+          {t(`status.deliveries.${status}`)}
+        </Badge>
+      ))
+  );
+
   return (
-    <section aria-label={t("inbox.deliveries.label")} className="grid gap-3 hairline-t pt-5">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">{t("inbox.deliveries.title")}</h3>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t("inbox.deliveries.refresh")}
-          onClick={() => void history.refetch()}
-        >
-          <RefreshCw
-            aria-hidden="true"
-            className={cn(
-              "size-4",
-              history.isFetching && "animate-spin motion-reduce:animate-none",
-            )}
+    <ReaderPanel
+      value="deliveries"
+      title={t("inbox.deliveries.title")}
+      summary={summary}
+      actions={
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("inbox.deliveries.refresh")}
+                onClick={() => void history.refetch()}
+              >
+                <RefreshCw
+                  aria-hidden="true"
+                  className={cn(
+                    "size-4",
+                    history.isFetching && "animate-spin motion-reduce:animate-none",
+                  )}
+                />
+              </Button>
+            }
           />
-        </Button>
-      </div>
+          <TooltipContent>{t("inbox.deliveries.refresh")}</TooltipContent>
+        </Tooltip>
+      }
+    >
       {history.isError && (
         <ReadFailure
           cause={history.error}
@@ -241,6 +271,6 @@ export function DeliveryHistory({ organizationId, submissionId, canRetry }: Deli
           {t(`inbox.deliveries.problems.${problem}`)}
         </p>
       )}
-    </section>
+    </ReaderPanel>
   );
 }

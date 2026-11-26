@@ -1,6 +1,8 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { MessageReader, MessageReaderSkeleton } from "~/features/messages/message-reader";
+import type { ReaderPanelName } from "~/features/messages/reader-panels";
 import { deliveriesQuery } from "~/lib/api/deliveries";
 import { messageListQuery, messageQuery } from "~/lib/api/messages";
 import { statusOf } from "~/lib/api/request";
@@ -43,12 +45,16 @@ function OpenMessage() {
   const { submissionId } = Route.useParams();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
+  // The route stays mounted from one message to the next, and so does the open panel.
+  const [panel, setPanel] = useState<ReaderPanelName | null>(null);
   return (
     <MessageReader
       key={submissionId}
       organization={organization}
       submissionId={submissionId}
       search={search}
+      panel={panel}
+      onPanel={setPanel}
       onOpen={(next, replace) =>
         void (next === null
           ? navigate({ to: "/o/$organizationId/messages", search, replace })

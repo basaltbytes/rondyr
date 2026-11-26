@@ -43,6 +43,7 @@ import type { MessagesSearch } from "~/lib/messages-search";
 import { DeliveryHistory } from "./delivery-history.tsx";
 import { readMessage } from "./message-preview.ts";
 import { MessageVerification } from "./message-verification.tsx";
+import { ReaderPanels, type ReaderPanelName } from "./reader-panels.tsx";
 
 // Color is the status of the message, and nothing else in the reader has one.
 const statusTones = {
@@ -73,6 +74,9 @@ interface MessageReaderProps {
    * the address of the message that left replaces itself.
    */
   readonly onOpen: (submissionId: string | null, replace: boolean) => void;
+  /** The open panel under the message. It stays open from one message to the next. */
+  readonly panel: ReaderPanelName | null;
+  readonly onPanel: (panel: ReaderPanelName | null) => void;
 }
 
 interface DeletionProps {
@@ -200,6 +204,10 @@ export function MessageReaderSkeleton() {
           </div>
         </div>
       </div>
+      <div aria-hidden="true" className="flex h-11 shrink-0 items-center gap-3 hairline-t px-5">
+        <Skeleton className="h-3.5 w-24" />
+        <Skeleton className="h-3.5 w-48 max-w-full" />
+      </div>
     </>
   );
 }
@@ -208,10 +216,17 @@ export function MessageReaderSkeleton() {
  * One message. The bar on top has the place of the message in the list and the
  * decision, at the height of the list's header. Under it everything starts on
  * one left edge: why the message is here, who wrote, what they wrote, then the
- * other fields. A message opened by its address shows even when the list does not
- * have it.
+ * other fields. Its classification and its deliveries are folded at the foot. A
+ * message opened by its address shows even when the list does not have it.
  */
-export function MessageReader({ organization, submissionId, search, onOpen }: MessageReaderProps) {
+export function MessageReader({
+  organization,
+  submissionId,
+  search,
+  onOpen,
+  panel,
+  onPanel,
+}: MessageReaderProps) {
   const { t } = useTranslation();
   const format = useFormats();
   const queryClient = useQueryClient();
@@ -501,26 +516,28 @@ export function MessageReader({ organization, submissionId, search, onOpen }: Me
               ))}
             </dl>
           )}
-          <ErrorBoundary variant="section">
-            <MessageVerification
-              organizationId={organization.id}
-              canTestScreening={allows(organization.role, "manage-forms")}
-              entry={entry}
-              detail={detail.data}
-              loading={detail.isPending}
-            />
-          </ErrorBoundary>
-          {entry.status === "accepted" && (
-            <ErrorBoundary variant="section">
-              <DeliveryHistory
-                organizationId={organization.id}
-                submissionId={submissionId}
-                canRetry={mayRetry}
-              />
-            </ErrorBoundary>
-          )}
         </article>
       </div>
+      <ReaderPanels open={panel} onOpen={onPanel}>
+        <ErrorBoundary variant="section" className="px-5 pb-4">
+          <MessageVerification
+            organizationId={organization.id}
+            canTestScreening={allows(organization.role, "manage-forms")}
+            entry={entry}
+            detail={detail.data}
+            loading={detail.isPending}
+          />
+        </ErrorBoundary>
+        {entry.status === "accepted" && (
+          <ErrorBoundary variant="section" className="px-5 pb-4">
+            <DeliveryHistory
+              organizationId={organization.id}
+              submissionId={submissionId}
+              canRetry={mayRetry}
+            />
+          </ErrorBoundary>
+        )}
+      </ReaderPanels>
     </>
   );
 }
