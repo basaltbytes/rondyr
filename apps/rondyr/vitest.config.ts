@@ -7,6 +7,7 @@ import { unstable_getMiniflareWorkerOptions } from "wrangler";
 import {
   testEmailFrom,
   testOrigin,
+  testRecoveryToken,
   testResendKey,
   testSecretsKey,
   testSetupToken,
@@ -96,8 +97,8 @@ export default defineConfig({
       };
       const bindings = {
         ...queueNames,
-        BETTER_AUTH_SECRET: "workerd-test-only-better-auth-secret-8ea101",
-        BETTER_AUTH_URL: testOrigin,
+        RONDYR_SESSION_SECRET: "workerd-test-only-session-secret-8ea101",
+        RONDYR_PUBLIC_URL: testOrigin,
         RONDYR_SETUP_TOKEN: testSetupToken,
         RONDYR_EMAIL_FROM: testEmailFrom,
       };
@@ -154,6 +155,7 @@ export default defineConfig({
               unsafeBindings: [workersAiBinding],
               bindings: {
                 ...bindings,
+                RONDYR_RECOVERY_TOKEN: testRecoveryToken,
                 RESEND_API_KEY: testResendKey,
                 RONDYR_SECRETS_KEY: testSecretsKey,
               },

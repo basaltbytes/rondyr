@@ -2,11 +2,11 @@ import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { makeRpcStub, type RpcCallError } from "@alchemy.run/cloudflare/Workers/Rpc";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
-import { hashPassword } from "better-auth/crypto";
-import { Clock, Effect, Redacted, Schema } from "effect";
+import { Effect, Redacted, Schema } from "effect";
 import { Hex } from "effect/encoding";
 
 import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { seedAccount } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
   createInbox,
@@ -76,30 +76,7 @@ const quarantine = Effect.fnUntraced(function* (publicId: string) {
 });
 
 const otherAccount = Effect.fnUntraced(function* () {
-  const id = "api-token-outsider";
-  const credentials = {
-    email: "api-token-outsider@example.test",
-    password: "api-token-test-password",
-  };
-  const password = yield* Effect.promise(() => hashPassword(credentials.password));
-  const now = yield* Clock.currentTimeMillis;
-  yield* Effect.promise(() =>
-    env.DB.batch([
-      env.DB.prepare(
-        "INSERT INTO auth_users (id, name, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ).bind(id, "Other reviewer", credentials.email, now, now),
-      env.DB.prepare(`
-      INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password, created_at, updated_at)
-      VALUES (?, ?, ?, 'credential', ?, ?, ?)
-    `).bind(id, id, id, password, now, now),
-    ]),
-  );
-  const response = yield* call("POST", "/api/auth/sign-in/email", credentials);
-  assert.strictEqual(response.status, 200);
-  const cookie = response.headers
-    .getSetCookie()
-    .map((value) => value.split(";", 1)[0])
-    .join("; ");
+  const { cookie } = yield* seedAccount("api-token-outsider", "api-token-outsider@example.test");
   assert.isNotEmpty(cookie);
   return { cookie };
 });
@@ -254,10 +231,20 @@ it.live("returns 403 to a token on every other API route, even with a member's c
     const { token } = yield* createToken(id, cookie);
 
     const requests = [
+      ["GET", "/api/auth/status"],
       ["GET", "/api/auth/get-session"],
-      ["POST", "/api/auth/sign-in/email"],
+      ["POST", "/api/auth/passkey/options"],
+      ["POST", "/api/auth/passkey/verify"],
+      ["POST", "/api/auth/otp/request"],
+      ["POST", "/api/auth/otp/verify"],
+      ["POST", "/api/auth/recovery/options"],
+      ["POST", "/api/auth/recovery/verify"],
       ["POST", "/api/auth/sign-out"],
-      ["POST", "/api/setup"],
+      ["POST", "/api/setup/options"],
+      ["POST", "/api/setup/verify"],
+      ["GET", "/api/account/passkeys"],
+      ["POST", "/api/account/passkeys/options"],
+      ["POST", "/api/account/passkeys/verify"],
       ["GET", "/api/operations"],
       ["POST", "/api/organizations"],
       ["GET", tokensPath(id)],

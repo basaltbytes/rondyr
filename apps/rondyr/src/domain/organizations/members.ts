@@ -2,7 +2,8 @@ import { Schema } from "effect";
 
 import { EmailLanguage } from "../deliveries/email.ts";
 import { OrganizationId, UserId } from "../submissions/submission.id.ts";
-import { AccountEmail, AccountName, AccountPassword } from "./account.ts";
+import { AccountEmail, AccountName, PasskeyName } from "./account.ts";
+import { PasskeyRegistrationCredential } from "./authentication.ts";
 import { MemberRole } from "./member-role.ts";
 
 /** An invitation link stays valid for seven days. */
@@ -94,15 +95,22 @@ export const InvitationSummary = Schema.Struct({
 
 export const ReadInvitation = Schema.Struct({ token: InvitationToken });
 
-/**
- * Accept an invitation. A signed-in account at the invited address joins. A
- * person without an account sends a name and a password, with the rules of
- * the first account, and gets an account at the invited address.
- */
+/** Accept an invitation as the signed-in account at the invited address. */
 export const AcceptInvitation = Schema.Struct({
   token: InvitationToken,
-  name: Schema.optionalKey(AccountName),
-  password: Schema.optionalKey(AccountPassword),
+});
+
+/** Request passkey creation options to create an account and accept an invitation. */
+export const InvitationOptionsInput = Schema.Struct({
+  token: InvitationToken,
+  name: AccountName,
+});
+
+/** Verify passkey registration to atomically create an account, sign in, and join. */
+export const InvitationVerifyInput = Schema.Struct({
+  token: InvitationToken,
+  credential: PasskeyRegistrationCredential,
+  passkeyName: Schema.optionalKey(PasskeyName),
 });
 
 export const AcceptedInvitation = Schema.Struct({ organizationId: OrganizationId });
@@ -112,4 +120,5 @@ export const InvitationRequestError = Schema.Union([
   Schema.Struct({ error: Schema.Literal("sign-in-required") }),
   Schema.Struct({ error: Schema.Literal("other-account") }),
   Schema.Struct({ error: Schema.Literal("account-required") }),
+  Schema.Struct({ error: Schema.Literal("passkey-invalid") }),
 ]);

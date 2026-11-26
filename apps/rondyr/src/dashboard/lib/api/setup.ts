@@ -1,33 +1,34 @@
-import { queryOptions } from "@tanstack/react-query";
+import {
+  AuthSession,
+  PasskeyCreationOptions,
+  PasskeyError,
+} from "@rondyr/organizations/authentication";
 
-import { SetupStatus } from "@rondyr/organizations/setup";
+import { createBrowserPasskey } from "~/lib/webauthn";
 
-import { request, requestJson } from "./request.ts";
-
-/** Whether the first account of this instance can be created. */
-export const setupQuery = queryOptions({
-  queryKey: ["setup"],
-  queryFn: async ({ signal }) => {
-    const { state } = await requestJson("/api/setup", SetupStatus, { signal, cache: "no-store" });
-    return state;
-  },
-  staleTime: 0,
-});
+import { requestJson } from "./request.ts";
 
 interface Owner {
   readonly name: string;
   readonly email: string;
-  readonly password: string;
 }
 
 /**
- * Create the owner account with the setup token that whoever deployed the instance
- * chose. The token travels in a header, like the setup script sends it.
+ * Create the owner account and its first passkey atomically with the setup token,
+ * starting a session immediately upon verification.
  */
-export async function createOwner(token: string, owner: Owner) {
-  await request("/api/setup", {
+export async function createOwnerWithPasskey(token: string, owner: Owner) {
+  const headers = { authorization: `Bearer ${token}` };
+  const options = await requestJson("/api/setup/options", PasskeyCreationOptions, {
     method: "POST",
-    headers: { authorization: `Bearer ${token}` },
-    json: { ...owner },
+    headers,
+    json: { name: owner.name, email: owner.email },
+  });
+  const credential = await createBrowserPasskey(options);
+  return requestJson("/api/setup/verify", AuthSession, {
+    method: "POST",
+    headers,
+    json: { credential },
+    refusal: PasskeyError,
   });
 }

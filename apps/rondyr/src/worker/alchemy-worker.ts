@@ -11,15 +11,15 @@ import {
 } from "../domain/submissions/classification-policy.ts";
 import { workerImplementation } from "./worker-implementation.ts";
 
-const deployedOrigin = Config.schema(
-  Schema.URL.check(
-    Schema.makeFilter(
-      (url) =>
-        (url.protocol === "https:" && url.port === "" && url.href === `${url.origin}/`) ||
-        "Expected an HTTPS origin with no path, credentials, or custom port",
-    ),
+const canonicalOriginSchema = Schema.URL.check(
+  Schema.makeFilter(
+    (url) =>
+      (url.protocol === "https:" && url.port === "" && url.href === `${url.origin}/`) ||
+      "Expected an HTTPS origin with no path, credentials, or custom port",
   ),
-  "BETTER_AUTH_URL",
+);
+const deployedOrigin = Config.schema(canonicalOriginSchema, "RONDYR_PUBLIC_URL").pipe(
+  Config.orElse(() => Config.schema(canonicalOriginSchema, "BETTER_AUTH_URL")),
 );
 
 export const databaseResource = Cloudflare.D1.Database("Database", {
@@ -65,12 +65,17 @@ const deploymentProps = Effect.gen(function* () {
   const delivery = yield* deliveryQueue;
   const classificationDeadLetter = yield* classificationDeadLetterQueue;
   const deliveryDeadLetter = yield* deliveryDeadLetterQueue;
-  const secret = Config.Redacted("BETTER_AUTH_SECRET");
-  const authSecret = yield* dev ? Config.option(secret) : secret.pipe(Config.map(Option.some));
-  const authUrl = yield* dev
-    ? Config.option(Config.URL("BETTER_AUTH_URL"))
+  const secret = Config.Redacted("RONDYR_SESSION_SECRET").pipe(
+    Config.orElse(() => Config.Redacted("BETTER_AUTH_SECRET")),
+  );
+  const sessionSecret = yield* dev ? Config.option(secret) : secret.pipe(Config.map(Option.some));
+  const publicUrl = yield* dev
+    ? Config.option(
+        Config.URL("RONDYR_PUBLIC_URL").pipe(Config.orElse(() => Config.URL("BETTER_AUTH_URL"))),
+      )
     : deployedOrigin.pipe(Config.map(Option.some));
   const setupToken = yield* Config.option(Config.Redacted("RONDYR_SETUP_TOKEN"));
+  const recoveryToken = yield* Config.option(Config.Redacted("RONDYR_RECOVERY_TOKEN"));
   // Without it, webhook targets cannot be created or rotated; everything else works.
   const secretsKey = yield* Config.option(Config.Redacted("RONDYR_SECRETS_KEY"));
   const classifier = yield* Config.schema(ClassifierProvider, "RONDYR_CLASSIFIER").pipe(
@@ -94,8 +99,8 @@ const deploymentProps = Effect.gen(function* () {
   return {
     main: import.meta.url,
     name: `rondyr-${stage}`,
-    ...(!dev && stage === "prod" && Option.isSome(authUrl)
-      ? { domain: authUrl.value.hostname, workersDev: false }
+    ...(!dev && stage === "prod" && Option.isSome(publicUrl)
+      ? { domain: publicUrl.value.hostname, workersDev: false }
       : { workersDev: true }),
     compatibility: {
       date: wrangler.compatibility_date,
@@ -125,9 +130,10 @@ const deploymentProps = Effect.gen(function* () {
       }),
       RONDYR_EMAIL_PROVIDER: emailProvider,
       ...(!dev && { AI: Cloudflare.Workers.AI() }),
-      ...(Option.isSome(authSecret) && { BETTER_AUTH_SECRET: authSecret.value }),
-      ...(Option.isSome(authUrl) && { BETTER_AUTH_URL: authUrl.value.origin }),
+      ...(Option.isSome(sessionSecret) && { RONDYR_SESSION_SECRET: sessionSecret.value }),
+      ...(Option.isSome(publicUrl) && { RONDYR_PUBLIC_URL: publicUrl.value.origin }),
       ...(Option.isSome(setupToken) && { RONDYR_SETUP_TOKEN: setupToken.value }),
+      ...(Option.isSome(recoveryToken) && { RONDYR_RECOVERY_TOKEN: recoveryToken.value }),
       ...(Option.isSome(secretsKey) && { RONDYR_SECRETS_KEY: secretsKey.value }),
       ...(Option.isSome(emailFrom) && { RONDYR_EMAIL_FROM: emailFrom.value }),
       ...(Option.isSome(resendKey) && { RESEND_API_KEY: resendKey.value }),

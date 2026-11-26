@@ -15,7 +15,7 @@ Rondyr pins Effect in `package.json`. Verify examples against that installed ver
 
 When working in any repo that uses Effect (`effect` or `@effect/*` in package/dependency files), verify against the Effect source before writing, reviewing, or refactoring Effect code. Do not rely on stale memory, blog posts, or high-level docs alone.
 
-- **API names and signatures**: grep the installed pinned package first, at `node_modules/.pnpm/effect@<pinned>*/node_modules/effect/dist/*.d.ts` (plus `src/` and `internal/` for semantics). It is the exact version the code compiles against. Cite the `.d.ts` or source line when you state how something behaves.
+- **API names and signatures**: grep the installed pinned package first, at `apps/rondyr/node_modules/effect/dist/*.d.ts` (plus `src/` and `internal/` for semantics). It is the exact version the code compiles against. Cite the `.d.ts` or source line when you state how something behaves.
 - **Behavior**: for a question about what the code does at runtime, such as how a decoder treats an absent key or what a stream emits for a blank line, prove it with a throwaway `node --input-type=module` probe against the installed package. Do not answer it by reading alone.
 - **Broader reading** (tests, examples, implementation context): use the repo-local shallow mirror at `.agent-sources/effect/`; create it if missing with `mkdir -p .agent-sources && git clone --depth 1 --filter=blob:none https://github.com/effect-ts/effect.git .agent-sources/effect` (or the `effect_source` tool if available). The mirror follows upstream main, which is usually ahead of the pinned version. When the two disagree, the installed package is correct. The optional source mirror is ignored by Git.
 

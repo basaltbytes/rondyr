@@ -1,12 +1,12 @@
 import { useState } from "react";
 
-import { authClient } from "~/lib/api/session";
+import { signOutRequest } from "~/lib/api/session";
 
 /** Ends the session. Returns whether it worked. */
 async function signOut() {
   try {
-    const result = await authClient.signOut();
-    return result.error === null;
+    await signOutRequest();
+    return true;
   } catch {
     return false;
   }

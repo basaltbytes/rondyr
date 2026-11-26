@@ -40,10 +40,6 @@ export default defineConfig(({ command }) => ({
               groups: [
                 { name: "react", test: /node_modules\/(?:react|react-dom|scheduler)\// },
                 { name: "effect", test: /node_modules\/effect\// },
-                {
-                  name: "auth",
-                  test: /node_modules\/(?:better-auth|@better-auth|better-call|@better-fetch|nanostores)\//,
-                },
                 { name: "i18n", test: /node_modules\/(?:i18next|react-i18next)\// },
                 { name: "tanstack", test: /node_modules\/@tanstack\// },
               ],

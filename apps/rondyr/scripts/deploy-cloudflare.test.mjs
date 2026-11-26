@@ -18,7 +18,7 @@ const missingDatabase =
 test("generates both secrets for a Worker that does not exist yet", () => {
   const listing = { status: 1, stdout: "", stderr: missingWorker };
   assert.deepEqual(secretsToCreate(listing), {
-    create: ["BETTER_AUTH_SECRET", "RONDYR_SECRETS_KEY"],
+    create: ["RONDYR_SESSION_SECRET", "RONDYR_SECRETS_KEY"],
   });
 });
 
@@ -28,11 +28,19 @@ test("generates only the secrets that the Worker lacks", () => {
     { name: "RONDYR_SETUP_TOKEN", type: "secret_text" },
   ]);
   assert.deepEqual(secretsToCreate({ status: 0, stdout, stderr: "" }), {
-    create: ["BETTER_AUTH_SECRET"],
+    create: ["RONDYR_SESSION_SECRET"],
   });
 });
 
 test("generates nothing when the Worker has both secrets", () => {
+  const stdout = JSON.stringify([
+    { name: "RONDYR_SESSION_SECRET", type: "secret_text" },
+    { name: "RONDYR_SECRETS_KEY", type: "secret_text" },
+  ]);
+  assert.deepEqual(secretsToCreate({ status: 0, stdout, stderr: "" }), { create: [] });
+});
+
+test("skips RONDYR_SESSION_SECRET when legacy BETTER_AUTH_SECRET already exists", () => {
   const stdout = JSON.stringify([
     { name: "BETTER_AUTH_SECRET", type: "secret_text" },
     { name: "RONDYR_SECRETS_KEY", type: "secret_text" },
@@ -62,9 +70,9 @@ test("takes the Worker name from Workers Builds when it overrides the configurat
 });
 
 test("generates secrets in the formats that the Worker accepts", () => {
-  const authSecret = generatedSecrets.BETTER_AUTH_SECRET();
-  assert.match(authSecret, /^[0-9a-f]{64}$/u);
-  assert.notEqual(authSecret, generatedSecrets.BETTER_AUTH_SECRET());
+  const sessionSecret = generatedSecrets.RONDYR_SESSION_SECRET();
+  assert.match(sessionSecret, /^[0-9a-f]{64}$/u);
+  assert.notEqual(sessionSecret, generatedSecrets.RONDYR_SESSION_SECRET());
   // RONDYR_SECRETS_KEY is 32 bytes in base64; any other value counts as missing.
   assert.equal(Buffer.from(generatedSecrets.RONDYR_SECRETS_KEY(), "base64").byteLength, 32);
 });

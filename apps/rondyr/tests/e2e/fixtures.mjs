@@ -7,11 +7,13 @@ import { unstable_getMiniflareWorkerOptions } from "wrangler";
 
 import {
   testEmailFrom,
+  testRecoveryToken,
   testResendKey,
   testSecretsKey,
   testSetupToken,
 } from "../integration/auth-fixture.ts";
 import { externalWorkers, workersAiBinding } from "../integration/external-workers.ts";
+import { registerVirtualPasskey } from "../integration/webauthn-helper.mjs";
 import en from "../../src/dashboard/locales/en/translation.json" with { type: "json" };
 import fr from "../../src/dashboard/locales/fr/translation.json" with { type: "json" };
 
@@ -37,8 +39,31 @@ export const frenchT = i18n.getFixedT("fr");
 export const owner = {
   name: "Forms manager",
   email: "owner@example.test",
-  password: "playwright-local-password-42",
 };
+
+/** Attach a Chromium CDP virtual CTAP2 authenticator to `page` for real WebAuthn passkeys. */
+export async function attachVirtualAuthenticator(page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  const { authenticatorId } = await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+  return { cdp, authenticatorId };
+}
+
+/** Replace the virtual authenticator on `page` to simulate registering a passkey on another device. */
+export async function replaceVirtualAuthenticator(page) {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("WebAuthn.disable");
+  return attachVirtualAuthenticator(page);
+}
 
 /** The texts and the names of the external website that hosts a contact form. */
 export const externalSite = {
@@ -93,7 +118,7 @@ export const test = base.extend({
     const chunks = files.filter((file) => file !== "index.js" && file.endsWith(".js"));
     const runtime = new Miniflare(
       convertV4MiniflareOptions({
-        host: "127.0.0.1",
+        host: "localhost",
         port: 0,
         workers: [
           {
@@ -104,8 +129,9 @@ export const test = base.extend({
             outboundService: "webhook-receiver-fixture",
             bindings: {
               ...workerOptions.bindings,
-              BETTER_AUTH_SECRET: "playwright-local-better-auth-secret-42",
+              RONDYR_SESSION_SECRET: "playwright-local-session-secret-42",
               RONDYR_SETUP_TOKEN: testSetupToken,
+              RONDYR_RECOVERY_TOKEN: testRecoveryToken,
               RONDYR_SECRETS_KEY: testSecretsKey,
               RESEND_API_KEY: testResendKey,
               RONDYR_EMAIL_FROM: testEmailFrom,
@@ -129,11 +155,19 @@ export const test = base.extend({
         await db.batch(queries.map((query) => db.prepare(query)));
       }
       if (claimed) {
-        const setup = await request.post(`${origin}/api/setup`, {
-          headers: { authorization: `Bearer ${testSetupToken}` },
+        const headers = { authorization: `Bearer ${testSetupToken}`, origin };
+        const optionsResponse = await request.post(`${origin}/api/setup/options`, {
+          headers,
           data: owner,
         });
-        expect(setup.status(), "POST /api/setup").toBe(201);
+        expect(optionsResponse.status(), "POST /api/setup/options").toBe(200);
+        const creationOptions = await optionsResponse.json();
+        const { credential } = await registerVirtualPasskey(creationOptions, origin);
+        const setup = await request.post(`${origin}/api/setup/verify`, {
+          headers,
+          data: { credential, passkeyName: "Seed key" },
+        });
+        expect(setup.status(), "POST /api/setup/verify").toBe(201);
       }
       await use({ origin, runtime, database: db });
     } finally {
@@ -186,16 +220,18 @@ export const test = base.extend({
     context.on("console", (message) => {
       if (/content.security.policy/iu.test(message.text())) violations.push(message.text());
     });
+    await attachVirtualAuthenticator(page);
     const headers = await readFile("public/_headers", "utf8");
     const policy = headers.match(/^\s*Content-Security-Policy: (.+)$/mu)?.[1];
     expect(policy, "CSP in public/_headers").toBeTruthy();
     const response = await page.goto(dashboardOrigin);
     expect(await response?.headerValue("content-security-policy")).toBe(policy);
+    // Register a real browser passkey for the owner via recovery and sign in immediately.
+    await page.getByRole("button", { name: t("authentication.recovery.toggle") }).click();
+    await page.getByLabel(t("authentication.recovery.token")).fill(testRecoveryToken);
     await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
-    // Password inputs have no implicit ARIA role.
-    await page.getByLabel(t("authentication.signIn.password")).fill(owner.password);
     await page
-      .getByRole("button", { name: t("authentication.signIn.submit"), exact: true })
+      .getByRole("button", { name: t("authentication.recovery.submit"), exact: true })
       .click();
     // The account has no organization yet, so the dashboard opens on its first run.
     await expect(

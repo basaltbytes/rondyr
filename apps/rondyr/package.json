@@ -32,9 +32,10 @@
   "dependencies": {
     "@alchemy.run/domain": "catalog:",
     "@base-ui/react": "catalog:",
+    "@oslojs/crypto": "catalog:",
+    "@oslojs/webauthn": "catalog:",
     "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
-    "better-auth": "catalog:",
     "class-variance-authority": "catalog:",
     "cn": "catalog:",
     "drizzle-orm": "catalog:",

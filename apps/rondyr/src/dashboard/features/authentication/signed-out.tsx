@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { accountPasswordLength } from "@rondyr/organizations/account";
 import { setupTokenLength } from "@rondyr/organizations/setup";
 
 import { CardFormSkeleton } from "~/components/page-pending";
@@ -10,40 +9,40 @@ import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { statusOf } from "~/lib/api/request";
-import { authClient } from "~/lib/api/session";
-import { createOwner, setupQuery } from "~/lib/api/setup";
+import { authStatusQuery } from "~/lib/api/session";
+import { createOwnerWithPasskey } from "~/lib/api/setup";
+import { isWebAuthnClientError } from "~/lib/webauthn";
 
 import { SignInForm } from "./sign-in-form.tsx";
 
-type SetupProblem = "rejected" | "refused" | "rateLimited" | "failed";
+type SetupProblem = "rejected" | "refused" | "rateLimited" | "cancelled" | "unsupported" | "failed";
 
-function problemOf(status: number | null): SetupProblem {
+function problemOf(cause: unknown): SetupProblem {
+  if (isWebAuthnClientError(cause)) {
+    if (cause.problem === "cancelled") return "cancelled";
+    if (cause.problem === "unsupported") return "unsupported";
+    return "failed";
+  }
+  const status = statusOf(cause);
   if (status === 400) return "rejected";
   if (status === 404) return "refused";
   if (status === 429) return "rateLimited";
   return "failed";
 }
 
-type Outcome = SetupProblem | "created" | "signInFailed";
+type Outcome = SetupProblem | "created";
 
-/** Create the owner account, then sign in with it. */
+/** Create the owner account with its first passkey and start a session atomically. */
 async function claim(_previous: Outcome | null, data: FormData): Promise<Outcome> {
   const token = data.get("token")?.toString() ?? "";
   const name = data.get("name")?.toString().trim() ?? "";
   const email = data.get("email")?.toString().trim() ?? "";
-  const password = data.get("password")?.toString() ?? "";
   try {
-    await createOwner(token, { name, email, password });
+    await createOwnerWithPasskey(token, { name, email });
+    return "created";
   } catch (cause) {
-    return problemOf(statusOf(cause));
+    return problemOf(cause);
   }
-  try {
-    const result = await authClient.signIn.email({ email, password });
-    if (result.error === null) return "created";
-  } catch {
-    return "signInFailed";
-  }
-  return "signInFailed";
 }
 
 interface SignedInProps {
@@ -51,7 +50,7 @@ interface SignedInProps {
   readonly onSignedIn: () => Promise<void>;
 }
 
-/** The form that creates the owner account with the setup token of the deployment. */
+/** The form that creates the owner account and its passkey with the deployment setup token. */
 function OwnerForm({ onSignedIn }: SignedInProps) {
   const { t } = useTranslation();
   const [outcome, create, pending] = useActionState(
@@ -63,14 +62,6 @@ function OwnerForm({ onSignedIn }: SignedInProps) {
     null,
   );
 
-  if (outcome === "signInFailed") {
-    return (
-      <div className="grid gap-3">
-        <p className="text-sm text-pretty">{t("setup.created")}</p>
-        <SignInForm onSignedIn={onSignedIn} />
-      </div>
-    );
-  }
   return (
     <form action={create} className="grid gap-4">
       <TextField
@@ -90,19 +81,6 @@ function OwnerForm({ onSignedIn }: SignedInProps) {
         autoComplete="username"
         required
       />
-      <TextField
-        label={t("setup.password")}
-        hint={t("setup.passwordHint", {
-          minimum: accountPasswordLength.minimum,
-          maximum: accountPasswordLength.maximum,
-        })}
-        type="password"
-        name="password"
-        autoComplete="new-password"
-        minLength={accountPasswordLength.minimum}
-        maxLength={accountPasswordLength.maximum}
-        required
-      />
       <FormProblem>
         {outcome === null || outcome === "created" ? null : t(`setup.problems.${outcome}`)}
       </FormProblem>
@@ -120,8 +98,8 @@ function OwnerForm({ onSignedIn }: SignedInProps) {
  */
 export function SignedOut({ onSignedIn }: SignedInProps) {
   const { t } = useTranslation();
-  const setup = useQuery(setupQuery);
-  const loaded = setup.isError ? "failed" : (setup.data ?? null);
+  const status = useQuery(authStatusQuery);
+  const loaded = status.isError ? "failed" : (status.data?.setupState ?? null);
 
   if (loaded === null) {
     return (
@@ -132,7 +110,7 @@ export function SignedOut({ onSignedIn }: SignedInProps) {
       </Card>
     );
   }
-  // When the state cannot be read, the sign-in form still works for an existing account.
+  // When the status cannot be read, the sign-in form still works for an existing account.
   if (loaded === "closed" || loaded === "failed") return <SignInForm onSignedIn={onSignedIn} />;
   if (loaded === "token-missing" || loaded === "token-too-short") {
     const minimum = setupTokenLength.minimum;

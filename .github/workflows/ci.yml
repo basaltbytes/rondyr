@@ -71,13 +71,13 @@ jobs:
   dashboard-e2e:
     name: Dashboard browser tests
     # They run upstream, and in a fork set up for the Alchemy path, which the variable
-    # BETTER_AUTH_URL_PROD marks: the production job below needs them. A copy made by the
-    # Deploy to Cloudflare button deploys through Workers Builds and skips them, which
-    # saves several minutes of Actions on each push; the repository variable
-    # RONDYR_BROWSER_TESTS=true runs them there too.
+    # RONDYR_PUBLIC_URL_PROD (or legacy BETTER_AUTH_URL_PROD) marks: the production job below
+    # needs them. A copy made by the Deploy to Cloudflare button deploys through Workers Builds
+    # and skips them, which saves several minutes of Actions on each push; the repository
+    # variable RONDYR_BROWSER_TESTS=true runs them there too.
     if: >-
-      github.repository == 'basaltbytes/rondyr' || vars.BETTER_AUTH_URL_PROD != '' ||
-      vars.RONDYR_BROWSER_TESTS == 'true'
+      github.repository == 'basaltbytes/rondyr' || vars.RONDYR_PUBLIC_URL_PROD != '' ||
+      vars.BETTER_AUTH_URL_PROD != '' || vars.RONDYR_BROWSER_TESTS == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -101,15 +101,15 @@ jobs:
     # Deploys prod with Alchemy after both test jobs pass, then checks its /health. A push
     # deploys unless the scope job answered that the Worker package did not change: when
     # that job fails, the push deploys, as for any doubt.
-    # - basaltbytes/rondyr: BETTER_AUTH_URL_PROD is set and the browser tests run, so a
-    #   push to main deploys.
+    # - basaltbytes/rondyr: RONDYR_PUBLIC_URL_PROD (or legacy BETTER_AUTH_URL_PROD) is set
+    #   and the browser tests run, so a push to main deploys.
     # - A fork set up for the Alchemy path: the same, once its Alchemy settings are set.
-    # - A copy made by the button: no BETTER_AUTH_URL_PROD, so this job never runs, even
+    # - A copy made by the button: neither variable is set, so this job never runs, even
     #   when RONDYR_BROWSER_TESTS runs the browser tests; Workers Builds deploys it.
     name: Production
     if: >-
       !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' &&
-      vars.BETTER_AUTH_URL_PROD != '' &&
+      (vars.RONDYR_PUBLIC_URL_PROD != '' || vars.BETTER_AUTH_URL_PROD != '') &&
       needs.check.result == 'success' && needs.dashboard-e2e.result == 'success' &&
       needs.scope.outputs.worker != 'false'
     needs: [check, dashboard-e2e, scope]

@@ -41,12 +41,12 @@ A classifier outage puts messages in **To review** with the reason **Analysis un
 
 An instance deployed with the button has no health check after its build: open its address, or run the [smoke test](#smoke-test). The rest of this section is about an instance that deploys with [Alchemy and GitHub Actions](./deployment.md#deploy-with-alchemy-and-github-actions).
 
-After each deployment of the `prod` stage, GitHub Actions runs `apps/rondyr/scripts/smoke.mjs` against `BETTER_AUTH_URL_PROD` in the step **Check production health**. It asks for `/health` every 10 seconds until the Worker answers `ok`, for up to 15 minutes, and prints one line for each failed try, such as `Health check 3 failed: The deployment returned HTTP 522; expected 200 for /health. Trying again.` It never prints a response body.
+After each deployment of the `prod` stage, GitHub Actions runs `apps/rondyr/scripts/smoke.mjs` against `RONDYR_PUBLIC_URL_PROD` (or legacy `BETTER_AUTH_URL_PROD`) in the step **Check production health**. It asks for `/health` every 10 seconds until the Worker answers `ok`, for up to 15 minutes, and prints one line for each failed try, such as `Health check 3 failed: The deployment returned HTTP 522; expected 200 for /health. Trying again.` It never prints a response body.
 
 When the step fails, the run shows the error `Production health`. `prod` is deployed: the failed check does not roll it back.
 
 - `The request or its response failed.` or HTTP `52x` on every try: the domain does not reach the Worker. On a first deployment, check in **Workers & Pages → <Worker> → Settings → Domains & Routes** that the custom domain exists and that its certificate is active, and that the zone is active. Run the check again from your machine with `pnpm smoke <origin> --health-timeout 900` once the certificate is active.
-- HTTP `404`: the hostname answers but not with Rondyr. Check that `BETTER_AUTH_URL_PROD` is the hostname of the custom domain, and that no other Worker route takes it.
+- HTTP `404`: the hostname answers but not with Rondyr. Check that `RONDYR_PUBLIC_URL_PROD` (or `BETTER_AUTH_URL_PROD`) is the hostname of the custom domain, and that no other Worker route takes it.
 - HTTP `500` or `/health did not report ok.`: the Worker answers but fails. Open its logs in **Workers Logs**, and [roll back](#roll-back-the-worker) if the previous version worked.
 
 ## Smoke test
@@ -114,15 +114,19 @@ D1 Time Travel rewinds D1 alone. Durable Object event streams and workflow state
 
 ## Rotate secrets
 
-Replace a secret in **Workers & Pages → <Worker> → Settings → Variables and Secrets**; saving it deploys a new version. Deleting `BETTER_AUTH_SECRET` or `RONDYR_SECRETS_KEY` and pushing a commit also works: the deployment generates a new value for a missing one. An Alchemy stage reads its secrets from the GitHub secrets `*_PROD`, or from its environment file, and takes a new value at its next deployment; nothing generates a missing one.
+Replace a secret in **Workers & Pages → <Worker> → Settings → Variables and Secrets**; saving it deploys a new version. Deleting `RONDYR_SESSION_SECRET` (and legacy `BETTER_AUTH_SECRET`, if present) or `RONDYR_SECRETS_KEY` and pushing a commit also works: the deployment generates a new value for a missing one. An Alchemy stage reads its secrets from the GitHub secrets `*_PROD`, or from its environment file, and takes a new value at its next deployment; nothing generates a missing one.
 
 ### `RONDYR_SECRETS_KEY`
 
 Schedule a webhook maintenance window. Inventory the webhook targets and their recipients, retain the previous key with its matching D1 recovery point, and pause delivery consumers while changing keys. Set a new key of 32 random bytes in base64 (`openssl rand -base64 32`), or, on an instance deployed with the button, delete the secret and let the next deployment generate one. Existing signing secrets use the old encryption key. Rotate each target’s signing secret in the dashboard and give the new signing secret to its recipient over a private channel. The old signature cannot participate in the usual rotation overlap once the old encryption key is gone. Verify a test webhook for each recipient, resume the consumers, and retry affected failed deliveries after checking what each recipient already received. Turnstile secret keys are encrypted with the same key, so save the site key and secret key of each form that uses Turnstile again. Until then, intake logs a warning and classifies that form's messages without checking their Turnstile token. The form's Turnstile card in **Forms** shows a warning until the keys are saved again, so you can check that none is left.
 
-### `BETTER_AUTH_SECRET`
+### `RONDYR_SESSION_SECRET`
 
-Set a new value of at least 32 random characters (`openssl rand -hex 32`), or, on an instance deployed with the button, delete the secret and let the next deployment generate one. Expect existing cookies to stop working. Sign out or clear the old cookie, then verify a fresh sign-in and dashboard request. If rotating after a compromise, revoke the stored sessions as part of the incident response.
+Set a new value of at least 32 random characters (`openssl rand -hex 32`), or, on an instance deployed with the button, delete `RONDYR_SESSION_SECRET` (and legacy `BETTER_AUTH_SECRET`, if still set) and let the next deployment generate one. Expect existing cookies to stop working because session tokens are HMAC-signed with this secret. Clear the old cookie, then verify a fresh passkey or Email OTP sign-in and dashboard request. If rotating after a compromise, revoke stored rows in `auth_sessions` as part of the incident response.
+
+### `RONDYR_RECOVERY_TOKEN`
+
+Only set `RONDYR_RECOVERY_TOKEN` (at least 32 random characters) while recovering from passkey lockout or migrating from `workers.dev` to a custom domain without email. Recovery ends every earlier session of the account it recovers. Once the affected account has registered a passkey on the current domain and signed in, delete `RONDYR_RECOVERY_TOKEN` immediately so **Recover access** stays closed.
 
 ### `RESEND_API_KEY`
 

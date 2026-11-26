@@ -45,6 +45,7 @@
   "authentication": {
     "account": {
       "label": "Account {{email}}",
+      "security": "Security",
       "language": "Language",
       "theme": "Theme"
     },
@@ -52,27 +53,86 @@
       "title": "Sign in",
       "description": "The account of this Rondyr installation.",
       "email": "Email address",
-      "password": "Password",
-      "submit": "Sign in",
+      "submit": "Sign in with a passkey",
       "pending": "Signing in…",
-      "forgotPassword": "Forgot your password?",
       "problems": {
         "rateLimited": "Too many attempts. Try again in a moment.",
         "unavailable": "The sign-in service is unavailable.",
-        "refused": "Check your email address and your password.",
+        "refused": "This passkey was not recognized.",
+        "cancelled": "Passkey prompt was cancelled.",
+        "unsupported": "This browser does not support passkeys.",
         "failed": "Sign-in failed. Try again."
       },
-      "sessionEnded": "Your session has ended. Sign in again to go back to the page you were on."
+      "sessionEnded": "Your session has ended. Sign in again to go back to the page you were on.",
+      "noPasskeyHint": "No passkey for this site? Whoever runs this Rondyr can set the RONDYR_RECOVERY_TOKEN secret on the Worker. Reload this page afterwards to register a passkey."
     },
-    "passwordReset": {
-      "title": "Reset your password",
-      "description": "Enter the address of your account. If an account uses it, Rondyr emails it a link to choose a new password.",
-      "submit": "Email me a link",
+    "otp": {
+      "toggle": "Or sign in with an email code",
+      "send": "Send sign-in code",
       "sending": "Sending…",
-      "sent": "If an account uses {{email}}, a link is on its way. It works once, for one hour.",
-      "noProvider": "This server does not send email, so it cannot reset a password. Ask the person who runs it.",
-      "failed": "The request failed. Try again.",
-      "back": "Back to sign-in"
+      "sent": "If an account uses {{email}}, a 6-digit code is on its way. It expires in 10 minutes.",
+      "code": "6-digit code",
+      "verify": "Sign in with code",
+      "verifying": "Verifying…",
+      "changeEmail": "Use another email address",
+      "back": "Back to passkey sign-in",
+      "problems": {
+        "rateLimited": "Too many attempts. Try again in a moment.",
+        "noProvider": "This server does not send email, so email codes are unavailable.",
+        "invalid": "That code is invalid or expired. Request a new one.",
+        "failed": "Could not sign in with that code. Try again."
+      }
+    },
+    "recovery": {
+      "toggle": "Recover access",
+      "title": "Recover access",
+      "description": "Use the deployment recovery token to register a new passkey on this domain for an existing account.",
+      "token": "Recovery token",
+      "tokenHint": "The RONDYR_RECOVERY_TOKEN secret of the Worker, at least {{minimum}} characters.",
+      "deleteReminder": "Remove RONDYR_RECOVERY_TOKEN from your Cloudflare settings once you are signed in.",
+      "submit": "Register passkey and sign in",
+      "pending": "Registering passkey…",
+      "back": "Back to sign-in",
+      "problems": {
+        "rateLimited": "Too many attempts. Wait a minute, then try again.",
+        "refused": "Check the recovery token and email address.",
+        "rejected": "This passkey could not be registered. Try another one.",
+        "cancelled": "Passkey prompt was cancelled.",
+        "unsupported": "This browser does not support passkeys.",
+        "failed": "Recovery failed. Try again."
+      }
+    },
+    "security": {
+      "title": "Security",
+      "description": "Manage the passkeys that can sign in to your account.",
+      "close": "Close",
+      "passkeys": "Passkeys",
+      "loadFailed": "Could not load your passkeys.",
+      "empty": "No passkeys registered on this account yet.",
+      "otherDomain": "Other domain ({{domain}})",
+      "addedNeverUsed": "Added {{date}} · Never used",
+      "addedLastUsed": "Added {{added}} · Last used {{lastUsed}}",
+      "passkeyName": "Passkey name",
+      "renameLabel": "Rename passkey {{name}}",
+      "deleteLabel": "Delete passkey {{name}}",
+      "lastPasskeyHint": "Add another passkey for this domain before deleting the last one: email sign-in codes are not enabled on this server.",
+      "newPasskeyName": "New passkey name (optional)",
+      "newPasskeyPlaceholder": "Laptop Touch ID",
+      "add": "Add passkey",
+      "adding": "Adding passkey…",
+      "problems": {
+        "lastPasskey": "You cannot delete your last passkey for this domain when email codes are disabled.",
+        "exists": "That passkey is already registered.",
+        "cancelled": "Passkey prompt was cancelled.",
+        "unsupported": "This browser does not support passkeys.",
+        "failed": "Could not update passkeys. Try again."
+      },
+      "unnamed": "Passkey",
+      "deleteSignsOut": "Deleting a passkey signs your account out on every other device.",
+      "deleteConfirmTitle": "Delete this passkey?",
+      "deleteConfirmDescription": "“{{name}}” will no longer sign in to your account, and your account will be signed out on every other device.",
+      "deleteConfirm": "Delete passkey",
+      "deleting": "Deleting…"
     },
     "signOut": {
       "submit": "Sign out",
@@ -82,23 +142,22 @@
   },
   "setup": {
     "title": "Create the owner account",
-    "description": "This Rondyr has no account yet. Enter the setup token chosen when it was deployed, then the account that will own it.",
+    "description": "This Rondyr has no account yet. Enter the setup token chosen when it was deployed, then register a passkey for the owner account.",
     "token": "Setup token",
     "tokenHint": "The RONDYR_SETUP_TOKEN secret of the Worker, at least {{minimum}} characters.",
     "name": "Your name",
     "email": "Email address",
-    "password": "Password",
-    "passwordHint": "{{minimum}} to {{maximum}} characters.",
-    "submit": "Create the account",
+    "submit": "Create account with a passkey",
     "creating": "Creating…",
-    "created": "The account is created. Sign in with it.",
     "tokenMissing": "This Rondyr has no setup token yet, so nobody can create its owner account.",
     "tokenTooShort": "The setup token of this Rondyr is shorter than {{minimum}} characters, so Rondyr refuses it.",
     "addToken": "In the Cloudflare dashboard, open Workers & Pages, select this Worker, then Settings › Variables and Secrets. Add a secret named RONDYR_SETUP_TOKEN, a passphrase of at least {{minimum}} characters, then reload this page.",
     "problems": {
-      "rejected": "Check the name, the email address and the password.",
+      "rejected": "Check the name and the email address.",
       "refused": "This setup token does not match, or the owner account already exists.",
       "rateLimited": "Too many attempts. Wait a minute, then try again.",
+      "cancelled": "Passkey prompt was cancelled. No account was created.",
+      "unsupported": "This browser does not support passkeys.",
       "failed": "The account could not be created. Try again."
     }
   },
@@ -1044,9 +1103,7 @@
     },
     "email": "Email address",
     "name": "Your name",
-    "password": "Password",
-    "passwordHint": "At least {{minimum}} characters.",
-    "createAndJoin": "Create account and join",
+    "createAndJoin": "Create account with a passkey",
     "join": "Join the organization",
     "joining": "Joining…",
     "signInFirst": "An account already uses {{email}}. Sign in with it to accept.",
@@ -1055,27 +1112,10 @@
       "invalid": "This invitation link has expired, was cancelled or was already used.",
       "otherAccount": "This invitation is for another address than the one you are signed in with.",
       "signInRequired": "An account already uses this address. Sign in with it to accept.",
-      "rejected": "Check your name, and choose a password of 12 to 128 characters.",
+      "rejected": "Check your name and try registering your passkey again.",
+      "cancelled": "Passkey prompt was cancelled. No account was created.",
+      "unsupported": "This browser does not support passkeys.",
       "failed": "The invitation could not be accepted. Try again."
-    }
-  },
-  "passwordReset": {
-    "title": "Choose a new password",
-    "description": "The new password replaces the old one and signs your account out everywhere.",
-    "password": "New password",
-    "passwordHint": "From {{minimum}} to {{maximum}} characters.",
-    "submit": "Save the new password",
-    "saving": "Saving…",
-    "rejected": "Choose a password of {{minimum}} to {{maximum}} characters.",
-    "failed": "The password could not be changed. Try again.",
-    "signIn": "Sign in",
-    "changed": {
-      "title": "Password changed",
-      "body": "Your account was signed out everywhere. Sign in with your new password."
-    },
-    "invalid": {
-      "title": "Link unavailable",
-      "body": "This link has expired or was already used. Ask for a new one from the sign-in page."
     }
   },
   "recipientConfirmation": {

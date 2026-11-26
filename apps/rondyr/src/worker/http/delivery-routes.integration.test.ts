@@ -35,7 +35,7 @@ import { testWebhookFields, WebhookTestPayload } from "../../domain/deliveries/w
 import { DeliveryScheduler } from "../../domain/submissions/delivery-scheduler.external.ts";
 import { SubmissionFields } from "../../domain/submissions/submission-fields.ts";
 import { OrganizationId, SubmissionId, UserId } from "../../domain/submissions/submission.id.ts";
-import { Authentication } from "../ports/authentication.ts";
+import { fakeAuthentication } from "../../../tests/integration/organization-fixture.ts";
 import { DeliveryQueue } from "../ports/delivery-queue.ts";
 import { NotificationProvider } from "../ports/notification-provider.ts";
 import { NotificationTargets, type FormScope } from "../ports/notification-targets.ts";
@@ -74,12 +74,7 @@ const encodeFields = Schema.encodeEffect(Schema.fromJsonString(SubmissionFields)
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
 /** The account is the `x-test-user` header of the request; without it, nobody is signed in. */
-const signedIn = Layer.succeed(Authentication, {
-  userId: (request) => Effect.succeed(request.headers.get("x-test-user")),
-  handle: () => Effect.die("The routes under test do not proxy Better Auth"),
-  setup: () => Effect.die("The routes under test do not create accounts"),
-  setupState: Effect.die("The routes under test do not read the setup state"),
-});
+const signedIn = fakeAuthentication((request) => request.headers.get("x-test-user"));
 
 const cipher = secretCipherLayer(Effect.succeedSome(Redacted.make(testSecretsKey)));
 const emailSender = emailSenderLayer(

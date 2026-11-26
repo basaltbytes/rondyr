@@ -218,7 +218,8 @@ export function buildHomeJsonLd(origin: string): string {
         programmingLanguage: "TypeScript",
         codeRepository: githubRepository,
         installUrl: deployUrl,
-        softwareRequirements: "Cloudflare Workers Paid ($5/month per account)",
+        softwareRequirements:
+          "Cloudflare Workers (Workers Free to test-drive; Workers Paid at $5/month per account for production)",
         softwareHelp: {
           "@type": "CreativeWork",
           url: `${cleanOrigin}/deployment/`,

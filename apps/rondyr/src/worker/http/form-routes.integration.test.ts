@@ -3,7 +3,8 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
-import { testOrigin as origin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { setupOwner } from "../../../tests/integration/organization-fixture.ts";
 import { ManagedForm, type SuccessUrlRefusalReason } from "../../domain/forms/form.ts";
 import { InboxOrganizationWithForms } from "../../domain/submissions/inbox-setup.ts";
 import { InboxPage, SubmissionDetail } from "../../domain/submissions/inbox.ts";
@@ -46,29 +47,14 @@ const formOf = (response: Response) => json(response).pipe(Effect.flatMap(readFo
 const withBody = (response: Response) =>
   Effect.map(json(response), (body) => ({ status: response.status, body }));
 
-const credentials = { email: "forms@example.test", password: "form-routes-password" };
-
 /**
  * The cookie of the file's account. The first call creates the account. The tests reuse one
- * session, so their sign-ins stay within the rate limit window.
+ * session so they share one setup.
  */
 const signIn = Effect.runSync(
   Effect.cached(
     Effect.gen(function* () {
-      const setup = yield* call(
-        "POST",
-        "/api/setup",
-        { name: "Forms", ...credentials },
-        { authorization: `Bearer ${testSetupToken}` },
-      );
-      // 201 the first time; the setup endpoint answers 404 once an account exists.
-      assert.oneOf(setup.status, [201, 404]);
-      const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
-      assert.strictEqual(session.status, 200);
-      const cookie = session.headers
-        .getSetCookie()
-        .map((value) => value.split(";", 1)[0])
-        .join("; ");
+      const { cookie } = yield* setupOwner({ name: "Forms", email: "forms@example.test" });
       return { cookie, origin };
     }),
   ),

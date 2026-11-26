@@ -8,6 +8,12 @@ import { Option, Schema } from "effect";
 export const setupTokenLength = { minimum: 32 } as const;
 
 /**
+ * The recovery token is an optional operator secret for regaining access or registering a
+ * passkey on a new custom domain when Email OTP is unavailable. A shorter token is ignored.
+ */
+export const recoveryTokenLength = { minimum: 32 } as const;
+
+/**
  * Whether the first account can be created:
  * - `open`: no account exists and the Worker has a setup token;
  * - `closed`: an account exists; the setup endpoint refuses every request;
@@ -17,8 +23,13 @@ export const setupTokenLength = { minimum: 32 } as const;
 export const SetupState = Schema.Literals(["open", "closed", "token-missing", "token-too-short"]);
 export type SetupState = typeof SetupState.Type;
 
-/** The answer of `GET /api/setup`. */
-export const SetupStatus = Schema.Struct({ state: SetupState });
+/** The answer of `GET /api/auth/status`. */
+export const AuthStatus = Schema.Struct({
+  setupState: SetupState,
+  emailOtpEnabled: Schema.Boolean,
+  recoveryEnabled: Schema.Boolean,
+});
+export type AuthStatus = typeof AuthStatus.Type;
 
 /**
  * The setup state of an instance. Once an account exists, the answer says nothing about
@@ -28,4 +39,9 @@ export function setupState(accountExists: boolean, token: Option.Option<string>)
   if (accountExists) return "closed";
   if (Option.isNone(token)) return "token-missing";
   return token.value.length < setupTokenLength.minimum ? "token-too-short" : "open";
+}
+
+/** Whether `RONDYR_RECOVERY_TOKEN` is set and meets the minimum length. */
+export function recoveryEnabled(token: Option.Option<string>): boolean {
+  return Option.isSome(token) && token.value.length >= recoveryTokenLength.minimum;
 }

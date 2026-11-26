@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignedInRouteRouteImport } from './routes/_signed-in/route'
 import { Route as ConfirmRecipientRouteImport } from './routes/confirm-recipient'
 import { Route as InvitationRouteImport } from './routes/invitation'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignedInIndexRouteImport } from './routes/_signed-in/index'
 import { Route as SignedInOOrganizationIdRouteRouteImport } from './routes/_signed-in/o/$organizationId/route'
@@ -46,11 +45,6 @@ const ConfirmRecipientRoute = ConfirmRecipientRouteImport.update({
 const InvitationRoute = InvitationRouteImport.update({
   id: '/invitation',
   path: '/invitation',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -176,7 +170,6 @@ export interface FileRoutesByFullPath {
   '/': typeof SignedInIndexRoute
   '/confirm-recipient': typeof ConfirmRecipientRoute
   '/invitation': typeof InvitationRoute
-  '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/o/$organizationId': typeof SignedInOOrganizationIdRouteRouteWithChildren
   '/organizations/new': typeof SignedInOrganizationsNewRoute
@@ -200,7 +193,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/confirm-recipient': typeof ConfirmRecipientRoute
   '/invitation': typeof InvitationRoute
-  '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/': typeof SignedInIndexRoute
   '/organizations/new': typeof SignedInOrganizationsNewRoute
@@ -224,7 +216,6 @@ export interface FileRoutesById {
   '/_signed-in': typeof SignedInRouteRouteWithChildren
   '/confirm-recipient': typeof ConfirmRecipientRoute
   '/invitation': typeof InvitationRoute
-  '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/_signed-in/': typeof SignedInIndexRoute
   '/_signed-in/o/$organizationId': typeof SignedInOOrganizationIdRouteRouteWithChildren
@@ -252,7 +243,6 @@ export interface FileRouteTypes {
     | '/'
     | '/confirm-recipient'
     | '/invitation'
-    | '/reset-password'
     | '/sign-in'
     | '/o/$organizationId'
     | '/organizations/new'
@@ -276,7 +266,6 @@ export interface FileRouteTypes {
   to:
     | '/confirm-recipient'
     | '/invitation'
-    | '/reset-password'
     | '/sign-in'
     | '/'
     | '/organizations/new'
@@ -299,7 +288,6 @@ export interface FileRouteTypes {
     | '/_signed-in'
     | '/confirm-recipient'
     | '/invitation'
-    | '/reset-password'
     | '/sign-in'
     | '/_signed-in/'
     | '/_signed-in/o/$organizationId'
@@ -326,7 +314,6 @@ export interface RootRouteChildren {
   SignedInRouteRoute: typeof SignedInRouteRouteWithChildren
   ConfirmRecipientRoute: typeof ConfirmRecipientRoute
   InvitationRoute: typeof InvitationRoute
-  ResetPasswordRoute: typeof ResetPasswordRoute
   SignInRoute: typeof SignInRoute
 }
 
@@ -351,13 +338,6 @@ declare module '@tanstack/react-router' {
       path: '/invitation'
       fullPath: '/invitation'
       preLoaderRoute: typeof InvitationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -605,7 +585,6 @@ const rootRouteChildren: RootRouteChildren = {
   SignedInRouteRoute: SignedInRouteRouteWithChildren,
   ConfirmRecipientRoute: ConfirmRecipientRoute,
   InvitationRoute: InvitationRoute,
-  ResetPasswordRoute: ResetPasswordRoute,
   SignInRoute: SignInRoute,
 }
 export const routeTree = rootRouteImport

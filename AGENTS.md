@@ -13,6 +13,16 @@ Rondyr is a self-hosted form backend on Cloudflare. The code and its tests are t
 - Write everything in English: code, comments, commit messages, the README, `docs/`, issues, and pull request titles and descriptions. Older issues are still in French; do not add French text to them.
 - Write in English first everything a user of the product reads: dashboard text, the confirmation page, emails, script prompts. The dashboard, the confirmation page and the emails also exist in French: a dashboard text is an i18next key present in `apps/rondyr/src/dashboard/locales/en` and `apps/rondyr/src/dashboard/locales/fr`, never a string in a component.
 
+## Where things are
+
+- A Worker feature is one name in four places under `apps/rondyr/src/worker/`: `ports/<name>.ts`, `adapters/<kind>/`, `http/<name>-routes.ts` with its `*.integration.test.ts` beside it, and `jobs/`. The Drizzle schema is `adapters/database/database-schema.ts`. `worker.ts` is the entry point and `worker-implementation.ts` composes the layers.
+- The classifier rules and `rulesVersion` are in `apps/rondyr/src/domain/submissions/classification.ts`, the Workers AI adapter is in `apps/rondyr/src/worker/adapters/ai/`, and `pnpm evaluate` runs `apps/rondyr/evals/`.
+- In `apps/rondyr/src/dashboard/`: `features/<area>/` holds the screens, `lib/api/<resource>.ts` the HTTP clients, `components/ui/` the shadcn components, `locales/{en,fr}/translation.json` the texts, and `dashboard.css` the theme. Routes are files under `routes/_signed-in/o/$organizationId/`; quote the `$` in shell commands. `route-tree.gen.ts` is generated.
+- Test support: `apps/rondyr/tests/integration/` holds the fixtures and `external-workers.ts`, the simulated services. `apps/rondyr/tests/e2e/fixtures.mjs` and `dashboard.spec.mjs` are the Playwright suite.
+- The application's scripts (`doctor`, `smoke`, `screenshots`) are in `apps/rondyr/scripts/`. The release and deployment-scope scripts are in the root `scripts/`. The shared TypeScript settings are `tooling/tsconfig/base.json`.
+- Read a dependency's source through `apps/rondyr/node_modules/<package>/src` (`effect`, `alchemy`, `@alchemy.run/cloudflare`, `@tanstack/react-router`). The root `node_modules` holds only the root package's tools, and `node_modules/.pnpm` can hold several versions of one package. A package that `apps/rondyr` does not declare sits beside the one that needs it: `apps/rondyr/node_modules/@tanstack/react-query/../query-core`. Effect's HTTP modules are in `effect/src/http/`, and the package ships its own `AGENTS.md` and `ai-docs/`.
+- A new worktree has no `node_modules`, no `apps/rondyr/.env` and no `worker-configuration.d.ts`. Run `pnpm install`; `pnpm typecheck` generates the types, and [docs/local-development.md](docs/local-development.md) says how to write the `.env`.
+
 ## Working on an issue
 
 The GitHub issues are the roadmap. There are few of them and each one is large: an issue is delivered whole, in one pull request.

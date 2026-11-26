@@ -3,7 +3,8 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
 
-import { testOrigin as origin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { setupOwner } from "../../../tests/integration/organization-fixture.ts";
 import { outboxLive } from "../adapters/database/outbox.ts";
 import { classificationQueueLive } from "../adapters/queues/classification-queue.ts";
 import { InboxOrganizationWithForms } from "../../domain/submissions/inbox-setup.ts";
@@ -73,20 +74,7 @@ it.live(
   "receives a public form, recovers its outbox, and serializes tenant-scoped review",
   () =>
     Effect.gen(function* () {
-      const credentials = { email: "potter@example.test", password: "review-inbox-test-password" };
-      const setup = yield* post(
-        "/api/setup",
-        { name: "Potter", ...credentials },
-        { authorization: `Bearer ${testSetupToken}` },
-      );
-      assert.strictEqual(setup.status, 201);
-
-      const signIn = yield* post("/api/auth/sign-in/email", credentials);
-      assert.strictEqual(signIn.status, 200);
-      const cookie = signIn.headers
-        .getSetCookie()
-        .map((value) => value.split(";", 1)[0])
-        .join("; ");
+      const { cookie } = yield* setupOwner({ name: "Potter", email: "potter@example.test" });
       assert.isNotEmpty(cookie);
       const headers = { cookie, origin };
 

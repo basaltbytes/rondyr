@@ -6,11 +6,13 @@
 //   node scripts/dev-demo.mjs [--port 5173]
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, parseEnv } from "node:util";
+
+import { registerVirtualPasskey } from "../tests/integration/webauthn-helper.mjs";
 
 const app = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -21,7 +23,6 @@ const classificationTimeoutMillis = 90_000;
 const owner = {
   name: "Demo owner",
   email: "owner@example.test",
-  password: "rondyr local demo",
 };
 
 const organizationName = "Atelier Terre";
@@ -101,12 +102,19 @@ function fail(message) {
 function secrets(file) {
   if (!existsSync(file)) {
     const lines = [
-      `BETTER_AUTH_SECRET=${randomBytes(32).toString("hex")}`,
+      `RONDYR_SESSION_SECRET=${randomBytes(32).toString("hex")}`,
       `RONDYR_SETUP_TOKEN=${randomBytes(32).toString("hex")}`,
+      `RONDYR_RECOVERY_TOKEN=${randomBytes(32).toString("hex")}`,
     ];
     writeFileSync(file, `${lines.join("\n")}\n`, { mode: 0o600 });
   }
-  return parseEnv(readFileSync(file, "utf8"));
+  const current = parseEnv(readFileSync(file, "utf8"));
+  if (current.RONDYR_RECOVERY_TOKEN === undefined) {
+    const recovery = randomBytes(32).toString("hex");
+    appendFileSync(file, `RONDYR_RECOVERY_TOKEN=${recovery}\n`, { mode: 0o600 });
+    return { ...current, RONDYR_RECOVERY_TOKEN: recovery };
+  }
+  return current;
 }
 
 async function seed(origin, setupToken) {
@@ -116,17 +124,23 @@ async function seed(origin, setupToken) {
     body: JSON.stringify(body),
   });
 
-  const setup = await fetch(
-    `${origin}/api/setup`,
+  const optionsResponse = await fetch(
+    `${origin}/api/setup/options`,
     json(owner, { authorization: `Bearer ${setupToken}` }),
   );
   // 404: the owner exists, so an earlier run has made the demo.
-  if (setup.status === 404) return false;
-  if (setup.status !== 201) fail(`POST /api/setup answered ${setup.status}`);
-
-  const signIn = await fetch(`${origin}/api/auth/sign-in/email`, json(owner));
-  if (signIn.status !== 200) fail(`sign-in answered ${signIn.status}`);
-  const cookie = signIn.headers
+  if (optionsResponse.status === 404) return false;
+  if (optionsResponse.status !== 200) {
+    fail(`POST /api/setup/options answered ${optionsResponse.status}`);
+  }
+  const creationOptions = await optionsResponse.json();
+  const { credential } = await registerVirtualPasskey(creationOptions, origin);
+  const setup = await fetch(
+    `${origin}/api/setup/verify`,
+    json({ credential, passkeyName: "Demo seed key" }, { authorization: `Bearer ${setupToken}` }),
+  );
+  if (setup.status !== 201) fail(`POST /api/setup/verify answered ${setup.status}`);
+  const cookie = setup.headers
     .getSetCookie()
     .map((value) => value.split(";", 1)[0])
     .join("; ");
@@ -200,8 +214,10 @@ const directory = join(app, ".wrangler", "demo");
 const state = join(directory, "state");
 const envFile = join(directory, ".env");
 mkdirSync(directory, { recursive: true });
-const { RONDYR_SETUP_TOKEN: setupToken } = secrets(envFile);
-if (setupToken === undefined) fail(`${envFile} has no RONDYR_SETUP_TOKEN; delete ${directory}`);
+const { RONDYR_SETUP_TOKEN: setupToken, RONDYR_RECOVERY_TOKEN: recoveryToken } = secrets(envFile);
+if (setupToken === undefined || recoveryToken === undefined) {
+  fail(`${envFile} has no RONDYR_SETUP_TOKEN or RONDYR_RECOVERY_TOKEN; delete ${directory}`);
+}
 process.env.RONDYR_DEV_STATE = state;
 process.env.RONDYR_DEV_ENV_FILE = envFile;
 
@@ -229,7 +245,8 @@ try {
       seeded
         ? `Demo data created: ${organizationName}, ${forms.length} forms.`
         : "Demo data found.",
-      `Sign in as ${owner.email} with the password "${owner.password}".`,
+      `Open /sign-in, click "Recover access", and register a browser passkey once for ${owner.email}.`,
+      `Recovery token: ${recoveryToken}`,
       `Delete ${directory} to start again from an empty database.`,
       "",
     ].join("\n"),

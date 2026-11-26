@@ -404,6 +404,38 @@ it.effect("refuses a stored webhook targeting the configured BETTER_AUTH_URL", (
   return withServices(layer, scenario);
 });
 
+it.effect("refuses a stored webhook targeting the configured RONDYR_PUBLIC_URL", () => {
+  const { layer } = services();
+  const submissionId = SubmissionId.make("5a0c1d2e-3f40-4152-8a6b-7c8d9e0f1a18");
+  const scenario = Effect.gen(function* () {
+    const form = yield* seedForm("self-public-origin", [submissionId]);
+    const targets = yield* NotificationTargets;
+    yield* targets.createWebhook(
+      form,
+      webhookUrl("https://rondyr-public.example.test/t/self-public-origin/ok"),
+    );
+    yield* deliverAccepted(form, submissionId);
+
+    const context = yield* Effect.context<DeliveryStore | NotificationProvider>();
+    const run = Effect.runPromiseWith(context);
+    yield* Effect.promise(() =>
+      Promise.resolve(
+        withEnv({ ...env, RONDYR_PUBLIC_URL: "https://rondyr-public.example.test" }, () =>
+          run(consume(submissionId)),
+        ),
+      ),
+    );
+    const rows = yield* deliveriesOf(submissionId);
+    assert.deepEqual(
+      rows.map(({ status, last_error }) => [status, last_error]),
+      [["failed", "The webhook URL is refused: worker-origin."]],
+    );
+    const requests = yield* receivedUnder("/t/self-public-origin/");
+    assert.deepEqual(requests, []);
+  });
+  return withServices(layer, scenario);
+});
+
 it.effect("signs with both secrets during the rotation window, then with the new one", () => {
   const { layer } = services();
   const during = SubmissionId.make("5a0c1d2e-3f40-4152-8a6b-7c8d9e0f1a06");

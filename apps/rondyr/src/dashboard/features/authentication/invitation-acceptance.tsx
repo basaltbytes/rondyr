@@ -2,37 +2,47 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useActionState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { accountPasswordLength } from "@rondyr/organizations/account";
-
 import { CardFormSkeleton } from "~/components/page-pending";
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { acceptInvitation, invitationQuery, type InvitationSummary } from "~/lib/api/invitations";
+import {
+  acceptInvitation,
+  acceptInvitationWithPasskey,
+  invitationQuery,
+  type InvitationSummary,
+} from "~/lib/api/invitations";
 import { memberErrorOf } from "~/lib/api/members";
 import { statusOf } from "~/lib/api/request";
-import { authClient, sessionQuery } from "~/lib/api/session";
+import { sessionQuery } from "~/lib/api/session";
+import { isWebAuthnClientError } from "~/lib/webauthn";
 
 import { SignOutButton } from "./sign-out-button.tsx";
 import { SignInForm } from "./sign-in-form.tsx";
 
 type Summary = InvitationSummary;
-type AcceptProblem = "invalid" | "otherAccount" | "signInRequired" | "failed";
+type AcceptProblem =
+  | "invalid"
+  | "otherAccount"
+  | "signInRequired"
+  | "rejected"
+  | "cancelled"
+  | "unsupported"
+  | "failed";
 
-function problemOf(error: string | null): AcceptProblem {
+function problemOf(cause: unknown): AcceptProblem {
+  if (isWebAuthnClientError(cause)) {
+    if (cause.problem === "cancelled") return "cancelled";
+    if (cause.problem === "unsupported") return "unsupported";
+    return "failed";
+  }
+  const error = memberErrorOf(cause);
   if (error === "invitation-invalid") return "invalid";
   if (error === "other-account") return "otherAccount";
   if (error === "sign-in-required") return "signInRequired";
+  if (statusOf(cause) === 400) return "rejected";
   return "failed";
-}
-
-/** Accepts the invitation of a link, as the signed-in account or with a new one. */
-function useAccept(token: string) {
-  return useMutation({
-    mutationFn: (account?: { readonly name: string; readonly password: string }) =>
-      acceptInvitation(token, account),
-  });
 }
 
 /** The dashboard opens with the organization that the account just joined. */
@@ -40,24 +50,15 @@ function openDashboard() {
   window.location.assign("/");
 }
 
-function NewAccountForm({ token, summary }: { token: string; summary: Summary }) {
+function NewAccountForm({ token, summary }: { readonly token: string; readonly summary: Summary }) {
   const { t } = useTranslation();
-  const { mutateAsync: accept } = useAccept(token);
   const [problem, create, pending] = useActionState(
-    async (_: AcceptProblem | "rejected" | null, data: FormData) => {
+    async (_: AcceptProblem | null, data: FormData): Promise<AcceptProblem | null> => {
       const name = data.get("name")?.toString().trim() ?? "";
-      const password = data.get("password")?.toString() ?? "";
       try {
-        await accept({ name, password });
+        await acceptInvitationWithPasskey(token, name);
       } catch (cause) {
-        if (statusOf(cause) === 400) return "rejected";
-        return problemOf(memberErrorOf(cause));
-      }
-      try {
-        const result = await authClient.signIn.email({ email: summary.email, password });
-        if (result.error !== null) return "failed";
-      } catch {
-        return "failed";
+        return problemOf(cause);
       }
       openDashboard();
       return null;
@@ -80,16 +81,6 @@ function NewAccountForm({ token, summary }: { token: string; summary: Summary })
         maxLength={100}
         required
       />
-      <TextField
-        label={t("invitation.password")}
-        hint={t("invitation.passwordHint", { minimum: accountPasswordLength.minimum })}
-        type="password"
-        name="password"
-        autoComplete="new-password"
-        minLength={accountPasswordLength.minimum}
-        maxLength={accountPasswordLength.maximum}
-        required
-      />
       <FormProblem>{problem === null ? null : t(`invitation.problems.${problem}`)}</FormProblem>
       <Button type="submit" variant="default" disabled={pending}>
         {pending ? t("invitation.joining") : t("invitation.createAndJoin")}
@@ -98,14 +89,16 @@ function NewAccountForm({ token, summary }: { token: string; summary: Summary })
   );
 }
 
-function JoinButton({ token }: { token: string }) {
+function JoinButton({ token }: { readonly token: string }) {
   const { t } = useTranslation();
-  const { mutateAsync: accept } = useAccept(token);
+  const { mutateAsync: accept } = useMutation({
+    mutationFn: () => acceptInvitation(token),
+  });
   const [problem, join, pending] = useActionState(async (): Promise<AcceptProblem | null> => {
     try {
       await accept();
     } catch (cause) {
-      return problemOf(memberErrorOf(cause));
+      return problemOf(cause);
     }
     openDashboard();
     return null;
@@ -121,7 +114,7 @@ function JoinButton({ token }: { token: string }) {
   );
 }
 
-function Acceptance({ token, summary }: { token: string; summary: Summary }) {
+function Acceptance({ token, summary }: { readonly token: string; readonly summary: Summary }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const session = useQuery(sessionQuery);

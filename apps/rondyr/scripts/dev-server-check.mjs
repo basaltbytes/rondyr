@@ -13,6 +13,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { registerVirtualPasskey } from "../tests/integration/webauthn-helper.mjs";
+
 const app = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(import.meta.url);
 const wrangler = join(dirname(require.resolve("wrangler/package.json")), "bin", "wrangler.js");
@@ -24,7 +26,7 @@ const token = randomBytes(32).toString("hex");
 const envFile = join(directory, ".env");
 writeFileSync(
   envFile,
-  `BETTER_AUTH_SECRET=${randomBytes(32).toString("hex")}\nRONDYR_SETUP_TOKEN=${token}\n`,
+  `RONDYR_SESSION_SECRET=${randomBytes(32).toString("hex")}\nRONDYR_SETUP_TOKEN=${token}\n`,
   { mode: 0o600 },
 );
 process.env.RONDYR_DEV_STATE = state;
@@ -49,7 +51,8 @@ try {
     configFile: join(app, "vite.config.ts"),
     root: app,
     logLevel: "warn",
-    server: { port: 0, host: "127.0.0.1" },
+    // Sign-in accepts plain HTTP on `localhost` only, the one loopback name a passkey works on.
+    server: { port: 0, host: "localhost" },
   });
   await server.listen();
   const origin = new URL(server.resolvedUrls.local[0]).origin;
@@ -62,16 +65,22 @@ try {
   const owner = {
     name: "Dev check",
     email: "dev-check@example.test",
-    password: "dev check password",
   };
-  const setup = await fetch(
-    `${origin}/api/setup`,
+  const optionsResponse = await fetch(
+    `${origin}/api/setup/options`,
     json(owner, { authorization: `Bearer ${token}` }),
   );
-  if (setup.status !== 201) fail(`POST /api/setup answered ${setup.status}`);
-  const signIn = await fetch(`${origin}/api/auth/sign-in/email`, json(owner));
-  if (signIn.status !== 200) fail(`sign-in answered ${signIn.status}`);
-  const cookie = signIn.headers
+  if (optionsResponse.status !== 200) {
+    fail(`POST /api/setup/options answered ${optionsResponse.status}`);
+  }
+  const creationOptions = await optionsResponse.json();
+  const { credential } = await registerVirtualPasskey(creationOptions, origin);
+  const setup = await fetch(
+    `${origin}/api/setup/verify`,
+    json({ credential }, { authorization: `Bearer ${token}` }),
+  );
+  if (setup.status !== 201) fail(`POST /api/setup/verify answered ${setup.status}`);
+  const cookie = setup.headers
     .getSetCookie()
     .map((value) => value.split(";", 1)[0])
     .join("; ");

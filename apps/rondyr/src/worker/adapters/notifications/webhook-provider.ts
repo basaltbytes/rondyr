@@ -33,12 +33,23 @@ const decodeConfiguration = Schema.decodeUnknownEffect(WebhookConfiguration);
 const encodePayload = Schema.encodeEffect(Schema.fromJsonString(WebhookPayload));
 const encodeTestPayload = Schema.encodeEffect(Schema.fromJsonString(WebhookTestPayload));
 
-const WorkerEnvironment = Schema.Struct({ BETTER_AUTH_URL: Schema.optionalKey(Schema.String) });
+const WorkerEnvironment = Schema.Struct({
+  RONDYR_PUBLIC_URL: Schema.optionalKey(Schema.String),
+  BETTER_AUTH_URL: Schema.optionalKey(Schema.String),
+});
 
 /** The Worker's own origin, which is never a destination. */
 const workerOrigin = Effect.promise(() => import("cloudflare:workers")).pipe(
   Effect.flatMap(({ env }) => Schema.decodeUnknownEffect(WorkerEnvironment)(env)),
-  Effect.map(({ BETTER_AUTH_URL: origin }) => Option.fromUndefinedOr(origin)),
+  Effect.map(({ RONDYR_PUBLIC_URL: publicUrl, BETTER_AUTH_URL: legacyUrl }) => {
+    const origin =
+      publicUrl !== undefined && publicUrl !== ""
+        ? publicUrl
+        : legacyUrl !== undefined && legacyUrl !== ""
+          ? legacyUrl
+          : undefined;
+    return Option.fromUndefinedOr(origin);
+  }),
   Effect.orElseSucceed(() => Option.none<string>()),
 );
 
