@@ -3,7 +3,8 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it } from "@effect/vitest";
 import { Clock, Effect, Schema } from "effect";
 
-import { testOrigin as origin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { setupOwner } from "../../../tests/integration/organization-fixture.ts";
 import { OperationsStatus } from "../../domain/submissions/operations-status.ts";
 import { OrganizationId } from "../../domain/submissions/submission.id.ts";
 
@@ -12,16 +13,6 @@ const decode = Schema.decodeUnknownEffect(OperationsStatus);
 
 beforeAll(() => applyD1Migrations(env.DB, env.TEST_MIGRATIONS));
 
-const post = Effect.fnUntraced(function* (path: string, data: Schema.Json, extra?: HeadersInit) {
-  const body = yield* encode(data);
-  const headers = new Headers(extra);
-  headers.set("origin", origin);
-  headers.set("content-type", "application/json");
-  return yield* Effect.promise(() =>
-    env.TEST_WORKER.fetch(`${origin}${path}`, { method: "POST", headers, body }),
-  );
-});
-
 it.live(
   "reports only member organizations, with current queue totals and the 24-hour intake cohort",
   () =>
@@ -29,22 +20,7 @@ it.live(
       const denied = yield* Effect.promise(() => env.TEST_WORKER.fetch(`${origin}/api/operations`));
       assert.strictEqual(denied.status, 401);
 
-      const credentials = {
-        email: "operations@example.test",
-        password: "worker-operations-password",
-      };
-      const setup = yield* post(
-        "/api/setup",
-        { name: "Operator", ...credentials },
-        { authorization: `Bearer ${testSetupToken}` },
-      );
-      assert.strictEqual(setup.status, 201);
-      const signIn = yield* post("/api/auth/sign-in/email", credentials);
-      assert.strictEqual(signIn.status, 200);
-      const cookie = signIn.headers
-        .getSetCookie()
-        .map((value) => value.split(";", 1)[0])
-        .join("; ");
+      const { cookie } = yield* setupOwner({ name: "Operator", email: "operations@example.test" });
       const read = () =>
         Effect.promise(() =>
           env.TEST_WORKER.fetch(`${origin}/api/operations`, { headers: { cookie } }),

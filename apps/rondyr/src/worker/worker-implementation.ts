@@ -12,7 +12,7 @@ import {
 
 import { classifierLive } from "./adapters/ai/classifier.ts";
 import { submissionScreeningLive } from "./adapters/ai/submission-screening.ts";
-import { authenticationLive } from "./adapters/authentication/better-auth.ts";
+import { authenticationLive } from "./adapters/authentication/passwordless.ts";
 import { secretCipherLive } from "./adapters/crypto/secret-cipher.ts";
 import { apiTokensLive } from "./adapters/database/api-tokens.ts";
 import { classificationPoliciesLive } from "./adapters/database/classification-policies.ts";
@@ -23,7 +23,6 @@ import { formOriginsLive } from "./adapters/database/form-origins.ts";
 import { formsLive } from "./adapters/database/forms.ts";
 import { inboxStoreLive } from "./adapters/database/inbox.ts";
 import { membersLive } from "./adapters/database/members.ts";
-import { passwordResetsLive } from "./adapters/database/password-resets.ts";
 import { recipientConfirmationsLive } from "./adapters/database/recipient-confirmations.ts";
 import { submissionExportsLive } from "./adapters/database/submission-exports.ts";
 import { submissionRetentionLive } from "./adapters/database/submission-retention.ts";
@@ -51,6 +50,7 @@ import { consumeDeliveries, deliverySchedulerLive } from "./jobs/delivery-outbox
 import { publishOutboxes } from "./jobs/publish-outboxes.ts";
 import { purgeOnTheHour } from "./jobs/retention-purge.ts";
 import { consumeSubmissions } from "./jobs/submission-outbox.ts";
+import { Authentication } from "./ports/authentication.ts";
 import { BackgroundTasks } from "./ports/background-tasks.ts";
 
 const deliveries = Layer.mergeAll(deliveryStoreLive, deliveryQueueLive);
@@ -58,7 +58,7 @@ const turnstile = turnstileVerifierLive.pipe(
   Layer.provide([secretCipherLive, FetchHttpClient.layer]),
 );
 const services = Layer.mergeAll(
-  authenticationLive,
+  authenticationLive.pipe(Layer.provide(emailSenderLive)),
   apiTokensLive,
   HttpServer.layerServices,
   submissionIntakeLive.pipe(Layer.provide(turnstile)),
@@ -72,7 +72,6 @@ const services = Layer.mergeAll(
   formsLive.pipe(Layer.provide([secretCipherLive, turnstile])),
   organizationDirectoryLive,
   membersLive,
-  passwordResetsLive,
   organizationQuotasLive,
   classificationPoliciesLive,
   submissionScreeningLive.pipe(
@@ -140,13 +139,11 @@ export const workerImplementation = Effect.gen(function* () {
   const fetch = router.pipe(
     Effect.provideServiceEffect(BackgroundTasks, eventBackgroundTasks),
     Effect.provideContext(context),
-    Effect.catchTags({
-      HttpServerError: ({ reason }) =>
-        Effect.succeed(
-          HttpServerResponse.empty({ status: reason._tag === "RouteNotFound" ? 404 : 500 }),
-        ),
-      RouteNotFound: () => Effect.succeed(HttpServerResponse.empty({ status: 404 })),
-    }),
+    Effect.catchTag("HttpServerError", ({ reason }) =>
+      Effect.succeed(
+        HttpServerResponse.empty({ status: reason._tag === "RouteNotFound" ? 404 : 500 }),
+      ),
+    ),
     Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 500 })),
     // The Worker answers /health, /f and /api. public/_headers covers the dashboard assets.
     Effect.flatMap((response) =>
@@ -169,8 +166,20 @@ export const workerImplementation = Effect.gen(function* () {
     if (event.type === "scheduled") {
       // The purge never fails the Cron, and runs whatever the publication did. It
       // goes by the scheduled time, which a slow publication does not move.
+      const purgeAuth = Effect.gen(function* () {
+        if (Math.floor(event.input.scheduledTime / 60_000) % 60 !== 0) return;
+        const auth = yield* Authentication;
+        yield* auth
+          .purgeExpired(event.input.scheduledTime)
+          .pipe(
+            Effect.catchCause(() =>
+              Effect.logError("Auth expiry purge failed", { status: "failed" }),
+            ),
+          );
+      });
       return publishOutboxes().pipe(
         Effect.ensuring(purgeOnTheHour(event.input.scheduledTime)),
+        Effect.ensuring(purgeAuth),
         Effect.provideContext(context),
       );
     }

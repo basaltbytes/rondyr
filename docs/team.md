@@ -1,6 +1,6 @@
 # Team and accounts
 
-Public sign-up is closed on every Rondyr instance. After you create the owner account, invite teammates from the dashboard and assign each person the **Reviewer** or **Admin** role.
+Public sign-up is closed on every Rondyr instance. Accounts sign in without passwords using **passkeys** (always enabled) and optional **Email OTP** sign-in codes. After creating the owner account, invite teammates from the dashboard and assign each person the **Reviewer** or **Admin** role.
 
 ![Settings Members screen showing Camille as Admin, the Invite someone form with email address and role selector, and pending invitations](./screenshots/members.webp)
 
@@ -14,8 +14,8 @@ Each invitation link works once and expires after 7 days. An organization can ha
 
 When the invited person opens the link:
 
-- If they don't have an account on this Rondyr instance yet, they enter their name and a password of 12 to 128 characters to create one and join.
-- If they already have an account at that address, they sign in and join the organization.
+- If they don't have an account on this Rondyr instance yet, they enter their name and register a passkey. Cancelling the browser prompt leaves no account behind; completing it creates the account, signs them in immediately, and adds them to the organization.
+- If they already have an account at that address, they sign in with their passkey or an email code and join the organization.
 - If they are signed in under a different email address, Rondyr asks them to sign out first.
 
 Pending invitations stay listed under **Invite someone**, where an admin can cancel them at any time. Creating a new invitation for the same email address replaces the previous pending link.
@@ -33,7 +33,7 @@ Each member has one role per organization. A single account can belong to severa
 
 In **Settings → Members**, use the role dropdown next to a member to switch between **Admin** and **Reviewer**, or select **Remove** to revoke their access to the organization.
 
-Keep three rules in mind before making changes:
+Keep these rules in mind before making changes:
 
 - **Last admin protection.** Every organization keeps at least one admin; promote someone else before stepping down or removing the last admin.
 - **Stepping down.** If you switch your own role from Admin to Reviewer, Rondyr asks you to confirm, because only another admin can promote you back.
@@ -41,21 +41,38 @@ Keep three rules in mind before making changes:
 
 Removing a member removes them from the organization only; their account still exists, and an admin can invite them again later. When it was their last organization, Rondyr also signs them out on every device.
 
-## Reset a forgotten password
+## Passkeys and Email OTP
 
-When your instance has email configured, the sign-in screen shows a **Forgot your password?** link.
+Every Rondyr instance enables passkey sign-in out of the box with no external configuration. On `/sign-in`, select **Sign in with a passkey** to authenticate with a discoverable passkey stored in your browser, OS keychain, or hardware security key.
 
-1. Select **Forgot your password?**, enter your account's email address, and select **Email me a link**.
-2. Open the link from your inbox and choose a new password (12 to 128 characters).
+When an email provider is configured (see [Send messages by email](./email.md)), **Or sign in with an email code** appears automatically on `/sign-in`:
 
-Reset links work once and expire after one hour, and an account can request at most 3 reset emails in 24 hours. Saving a new password signs the account out of every active session. For privacy, the sign-in page shows the same confirmation message whether or not an account exists for that address.
+- Entering an account's email address sends a single-use 6-digit code valid for 10 minutes.
+- A code locks out after 5 wrong guesses, and each address can receive up to 5 codes per hour.
+- Unknown email addresses never create an account and receive the same confirmation message for privacy.
 
-If your instance doesn't have an email provider configured, Rondyr can't send password reset emails; configure email first in [Send messages by email](./email.md).
+When no email provider is configured, Email OTP stays hidden and its endpoints return `503`.
+
+## Manage passkeys
+
+Open the account menu at the foot of the sidebar and select **Security** to manage the passkeys registered on your account.
+
+- Add backup passkeys (for example a second device or a hardware security key) with an optional label.
+- Rename existing passkeys at any time.
+- Delete passkeys you no longer use. When Email OTP is not configured, Rondyr refuses to delete your last remaining passkey so you don't lock yourself out.
+- Passkeys bound to another hostname (such as an old `workers.dev` address after attaching a custom domain) are marked with their domain name so you can clean them up once your new passkey works.
+
+## Recover access and migrate domains
+
+WebAuthn passkeys are bound to a hostname (`rpID`), so a passkey created on `*.workers.dev` does not work after attaching a custom domain. You have two recovery paths:
+
+- **With email configured:** open `/sign-in` on the new domain or device, sign in with an email code, then open **Account → Security** to register a new passkey.
+- **Without email configured (or full lockout):** add a secret named `RONDYR_RECOVERY_TOKEN` (at least 32 characters, for example `openssl rand -hex 32`) in Cloudflare under **Workers & Pages → rondyr → Settings → Variables and Secrets**. Reload `/sign-in`, select **Recover access**, enter the recovery token and an existing account's email address, and register a new passkey for the current domain. You are signed in immediately. Delete `RONDYR_RECOVERY_TOKEN` from Cloudflare afterward.
 
 ## Rotate instance secrets
 
 To replace a secret on an instance deployed with the button, open **Workers & Pages → rondyr → Settings → Variables and Secrets** in the Cloudflare dashboard, update the value, and save. On an Alchemy deployment, update the matching `*_PROD` secret in your GitHub fork and run the **Deploy** workflow.
 
-- **`BETTER_AUTH_SECRET`**: set a new random string of at least 32 characters (`openssl rand -hex 32`). Everyone will be signed out and will need to sign in again.
+- **`RONDYR_SESSION_SECRET`** (legacy name `BETTER_AUTH_SECRET`): set a new random string of at least 32 characters (`openssl rand -hex 32`). Everyone will be signed out and will need to sign in again.
 - **`RESEND_API_KEY`**: create a new sending key in Resend, replace the secret, send a test email from **Destinations** to confirm it works, then revoke the old key in Resend.
 - **`RONDYR_SECRETS_KEY`**: set a new 32-byte base64 key (`openssl rand -base64 32`). Afterward, rotate each webhook's signing secret in **Destinations** (and update the receiving apps) and re-save the Turnstile keys on any form that uses Turnstile.

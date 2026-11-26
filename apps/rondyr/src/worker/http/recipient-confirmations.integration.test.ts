@@ -1,10 +1,10 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
-import { hashPassword } from "better-auth/crypto";
 import { Clock, Effect, Schema } from "effect";
 
 import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { seedAccount } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
   callFromOtherSite,
@@ -30,41 +30,18 @@ const readTest = Schema.decodeUnknownEffect(TargetTestResult);
 const readAccepted = Schema.decodeUnknownEffect(Schema.Struct({ "submission-id": SubmissionId }));
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
-let clients = 0;
-
-/** A second account in its own organization. Each sign-in comes from its own client. */
+/** A second account in its own organization. */
 const otherAdmin = Effect.fnUntraced(function* (id: string) {
   const email = `${id}@example.test`;
-  const password = "confirmation-test-password";
-  const hash = yield* Effect.promise(() => hashPassword(password));
-  const now = yield* Clock.currentTimeMillis;
+  const { cookie } = yield* seedAccount(id, email);
   yield* Effect.promise(() =>
     env.DB.batch([
-      env.DB.prepare(
-        "INSERT INTO auth_users (id, name, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-      ).bind(id, id, email, now, now),
-      env.DB.prepare(`
-        INSERT INTO auth_accounts (id, user_id, account_id, provider_id, password, created_at, updated_at)
-        VALUES (?, ?, ?, 'credential', ?, ?, ?)
-      `).bind(id, id, id, hash, now, now),
       env.DB.prepare("INSERT INTO organizations (id, name) VALUES (?, ?)").bind(`${id}-seed`, id),
       env.DB.prepare(
         "INSERT INTO organization_members (organization_id, user_id, role) VALUES (?, ?, 'admin')",
       ).bind(`${id}-seed`, id),
     ]),
   );
-  clients += 1;
-  const response = yield* call(
-    "POST",
-    "/api/auth/sign-in/email",
-    { email, password },
-    { "cf-connecting-ip": `198.51.100.${clients}` },
-  );
-  assert.strictEqual(response.status, 200);
-  const cookie = response.headers
-    .getSetCookie()
-    .map((value) => value.split(";", 1)[0])
-    .join("; ");
   return { cookie };
 });
 

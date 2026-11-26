@@ -3,7 +3,8 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
-import { testOrigin as origin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { setupOwner } from "../../../tests/integration/organization-fixture.ts";
 import { FormOrigin, type OriginRefusalReason } from "../../domain/forms/allowed-origin.ts";
 import { InboxOrganizationWithForms } from "../../domain/submissions/inbox-setup.ts";
 
@@ -44,19 +45,7 @@ const storedOrigins = (publicId: string) =>
 
 it.live("manages the allowed origins of the account's forms and refuses other organizations", () =>
   Effect.gen(function* () {
-    const credentials = { email: "origins@example.test", password: "origin-routes-password" };
-    const setup = yield* post(
-      "/api/setup",
-      { name: "Origins", ...credentials },
-      { authorization: `Bearer ${testSetupToken}` },
-    );
-    assert.strictEqual(setup.status, 201);
-    const signIn = yield* post("/api/auth/sign-in/email", credentials);
-    assert.strictEqual(signIn.status, 200);
-    const cookie = signIn.headers
-      .getSetCookie()
-      .map((value) => value.split(";", 1)[0])
-      .join("; ");
+    const { cookie } = yield* setupOwner({ name: "Origins", email: "origins@example.test" });
     const headers = { cookie, origin };
     const created = yield* post(
       "/api/organizations",

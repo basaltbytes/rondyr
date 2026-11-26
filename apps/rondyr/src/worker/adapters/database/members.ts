@@ -22,12 +22,11 @@ import {
   MemberNotFound,
   Members,
   NotAnAdmin,
-  type NewAccount,
+  type NewPasskeyAccount,
 } from "../../ports/members.ts";
 import type { OrganizationScope } from "../../ports/organization-directory.ts";
 import { StorageUnavailable } from "../../ports/storage.ts";
 import { d1, database } from "./d1.ts";
-import { passwordHash } from "./password-hash.ts";
 import { hashSecret, newLinkSecret } from "./secret-hash.ts";
 
 const dayMillis = 24 * 60 * 60 * 1000;
@@ -412,54 +411,76 @@ const acceptAsAccount = Effect.fn("Members.acceptAsAccount")(function* (
   return yield* InvitationNotFound.make();
 });
 
-const acceptWithNewAccount = Effect.fn("Members.acceptWithNewAccount")(function* (
+const acceptWithPasskey = Effect.fn("Members.acceptWithPasskey")(function* (
   token: Redacted.Redacted<string>,
-  account: NewAccount,
+  account: NewPasskeyAccount,
 ) {
-  // A cheap read first: hashing a password costs CPU, which nobody should be
-  // able to spend with a random link.
-  const summary = yield* readInvitation(token);
-  if (summary.account === "existing") return yield* InvitationNeedsSignIn.make();
   const db = yield* database;
   const tokenHash = yield* hashSecret(token);
-  const password = yield* passwordHash(account.password);
   const now = yield* Clock.currentTimeMillis;
-  const userId = SecureRandom.uuidV4Unsafe();
   // ?1 is the hash of the link, ?2 the new account and ?3 the time. The account
   // is created only for a usable invitation whose address has no account yet;
-  // every other statement depends on that account, in one transaction.
+  // every other statement depends on that account, in one atomic transaction.
   const created = "EXISTS (SELECT 1 FROM auth_users WHERE id = ?2)";
-  const [, , , accepted, valid] = yield* d1(() =>
+  const [, , , , accepted, valid] = yield* d1(() =>
     db.batch([
       db
         .prepare(`
-        INSERT INTO auth_users (id, name, email, created_at, updated_at)
-        SELECT ?2, ?4, i.email, ?3, ?3 FROM organization_invitations i
+        INSERT INTO auth_users (id, name, email, email_verified, created_at, updated_at)
+        SELECT ?2, ?4, i.email, 0, ?3, ?3 FROM organization_invitations i
         WHERE i.token_hash = ?1 AND ${usable("?3")}
           AND NOT EXISTS (SELECT 1 FROM auth_users u WHERE lower(u.email) = i.email)
       `)
-        .bind(tokenHash, userId, now, account.name),
+        .bind(tokenHash, account.userId, now, account.name),
       db
         .prepare(`
-        INSERT INTO auth_accounts
-          (id, user_id, account_id, provider_id, password, created_at, updated_at)
-        SELECT ?2, ?2, ?2, 'credential', ?4, ?3, ?3 WHERE ${created}
+        INSERT INTO auth_passkeys
+          (id, user_id, name, credential_id, public_key, algorithm, counter, transports, rp_id, created_at, last_used_at)
+        SELECT ?4, ?2, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?3, NULL WHERE ${created}
       `)
-        .bind(tokenHash, userId, now, password),
+        .bind(
+          tokenHash,
+          account.userId,
+          now,
+          account.passkey.id,
+          account.passkey.name,
+          account.passkey.credentialId,
+          account.passkey.publicKey,
+          account.passkey.algorithm,
+          account.passkey.counter,
+          account.passkey.transports,
+          account.passkey.rpId,
+        ),
       db
         .prepare(`
         INSERT INTO organization_members (organization_id, user_id, role)
         SELECT i.organization_id, ?2, i.role FROM organization_invitations i
         WHERE i.token_hash = ?1 AND ${usable("?3")} AND ${created}
       `)
-        .bind(tokenHash, userId, now),
+        .bind(tokenHash, account.userId, now),
+      db
+        .prepare(`
+        INSERT INTO auth_sessions
+          (id, token, user_id, expires_at, created_at, updated_at, ip_address, user_agent)
+        SELECT ?4, ?5, ?2, ?6, ?3, ?3, ?7, ?8 WHERE ${created}
+      `)
+        .bind(
+          tokenHash,
+          account.userId,
+          now,
+          account.session.id,
+          account.session.tokenHash,
+          account.session.expiresAt,
+          account.session.ipAddress,
+          account.session.userAgent,
+        ),
       db
         .prepare(`
         UPDATE organization_invitations AS i SET accepted_at = ?3
         WHERE i.token_hash = ?1 AND ${usable("?3")} AND ${created}
         RETURNING organization_id AS organizationId
       `)
-        .bind(tokenHash, userId, now),
+        .bind(tokenHash, account.userId, now),
       db
         .prepare(`
         SELECT EXISTS (SELECT 1 FROM organization_invitations i WHERE i.token_hash = ?1 AND ${usable("?2")})
@@ -487,5 +508,5 @@ export const membersLive = Layer.succeed(Members, {
   remove,
   readInvitation,
   acceptAsAccount,
-  acceptWithNewAccount,
+  acceptWithPasskey,
 });

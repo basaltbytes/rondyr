@@ -4,9 +4,10 @@
 //   1. creates the D1 database when it does not exist yet (a fork imported into Workers
 //      Builds; the button creates it before the first build);
 //   2. applies the D1 migrations that are not applied yet, before the new code runs;
-//   3. generates BETTER_AUTH_SECRET and RONDYR_SECRETS_KEY when the Worker has no such
-//      secret. A secret that exists is never replaced: a new RONDYR_SECRETS_KEY would
-//      leave every stored webhook secret and Turnstile key undecryptable;
+//   3. generates RONDYR_SESSION_SECRET and RONDYR_SECRETS_KEY when the Worker has no such
+//      secret (skipping RONDYR_SESSION_SECRET when legacy BETTER_AUTH_SECRET already exists).
+//      A secret that exists is never replaced: a new RONDYR_SECRETS_KEY would leave every
+//      stored webhook secret and Turnstile key undecryptable;
 //   4. deploys the Worker, with the generated secrets in the same version.
 //
 // A generated value is never printed. It goes to Cloudflare through a file that only
@@ -28,8 +29,13 @@ const builtConfig = fileURLToPath(new URL("../dist/rondyr/wrangler.json", import
 
 /** The secrets that the deployment generates when the Worker has none, and how. */
 export const generatedSecrets = {
-  BETTER_AUTH_SECRET: () => randomBytes(32).toString("hex"),
+  RONDYR_SESSION_SECRET: () => randomBytes(32).toString("hex"),
   RONDYR_SECRETS_KEY: () => randomBytes(32).toString("base64"),
+};
+
+/** Legacy secret names that satisfy a generated secret on upgraded Workers. */
+const legacySecretAliases = {
+  RONDYR_SESSION_SECRET: ["BETTER_AUTH_SECRET"],
 };
 
 /** The Worker's name: Workers Builds can override the one of the configuration. */
@@ -69,7 +75,12 @@ export function secretsToCreate(listing) {
   } else {
     return { error: "The secrets of the Worker could not be listed." };
   }
-  return { create: Object.keys(generatedSecrets).filter((name) => !existing.includes(name)) };
+  return {
+    create: Object.keys(generatedSecrets).filter((name) => {
+      const satisfiedBy = [name, ...(legacySecretAliases[name] ?? [])];
+      return !satisfiedBy.some((candidate) => existing.includes(candidate));
+    }),
+  };
 }
 
 const require = createRequire(import.meta.url);

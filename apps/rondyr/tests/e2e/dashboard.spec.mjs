@@ -3,7 +3,15 @@ import { expect } from "@playwright/test";
 import { discord } from "../../src/domain/deliveries/connectors/discord.ts";
 import { slack } from "../../src/domain/deliveries/connectors/slack.ts";
 import { confirmationPages } from "../../src/domain/submissions/confirmation-page.ts";
-import { externalSite, frenchT, owner, t, test } from "./fixtures.mjs";
+import {
+  attachVirtualAuthenticator,
+  externalSite,
+  frenchT,
+  owner,
+  replaceVirtualAuthenticator,
+  t,
+  test,
+} from "./fixtures.mjs";
 
 const organizationName = "Rondyr Workshop";
 const formName = "Visitor contact";
@@ -1158,6 +1166,7 @@ test("invite a reviewer, who creates an account from the link and sees no settin
 
   const context = await browser.newContext();
   const invited = await context.newPage();
+  await attachVirtualAuthenticator(invited);
   await invited.goto(link);
   await expect(
     invited.getByRole("heading", {
@@ -1165,7 +1174,6 @@ test("invite a reviewer, who creates an account from the link and sees no settin
     }),
   ).toBeVisible();
   await invited.getByRole("textbox", { name: t("invitation.name") }).fill(reviewer.name);
-  await invited.getByLabel(t("invitation.password")).fill("playwright-reviewer-password");
   await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
   await expect(
     invited.getByRole("button", {
@@ -1205,9 +1213,9 @@ test("count the API tokens of a member before removing it, and confirm before st
   // The second admin joins and creates a token for a website.
   const context = await browser.newContext();
   const invited = await context.newPage();
+  await attachVirtualAuthenticator(invited);
   await invited.goto(link);
   await invited.getByRole("textbox", { name: t("invitation.name") }).fill(second.name);
-  await invited.getByLabel(t("invitation.password")).fill("playwright-second-admin-password");
   await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
   await openSettings(invited, t("inbox.sections.apiTokens"));
   await invited.getByRole("textbox", { name: t("inbox.apiTokens.name") }).fill("Website");
@@ -1248,16 +1256,15 @@ test("a member removed from its only organization is told to ask for an invitati
   await createOrganization(page);
   await openSettings(page, t("inbox.sections.members"));
   const removed = { name: "Removed reviewer", email: "removed-reviewer@example.test" };
-  const password = "playwright-removed-reviewer-password";
   await page.getByRole("textbox", { name: t("inbox.members.email") }).fill(removed.email);
   await page.getByRole("button", { name: t("inbox.members.invite"), exact: true }).click();
   const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
 
   const context = await browser.newContext();
   const invited = await context.newPage();
+  await attachVirtualAuthenticator(invited);
   await invited.goto(link);
   await invited.getByRole("textbox", { name: t("invitation.name") }).fill(removed.name);
-  await invited.getByLabel(t("invitation.password")).fill(password);
   await invited.getByRole("button", { name: t("invitation.createAndJoin") }).click();
   await expect(
     invited.getByRole("button", {
@@ -1279,12 +1286,8 @@ test("a member removed from its only organization is told to ask for an invitati
     page.getByRole("button", { name: t("inbox.members.removeLabel", { name: removed.name }) }),
   ).toHaveCount(0);
 
-  // The removal ended the member's sessions: it signs in again where the dashboard opens.
+  // The removal ended the member's sessions: it signs in again with its passkey.
   await invited.goto(dashboardOrigin);
-  await invited
-    .getByRole("textbox", { name: t("authentication.signIn.email") })
-    .fill(removed.email);
-  await invited.getByLabel(t("authentication.signIn.password")).fill(password);
   await invited
     .getByRole("button", { name: t("authentication.signIn.submit"), exact: true })
     .click();
@@ -1298,37 +1301,64 @@ test("a member removed from its only organization is told to ask for an invitati
   await context.close();
 });
 
-test("reset a forgotten password from the sign-in screen", async ({
+test("sign in with an email code from the sign-in screen", async ({
   page,
   dashboardOrigin,
   sentEmails,
 }) => {
   await page.goto(dashboardOrigin);
-  await page.getByRole("button", { name: t("authentication.signIn.forgotPassword") }).click();
+  await page.getByRole("button", { name: t("authentication.otp.toggle") }).click();
   await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
-  await page.getByRole("button", { name: t("authentication.passwordReset.submit") }).click();
-  await expect(
-    page.getByText(t("authentication.passwordReset.sent", { email: owner.email })),
-  ).toBeVisible();
-  const linkPattern = /https?:\/\/\S+\/reset-password#[\w-]{43}/u;
+  await page.getByRole("button", { name: t("authentication.otp.send") }).click();
+  await expect(page.getByText(t("authentication.otp.sent", { email: owner.email }))).toBeVisible();
+  const codePattern = /\b([0-9]{6})\b/u;
   await expect
-    .poll(async () => (await sentEmails(owner.email)).some(({ text }) => linkPattern.test(text)))
+    .poll(async () => (await sentEmails(owner.email)).some(({ text }) => codePattern.test(text)))
     .toBe(true);
   const emails = await sentEmails(owner.email);
-  const link = emails.at(-1).text.match(linkPattern)[0];
+  const code = emails.at(-1).text.match(codePattern)[1];
 
-  const password = "playwright-new-password-43";
-  await page.goto(link);
-  await page.getByLabel(t("passwordReset.password")).fill(password);
-  await page.getByRole("button", { name: t("passwordReset.submit") }).click();
-  await expect(
-    page.getByRole("heading", { name: t("passwordReset.changed.title"), exact: true }),
-  ).toBeVisible();
-  await page.getByRole("link", { name: t("passwordReset.signIn") }).click();
-  await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
-  await page.getByLabel(t("authentication.signIn.password")).fill(password);
-  await page.getByRole("button", { name: t("authentication.signIn.submit"), exact: true }).click();
+  await page.getByRole("textbox", { name: t("authentication.otp.code") }).fill(code);
+  await page.getByRole("button", { name: t("authentication.otp.verify") }).click();
   await expect(page.getByRole("heading", { name: t("inbox.sections.organization") })).toBeVisible();
+});
+
+test("add, rename, and delete passkeys from Account Security", async ({ dashboard: page }) => {
+  await createOrganization(page);
+  await accountMenu(page).click();
+  await page.getByRole("menuitem", { name: t("authentication.account.security") }).click();
+  const dialog = page.getByRole("dialog", { name: t("authentication.security.title") });
+  await expect(dialog).toBeVisible();
+
+  await dialog
+    .getByRole("textbox", { name: t("authentication.security.newPasskeyName") })
+    .fill("Work laptop");
+  await dialog.getByRole("button", { name: t("authentication.security.add") }).click();
+  await expect(dialog.getByText(t("authentication.security.problems.exists"))).toBeVisible();
+
+  await replaceVirtualAuthenticator(page);
+  await dialog.getByRole("button", { name: t("authentication.security.add") }).click();
+  await expect(dialog.getByText("Work laptop", { exact: true })).toBeVisible();
+
+  await dialog
+    .getByRole("button", {
+      name: t("authentication.security.renameLabel", { name: "Work laptop" }),
+    })
+    .click();
+  const renameInput = dialog.getByRole("textbox", {
+    name: t("authentication.security.passkeyName"),
+    exact: true,
+  });
+  await renameInput.fill("Travel laptop");
+  await dialog.getByRole("button", { name: t("common.save"), exact: true }).click();
+  await expect(dialog.getByText("Travel laptop", { exact: true })).toBeVisible();
+
+  await dialog
+    .getByRole("button", {
+      name: t("authentication.security.deleteLabel", { name: "Travel laptop" }),
+    })
+    .click();
+  await expect(dialog.getByText("Travel laptop", { exact: true })).toHaveCount(0);
 });
 
 test("search the messages, export the list, delete a message and keep messages 30 days", async ({
@@ -1443,8 +1473,6 @@ async function postMessage(page, endpoint, message, verdict = "accept") {
 }
 
 async function signInAsOwner(page) {
-  await page.getByRole("textbox", { name: t("authentication.signIn.email") }).fill(owner.email);
-  await page.getByLabel(t("authentication.signIn.password")).fill(owner.password);
   await page.getByRole("button", { name: t("authentication.signIn.submit"), exact: true }).click();
 }
 
@@ -1628,9 +1656,9 @@ test.describe("addresses", () => {
     const link = await page.getByText(/\/invitation#[A-Za-z0-9_-]{43}$/u).innerText();
     const context = await browser.newContext();
     const reviewer = await context.newPage();
+    await attachVirtualAuthenticator(reviewer);
     await reviewer.goto(link);
     await reviewer.getByRole("textbox", { name: t("invitation.name") }).fill("Reader");
-    await reviewer.getByLabel(t("invitation.password")).fill("playwright-reader-password");
     await reviewer.getByRole("button", { name: t("invitation.createAndJoin") }).click();
     await expect(folderHeading(reviewer, t("inbox.folders.quarantined"))).toBeVisible();
 
@@ -1688,9 +1716,9 @@ test.describe("addresses", () => {
     // The other account joins, then creates an organization that the owner is not part of.
     const context = await browser.newContext();
     const other = await context.newPage();
+    await attachVirtualAuthenticator(other);
     await other.goto(link);
     await other.getByRole("textbox", { name: t("invitation.name") }).fill("Other account");
-    await other.getByLabel(t("invitation.password")).fill("playwright-other-password");
     await other.getByRole("button", { name: t("invitation.createAndJoin") }).click();
     await other
       .getByRole("button", { name: t("inbox.organizations.switcher", { name: organizationName }) })

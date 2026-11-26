@@ -9,6 +9,7 @@ import type {
   PendingInvitation,
 } from "../../domain/organizations/members.ts";
 import type { OrganizationId, UserId } from "../../domain/submissions/submission.id.ts";
+import type { PreparedPasskeyRow, PreparedSessionRow } from "./authentication.ts";
 import type { OrganizationScope } from "./organization-directory.ts";
 import type { StorageUnavailable } from "./storage.ts";
 
@@ -68,9 +69,11 @@ export interface CreatedInvitation {
   readonly mayEmail: boolean;
 }
 
-export interface NewAccount {
+export interface NewPasskeyAccount {
+  readonly userId: typeof UserId.Type;
   readonly name: string;
-  readonly password: Redacted.Redacted<string>;
+  readonly passkey: PreparedPasskeyRow;
+  readonly session: PreparedSessionRow;
 }
 
 /**
@@ -119,10 +122,10 @@ export class Members extends Context.Service<
       OrganizationId,
       InvitationNotFound | InvitationForOtherAccount | StorageUnavailable
     >;
-    /** Create an account at the invited address and join, in one transaction. */
-    readonly acceptWithNewAccount: (
+    /** Create an account with a passkey and session at the invited address and join atomically. */
+    readonly acceptWithPasskey: (
       token: Redacted.Redacted<string>,
-      account: NewAccount,
+      account: NewPasskeyAccount,
     ) => Effect.Effect<
       OrganizationId,
       InvitationNotFound | InvitationNeedsSignIn | StorageUnavailable

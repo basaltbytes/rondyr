@@ -3,7 +3,8 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Clock, Effect, Schema } from "effect";
 
-import { testOrigin as origin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { setupOwner } from "../../../tests/integration/organization-fixture.ts";
 import { ManagedForm } from "../../domain/forms/form.ts";
 import { ClassifierInput, RepetitionCounts } from "../../domain/submissions/classifier-input.ts";
 import { InboxOrganizationWithForms } from "../../domain/submissions/inbox-setup.ts";
@@ -56,25 +57,11 @@ const call = Effect.fnUntraced(function* (
 
 const json = (response: Response) => Effect.promise(() => response.json());
 
-const credentials = { email: "honeypot@example.test", password: "honeypot-test-password" };
-
-/** Reuse the session so the tests share one sign-in within the rate limit window. */
+/** Reuse the session so the tests share one owner setup. */
 const signIn = Effect.runSync(
   Effect.cached(
     Effect.gen(function* () {
-      const setup = yield* call(
-        "POST",
-        "/api/setup",
-        { name: "Honeypot", ...credentials },
-        { authorization: `Bearer ${testSetupToken}` },
-      );
-      assert.oneOf(setup.status, [201, 404]);
-      const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
-      assert.strictEqual(session.status, 200);
-      const cookie = session.headers
-        .getSetCookie()
-        .map((value) => value.split(";", 1)[0])
-        .join("; ");
+      const { cookie } = yield* setupOwner({ name: "Honeypot", email: "honeypot@example.test" });
       return { cookie, origin };
     }),
   ),

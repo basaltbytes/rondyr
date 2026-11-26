@@ -1,4 +1,5 @@
-import { ChevronsUpDown, LogOut } from "lucide-react";
+import { ChevronsUpDown, LogOut, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -24,6 +25,7 @@ import { setLanguage, useLanguage } from "~/lib/i18n";
 import { chooseLanguage, languages } from "~/lib/language";
 import { chooseTheme, themes } from "~/lib/theme";
 
+import { AccountSecurityDialog } from "./account-security-dialog.tsx";
 import { useSignOut } from "./use-sign-out.ts";
 
 interface AccountMenuProps {
@@ -38,81 +40,91 @@ export function AccountMenu({ email, onSignedOut }: AccountMenuProps) {
   const language = useLanguage();
   const theme = useTheme();
   const { failed, pending, leave } = useSignOut(onSignedOut);
+  const [securityOpen, setSecurityOpen] = useState(false);
+
   return (
-    <SidebarMenu>
-      {failed && (
-        <li
-          role="alert"
-          className="rounded-md bg-destructive px-2.5 py-1 text-xs text-pretty text-destructive-foreground"
-        >
-          {t("authentication.signOut.failed")}
-        </li>
-      )}
-      <SidebarMenuItem>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <SidebarMenuButton
-                size="lg"
-                tooltip={email}
-                aria-label={t("authentication.account.label", { email })}
-                disabled={pending}
-              />
-            }
+    <>
+      <SidebarMenu>
+        {failed && (
+          <li
+            role="alert"
+            className="rounded-md bg-destructive px-2.5 py-1 text-xs text-pretty text-destructive-foreground"
           >
-            <span
-              aria-hidden="true"
-              className="flex size-(--sidebar-rail) shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground uppercase"
+            {t("authentication.signOut.failed")}
+          </li>
+        )}
+        <SidebarMenuItem>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <SidebarMenuButton
+                  size="lg"
+                  tooltip={email}
+                  aria-label={t("authentication.account.label", { email })}
+                  disabled={pending}
+                />
+              }
             >
-              {email.slice(0, 1)}
-            </span>
-            <SidebarMenuLabel>{email}</SidebarMenuLabel>
-            <SidebarMenuBadge>
-              <ChevronsUpDown aria-hidden="true" className="size-4" />
-            </SidebarMenuBadge>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="top">
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>
-                <span className="wrap-anywhere">{email}</span>
-              </DropdownMenuLabel>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>{t("authentication.account.language")}</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={language}
-                onValueChange={(value: string) => setLanguage(chooseLanguage(value, []))}
+              <span
+                aria-hidden="true"
+                className="flex size-(--sidebar-rail) shrink-0 items-center justify-center rounded-full border border-sidebar-border bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground uppercase"
               >
-                {languages.map((code) => (
-                  <DropdownMenuRadioItem key={code} value={code}>
-                    <span className="min-w-0 flex-1">{t(`languages.${code}`)}</span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>{t("authentication.account.theme")}</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={theme}
-                onValueChange={(value: string) => setTheme(chooseTheme(value))}
-              >
-                {themes.map((name) => (
-                  <DropdownMenuRadioItem key={name} value={name}>
-                    <span className="min-w-0 flex-1">{t(`themes.${name}`)}</span>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={leave}>
-              <LogOut aria-hidden="true" className="size-4" />
-              {t("authentication.signOut.submit")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarMenuItem>
-    </SidebarMenu>
+                {email.slice(0, 1)}
+              </span>
+              <SidebarMenuLabel>{email}</SidebarMenuLabel>
+              <SidebarMenuBadge>
+                <ChevronsUpDown aria-hidden="true" className="size-4" />
+              </SidebarMenuBadge>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>
+                  <span className="wrap-anywhere">{email}</span>
+                </DropdownMenuLabel>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setSecurityOpen(true)}>
+                <ShieldCheck aria-hidden="true" className="size-4" />
+                {t("authentication.account.security")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>{t("authentication.account.language")}</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={language}
+                  onValueChange={(value: string) => setLanguage(chooseLanguage(value, []))}
+                >
+                  {languages.map((code) => (
+                    <DropdownMenuRadioItem key={code} value={code}>
+                      <span className="min-w-0 flex-1">{t(`languages.${code}`)}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>{t("authentication.account.theme")}</DropdownMenuLabel>
+                <DropdownMenuRadioGroup
+                  value={theme}
+                  onValueChange={(value: string) => setTheme(chooseTheme(value))}
+                >
+                  {themes.map((name) => (
+                    <DropdownMenuRadioItem key={name} value={name}>
+                      <span className="min-w-0 flex-1">{t(`themes.${name}`)}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={leave}>
+                <LogOut aria-hidden="true" className="size-4" />
+                {t("authentication.signOut.submit")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </SidebarMenuItem>
+      </SidebarMenu>
+      <AccountSecurityDialog open={securityOpen} onOpenChange={setSecurityOpen} />
+    </>
   );
 }

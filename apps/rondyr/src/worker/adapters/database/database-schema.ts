@@ -148,7 +148,7 @@ export const organizationInvitations = sqliteTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    // In lowercase, as Better Auth stores the address of an account.
+    // In lowercase, matching the stored address of an account.
     email: text().notNull(),
     role: text().notNull(),
     tokenHash: text("token_hash").notNull(),
@@ -301,25 +301,6 @@ export const submissionDeletions = sqliteTable(
   (table) => [
     check("submission_deletions_submission_id_not_null", sql`${table.submissionId} is not null`),
     index("submission_deletions_organization_idx").on(table.organizationId, table.deletedAt),
-  ],
-);
-
-// A password reset link of an account. D1 keeps the hash of its secret only. A
-// link works once, until `expires_at`; using one uses every link of the account.
-export const passwordResets = sqliteTable(
-  "password_resets",
-  {
-    tokenHash: text("token_hash").primaryKey(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    createdAt: integer("created_at").notNull(),
-    expiresAt: integer("expires_at").notNull(),
-    usedAt: integer("used_at"),
-  },
-  (table) => [
-    check("password_resets_token_hash_not_null", sql`${table.tokenHash} is not null`),
-    index("password_resets_user_idx").on(table.userId, table.createdAt),
   ],
 );
 

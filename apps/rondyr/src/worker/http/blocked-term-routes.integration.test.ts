@@ -3,7 +3,8 @@ import { env } from "cloudflare:workers";
 import { assert, beforeAll, it, vi } from "@effect/vitest";
 import { Effect, Schema } from "effect";
 
-import { testOrigin as origin, testSetupToken } from "../../../tests/integration/auth-fixture.ts";
+import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
+import { setupOwner } from "../../../tests/integration/organization-fixture.ts";
 import {
   FormBlockedTerm,
   maxBlockedTermLength,
@@ -60,24 +61,13 @@ const statusOf = (response: Response) => response.status;
 const withBody = (response: Response) =>
   Effect.map(json(response), (body) => ({ status: response.status, body }));
 
-const credentials = { email: "blocked-terms@example.test", password: "blocked-terms-password" };
-
 const signIn = Effect.runSync(
   Effect.cached(
     Effect.gen(function* () {
-      const setup = yield* call(
-        "POST",
-        "/api/setup",
-        { name: "Blocked terms", ...credentials },
-        { authorization: `Bearer ${testSetupToken}` },
-      );
-      assert.oneOf(setup.status, [201, 404]);
-      const session = yield* call("POST", "/api/auth/sign-in/email", credentials);
-      assert.strictEqual(session.status, 200);
-      const cookie = session.headers
-        .getSetCookie()
-        .map((value) => value.split(";", 1)[0])
-        .join("; ");
+      const { cookie } = yield* setupOwner({
+        name: "Blocked terms",
+        email: "blocked-terms@example.test",
+      });
       return { cookie, origin };
     }),
   ),

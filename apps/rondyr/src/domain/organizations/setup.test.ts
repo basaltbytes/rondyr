@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import { Option } from "effect";
 
-import { setupState } from "./setup.ts";
+import { recoveryEnabled, setupState } from "./setup.ts";
 
 describe("setupState", () => {
   it("is closed once an account exists, whatever the token", () => {
@@ -18,5 +18,14 @@ describe("setupState", () => {
     assert.strictEqual(setupState(false, Option.none()), "token-missing");
     assert.strictEqual(setupState(false, Option.some("")), "token-too-short");
     assert.strictEqual(setupState(false, Option.some("a".repeat(31))), "token-too-short");
+  });
+});
+
+describe("recoveryEnabled", () => {
+  it("requires a token of at least 32 characters", () => {
+    assert.strictEqual(recoveryEnabled(Option.none()), false);
+    assert.strictEqual(recoveryEnabled(Option.some("")), false);
+    assert.strictEqual(recoveryEnabled(Option.some("a".repeat(31))), false);
+    assert.strictEqual(recoveryEnabled(Option.some("a".repeat(32))), true);
   });
 });

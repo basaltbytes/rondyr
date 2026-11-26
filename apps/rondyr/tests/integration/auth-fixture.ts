@@ -2,6 +2,8 @@ export const testOrigin = "https://rondyr.test";
 
 export const testSetupToken = "workerd-test-only-rondyr-setup-token-c056a9";
 
+export const testRecoveryToken = "workerd-test-only-rondyr-recovery-token-9f3a12";
+
 /** The `RESEND_API_KEY` of the test Worker, which the Resend fixture receives. */
 export const testResendKey = "re_workerd_test_only_resend_key";
 

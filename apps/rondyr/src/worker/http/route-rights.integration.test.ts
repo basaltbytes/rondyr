@@ -7,6 +7,7 @@ import { HttpRouter } from "effect/http";
 import { addMember, seedAccount } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
+  callFromOtherSite,
   createInbox,
   json,
   signIn,
@@ -45,15 +46,26 @@ const rights: ReadonlyArray<RouteRights> = [
   { route: "GET /health", access: "public" },
   { route: "POST /f/:formId", access: "public" },
   { route: "OPTIONS /f/:formId", access: "public" },
+  { route: "GET /api/auth/status", access: "public" },
   { route: "GET /api/auth/get-session", access: "public" },
-  { route: "POST /api/auth/sign-in/email", access: "public" },
   { route: "POST /api/auth/sign-out", access: "public" },
-  { route: "GET /api/setup", access: "public" },
-  { route: "POST /api/setup", access: "public" },
-  { route: "POST /api/password-resets", access: "public" },
-  { route: "POST /api/password-resets/complete", access: "public" },
+  { route: "POST /api/setup/options", access: "public" },
+  { route: "POST /api/setup/verify", access: "public" },
+  { route: "POST /api/auth/passkey/options", access: "public" },
+  { route: "POST /api/auth/passkey/verify", access: "public" },
+  { route: "POST /api/auth/otp/request", access: "public" },
+  { route: "POST /api/auth/otp/verify", access: "public" },
+  { route: "POST /api/auth/recovery/options", access: "public" },
+  { route: "POST /api/auth/recovery/verify", access: "public" },
+  { route: "GET /api/account/passkeys", access: "account" },
+  { route: "POST /api/account/passkeys/options", access: "account" },
+  { route: "POST /api/account/passkeys/verify", access: "account" },
+  { route: "PATCH /api/account/passkeys/:id", access: "account" },
+  { route: "DELETE /api/account/passkeys/:id", access: "account" },
   { route: "POST /api/invitations/read", access: "public" },
   { route: "POST /api/invitations/accept", access: "public" },
+  { route: "POST /api/invitations/options", access: "public" },
+  { route: "POST /api/invitations/verify", access: "public" },
   { route: "POST /api/recipient-confirmations", access: "public" },
   { route: "GET /api/organizations", access: "account", token: true },
   { route: "POST /api/organizations", access: "account" },
@@ -241,6 +253,7 @@ it.live(
       const bearer = { authorization: `Bearer ${token}` };
 
       const samples = new Map([
+        ["id", "73123ee4-40bf-4c5f-b8ff-1d56cdaa7643"],
         ["organizationId", id],
         ["publicId", form.publicId],
         ["formId", form.publicId],
@@ -332,6 +345,32 @@ it.live(
         ).pipe(Effect.map(({ status }) => status)),
       );
       assert.deepEqual(createdByRoles, [403, 403, 201]);
+
+      // Cross-origin POSTs to auth, setup, invitation, recovery, and passkey management routes are refused with 403.
+      const crossOriginPaths = [
+        "/api/auth/sign-out",
+        "/api/setup/options",
+        "/api/setup/verify",
+        "/api/auth/passkey/options",
+        "/api/auth/passkey/verify",
+        "/api/auth/otp/request",
+        "/api/auth/otp/verify",
+        "/api/auth/recovery/options",
+        "/api/auth/recovery/verify",
+        "/api/invitations/read",
+        "/api/invitations/accept",
+        "/api/invitations/options",
+        "/api/invitations/verify",
+        "/api/account/passkeys/options",
+        "/api/account/passkeys/verify",
+      ];
+      const crossOriginStatuses = yield* Effect.forEach(crossOriginPaths, (path) =>
+        callFromOtherSite(path, {}, owner).pipe(Effect.map(({ status }) => [path, status])),
+      );
+      assert.deepEqual(
+        crossOriginStatuses,
+        crossOriginPaths.map((path) => [path, 403]),
+      );
     }),
   60_000,
 );

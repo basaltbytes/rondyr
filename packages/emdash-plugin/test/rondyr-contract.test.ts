@@ -5,6 +5,7 @@ import { z } from "astro/zod";
 import { beforeAll, expect, it, vi } from "vitest";
 
 import { testOrigin, testSetupToken } from "../../../apps/rondyr/tests/integration/auth-fixture.ts";
+import { registerVirtualPasskey } from "../../../apps/rondyr/tests/integration/webauthn-helper.mjs";
 import { DeclaredForm } from "../src/core/declared-forms.ts";
 import { flattenFields, type FormLayout } from "../src/core/fields.ts";
 import { newEntry, QueueEntry } from "../src/core/queue.ts";
@@ -51,19 +52,27 @@ const Delivered = z.object({
 const owner = {
   name: "Contract owner",
   email: "contract@example.test",
-  password: "contract-test-password",
 };
 let ownerSession: Promise<string> | undefined;
 
+const CreationOptions = z.object({
+  challenge: z.string(),
+  rp: z.object({ id: z.string() }),
+  user: z.object({ id: z.string() }),
+});
+
 async function signIn() {
-  const setup = await api("POST", "/api/setup", JSON.stringify(owner), {
+  const optionsResponse = await api("POST", "/api/setup/options", JSON.stringify(owner), {
+    authorization: `Bearer ${testSetupToken}`,
+  });
+  expect(optionsResponse.status).toBe(200);
+  const creationOptions = CreationOptions.parse(await optionsResponse.json());
+  const { credential } = await registerVirtualPasskey(creationOptions, testOrigin);
+  const setup = await api("POST", "/api/setup/verify", JSON.stringify({ credential }), {
     authorization: `Bearer ${testSetupToken}`,
   });
   expect(setup.status).toBe(201);
-  const credentials = JSON.stringify({ email: owner.email, password: owner.password });
-  const signedIn = await api("POST", "/api/auth/sign-in/email", credentials, {});
-  expect(signedIn.status).toBe(200);
-  return signedIn.headers
+  return setup.headers
     .getSetCookie()
     .map((value: string) => value.split(";", 1)[0])
     .join("; ");

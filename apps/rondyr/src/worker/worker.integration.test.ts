@@ -5,14 +5,23 @@ import { Effect, Exit, Schema } from "effect";
 import { assert, beforeAll, describe, it } from "@effect/vitest";
 
 import { testOrigin as origin, testSetupToken } from "../../tests/integration/auth-fixture.ts";
+import {
+  assertVirtualPasskey,
+  registerVirtualPasskey,
+} from "../../tests/integration/webauthn-helper.mjs";
+import {
+  PasskeyCreationOptions,
+  PasskeyRequestOptions,
+} from "../domain/organizations/authentication.ts";
 import { forms, organizations } from "./adapters/database/database-schema.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodeCreationOptions = Schema.decodeUnknownEffect(PasskeyCreationOptions);
+const decodeRequestOptions = Schema.decodeUnknownEffect(PasskeyRequestOptions);
 const SessionUser = Schema.Struct({ user: Schema.Struct({ email: Schema.String }) });
 const owner = {
   name: "Test Owner",
   email: "owner@example.test",
-  password: "a test password for the isolated worker",
 };
 
 function post(path: string, body: string, headers?: HeadersInit) {
@@ -155,76 +164,126 @@ describe("Rondyr Worker", () => {
 });
 
 describe("Rondyr authentication", () => {
-  it.effect("creates one operator, rejects cross-origin sign-in and manages the session", () =>
-    Effect.gen(function* () {
-      const details = yield* encodeJson(owner);
+  it.effect(
+    "creates one operator with a passkey, rejects cross-origin sign-in, and manages the session",
+    () =>
+      Effect.gen(function* () {
+        const details = yield* encodeJson(owner);
 
-      const publicRegistration = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(post("/api/auth/sign-up/email", details)),
-      );
-      const unauthenticatedSetup = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(post("/api/setup", details)),
-      );
-      assert.strictEqual(publicRegistration.status, 404);
-      assert.strictEqual(unauthenticatedSetup.status, 404);
+        const publicRegistration = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/auth/sign-up/email", details)),
+        );
+        const unauthenticatedSetup = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/setup/options", details)),
+        );
+        assert.strictEqual(publicRegistration.status, 404);
+        assert.strictEqual(unauthenticatedSetup.status, 404);
 
-      const setupHeader = { authorization: `Bearer ${testSetupToken}` };
-      const invalidEmail = yield* encodeJson({ ...owner, email: "..owner@example.test" });
-      const invalidSetup = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(post("/api/setup", invalidEmail, setupHeader)),
-      );
-      assert.strictEqual(invalidSetup.status, 400);
+        const setupHeader = { authorization: `Bearer ${testSetupToken}` };
+        const invalidEmail = yield* encodeJson({ ...owner, email: "..owner@example.test" });
+        const invalidSetup = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/setup/options", invalidEmail, setupHeader)),
+        );
+        assert.strictEqual(invalidSetup.status, 400);
 
-      const install = () =>
-        Effect.promise(() => env.TEST_WORKER.fetch(post("/api/setup", details, setupHeader)));
-      const [first, second] = yield* Effect.all([install(), install()], {
-        concurrency: "unbounded",
-      });
-      assert.deepEqual([first.status, second.status].toSorted(), [201, 404]);
-      const afterSetup = yield* install();
-      assert.strictEqual(afterSetup.status, 404);
+        const optsA = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/setup/options", details, setupHeader)),
+        ).pipe(
+          Effect.flatMap((res) => {
+            assert.strictEqual(res.status, 200);
+            return Effect.promise(() => res.json());
+          }),
+          Effect.flatMap(decodeCreationOptions),
+        );
+        const optsB = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/setup/options", details, setupHeader)),
+        ).pipe(
+          Effect.flatMap((res) => {
+            assert.strictEqual(res.status, 200);
+            return Effect.promise(() => res.json());
+          }),
+          Effect.flatMap(decodeCreationOptions),
+        );
+        const [{ passkey: passkeyA, credential: credA }, { passkey: passkeyB, credential: credB }] =
+          yield* Effect.all([
+            Effect.promise(() => registerVirtualPasskey(optsA, origin)),
+            Effect.promise(() => registerVirtualPasskey(optsB, origin)),
+          ]);
+        const [bodyA, bodyB] = yield* Effect.all([
+          encodeJson({ credential: credA }),
+          encodeJson({ credential: credB }),
+        ]);
+        const [first, second] = yield* Effect.all(
+          [
+            Effect.promise(() =>
+              env.TEST_WORKER.fetch(post("/api/setup/verify", bodyA, setupHeader)),
+            ),
+            Effect.promise(() =>
+              env.TEST_WORKER.fetch(post("/api/setup/verify", bodyB, setupHeader)),
+            ),
+          ],
+          { concurrency: "unbounded" },
+        );
+        assert.deepEqual([first.status, second.status].toSorted(), [201, 404]);
+        const winningPasskey = first.status === 201 ? passkeyA : passkeyB;
+        const afterSetup = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/setup/options", details, setupHeader)),
+        );
+        assert.strictEqual(afterSetup.status, 404);
 
-      const credentials = yield* encodeJson({ email: owner.email, password: owner.password });
-      const crossOrigin = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(
-          post("/api/auth/sign-in/email", credentials, { origin: "https://other.test" }),
-        ),
-      );
-      assert.strictEqual(crossOrigin.status, 403);
+        const crossOrigin = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(
+            post("/api/auth/passkey/options", "{}", { origin: "https://other.test" }),
+          ),
+        );
+        assert.strictEqual(crossOrigin.status, 403);
 
-      const login = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(post("/api/auth/sign-in/email", credentials)),
-      );
-      assert.strictEqual(login.status, 200);
-      const cookie =
-        login.headers
-          .getSetCookie()
-          .find((value) => value.startsWith("__Secure-better-auth.session_token=")) ?? "";
-      assert.match(cookie, /; HttpOnly/i);
-      assert.match(cookie, /; Secure/i);
-      assert.match(cookie, /; SameSite=Lax/i);
-      const sessionHeaders = { cookie: cookie.split(";")[0] ?? "" };
+        const signInOpts = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/auth/passkey/options", "{}")),
+        ).pipe(
+          Effect.flatMap((res) => {
+            assert.strictEqual(res.status, 200);
+            return Effect.promise(() => res.json());
+          }),
+          Effect.flatMap(decodeRequestOptions),
+        );
+        const assertion = yield* Effect.promise(() =>
+          assertVirtualPasskey(winningPasskey, signInOpts, origin),
+        );
+        const loginBody = yield* encodeJson({ credential: assertion });
+        const login = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/auth/passkey/verify", loginBody)),
+        );
+        assert.strictEqual(login.status, 200);
+        const cookie =
+          login.headers
+            .getSetCookie()
+            .find((value) => value.startsWith("__Host-rondyr_session=")) ?? "";
+        assert.match(cookie, /; HttpOnly/i);
+        assert.match(cookie, /; Secure/i);
+        assert.match(cookie, /; SameSite=Lax/i);
+        const sessionHeaders = { cookie: cookie.split(";")[0] ?? "" };
 
-      const session = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(
-          new Request(`${origin}/api/auth/get-session`, { headers: sessionHeaders }),
-        ),
-      );
-      const sessionBody = yield* Effect.promise(() => session.json());
-      const signedIn = yield* Schema.decodeUnknownEffect(SessionUser)(sessionBody);
-      assert.strictEqual(signedIn.user.email, owner.email);
+        const session = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(
+            new Request(`${origin}/api/auth/get-session`, { headers: sessionHeaders }),
+          ),
+        );
+        const sessionBody = yield* Effect.promise(() => session.json());
+        const signedIn = yield* Schema.decodeUnknownEffect(SessionUser)(sessionBody);
+        assert.strictEqual(signedIn.user.email, owner.email);
 
-      const logout = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(post("/api/auth/sign-out", "{}", sessionHeaders)),
-      );
-      assert.strictEqual(logout.status, 200);
-      const revokedSession = yield* Effect.promise(() =>
-        env.TEST_WORKER.fetch(
-          new Request(`${origin}/api/auth/get-session`, { headers: sessionHeaders }),
-        ),
-      );
-      const revokedBody = yield* Effect.promise(() => revokedSession.json());
-      assert.isNull(revokedBody);
-    }),
+        const logout = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(post("/api/auth/sign-out", "{}", sessionHeaders)),
+        );
+        assert.strictEqual(logout.status, 200);
+        const revokedSession = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(
+            new Request(`${origin}/api/auth/get-session`, { headers: sessionHeaders }),
+          ),
+        );
+        const revokedBody = yield* Effect.promise(() => revokedSession.json());
+        assert.isNull(revokedBody);
+      }),
   );
 });

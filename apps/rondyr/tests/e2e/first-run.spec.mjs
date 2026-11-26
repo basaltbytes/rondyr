@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 
 import { testSetupToken } from "../integration/auth-fixture.ts";
-import { owner, t, test } from "./fixtures.mjs";
+import { attachVirtualAuthenticator, owner, t, test } from "./fixtures.mjs";
 
 // A fresh deployment has no account. Its address can be found by anyone, so the page
 // creates the owner account only with the setup token chosen at deployment.
@@ -12,14 +12,14 @@ async function fillOwnerForm(page, token) {
   await page.getByLabel(t("setup.token")).fill(token);
   await page.getByRole("textbox", { name: t("setup.name") }).fill(owner.name);
   await page.getByRole("textbox", { name: t("setup.email") }).fill(owner.email);
-  await page.getByLabel(t("setup.password"), { exact: true }).fill(owner.password);
   await page.getByRole("button", { name: t("setup.submit") }).click();
 }
 
-test("a new instance creates its owner account with the setup token only", async ({
+test("a new instance creates its owner account with a passkey and the setup token only", async ({
   page,
   dashboardOrigin,
 }) => {
+  await attachVirtualAuthenticator(page);
   await page.goto(dashboardOrigin);
   await expect(page.getByRole("heading", { name: t("setup.title") })).toBeVisible();
   await expect(page.getByRole("button", { name: t("authentication.signIn.submit") })).toHaveCount(
@@ -30,14 +30,18 @@ test("a new instance creates its owner account with the setup token only", async
   await expect(page.getByText(t("setup.problems.refused"))).toBeVisible();
 
   await fillOwnerForm(page, testSetupToken);
-  // The owner is signed in, and the dashboard opens on its first run.
+  // The owner is signed in immediately after passkey verification, and opens on first run.
   await expect(page.getByRole("heading", { name: t("inbox.sections.organization") })).toBeVisible();
 
-  // The instance is claimed: a visitor sees the sign-in form.
+  // The instance is claimed: clearing cookies shows passkey sign-in, and the registered passkey works.
   await page.context().clearCookies();
   await page.reload();
-  await expect(
-    page.getByRole("button", { name: t("authentication.signIn.submit"), exact: true }),
-  ).toBeVisible();
+  const signInButton = page.getByRole("button", {
+    name: t("authentication.signIn.submit"),
+    exact: true,
+  });
+  await expect(signInButton).toBeVisible();
   await expect(page.getByRole("heading", { name: t("setup.title") })).toHaveCount(0);
+  await signInButton.click();
+  await expect(page.getByRole("heading", { name: t("inbox.sections.organization") })).toBeVisible();
 });

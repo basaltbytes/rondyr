@@ -12,7 +12,6 @@ import { operationsRoute } from "./operations-route.ts";
 import { organizationDomainRoutes } from "./organization-domain-routes.ts";
 import { organizationQuotaRoutes } from "./organization-quota-routes.ts";
 import { originRoutes } from "./origin-routes.ts";
-import { passwordResetRoutes } from "./password-reset-routes.ts";
 import { publicRoutes } from "./public-routes.ts";
 import { recipientConfirmationRoutes } from "./recipient-confirmation-routes.ts";
 import { reviewRoutes } from "./review-routes.ts";
@@ -28,7 +27,6 @@ import { targetRoutes } from "./target-routes.ts";
 export const routes = Layer.mergeAll(
   publicRoutes,
   authenticationRoutes,
-  passwordResetRoutes,
   apiTokenRoutes,
   submissionRoutes,
   reviewRoutes,

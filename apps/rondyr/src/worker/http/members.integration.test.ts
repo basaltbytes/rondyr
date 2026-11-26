@@ -6,10 +6,11 @@ import { Clock, Effect, Layer, Redacted, Schema } from "effect";
 import { testOrigin as origin } from "../../../tests/integration/auth-fixture.ts";
 import {
   addMember,
+  addMemberWithPasskey,
+  cookieOf,
   invite,
-  memberPassword,
   seedAccount,
-  signInAs,
+  signInWithKey,
 } from "../../../tests/integration/member-fixture.ts";
 import {
   call,
@@ -18,6 +19,8 @@ import {
   json,
   signIn,
 } from "../../../tests/integration/organization-fixture.ts";
+import { registerVirtualPasskey } from "../../../tests/integration/webauthn-helper.mjs";
+import { PasskeyCreationOptions } from "../../domain/organizations/authentication.ts";
 import {
   InvitationSummary,
   Member,
@@ -50,7 +53,16 @@ const readEmails = Schema.decodeUnknownEffect(
   ),
 );
 
-const password = memberPassword;
+const readCreationOptions = Schema.decodeUnknownEffect(PasskeyCreationOptions);
+
+const acceptNewPasskeyAccount = Effect.fnUntraced(function* (token: string, name: string) {
+  const optsRes = yield* call("POST", "/api/invitations/options", { token, name });
+  assert.strictEqual(optsRes.status, 200);
+  const opts = yield* json(optsRes).pipe(Effect.flatMap(readCreationOptions));
+  const { passkey, credential } = yield* Effect.promise(() => registerVirtualPasskey(opts, origin));
+  const response = yield* call("POST", "/api/invitations/verify", { token, credential });
+  return { response, passkey };
+});
 
 const quarantine = Effect.fnUntraced(function* (publicId: string) {
   const response = yield* Effect.promise(() =>
@@ -270,11 +282,7 @@ it.live("refuses an expired, a reused and a cancelled invitation", () =>
         .bind(now - 1, expired.invitation.id)
         .run(),
     );
-    const first = yield* call("POST", "/api/invitations/accept", {
-      token: reused.token,
-      name: "Reused",
-      password,
-    });
+    const { response: first } = yield* acceptNewPasskeyAccount(reused.token, "Reused");
     assert.strictEqual(first.status, 201);
     const removed = yield* call(
       "DELETE",
@@ -287,7 +295,7 @@ it.live("refuses an expired, a reused and a cancelled invitation", () =>
     const attempts = yield* Effect.forEach([expired, reused, cancelled], ({ token }) =>
       Effect.all([
         call("POST", "/api/invitations/read", { token }),
-        call("POST", "/api/invitations/accept", { token, name: "Late", password }),
+        call("POST", "/api/invitations/options", { token, name: "Late" }),
       ]),
     );
     const bodies = yield* Effect.forEach(attempts.flat(), (response) =>
@@ -318,51 +326,60 @@ it.live("refuses an expired, a reused and a cancelled invitation", () =>
   }),
 );
 
-it.live("creates an account at the invited address, which then signs in", () =>
-  Effect.gen(function* () {
-    const admin = yield* signIn;
-    const { id } = yield* createInbox("New account", admin);
-    const { token } = yield* invite(id, admin, "newcomer@example.test", "reviewer");
+it.live(
+  "creates an account atomically with a passkey at the invited address and sets a session cookie",
+  () =>
+    Effect.gen(function* () {
+      const admin = yield* signIn;
+      const { id } = yield* createInbox("New account", admin);
+      const { token } = yield* invite(id, admin, "newcomer@example.test", "reviewer");
 
-    const summary = yield* call("POST", "/api/invitations/read", { token }).pipe(
-      Effect.flatMap(json),
-      Effect.flatMap(readSummary),
-    );
-    const missing = yield* call("POST", "/api/invitations/accept", { token });
-    const short = yield* call("POST", "/api/invitations/accept", {
-      token,
-      name: "Newcomer",
-      password: "too-short",
-    });
-    const accepted = yield* call("POST", "/api/invitations/accept", {
-      token,
-      name: "Newcomer",
-      password,
-    });
-    const session = yield* signInAs("newcomer@example.test");
-    const inboxes = yield* call("GET", "/api/organizations", undefined, session).pipe(
-      Effect.flatMap(json),
-      Effect.flatMap(readInboxes),
-    );
+      const summary = yield* call("POST", "/api/invitations/read", { token }).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readSummary),
+      );
+      const missing = yield* call("POST", "/api/invitations/accept", { token });
+      const blankName = yield* call("POST", "/api/invitations/options", { token, name: "   " });
 
-    assert.deepEqual(summary, {
-      organizationName: "New account",
-      email: "newcomer@example.test",
-      role: "reviewer",
-      account: "new",
-    });
-    assert.strictEqual(missing.status, 400);
-    const missingBody = yield* json(missing);
-    assert.deepEqual(missingBody, { error: "account-required" });
-    assert.strictEqual(short.status, 400);
-    assert.strictEqual(accepted.status, 201);
-    const acceptedBody = yield* json(accepted);
-    assert.deepEqual(acceptedBody, { organizationId: id });
-    assert.deepEqual(
-      inboxes.map(({ id: organization, role }) => [organization, role]),
-      [[id, "reviewer"]],
-    );
-  }),
+      // Cancelling before verify leaves no user row.
+      const cancelledOpts = yield* call("POST", "/api/invitations/options", {
+        token,
+        name: "Newcomer",
+      });
+      assert.strictEqual(cancelledOpts.status, 200);
+      const beforeVerifyUsers = yield* Effect.promise(() =>
+        env.DB.prepare("SELECT count(*) AS total FROM auth_users WHERE email = ?")
+          .bind("newcomer@example.test")
+          .first("total"),
+      );
+      assert.strictEqual(beforeVerifyUsers, 0);
+
+      // Completing verify creates the user, passkey, membership, and session cookie atomically.
+      const { response: accepted } = yield* acceptNewPasskeyAccount(token, "Newcomer");
+      const session = { cookie: cookieOf(accepted) };
+      const inboxes = yield* call("GET", "/api/organizations", undefined, session).pipe(
+        Effect.flatMap(json),
+        Effect.flatMap(readInboxes),
+      );
+
+      assert.deepEqual(summary, {
+        organizationName: "New account",
+        email: "newcomer@example.test",
+        role: "reviewer",
+        account: "new",
+      });
+      assert.strictEqual(missing.status, 400);
+      const missingBody = yield* json(missing);
+      assert.deepEqual(missingBody, { error: "account-required" });
+      assert.strictEqual(blankName.status, 400);
+      assert.strictEqual(accepted.status, 201);
+      const acceptedBody = yield* json(accepted);
+      assert.deepEqual(acceptedBody, { organizationId: id });
+      assert.deepEqual(
+        inboxes.map(({ id: organization, role }) => [organization, role]),
+        [[id, "reviewer"]],
+      );
+    }),
 );
 
 it.live("lets an existing account at the invited address sign in, then join", () =>
@@ -377,10 +394,9 @@ it.live("lets an existing account at the invited address sign in, then join", ()
       Effect.flatMap(json),
       Effect.flatMap(readSummary),
     );
-    const anonymous = yield* call("POST", "/api/invitations/accept", {
+    const anonymous = yield* call("POST", "/api/invitations/options", {
       token,
       name: "Intruder",
-      password,
     });
     const wrongAccount = yield* call("POST", "/api/invitations/accept", { token }, other);
     const accepted = yield* call("POST", "/api/invitations/accept", { token }, existing);
@@ -401,14 +417,14 @@ it.live("lets an existing account at the invited address sign in, then join", ()
       inboxes.map(({ id: organization, role }) => [organization, role]),
       [[id, "admin"]],
     );
-    const passwords = yield* Effect.promise(() =>
+    const passkeys = yield* Effect.promise(() =>
       env.DB.prepare(
-        "SELECT count(*) AS total FROM auth_accounts a JOIN auth_users u ON u.id = a.user_id WHERE u.email = ?",
+        "SELECT count(*) AS total FROM auth_passkeys p JOIN auth_users u ON u.id = p.user_id WHERE u.email = ?",
       )
         .bind("existing@example.test")
         .first("total"),
     );
-    assert.strictEqual(passwords, 1);
+    assert.strictEqual(passkeys, 1);
   }),
 );
 
@@ -607,7 +623,7 @@ it.live(
         }),
       );
       const accepted = yield* Effect.forEach([byLeaving, byDemoted], ({ token: link }) =>
-        call("POST", "/api/invitations/accept", { token: link, name: "Friend", password }),
+        call("POST", "/api/invitations/options", { token: link, name: "Friend" }),
       );
 
       assert.deepEqual([removed.status, changed.status], [204, 200]);
@@ -681,10 +697,9 @@ it.live(
           .run(),
       );
       const read = yield* call("POST", "/api/invitations/read", { token });
-      const accepted = yield* call("POST", "/api/invitations/accept", {
+      const accepted = yield* call("POST", "/api/invitations/options", {
         token,
         name: "Smuggled",
-        password,
       });
 
       assert.deepEqual(
@@ -738,7 +753,12 @@ it.live(
       const admin = yield* signIn;
       const first = yield* createInbox("Last org first", admin);
       const second = yield* createInbox("Last org second", admin);
-      const solo = yield* addMember(first.id, admin, "solo-member@example.test", "reviewer");
+      const solo = yield* addMemberWithPasskey(
+        first.id,
+        admin,
+        "solo-member@example.test",
+        "reviewer",
+      );
       const multi = yield* addMember(first.id, admin, "multi-member@example.test", "reviewer");
       const secondInvite = yield* invite(second.id, admin, "multi-member@example.test", "reviewer");
       const joinedSecond = yield* call(
@@ -772,7 +792,7 @@ it.live(
       );
       assert.deepEqual([removedSolo.status, removedMulti.status], [204, 204]);
 
-      const soloAfter = yield* call("GET", "/api/organizations", undefined, solo);
+      const soloAfter = yield* call("GET", "/api/organizations", undefined, solo.headers);
       assert.strictEqual(soloAfter.status, 401);
 
       const multiAfter = yield* call("GET", "/api/organizations", undefined, multi);
@@ -784,7 +804,7 @@ it.live(
       );
 
       // Even after signing back in, an account with no admin role cannot create an organization.
-      const soloAgain = yield* signInAs("solo-member@example.test");
+      const soloAgain = yield* signInWithKey(solo.passkey);
       const createAttempt = yield* call(
         "POST",
         "/api/organizations",
@@ -893,16 +913,16 @@ it.live("does not count a request from another site against the client's invitat
     const token = "e".repeat(43);
     const readClient = { "cf-connecting-ip": "203.0.113.73" };
     const acceptClient = { "cf-connecting-ip": "203.0.113.74" };
-    const acceptance = { token, name: "Visitor", password };
+    const acceptance = { token, name: "Visitor" };
 
     const crossSiteReads = yield* Effect.forEach(Array.from({ length: 6 }), () =>
       callFromOtherSite("/api/invitations/read", { token }, readClient),
     );
     const crossSiteAcceptances = yield* Effect.forEach(Array.from({ length: 6 }), () =>
-      callFromOtherSite("/api/invitations/accept", acceptance, acceptClient),
+      callFromOtherSite("/api/invitations/options", acceptance, acceptClient),
     );
     const read = yield* call("POST", "/api/invitations/read", { token }, readClient);
-    const accept = yield* call("POST", "/api/invitations/accept", acceptance, acceptClient);
+    const accept = yield* call("POST", "/api/invitations/options", acceptance, acceptClient);
 
     assert.deepEqual(
       crossSiteReads.map(({ status }) => status),
@@ -931,8 +951,8 @@ it.live("rate-limits invitation read and accept requests per client IP", () =>
     const acceptResponses = yield* Effect.forEach(Array.from({ length: 11 }), () =>
       call(
         "POST",
-        "/api/invitations/accept",
-        { token, name: "Guesser", password },
+        "/api/invitations/options",
+        { token, name: "Guesser" },
         { "cf-connecting-ip": "198.51.100.22" },
       ),
     );

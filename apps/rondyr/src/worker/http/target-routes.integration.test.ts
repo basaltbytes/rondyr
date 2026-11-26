@@ -9,8 +9,8 @@ import {
   testEmailFrom,
   testOrigin as origin,
   testResendKey,
-  testSetupToken,
 } from "../../../tests/integration/auth-fixture.ts";
+import { fakeAuthentication, setupOwner } from "../../../tests/integration/organization-fixture.ts";
 import { confirmByEmail } from "../../../tests/integration/recipient-fixture.ts";
 import { secretCipherLive } from "../adapters/crypto/secret-cipher.ts";
 import { notificationTargetsLive } from "../adapters/database/notification-targets.ts";
@@ -22,7 +22,6 @@ import { DestinationTarget, TargetRequestError } from "../../domain/deliveries/t
 import type { DestinationRefusalReason } from "../../domain/deliveries/webhook-destination.ts";
 import { IssuedWebhookSecret, WebhookTarget } from "../../domain/deliveries/webhook.ts";
 import { InboxOrganizationWithForms } from "../../domain/submissions/inbox-setup.ts";
-import { Authentication } from "../ports/authentication.ts";
 import { targetRoutes } from "./target-routes.ts";
 
 const encode = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -97,19 +96,7 @@ it.live(
   "manages the webhook and email targets of the account's forms and delivers through the deployed Worker",
   () =>
     Effect.gen(function* () {
-      const credentials = { email: "potter@example.test", password: "webhook-routes-password" };
-      const setup = yield* post(
-        "/api/setup",
-        { name: "Potter", ...credentials },
-        { authorization: `Bearer ${testSetupToken}` },
-      );
-      assert.strictEqual(setup.status, 201);
-      const signIn = yield* post("/api/auth/sign-in/email", credentials);
-      assert.strictEqual(signIn.status, 200);
-      const cookie = signIn.headers
-        .getSetCookie()
-        .map((value) => value.split(";", 1)[0])
-        .join("; ");
+      const { cookie } = yield* setupOwner({ name: "Potter", email: "potter@example.test" });
       const headers = { cookie, origin };
       const created = yield* post(
         "/api/organizations",
@@ -456,12 +443,7 @@ it.live("refuses to create an email target when the stage has no email provider"
         ).bind(configuration),
       ]),
     );
-    const member = Layer.succeed(Authentication, {
-      userId: () => Effect.succeed("mailless-user"),
-      handle: () => Effect.die("The routes under test do not proxy Better Auth"),
-      setup: () => Effect.die("The routes under test do not create accounts"),
-      setupState: Effect.die("The routes under test do not read the setup state"),
-    });
+    const member = fakeAuthentication(() => "mailless-user");
     const services = yield* Layer.build(
       Layer.mergeAll(
         member,
@@ -523,23 +505,10 @@ it.live("sends a test email through the built Worker configured for Cloudflare",
   Effect.gen(function* () {
     yield* Effect.promise(() => applyD1Migrations(env.CLOUDFLARE_EMAIL_DB, env.TEST_MIGRATIONS));
     const worker = env.CLOUDFLARE_EMAIL_WORKER;
-    const credentials = {
-      email: "cloudflare-owner@example.test",
-      password: "cloudflare-test-password",
-    };
-    const setup = yield* post(
-      "/api/setup",
-      { name: "Potter", ...credentials },
-      { authorization: `Bearer ${testSetupToken}` },
-      worker,
+    const { cookie } = yield* setupOwner(
+      { name: "Potter", email: "cloudflare-owner@example.test" },
+      { worker },
     );
-    assert.strictEqual(setup.status, 201);
-    const signIn = yield* post("/api/auth/sign-in/email", credentials, undefined, worker);
-    assert.strictEqual(signIn.status, 200);
-    const cookie = signIn.headers
-      .getSetCookie()
-      .map((value) => value.split(";", 1)[0])
-      .join("; ");
     const headers = { cookie, origin };
     const created = yield* post(
       "/api/organizations",
@@ -647,12 +616,7 @@ it.live("refuses to create or rotate a webhook target without RONDYR_SECRETS_KEY
         ).bind(configuration),
       ]),
     );
-    const member = Layer.succeed(Authentication, {
-      userId: () => Effect.succeed("keyless-user"),
-      handle: () => Effect.die("The routes under test do not proxy Better Auth"),
-      setup: () => Effect.die("The routes under test do not create accounts"),
-      setupState: Effect.die("The routes under test do not read the setup state"),
-    });
+    const member = fakeAuthentication(() => "keyless-user");
     const services = yield* Layer.build(
       Layer.mergeAll(
         member,

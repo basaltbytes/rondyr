@@ -45,6 +45,7 @@
   "authentication": {
     "account": {
       "label": "Compte {{email}}",
+      "security": "Sécurité",
       "language": "Langue",
       "theme": "Thème"
     },
@@ -52,27 +53,79 @@
       "title": "Connexion",
       "description": "Le compte de cette installation de Rondyr.",
       "email": "Adresse e-mail",
-      "password": "Mot de passe",
-      "submit": "Se connecter",
+      "submit": "Se connecter avec une clé d’accès",
       "pending": "Connexion en cours…",
-      "forgotPassword": "Mot de passe oublié ?",
       "problems": {
         "rateLimited": "Trop de tentatives. Réessayez dans un moment.",
         "unavailable": "Le service de connexion est indisponible.",
-        "refused": "Vérifiez votre adresse e-mail et votre mot de passe.",
+        "refused": "Cette clé d’accès n’a pas été reconnue.",
+        "cancelled": "La demande de clé d’accès a été annulée.",
+        "unsupported": "Ce navigateur ne prend pas en charge les clés d’accès.",
         "failed": "La connexion a échoué. Réessayez."
       },
       "sessionEnded": "Votre session a pris fin. Reconnectez-vous pour revenir à la page où vous étiez."
     },
-    "passwordReset": {
-      "title": "Réinitialiser votre mot de passe",
-      "description": "Saisissez l’adresse de votre compte. Si un compte l’utilise, Rondyr lui envoie un lien pour choisir un nouveau mot de passe.",
-      "submit": "M’envoyer un lien",
+    "otp": {
+      "toggle": "Ou se connecter avec un code par e-mail",
+      "send": "Envoyer un code de connexion",
       "sending": "Envoi…",
-      "sent": "Si un compte utilise {{email}}, un lien est en route. Il sert une fois, pendant une heure.",
-      "noProvider": "Ce serveur n’envoie pas d’e-mails, il ne peut donc pas réinitialiser un mot de passe. Demandez à la personne qui l’administre.",
-      "failed": "La demande a échoué. Réessayez.",
-      "back": "Retour à la connexion"
+      "sent": "Si un compte utilise {{email}}, un code à 6 chiffres est en route. Il expire dans 10 minutes.",
+      "code": "Code à 6 chiffres",
+      "verify": "Se connecter avec le code",
+      "verifying": "Vérification…",
+      "changeEmail": "Utiliser une autre adresse e-mail",
+      "back": "Retour à la connexion par clé d’accès",
+      "problems": {
+        "rateLimited": "Trop de tentatives. Réessayez dans un moment.",
+        "noProvider": "Ce serveur n’envoie pas d’e-mails : les codes par e-mail sont indisponibles.",
+        "invalid": "Ce code est invalide ou expiré. Demandez-en un nouveau.",
+        "failed": "Impossible de se connecter avec ce code. Réessayez."
+      }
+    },
+    "recovery": {
+      "toggle": "Récupérer l’accès",
+      "title": "Récupérer l’accès",
+      "description": "Utilisez le jeton de récupération du déploiement pour enregistrer une nouvelle clé d’accès sur ce domaine pour un compte existant.",
+      "token": "Jeton de récupération",
+      "tokenHint": "Le secret RONDYR_RECOVERY_TOKEN du Worker, d’au moins {{minimum}} caractères.",
+      "deleteReminder": "Supprimez RONDYR_RECOVERY_TOKEN de vos réglages Cloudflare une fois connecté.",
+      "submit": "Enregistrer la clé et se connecter",
+      "pending": "Enregistrement de la clé…",
+      "back": "Retour à la connexion",
+      "problems": {
+        "rateLimited": "Trop de tentatives. Attendez une minute, puis réessayez.",
+        "refused": "Vérifiez le jeton de récupération et l’adresse e-mail.",
+        "rejected": "Cette clé d’accès n’a pas pu être enregistrée. Essayez-en une autre.",
+        "cancelled": "La demande de clé d’accès a été annulée.",
+        "unsupported": "Ce navigateur ne prend pas en charge les clés d’accès.",
+        "failed": "La récupération a échoué. Réessayez."
+      }
+    },
+    "security": {
+      "title": "Sécurité",
+      "description": "Gérez les clés d’accès qui permettent de vous connecter à votre compte.",
+      "close": "Fermer",
+      "passkeys": "Clés d’accès",
+      "loadFailed": "Impossible de charger vos clés d’accès.",
+      "empty": "Aucune clé d’accès enregistrée sur ce compte pour le moment.",
+      "otherDomain": "Autre domaine ({{domain}})",
+      "addedNeverUsed": "Ajoutée le {{date}} · Jamais utilisée",
+      "addedLastUsed": "Ajoutée le {{added}} · Dernière utilisation le {{lastUsed}}",
+      "passkeyName": "Nom de la clé d’accès",
+      "renameLabel": "Renommer la clé d’accès {{name}}",
+      "deleteLabel": "Supprimer la clé d’accès {{name}}",
+      "lastPasskeyHint": "Ajoutez une autre clé d’accès avant de supprimer celle-ci : les codes par e-mail ne sont pas activés sur ce serveur.",
+      "newPasskeyName": "Nom de la nouvelle clé d’accès (facultatif)",
+      "newPasskeyPlaceholder": "Touch ID de l’ordinateur",
+      "add": "Ajouter une clé d’accès",
+      "adding": "Ajout de la clé d’accès…",
+      "problems": {
+        "lastPasskey": "Vous ne pouvez pas supprimer votre dernière clé d’accès lorsque les codes par e-mail sont désactivés.",
+        "exists": "Cette clé d’accès est déjà enregistrée.",
+        "cancelled": "La demande de clé d’accès a été annulée.",
+        "unsupported": "Ce navigateur ne prend pas en charge les clés d’accès.",
+        "failed": "Impossible de mettre à jour les clés d’accès. Réessayez."
+      }
     },
     "signOut": {
       "submit": "Se déconnecter",
@@ -82,23 +135,22 @@
   },
   "setup": {
     "title": "Créer le compte propriétaire",
-    "description": "Ce Rondyr n’a encore aucun compte. Saisissez le jeton d’installation choisi lors du déploiement, puis le compte qui en sera propriétaire.",
+    "description": "Ce Rondyr n’a encore aucun compte. Saisissez le jeton d’installation choisi lors du déploiement, puis enregistrez une clé d’accès pour le compte propriétaire.",
     "token": "Jeton d’installation",
     "tokenHint": "Le secret RONDYR_SETUP_TOKEN du Worker, d’au moins {{minimum}} caractères.",
     "name": "Votre nom",
     "email": "Adresse e-mail",
-    "password": "Mot de passe",
-    "passwordHint": "De {{minimum}} à {{maximum}} caractères.",
-    "submit": "Créer le compte",
+    "submit": "Créer le compte avec une clé d’accès",
     "creating": "Création…",
-    "created": "Le compte est créé. Connectez-vous avec ce compte.",
     "tokenMissing": "Ce Rondyr n’a pas encore de jeton d’installation : personne ne peut créer son compte propriétaire.",
     "tokenTooShort": "Le jeton d’installation de ce Rondyr fait moins de {{minimum}} caractères : Rondyr le refuse.",
     "addToken": "Dans le tableau de bord Cloudflare, ouvrez Workers & Pages, sélectionnez ce Worker, puis Settings › Variables and Secrets. Ajoutez un secret nommé RONDYR_SETUP_TOKEN, une phrase secrète d’au moins {{minimum}} caractères, puis rechargez cette page.",
     "problems": {
-      "rejected": "Vérifiez le nom, l’adresse e-mail et le mot de passe.",
+      "rejected": "Vérifiez le nom et l’adresse e-mail.",
       "refused": "Ce jeton d’installation ne correspond pas, ou le compte propriétaire existe déjà.",
       "rateLimited": "Trop de tentatives. Attendez une minute, puis réessayez.",
+      "cancelled": "La demande de clé d’accès a été annulée. Aucun compte n’a été créé.",
+      "unsupported": "Ce navigateur ne prend pas en charge les clés d’accès.",
       "failed": "Le compte n’a pas pu être créé. Réessayez."
     }
   },
@@ -1044,9 +1096,7 @@
     },
     "email": "Adresse e-mail",
     "name": "Votre nom",
-    "password": "Mot de passe",
-    "passwordHint": "Au moins {{minimum}} caractères.",
-    "createAndJoin": "Créer le compte et rejoindre",
+    "createAndJoin": "Créer le compte avec une clé d’accès",
     "join": "Rejoindre l’organisation",
     "joining": "Connexion à l’organisation…",
     "signInFirst": "Un compte utilise déjà {{email}}. Connectez-vous avec ce compte pour accepter.",
@@ -1055,27 +1105,10 @@
       "invalid": "Ce lien d’invitation a expiré, a été annulé ou a déjà servi.",
       "otherAccount": "Cette invitation est destinée à une autre adresse que celle de votre compte.",
       "signInRequired": "Un compte utilise déjà cette adresse. Connectez-vous avec ce compte pour accepter.",
-      "rejected": "Vérifiez votre nom et choisissez un mot de passe de 12 à 128 caractères.",
+      "rejected": "Vérifiez votre nom et essayez de nouveau d’enregistrer votre clé d’accès.",
+      "cancelled": "La demande de clé d’accès a été annulée. Aucun compte n’a été créé.",
+      "unsupported": "Ce navigateur ne prend pas en charge les clés d’accès.",
       "failed": "L’invitation n’a pas pu être acceptée. Réessayez."
-    }
-  },
-  "passwordReset": {
-    "title": "Choisir un nouveau mot de passe",
-    "description": "Le nouveau mot de passe remplace l’ancien et déconnecte votre compte partout.",
-    "password": "Nouveau mot de passe",
-    "passwordHint": "De {{minimum}} à {{maximum}} caractères.",
-    "submit": "Enregistrer le mot de passe",
-    "saving": "Enregistrement…",
-    "rejected": "Choisissez un mot de passe de {{minimum}} à {{maximum}} caractères.",
-    "failed": "Le mot de passe n’a pas pu être changé. Réessayez.",
-    "signIn": "Se connecter",
-    "changed": {
-      "title": "Mot de passe changé",
-      "body": "Votre compte a été déconnecté partout. Connectez-vous avec le nouveau mot de passe."
-    },
-    "invalid": {
-      "title": "Lien indisponible",
-      "body": "Ce lien a expiré ou a déjà servi. Demandez-en un nouveau depuis la page de connexion."
     }
   },
   "recipientConfirmation": {

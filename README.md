@@ -28,12 +28,12 @@ Point your website's `<form>` at Rondyr and it saves every message in your own C
 
 ## Deploy in a few minutes
 
-You need a Cloudflare account on **Workers Paid** ($5/month per account; [Costs and limits](./docs/costs.md) explains why) and a GitHub or GitLab account. A custom domain is optional.
+You can deploy and test-drive Rondyr on **Workers Free** with one click, and upgrade to **Workers Paid** ($5/month per account) for production; [Costs and limits](./docs/costs.md) lists the free tier limits. You also need a GitHub or GitLab account. A custom domain is optional.
 
 1. Select **Deploy to Cloudflare** above, sign in to Cloudflare, and connect your GitHub or GitLab account.
 2. Keep the default names (`rondyr`), and enter a random passphrase of at least 32 characters for `RONDYR_SETUP_TOKEN` (for example from your password manager or `openssl rand -hex 32`). Keep it for step 4.
 3. Select **Deploy**. Cloudflare copies the repository to your account, sets up the resources, and deploys Rondyr.
-4. Open your new Rondyr URL from **Workers & Pages → rondyr**, paste your setup token, and create the owner account.
+4. Open your new Rondyr URL from **Workers & Pages → rondyr**, paste your setup token, and register a passkey for the owner account.
 5. Create an organization and a form, then paste the form's URL into your site:
 
 ```html
@@ -67,7 +67,7 @@ For custom domains, updates, and deploying from a fork with Alchemy and GitHub A
 | Task | Guide |
 | --- | --- |
 | Deploy with the button or Alchemy, add a custom domain, update | [Deploy Rondyr](./docs/deployment.md) |
-| Invite teammates, manage roles, reset passwords | [Team and accounts](./docs/team.md) |
+| Invite teammates, manage roles, passkeys, and access recovery | [Team and accounts](./docs/team.md) |
 | Understand Cloudflare plan requirements, email costs, and daily quotas | [Costs and limits](./docs/costs.md) |
 | Add an HTML or JavaScript form, set redirects and allowed origins | [Put a form on your site](./docs/forms.md) |
 | Configure honeypot, Turnstile, business context, and spam thresholds | [Fight spam](./docs/spam-protection.md) |

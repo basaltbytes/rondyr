@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 export const user = sqliteTable("auth_users", {
   id: text().primaryKey(),
@@ -27,47 +27,52 @@ export const session = sqliteTable(
   (table) => [index("auth_sessions_user_id_idx").on(table.userId)],
 );
 
-export const account = sqliteTable(
-  "auth_accounts",
+export const passkey = sqliteTable(
+  "auth_passkeys",
   {
     id: text().primaryKey(),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    accountId: text("account_id").notNull(),
-    providerId: text("provider_id").notNull(),
-    password: text(),
-    accessToken: text("access_token"),
-    refreshToken: text("refresh_token"),
-    idToken: text("id_token"),
-    accessTokenExpiresAt: integer("access_token_expires_at", { mode: "timestamp_ms" }),
-    refreshTokenExpiresAt: integer("refresh_token_expires_at", { mode: "timestamp_ms" }),
-    scope: text(),
+    name: text().notNull(),
+    credentialId: text("credential_id").notNull().unique(),
+    publicKey: text("public_key").notNull(),
+    algorithm: integer().notNull(),
+    counter: integer().notNull().default(0),
+    transports: text(),
+    rpId: text("rp_id").notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
   },
-  (table) => [
-    index("auth_accounts_user_id_idx").on(table.userId),
-    uniqueIndex("auth_accounts_provider_idx").on(table.providerId, table.accountId),
-  ],
+  (table) => [index("auth_passkeys_user_id_idx").on(table.userId)],
 );
 
-export const verification = sqliteTable(
-  "auth_verifications",
+export const challenge = sqliteTable(
+  "auth_challenges",
   {
     id: text().primaryKey(),
-    identifier: text().notNull(),
-    value: text().notNull(),
+    purpose: text().notNull(),
+    challengeHash: text("challenge_hash").notNull().unique(),
+    payloadJson: text("payload_json").notNull(),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (table) => [index("auth_verifications_identifier_idx").on(table.identifier)],
+  (table) => [index("auth_challenges_expires_at_idx").on(table.expiresAt)],
 );
 
-export const rateLimit = sqliteTable("auth_rate_limits", {
-  id: text().primaryKey(),
-  key: text().notNull().unique(),
-  count: integer().notNull(),
-  lastRequest: integer("last_request").notNull(),
-});
+export const emailOtp = sqliteTable(
+  "auth_email_otps",
+  {
+    id: text().primaryKey(),
+    email: text().notNull(),
+    codeHash: text("code_hash").notNull(),
+    attempts: integer().notNull().default(0),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    consumedAt: integer("consumed_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    index("auth_email_otps_email_created_idx").on(table.email, table.createdAt),
+    index("auth_email_otps_expires_at_idx").on(table.expiresAt),
+  ],
+);

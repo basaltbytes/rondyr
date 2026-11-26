@@ -1,16 +1,20 @@
 # Costs and limits
 
-Rondyr itself is free and open source, so you only pay Cloudflare (and your email provider, if you use Resend) for what your instance uses. You need the **Workers Paid** plan ($5/month per Cloudflare account) to run Rondyr reliably.
+Rondyr is free and open source, so you only pay Cloudflare (and your email provider, if you use Resend) for what your instance uses. You can deploy and test-drive Rondyr on **Workers Free** with one click. For production sites, use **Workers Paid** ($5/month per Cloudflare account).
 
 For most small and medium sites, the $5/month Cloudflare plan plus the free email allowance covers everything with plenty of headroom.
 
-## Workers Paid requirement
+## Workers Free vs. Workers Paid
 
-The Deploy to Cloudflare button works on a free account, but Rondyr doesn't run reliably on **Workers Free**:
+Passkeys and Email OTP run well under the 10 ms CPU limit, so the Deploy to Cloudflare button works end to end on a **Workers Free** account with the default `wrangler.json` configuration. Keep these free tier limits in mind:
 
-- **Sign-in fails on the free CPU limit.** Workers Free caps each request at 10 ms of CPU time. Rondyr hashes passwords with scrypt, which intentionally uses more CPU than 10 ms, so creating the owner account and signing in can time out.
-- **Free daily usage limits run out fast.** A busy form or a short spam burst can exhaust the free tier's daily background processing allowance in minutes, leaving messages waiting until midnight UTC.
-- **Cloudflare Email Sending requires Workers Paid.** If you want Cloudflare to send your notification emails instead of Resend, the paid plan is mandatory.
+- **Background delivery & retries (10,000 operations/day).** Background classification and delivery retries count toward this daily cap. A busy form or a spam burst can exhaust it before midnight UTC.
+- **Workflow state (100,000 requests and 100,000 row writes/day).** Submission workflows and the inbox view store their state in Cloudflare workflow storage. Low-traffic testing fits easily; steady production traffic does not.
+- **CPU time (10 ms per request).** Single sign-ins, dashboard reads, and individual form submissions finish well below 10 ms, but full 10-message processing batches or large CSV/JSONL exports can exceed 10 ms on Free.
+- **Workers AI (10,000 Neurons/day) and `typesafe/jev`.** Cloudflare includes 10,000 free Neurons/day on Workers Free for standard open-weight models. However, `typesafe/jev` (Rondyr's default classifier) is a partner model that requires a paid billing setup or AI Gateway credits on Cloudflare rather than drawing from the standard free Neuron pool. If Workers AI refuses calls on a Free account, Rondyr still saves every submission and places it in **To review** with **Analysis unavailable** so no message is lost.
+- **Cloudflare Email Sending.** On Workers Free, outbound email through Cloudflare Email Sending is restricted to destination addresses verified in your Cloudflare account. Resend's free tier can send to any confirmed recipient address.
+
+Upgrade to **Workers Paid** ($5/month) before putting a live production site on Rondyr.
 
 ## Cloudflare pricing
 
@@ -30,7 +34,7 @@ Even with zero form traffic, Rondyr runs a once-per-minute health and retry chec
 
 ## Email provider costs
 
-You only need an email provider if you want Rondyr to send notification emails, team invitations, or password resets.
+You only need an email provider if you want Rondyr to send notification emails, team invitations, or Email OTP sign-in codes.
 
 - **Resend (default).** Free tier includes 3,000 emails per month (up to 100 per day) from up to 3 domains. Paid plans start at $20/month for 50,000 emails with no daily cap. Each recipient on an email destination counts as one email. See [Resend pricing](https://resend.com/pricing).
 - **Cloudflare Email Sending.** Workers Paid includes 3,000 outbound emails per month per account, then $0.35 per 1,000 emails. Sends to addresses already verified in your Cloudflare account don't count toward the quota. See [Cloudflare Email Sending pricing](https://developers.cloudflare.com/email-service/platform/pricing/).

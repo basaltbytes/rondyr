@@ -39,8 +39,8 @@ updates:
         patterns: ["wrangler", "miniflare", "@cloudflare/*"]
       drizzle:
         patterns: ["drizzle-orm", "drizzle-kit"]
-      better-auth:
-        patterns: ["better-auth", "@better-auth/*"]
+      oslojs:
+        patterns: ["@oslojs/*"]
       react:
         patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
       emdash:

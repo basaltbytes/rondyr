@@ -54,7 +54,6 @@ const webhookUrl = "https://hooks.claywork.example/rondyr";
 const owner = {
   name: "Camille",
   email: "camille@claywork.example",
-  password: "screenshots only password",
 };
 const organizationName = "Claywork Studio";
 const formName = "Contact";
@@ -213,7 +212,7 @@ async function startWorker() {
           outboundService: "webhook-receiver-fixture",
           bindings: {
             ...workerOptions.bindings,
-            BETTER_AUTH_SECRET: "screenshots-only-better-auth-secret-42",
+            RONDYR_SESSION_SECRET: "screenshots-only-session-secret-42",
             RONDYR_SETUP_TOKEN: testSetupToken,
             RONDYR_SECRETS_KEY: testSecretsKey,
             RESEND_API_KEY: testResendKey,
@@ -281,6 +280,18 @@ try {
     viewport: { width: 1280, height: 800 },
   });
   const page = await context.newPage();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("WebAuthn.enable");
+  await cdp.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
   const encoder = await context.newPage();
   await encoder.goto(`${origin}/robots.txt`);
   mkdirSync(output, { recursive: true });
@@ -330,8 +341,11 @@ try {
   await page.getByRole("heading", { name: t("setup.title") }).waitFor();
   await capture("setup");
 
-  await api("POST", "/api/setup", owner, { authorization: `Bearer ${testSetupToken}` });
-  await api("POST", "/api/auth/sign-in/email", { email: owner.email, password: owner.password });
+  await page.getByLabel(t("setup.token")).fill(testSetupToken);
+  await page.getByRole("textbox", { name: t("setup.name") }).fill(owner.name);
+  await page.getByRole("textbox", { name: t("setup.email") }).fill(owner.email);
+  await page.getByRole("button", { name: t("setup.submit") }).click();
+  await page.getByRole("heading", { name: t("inbox.sections.organization") }).waitFor();
   await api("POST", "/api/organizations", { organizationName, formName, businessContext });
   const [organization] = await api("GET", "/api/organizations");
   const [form] = organization.forms;
