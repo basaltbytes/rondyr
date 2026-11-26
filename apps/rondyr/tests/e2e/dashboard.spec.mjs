@@ -169,6 +169,13 @@ async function openMessage(page, message) {
   return reader;
 }
 
+/** Unfold a panel at the foot of the open message, unless it is open already. */
+async function openPanel(reader, title) {
+  const trigger = reader.getByRole("button", { name: title, exact: true });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+}
+
 /** A figure of the status page as its text reads: the label, then the value. */
 function figure(label, value) {
   return new RegExp(`${RegExp.escape(label)}\\s*${value}`, "u");
@@ -549,7 +556,11 @@ test("quarantine a message with a filled honeypot field and review it", async ({
   await expect(site.getByRole("heading", { name: confirmationPages.en.title })).toBeVisible();
   const reader = await openSubmission(page, t("inbox.folders.quarantined"), message);
   await expect(reader.getByText(t("status.reasons.honeypot"), { exact: true })).toBeVisible();
-  const verification = reader.getByRole("region", { name: t("verification.label") });
+  await openPanel(reader, t("verification.title"));
+  const verification = reader.getByRole("region", {
+    name: t("verification.title"),
+    exact: true,
+  });
   await expect(verification.getByText(t("verification.verdicts.honeypot"))).toBeVisible();
   await expect(
     verification.getByText(
@@ -562,7 +573,7 @@ test("quarantine a message with a filled honeypot field and review it", async ({
   await expect(honeypotRow).toContainText(t("verification.checks.honeypot.filled"));
   await expect(verification.getByText(t("verification.ai.skipped"))).toBeVisible();
   // Admin can dry-run current screening rules on the message without changing its status.
-  await verification.getByRole("button", { name: t("verification.test.action") }).click();
+  await reader.getByRole("button", { name: t("verification.test.action") }).click();
   const testResult = verification.getByRole("status");
   await expect(testResult).toContainText(t("verification.test.notRechecked"));
   await expect(testResult).toContainText(t("verification.test.dryRun"));
@@ -574,7 +585,11 @@ test("quarantine a message with a filled honeypot field and review it", async ({
   const accepted = await openSubmission(page, t("inbox.folders.accepted"), message);
   await expect(accepted.getByText(t("inbox.statuses.accepted"), { exact: true })).toBeVisible();
   await expect(accepted.getByRole("button", { name: accept })).toHaveCount(0);
-  const acceptedVerification = accepted.getByRole("region", { name: t("verification.label") });
+  await openPanel(accepted, t("verification.title"));
+  const acceptedVerification = accepted.getByRole("region", {
+    name: t("verification.title"),
+    exact: true,
+  });
   await expect(
     acceptedVerification.getByText(
       t("verification.verdicts.byHandAfter", { reason: t("status.reasons.honeypot") }),
@@ -654,10 +669,14 @@ test("add destinations, confirm a recipient, send a test and retry a failed webh
   const message = "Request with delivery history";
   expect((await submitContact(site, endpoint, message)).status()).toBe(202);
   const reader = await openSubmission(page, t("inbox.folders.accepted"), message);
-  const history = reader.getByRole("region", { name: t("inbox.deliveries.label") });
+  await openPanel(reader, t("inbox.deliveries.title"));
+  const history = reader.getByRole("region", {
+    name: t("inbox.deliveries.title"),
+    exact: true,
+  });
   // Only a delivery names its destination. The attempts listed inside it do not.
   const webhookDelivery = history.getByRole("listitem").filter({ hasText: receiver });
-  const refresh = history.getByRole("button", { name: t("inbox.deliveries.refresh") });
+  const refresh = reader.getByRole("button", { name: t("inbox.deliveries.refresh") });
   const retry = webhookDelivery.getByRole("button", { name: t("inbox.deliveries.retry") });
   const delivered = t("status.deliveries.delivered");
   await expect(async () => {
@@ -758,11 +777,15 @@ test("add a Discord connector, correct a refused setting, test it and see its de
   const message = "Request sent to a Discord channel";
   expect((await submitContact(site, endpoint, message)).status()).toBe(202);
   const reader = await openSubmission(page, t("inbox.folders.accepted"), message);
-  const history = reader.getByRole("region", { name: t("inbox.deliveries.label") });
+  await openPanel(reader, t("inbox.deliveries.title"));
+  const history = reader.getByRole("region", {
+    name: t("inbox.deliveries.title"),
+    exact: true,
+  });
   const delivery = history.getByRole("listitem").filter({
     hasText: t("inbox.deliveries.connector", { service: discord.label, name: channel }),
   });
-  const refresh = history.getByRole("button", { name: t("inbox.deliveries.refresh") });
+  const refresh = reader.getByRole("button", { name: t("inbox.deliveries.refresh") });
   await expect(async () => {
     await refresh.click();
     await expect(delivery.getByText(t("status.deliveries.delivered"), { exact: true })).toBeVisible(

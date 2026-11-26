@@ -162,7 +162,6 @@
     }
   },
   "verification": {
-    "label": "Classification du message",
     "title": "Classification",
     "verdicts": {
       "acceptedAutomatic": "Accepté automatiquement par {{classifier}}",
@@ -567,7 +566,6 @@
       "loadFailed": "Impossible de charger ce message."
     },
     "deliveries": {
-      "label": "Livraisons du message",
       "title": "Livraisons",
       "refresh": "Actualiser les livraisons",
       "loading": "Chargement des livraisons…",
