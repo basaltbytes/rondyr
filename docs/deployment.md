@@ -86,6 +86,13 @@ If you deployed by forking `basaltbytes/rondyr` and importing the fork into **Wo
 
 Note that a fork imported directly into Workers Builds has no `RONDYR_SETUP_TOKEN` yet: after the first deploy, add `RONDYR_SETUP_TOKEN` (at least 32 characters) in **Settings → Variables and Secrets** and reload the setup page.
 
+### Update from a version that signed in with passwords
+
+The release that replaces passwords with passkeys deletes the stored passwords when it deploys, and everyone has to sign in again. Rolling the Worker back does not bring the passwords back. No account has a passkey yet at that point, so each person registers one:
+
+- **With an email provider configured:** open `/sign-in`, select **Or sign in with an email code**, then add a passkey in **Account → Security**.
+- **Without an email provider:** add a secret named `RONDYR_RECOVERY_TOKEN` (at least 32 characters, for example `openssl rand -hex 32`) in **Settings → Variables and Secrets**, before the update or after it. Open `/sign-in`, select **Recover access**, enter the token and the account's email address, and register a passkey. Do this for each account, then delete `RONDYR_RECOVERY_TOKEN`. Until the secret is set, the sign-in page has only the passkey button, and a note under it names the secret to add.
+
 ## Trial copy
 
 To test an upgrade or configuration without touching your live instance, select the **Deploy to Cloudflare** button again and pick different names for the Worker and its resources (resource names are unique per Cloudflare account). Each trial copy has its own setup token and counts separately toward your Cloudflare usage. When you finish, delete the trial Worker, its resources, and its repository.

@@ -51,7 +51,8 @@ try {
     configFile: join(app, "vite.config.ts"),
     root: app,
     logLevel: "warn",
-    server: { port: 0, host: "127.0.0.1" },
+    // Sign-in accepts plain HTTP on `localhost` only, the one loopback name a passkey works on.
+    server: { port: 0, host: "localhost" },
   });
   await server.listen();
   const origin = new URL(server.resolvedUrls.local[0]).origin;

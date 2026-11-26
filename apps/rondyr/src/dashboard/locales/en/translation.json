@@ -63,7 +63,8 @@
         "unsupported": "This browser does not support passkeys.",
         "failed": "Sign-in failed. Try again."
       },
-      "sessionEnded": "Your session has ended. Sign in again to go back to the page you were on."
+      "sessionEnded": "Your session has ended. Sign in again to go back to the page you were on.",
+      "noPasskeyHint": "No passkey for this site? Whoever runs this Rondyr can set the RONDYR_RECOVERY_TOKEN secret on the Worker. Reload this page afterwards to register a passkey."
     },
     "otp": {
       "toggle": "Or sign in with an email code",
@@ -114,18 +115,20 @@
       "passkeyName": "Passkey name",
       "renameLabel": "Rename passkey {{name}}",
       "deleteLabel": "Delete passkey {{name}}",
-      "lastPasskeyHint": "Add another passkey before deleting this one: email sign-in codes are not enabled on this server.",
+      "lastPasskeyHint": "Add another passkey for this domain before deleting the last one: email sign-in codes are not enabled on this server.",
       "newPasskeyName": "New passkey name (optional)",
       "newPasskeyPlaceholder": "Laptop Touch ID",
       "add": "Add passkey",
       "adding": "Adding passkey…",
       "problems": {
-        "lastPasskey": "You cannot delete your last passkey when email codes are disabled.",
+        "lastPasskey": "You cannot delete your last passkey for this domain when email codes are disabled.",
         "exists": "That passkey is already registered.",
         "cancelled": "Passkey prompt was cancelled.",
         "unsupported": "This browser does not support passkeys.",
         "failed": "Could not update passkeys. Try again."
-      }
+      },
+      "unnamed": "Passkey",
+      "deleteSignsOut": "Deleting a passkey signs your account out on every other device."
     },
     "signOut": {
       "submit": "Sign out",

@@ -126,7 +126,7 @@ Set a new value of at least 32 random characters (`openssl rand -hex 32`), or, o
 
 ### `RONDYR_RECOVERY_TOKEN`
 
-Only set `RONDYR_RECOVERY_TOKEN` (at least 32 random characters) while recovering from passkey lockout or migrating from `workers.dev` to a custom domain without email. Once the affected account has registered a passkey on the current domain and signed in, delete `RONDYR_RECOVERY_TOKEN` immediately so **Recover access** stays closed.
+Only set `RONDYR_RECOVERY_TOKEN` (at least 32 random characters) while recovering from passkey lockout or migrating from `workers.dev` to a custom domain without email. Recovery ends every earlier session of the account it recovers. Once the affected account has registered a passkey on the current domain and signed in, delete `RONDYR_RECOVERY_TOKEN` immediately so **Recover access** stays closed.
 
 ### `RESEND_API_KEY`
 

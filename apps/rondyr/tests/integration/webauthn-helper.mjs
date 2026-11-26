@@ -107,7 +107,10 @@ export async function registerVirtualPasskey(options, origin, overrides = {}) {
 
   const rpId = overrides.rpId ?? options.rp.id;
   const rpIdHash = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(rpId)));
-  const flags = (overrides.userPresent === false ? 0x00 : 0x01) | 0x04 | 0x40;
+  const flags =
+    (overrides.userPresent === false ? 0x00 : 0x01) |
+    (overrides.userVerified === false ? 0x00 : 0x04) |
+    0x40;
   const initialCounter = overrides.counter ?? 0;
   const aaguid = new Uint8Array(16);
   const authData = concat(
@@ -165,7 +168,8 @@ export async function assertVirtualPasskey(passkey, options, origin, overrides =
   if (overrides.counter === undefined) passkey.counter = nextCounter;
   const rpId = overrides.rpId ?? options.rpId;
   const rpIdHash = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(rpId)));
-  const authData = concat(rpIdHash, new Uint8Array([0x05]), uint32BE(nextCounter));
+  const flags = overrides.userVerified === false ? 0x01 : 0x05;
+  const authData = concat(rpIdHash, new Uint8Array([flags]), uint32BE(nextCounter));
   const clientDataJSON = encoder.encode(
     JSON.stringify({
       type: "webauthn.get",

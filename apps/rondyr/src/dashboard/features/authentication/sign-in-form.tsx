@@ -287,6 +287,11 @@ export function SignInForm({ onSignedIn }: SignInFormProps) {
                 {t("authentication.recovery.toggle")}
               </Button>
             )}
+            {status.data !== undefined && !emailOtpEnabled && !recoveryEnabled && (
+              <p className="text-xs text-pretty text-muted-foreground">
+                {t("authentication.signIn.noPasskeyHint")}
+              </p>
+            )}
           </div>
         )}
       </CardContent>

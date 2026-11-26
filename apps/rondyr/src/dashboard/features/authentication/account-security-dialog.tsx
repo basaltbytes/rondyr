@@ -3,7 +3,7 @@ import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { PasskeySummary } from "@rondyr/organizations/authentication";
+import type { AccountPasskeys, PasskeySummary } from "@rondyr/organizations/authentication";
 
 import { ReadFailure } from "~/components/read-failure";
 import { FormProblem, TextField } from "~/components/text-field";
@@ -47,6 +47,19 @@ function formatDate(timestamp: number, language: string) {
   return new Intl.DateTimeFormat(language, { dateStyle: "medium" }).format(timestamp);
 }
 
+/**
+ * Whether deleting this passkey leaves a way to sign in. Only a passkey of the current
+ * domain signs in here, so the last of those stays unless email codes are enabled; the
+ * Worker applies the same rule.
+ */
+function deletable(
+  passkey: PasskeySummary,
+  { passkeys, emailOtpEnabled }: AccountPasskeys,
+): boolean {
+  if (emailOtpEnabled || !passkey.currentDomain) return true;
+  return passkeys.some((other) => other.id !== passkey.id && other.currentDomain);
+}
+
 interface PasskeyRowProps {
   readonly passkey: PasskeySummary;
   readonly canDelete: boolean;
@@ -58,6 +71,8 @@ function PasskeyRow({ passkey, canDelete, language, onProblem }: PasskeyRowProps
   const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(passkey.name);
+  // A passkey registered without a name is stored unnamed and labelled here.
+  const name = passkey.name === "" ? t("authentication.security.unnamed") : passkey.name;
   const rename = useMutation(renamePasskeyMutation());
   const remove = useMutation(deletePasskeyMutation());
 
@@ -114,7 +129,7 @@ function PasskeyRow({ passkey, canDelete, language, onProblem }: PasskeyRowProps
           <div className="min-w-0 grid gap-1">
             <div className="flex flex-wrap items-center gap-2">
               <KeyRound aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-              <span className="font-medium wrap-anywhere">{passkey.name}</span>
+              <span className="font-medium wrap-anywhere">{name}</span>
               {!passkey.currentDomain && (
                 <Badge variant="warning">
                   {t("authentication.security.otherDomain", { domain: passkey.rpId })}
@@ -137,7 +152,7 @@ function PasskeyRow({ passkey, canDelete, language, onProblem }: PasskeyRowProps
               type="button"
               size="sm"
               variant="ghost"
-              aria-label={t("authentication.security.renameLabel", { name: passkey.name })}
+              aria-label={t("authentication.security.renameLabel", { name })}
               onClick={() => {
                 setDraftName(passkey.name);
                 setEditing(true);
@@ -149,7 +164,7 @@ function PasskeyRow({ passkey, canDelete, language, onProblem }: PasskeyRowProps
               type="button"
               size="sm"
               variant="ghost"
-              aria-label={t("authentication.security.deleteLabel", { name: passkey.name })}
+              aria-label={t("authentication.security.deleteLabel", { name })}
               disabled={!canDelete || remove.isPending}
               onClick={() => void deleteCurrent()}
             >
@@ -177,8 +192,6 @@ export function AccountSecurityDialog({ open, onOpenChange }: AccountSecurityDia
   const [problem, setProblem] = useState<SecurityProblem | null>(null);
 
   const loaded = passkeys.data;
-  const canDeletePasskey =
-    loaded !== undefined && (loaded.passkeys.length > 1 || loaded.emailOtpEnabled);
 
   async function addPasskey(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -231,7 +244,7 @@ export function AccountSecurityDialog({ open, onOpenChange }: AccountSecurityDia
                     <PasskeyRow
                       key={item.id}
                       passkey={item}
-                      canDelete={canDeletePasskey}
+                      canDelete={deletable(item, loaded)}
                       language={language}
                       onProblem={setProblem}
                     />
@@ -239,9 +252,15 @@ export function AccountSecurityDialog({ open, onOpenChange }: AccountSecurityDia
                 </ul>
               )}
 
-              {loaded.passkeys.length === 1 && !loaded.emailOtpEnabled && (
+              {loaded.passkeys.some((item) => !deletable(item, loaded)) && (
                 <p className="text-xs text-pretty text-muted-foreground">
                   {t("authentication.security.lastPasskeyHint")}
+                </p>
+              )}
+
+              {loaded.passkeys.length > 0 && (
+                <p className="text-xs text-pretty text-muted-foreground">
+                  {t("authentication.security.deleteSignsOut")}
                 </p>
               )}
 

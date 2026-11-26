@@ -7,6 +7,7 @@ import {
   PasskeyRequestOptions,
 } from "../../src/domain/organizations/authentication.ts";
 import { InboxOrganizationWithForms } from "../../src/domain/submissions/inbox-setup.ts";
+import { UserId } from "../../src/domain/submissions/submission.id.ts";
 import { Authentication } from "../../src/worker/ports/authentication.ts";
 import { testOrigin as origin, testSetupToken } from "./auth-fixture.ts";
 import {
@@ -160,12 +161,17 @@ export const createInbox = Effect.fnUntraced(function* (
 
 const unexpectedAuthCall = () => Effect.die("Unexpected Authentication call in route unit test");
 
-/** Test-only Authentication layer for route tests that exercise only `userId`. */
+/** Test-only Authentication layer for route tests that only read the session. */
 export function fakeAuthentication(userIdOf: (request: Request) => string | null) {
   return Layer.succeed(Authentication, {
-    userId: (request) => Effect.succeed(userIdOf(request)),
+    getSession: (request) => {
+      const id = userIdOf(request);
+      return Effect.succeed({
+        session: id === null ? null : { user: { id: UserId.make(id), name: "", email: "" } },
+        setCookie: null,
+      });
+    },
     verifyOrigin: unexpectedAuthCall,
-    getSession: unexpectedAuthCall,
     signOut: unexpectedAuthCall,
     authStatus: unexpectedAuthCall(),
     setupOptions: unexpectedAuthCall,

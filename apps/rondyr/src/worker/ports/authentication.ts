@@ -124,11 +124,11 @@ export class Authentication extends Context.Service<
     readonly verifyOrigin: (
       request: Request,
     ) => Effect.Effect<VerifiedOrigin, AuthUnavailable | AuthOriginRefused>;
-    /** Read the signed-in user ID from a request cookie, validating origin first. */
-    readonly userId: (
-      request: Request,
-    ) => Effect.Effect<string | null, AuthUnavailable | AuthOriginRefused>;
-    /** Read the full session (user details), sliding expiry when near renewal. */
+    /**
+     * Read the session of a request cookie, validating origin first. A session past half
+     * its lifetime is renewed, and `setCookie` is then the cookie the response must carry:
+     * without it the browser drops the session at its first expiry.
+     */
     readonly getSession: (
       request: Request,
     ) => Effect.Effect<SessionResult, AuthUnavailable | AuthOriginRefused>;
@@ -164,11 +164,11 @@ export class Authentication extends Context.Service<
       request: Request,
       credential: PasskeyAssertionCredential,
     ) => Effect.Effect<AuthenticatedSession, AuthUnavailable | AuthOriginRefused | PasskeyInvalid>;
-    /** Issue a 6-digit Email OTP if an account exists and is under the hourly cap. */
+    /** Issue a 6-digit Email OTP if an account exists and is under the hourly and daily caps. */
     readonly issueEmailOtp: (
       email: string,
     ) => Effect.Effect<IssuedEmailOtp | null, AuthUnavailable>;
-    /** Verify a 6-digit Email OTP, enforce 5-attempt lockout, and start a session. */
+    /** Verify a 6-digit Email OTP against the live codes of the address, enforce 5-attempt lockout, and start a session. */
     readonly verifyEmailOtp: (
       request: Request,
       email: string,
@@ -182,7 +182,10 @@ export class Authentication extends Context.Service<
       PasskeyCreationOptions,
       AuthUnavailable | AuthOriginRefused | RecoveryClosed | SetupRateLimited
     >;
-    /** Recovery step 2: verify token and attestation, add passkey on current origin, start session. */
+    /**
+     * Recovery step 2: verify token and attestation, add passkey on current origin, end the
+     * earlier sessions of the account and start a new one.
+     */
     readonly recoveryVerify: (
       request: Request,
       credential: PasskeyRegistrationCredential,
@@ -242,12 +245,16 @@ export class Authentication extends Context.Service<
       passkeyId: PasskeyId,
       name: string,
     ) => Effect.Effect<PasskeySummary, AuthUnavailable | AuthOriginRefused | PasskeyNotFound>;
-    /** Delete a passkey owned by the signed-in user, refusing the last one if Email OTP is off. */
+    /**
+     * Delete a passkey owned by the signed-in user and end the other sessions of the account.
+     * Without `allowDeleteLast`, the last passkey of the current domain is refused.
+     */
     readonly deletePasskey: (
+      request: Request,
       userId: typeof UserId.Type,
       passkeyId: PasskeyId,
       allowDeleteLast: boolean,
-    ) => Effect.Effect<void, AuthUnavailable | PasskeyNotFound | LastPasskey>;
+    ) => Effect.Effect<void, AuthUnavailable | AuthOriginRefused | PasskeyNotFound | LastPasskey>;
     /** Prune expired challenges, expired sessions, and old Email OTP rows. */
     readonly purgeExpired: (now: number) => Effect.Effect<void, AuthUnavailable>;
   }

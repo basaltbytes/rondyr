@@ -24,6 +24,7 @@ export interface RegistrationOverrides {
   readonly rpId?: string;
   readonly challenge?: string;
   readonly userPresent?: boolean;
+  readonly userVerified?: boolean;
   readonly counter?: number;
 }
 
@@ -34,6 +35,7 @@ export interface AssertionOverrides {
   readonly counter?: number;
   readonly tamperSignature?: boolean;
   readonly crossOrigin?: boolean;
+  readonly userVerified?: boolean;
 }
 
 export function registerVirtualPasskey(

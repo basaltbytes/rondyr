@@ -8,6 +8,7 @@ import {
   challengeLifetimeMillis,
   otpLifetimeMillis,
   otpMaxAttempts,
+  otpMaxCodesPerDay,
   otpMaxCodesPerHour,
   sessionLifetimeMillis,
   sessionSlideThresholdMillis,
@@ -58,7 +59,9 @@ import {
 
 const encoder = new TextEncoder();
 const hourMillis = 60 * 60 * 1000;
-const defaultPasskeyName = "Passkey";
+const dayMillis = 24 * hourMillis;
+/** A passkey registered without a name: the dashboard shows its own translated label. */
+const unnamedPasskey = "";
 
 const OptionalNonEmpty = Schema.optionalKey(Schema.String);
 const EnvSecrets = Schema.Struct({
@@ -129,9 +132,7 @@ const ChallengeRow = Schema.Struct({
 const OtpRow = Schema.Struct({
   id: Schema.String,
   codeHash: Schema.String,
-  attempts: Schema.Int,
 });
-const CountRow = Schema.Struct({ total: Schema.Int });
 const ExistsRow = Schema.Struct({ stillExists: Schema.Literals([0, 1]) });
 
 const decodeEnv = Schema.decodeUnknownEffect(EnvSecrets);
@@ -142,8 +143,7 @@ const decodeStoredPasskeys = Schema.decodeUnknownEffect(Schema.Array(StoredPassk
 const decodeStoredPasskey = Schema.decodeUnknownEffect(StoredPasskeyRow);
 const decodeCredentialIds = Schema.decodeUnknownEffect(Schema.Array(CredentialIdRow));
 const decodeChallengeRow = Schema.decodeUnknownEffect(ChallengeRow);
-const decodeOtpRow = Schema.decodeUnknownEffect(OtpRow);
-const decodeCountRow = Schema.decodeUnknownEffect(CountRow);
+const decodeOtpRows = Schema.decodeUnknownEffect(Schema.Array(OtpRow));
 const decodeExistsRow = Schema.decodeUnknownEffect(ExistsRow);
 const decodeSetupPayload = Schema.decodeUnknownEffect(Schema.fromJsonString(SetupChallengePayload));
 const decodeRecoveryPayload = Schema.decodeUnknownEffect(
@@ -156,8 +156,12 @@ const decodeAddPasskeyPayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(AddPasskeyChallengePayload),
 );
 
+/**
+ * Local development over HTTP. Only `localhost` counts: the hostname is also the WebAuthn
+ * RP ID, and browsers refuse an IP address such as `127.0.0.1` there.
+ */
 function loopback(url: URL): boolean {
-  return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  return url.protocol === "http:" && url.hostname === "localhost";
 }
 
 function nonEmpty(value: string | undefined): string | undefined {
@@ -421,7 +425,7 @@ function creationOptions(input: {
     authenticatorSelection: {
       residentKey: "required",
       requireResidentKey: true,
-      userVerification: "preferred",
+      userVerification: "required",
     },
     ...(input.excludeCredentials !== undefined &&
       input.excludeCredentials.length > 0 && {
@@ -551,11 +555,6 @@ export const authenticationLive = Layer.effect(
       return { session, setCookie } satisfies SessionResult;
     });
 
-    const userId = Effect.fn("Authentication.userId")(function* (request: Request) {
-      const { session } = yield* getSession(request);
-      return session?.user.id ?? null;
-    });
-
     const signOut = Effect.fn("Authentication.signOut")(function* (request: Request) {
       const config = yield* readConfig(request);
       const rawToken = readCookie(request, sessionCookieName(config.secure));
@@ -647,7 +646,7 @@ export const authenticationLive = Layer.effect(
       const now = yield* Clock.currentTimeMillis;
       const passkeyId = PasskeyId.make(SecureRandom.uuidV4Unsafe());
       const { session, setCookie } = yield* prepareSession(config, request, now);
-      const label = passkeyName ?? defaultPasskeyName;
+      const label = passkeyName ?? unnamedPasskey;
 
       // D1 executes the batch atomically. A racing request can only insert the passkey and
       // session when its own user ID won the `WHERE NOT EXISTS (SELECT 1 FROM auth_users)` guard.
@@ -712,7 +711,7 @@ export const authenticationLive = Layer.effect(
         challenge,
         rpId: config.rpId,
         timeout: challengeLifetimeMillis,
-        userVerification: "preferred",
+        userVerification: "required",
         allowCredentials: [],
       } satisfies PasskeyRequestOptions;
     });
@@ -797,39 +796,38 @@ export const authenticationLive = Layer.effect(
       const env = yield* bindings;
       const email = rawEmail.toLowerCase();
       const now = yield* Clock.currentTimeMillis;
-      const [userFound, recentCount] = yield* Effect.tryPromise({
-        try: () =>
-          env.DB.batch([
-            env.DB.prepare("SELECT id FROM auth_users WHERE lower(email) = ? LIMIT 1").bind(email),
-            env.DB.prepare(
-              "SELECT count(*) AS total FROM auth_email_otps WHERE email = ? AND created_at > ?",
-            ).bind(email, now - hourMillis),
-          ]),
-        catch: () => AuthUnavailable.make(),
-      });
-      if (userFound === undefined || userFound.results.length === 0) return null;
-      const { total } = yield* decodeCountRow(recentCount?.results[0]).pipe(
-        Effect.mapError(() => AuthUnavailable.make()),
-      );
-      if (total >= otpMaxCodesPerHour) return null;
-
       const id = SecureRandom.uuidV4Unsafe();
       const code = generateOtpCode();
       const codeHash = yield* sha256Hex(`${id}:${email}:${code}`);
-      yield* Effect.tryPromise({
+      // One statement finds the account, checks both caps and stores the code: an unknown
+      // address and a capped one cost the same round trip as an address that gets a code,
+      // so the time of the answer does not tell them apart. A new code leaves the earlier
+      // ones valid, so asking for a code in someone's name cannot cancel the one they hold.
+      const issued = yield* Effect.tryPromise({
         try: () =>
-          env.DB.batch([
-            env.DB.prepare(
-              "UPDATE auth_email_otps SET consumed_at = ? WHERE email = ? AND consumed_at IS NULL",
-            ).bind(now, email),
-            env.DB.prepare(`
-              INSERT INTO auth_email_otps (id, email, code_hash, attempts, expires_at, consumed_at, created_at)
-              VALUES (?, ?, ?, 0, ?, NULL, ?)
-            `).bind(id, email, codeHash, now + otpLifetimeMillis, now),
-          ]),
+          env.DB.prepare(`
+            INSERT INTO auth_email_otps (id, email, code_hash, attempts, expires_at, consumed_at, created_at)
+            SELECT ?1, ?2, ?3, 0, ?4, NULL, ?5
+            WHERE EXISTS (SELECT 1 FROM auth_users WHERE lower(email) = ?2)
+              AND (SELECT count(*) FROM auth_email_otps WHERE email = ?2 AND created_at > ?6) < ?7
+              AND (SELECT count(*) FROM auth_email_otps WHERE email = ?2 AND created_at > ?8) < ?9
+            RETURNING id
+          `)
+            .bind(
+              id,
+              email,
+              codeHash,
+              now + otpLifetimeMillis,
+              now,
+              now - hourMillis,
+              otpMaxCodesPerHour,
+              now - dayMillis,
+              otpMaxCodesPerDay,
+            )
+            .all(),
         catch: () => AuthUnavailable.make(),
       });
-      return { email, code } satisfies IssuedEmailOtp;
+      return issued.results.length === 1 ? ({ email, code } satisfies IssuedEmailOtp) : null;
     });
 
     const verifyEmailOtp = Effect.fn("Authentication.verifyEmailOtp")(function* (
@@ -845,42 +843,48 @@ export const authenticationLive = Layer.effect(
         try: () =>
           env.DB.batch([
             env.DB.prepare(`
-              SELECT id, code_hash AS codeHash, attempts
+              SELECT id, code_hash AS codeHash
               FROM auth_email_otps
-              WHERE email = ? AND consumed_at IS NULL AND expires_at > ?
-              ORDER BY created_at DESC LIMIT 1
-            `).bind(email, now),
+              WHERE email = ? AND consumed_at IS NULL AND expires_at > ? AND attempts < ?
+              ORDER BY created_at DESC LIMIT ?
+            `).bind(email, now, otpMaxAttempts, otpMaxCodesPerHour),
             env.DB.prepare(
               "SELECT id, name, email FROM auth_users WHERE lower(email) = ? LIMIT 1",
             ).bind(email),
           ]),
         catch: () => AuthUnavailable.make(),
       });
-      const otpRaw = otpResult?.results[0];
-      const userRaw = userResult?.results[0];
-      if (otpRaw === undefined || userRaw === undefined) return yield* OtpInvalid.make();
-      const otp = yield* decodeOtpRow(otpRaw).pipe(Effect.mapError(() => AuthUnavailable.make()));
-      const user = yield* decodeUserRow(userRaw).pipe(
+      const liveCodes = yield* decodeOtpRows(otpResult?.results ?? []).pipe(
         Effect.mapError(() => AuthUnavailable.make()),
       );
-
-      const candidateHash = yield* sha256Hex(`${otp.id}:${email}:${code}`);
-      const matches = yield* equalSecrets(candidateHash, otp.codeHash);
-      if (!matches) {
+      // Every live code of the address is compared, without stopping at the first match.
+      let matchedId: string | null = null;
+      for (const live of liveCodes) {
+        const candidateHash = yield* sha256Hex(`${live.id}:${email}:${code}`);
+        if (yield* equalSecrets(candidateHash, live.codeHash)) matchedId = live.id;
+      }
+      const userRaw = userResult?.results[0];
+      if (matchedId === null || userRaw === undefined) {
+        // A wrong code counts against every live code of the address, so several live codes
+        // give no more guesses than one. The statement also runs for an address without an
+        // account or without a code: the refusal costs the same round trips either way.
         yield* Effect.tryPromise({
           try: () =>
             env.DB.prepare(`
               UPDATE auth_email_otps
               SET attempts = attempts + 1,
                   consumed_at = CASE WHEN attempts + 1 >= ? THEN ? ELSE NULL END
-              WHERE id = ? AND consumed_at IS NULL AND expires_at > ?
+              WHERE email = ? AND consumed_at IS NULL AND expires_at > ?
             `)
-              .bind(otpMaxAttempts, now, otp.id, now)
+              .bind(otpMaxAttempts, now, email, now)
               .run(),
           catch: () => AuthUnavailable.make(),
         });
         return yield* OtpInvalid.make();
       }
+      const user = yield* decodeUserRow(userRaw).pipe(
+        Effect.mapError(() => AuthUnavailable.make()),
+      );
 
       const consumed = yield* Effect.tryPromise({
         try: () =>
@@ -889,7 +893,7 @@ export const authenticationLive = Layer.effect(
             WHERE id = ? AND consumed_at IS NULL AND expires_at > ? AND attempts < ?
             RETURNING id
           `)
-            .bind(now, otp.id, now, otpMaxAttempts)
+            .bind(now, matchedId, now, otpMaxAttempts)
             .all(),
         catch: () => AuthUnavailable.make(),
       });
@@ -902,6 +906,10 @@ export const authenticationLive = Layer.effect(
             env.DB.prepare(
               "UPDATE auth_users SET email_verified = 1, updated_at = ? WHERE id = ?",
             ).bind(now, user.id),
+            // The sign-in spends the other codes of the address too.
+            env.DB.prepare(
+              "UPDATE auth_email_otps SET consumed_at = ? WHERE email = ? AND consumed_at IS NULL",
+            ).bind(now, email),
             env.DB.prepare(`
               INSERT INTO auth_sessions
                 (id, token, user_id, expires_at, created_at, updated_at, ip_address, user_agent)
@@ -993,7 +1001,7 @@ export const authenticationLive = Layer.effect(
       const now = yield* Clock.currentTimeMillis;
       const passkeyId = PasskeyId.make(SecureRandom.uuidV4Unsafe());
       const { session, setCookie } = yield* prepareSession(config, request, now);
-      const label = passkeyName ?? defaultPasskeyName;
+      const label = passkeyName ?? unnamedPasskey;
 
       const [inserted] = yield* Effect.tryPromise({
         try: () =>
@@ -1016,6 +1024,11 @@ export const authenticationLive = Layer.effect(
               now,
               payload.userId,
             ),
+            // Whoever recovers the account takes it back: every earlier session ends.
+            env.DB.prepare(`
+              DELETE FROM auth_sessions
+              WHERE user_id = ?1 AND EXISTS (SELECT 1 FROM auth_passkeys WHERE id = ?2)
+            `).bind(payload.userId, passkeyId),
             env.DB.prepare(`
               INSERT INTO auth_sessions
                 (id, token, user_id, expires_at, created_at, updated_at, ip_address, user_agent)
@@ -1101,7 +1114,7 @@ export const authenticationLive = Layer.effect(
       const { session, setCookie } = yield* prepareSession(config, request, now);
       const passkey: PreparedPasskeyRow = {
         id: PasskeyId.make(SecureRandom.uuidV4Unsafe()),
-        name: passkeyName ?? defaultPasskeyName,
+        name: passkeyName ?? unnamedPasskey,
         credentialId: verified.credentialId,
         publicKey: verified.publicKey,
         algorithm: verified.algorithm,
@@ -1187,7 +1200,7 @@ export const authenticationLive = Layer.effect(
       const verified = yield* verifyRegistrationAttestation(credential, config.rpId);
       const now = yield* Clock.currentTimeMillis;
       const passkeyId = PasskeyId.make(SecureRandom.uuidV4Unsafe());
-      const label = name ?? defaultPasskeyName;
+      const label = name ?? unnamedPasskey;
       const inserted = yield* Effect.tryPromise({
         try: () =>
           env.DB.prepare(`
@@ -1246,21 +1259,46 @@ export const authenticationLive = Layer.effect(
     });
 
     const deletePasskey = Effect.fn("Authentication.deletePasskey")(function* (
+      request: Request,
       userIdValue: typeof UserId.Type,
       passkeyId: PasskeyId,
       allowDeleteLast: boolean,
     ) {
+      const config = yield* readConfig(request);
       const env = yield* bindings;
+      const rawToken = readCookie(request, sessionCookieName(config.secure));
+      const currentSession =
+        rawToken === null ? "" : yield* hmacSessionToken(config.sessionSecret, rawToken);
       const allow = allowDeleteLast ? 1 : 0;
-      const [deleted, remaining] = yield* Effect.tryPromise({
+      // Only a passkey of the current domain can sign in here. Without email codes, the
+      // last of those stays; a passkey of another domain can always go.
+      const [, deleted, remaining] = yield* Effect.tryPromise({
         try: () =>
           env.DB.batch([
+            // Removing a passkey ends the other sessions of the account, so a session opened
+            // with that passkey does not outlive it. This runs first, under the condition of
+            // the deletion below, while the passkey is still there to test.
+            env.DB.prepare(`
+              DELETE FROM auth_sessions
+              WHERE user_id = ?2 AND token <> ?5
+                AND EXISTS (
+                  SELECT 1 FROM auth_passkeys target
+                  WHERE target.id = ?1 AND target.user_id = ?2
+                    AND (?3 = 1 OR target.rp_id <> ?4 OR EXISTS (
+                      SELECT 1 FROM auth_passkeys other
+                      WHERE other.user_id = ?2 AND other.id <> ?1 AND other.rp_id = ?4
+                    ))
+                )
+            `).bind(passkeyId, userIdValue, allow, config.rpId, currentSession),
             env.DB.prepare(`
               DELETE FROM auth_passkeys
               WHERE id = ?1 AND user_id = ?2
-                AND (?3 = 1 OR (SELECT count(*) FROM auth_passkeys WHERE user_id = ?2) > 1)
+                AND (?3 = 1 OR rp_id <> ?4 OR EXISTS (
+                  SELECT 1 FROM auth_passkeys other
+                  WHERE other.user_id = ?2 AND other.id <> ?1 AND other.rp_id = ?4
+                ))
               RETURNING id
-            `).bind(passkeyId, userIdValue, allow),
+            `).bind(passkeyId, userIdValue, allow, config.rpId),
             env.DB.prepare(
               "SELECT EXISTS (SELECT 1 FROM auth_passkeys WHERE id = ?1 AND user_id = ?2) AS stillExists",
             ).bind(passkeyId, userIdValue),
@@ -1277,7 +1315,8 @@ export const authenticationLive = Layer.effect(
 
     const purgeExpired = Effect.fn("Authentication.purgeExpired")(function* (now: number) {
       const env = yield* bindings;
-      const otpCutoff = now - 2 * hourMillis;
+      // The daily cap of email codes counts the rows of the last 24 hours.
+      const otpCutoff = now - dayMillis;
       yield* Effect.tryPromise({
         try: () =>
           env.DB.batch([
@@ -1291,7 +1330,6 @@ export const authenticationLive = Layer.effect(
 
     return {
       verifyOrigin,
-      userId,
       getSession,
       signOut,
       authStatus,

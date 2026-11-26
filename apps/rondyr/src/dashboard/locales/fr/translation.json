@@ -63,7 +63,8 @@
         "unsupported": "Ce navigateur ne prend pas en charge les clés d’accès.",
         "failed": "La connexion a échoué. Réessayez."
       },
-      "sessionEnded": "Votre session a pris fin. Reconnectez-vous pour revenir à la page où vous étiez."
+      "sessionEnded": "Votre session a pris fin. Reconnectez-vous pour revenir à la page où vous étiez.",
+      "noPasskeyHint": "Pas de clé d’accès pour ce site ? La personne qui administre ce Rondyr peut définir le secret RONDYR_RECOVERY_TOKEN sur le Worker. Rechargez ensuite cette page pour enregistrer une clé d’accès."
     },
     "otp": {
       "toggle": "Ou se connecter avec un code par e-mail",
@@ -114,18 +115,20 @@
       "passkeyName": "Nom de la clé d’accès",
       "renameLabel": "Renommer la clé d’accès {{name}}",
       "deleteLabel": "Supprimer la clé d’accès {{name}}",
-      "lastPasskeyHint": "Ajoutez une autre clé d’accès avant de supprimer celle-ci : les codes par e-mail ne sont pas activés sur ce serveur.",
+      "lastPasskeyHint": "Ajoutez une autre clé d’accès pour ce domaine avant de supprimer la dernière : les codes par e-mail ne sont pas activés sur ce serveur.",
       "newPasskeyName": "Nom de la nouvelle clé d’accès (facultatif)",
       "newPasskeyPlaceholder": "Touch ID de l’ordinateur",
       "add": "Ajouter une clé d’accès",
       "adding": "Ajout de la clé d’accès…",
       "problems": {
-        "lastPasskey": "Vous ne pouvez pas supprimer votre dernière clé d’accès lorsque les codes par e-mail sont désactivés.",
+        "lastPasskey": "Vous ne pouvez pas supprimer votre dernière clé d’accès pour ce domaine lorsque les codes par e-mail sont désactivés.",
         "exists": "Cette clé d’accès est déjà enregistrée.",
         "cancelled": "La demande de clé d’accès a été annulée.",
         "unsupported": "Ce navigateur ne prend pas en charge les clés d’accès.",
         "failed": "Impossible de mettre à jour les clés d’accès. Réessayez."
-      }
+      },
+      "unnamed": "Clé d’accès",
+      "deleteSignsOut": "Supprimer une clé d’accès déconnecte votre compte sur tous les autres appareils."
     },
     "signOut": {
       "submit": "Se déconnecter",

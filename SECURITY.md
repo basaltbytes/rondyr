@@ -15,7 +15,7 @@ We reply in the advisory to confirm that we received the report and to say wheth
 Rondyr receives messages from the public internet and runs in the operator's Cloudflare account. These parts are in scope:
 
 - the public form URL, `/f/<public-id>`: body parsing, the honeypot field, Turnstile, allowed origins, rate limits and daily quotas ([docs/forms.md](docs/forms.md));
-- sign-in, sessions, the first-account setup, invitations, password resets, and the roles and isolation between organizations;
+- sign-in with passkeys and email codes, sessions, the first-account setup, invitations, account recovery with `RONDYR_RECOVERY_TOKEN`, and the roles and isolation between organizations;
 - the dashboard and its API, including API tokens and server intake ([docs/api.md](docs/api.md));
 - webhook delivery: the signature, the URL rules that refuse private and local addresses, and the encryption of secrets in D1 ([docs/webhooks.md](docs/webhooks.md));
 - email delivery and recipient confirmation ([docs/email.md](docs/email.md));

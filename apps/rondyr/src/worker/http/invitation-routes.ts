@@ -1,4 +1,4 @@
-import { ByteSize, Effect, Layer, Schema } from "effect";
+import { ByteSize, Effect, Layer } from "effect";
 import {
   HttpIncomingMessage,
   HttpRouter,
@@ -17,10 +17,10 @@ import {
   InvitationVerifyInput,
   ReadInvitation,
 } from "../../domain/organizations/members.ts";
-import { UserId } from "../../domain/submissions/submission.id.ts";
 import { Authentication } from "../ports/authentication.ts";
 import { Members } from "../ports/members.ts";
 import { enforceClientRateLimit, rateLimitedResponse } from "./client-rate-limit.ts";
+import { currentSession } from "./organization-access.ts";
 
 const jsonOptions = { headers: { "cache-control": "no-store" } };
 const errorJson = HttpServerResponse.schemaJson(InvitationRequestError);
@@ -60,13 +60,7 @@ const withErrors = <A, E, R>(route: Effect.Effect<A, E, R>) =>
  * The signed-in account, or null. Authentication refuses a request from another
  * origin, with or without a session, so another site cannot accept for a visitor.
  */
-const currentAccount = Effect.gen(function* () {
-  const auth = yield* Authentication;
-  const incoming = yield* HttpServerRequest.HttpServerRequest;
-  const request = yield* HttpServerRequest.toWeb(incoming);
-  const user = yield* auth.userId(request);
-  return user === null ? null : yield* Schema.decodeEffect(UserId)(user);
-});
+const currentAccount = Effect.map(currentSession(), (session) => session?.user.id ?? null);
 
 const sameOriginRequest = Effect.gen(function* () {
   const auth = yield* Authentication;

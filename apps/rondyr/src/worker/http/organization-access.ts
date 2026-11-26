@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect";
-import { HttpServerRequest } from "effect/http";
+import { HttpEffect, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import {
   allows,
@@ -7,7 +7,7 @@ import {
   type Permission,
 } from "../../domain/organizations/member-role.ts";
 import { ReviewUnauthorized } from "../../domain/submissions/review-session.middleware.ts";
-import { UserId, type OrganizationId } from "../../domain/submissions/submission.id.ts";
+import type { OrganizationId, UserId } from "../../domain/submissions/submission.id.ts";
 import { Authentication } from "../ports/authentication.ts";
 import { OrganizationDirectory } from "../ports/organization-directory.ts";
 import { CurrentApiToken } from "./api-token-authentication.ts";
@@ -24,14 +24,29 @@ export class OrganizationNotFound extends Schema.TaggedError<
   { readonly brand: unique symbol }
 >()("OrganizationNotFound", {}) {}
 
-/** The signed-in account, or `ReviewUnauthorized` without a session. */
-export const signedInAccount = Effect.fn("OrganizationAccess.signedInAccount")(function* () {
+/**
+ * The session of the request, or null. Authentication renews a session past half its
+ * lifetime: the renewed cookie then leaves with the response of whichever route asked,
+ * so an account that stays active is never signed out by the cookie's first expiry.
+ */
+export const currentSession = Effect.fn("OrganizationAccess.currentSession")(function* () {
   const auth = yield* Authentication;
   const incoming = yield* HttpServerRequest.HttpServerRequest;
   const request = yield* HttpServerRequest.toWeb(incoming);
-  const user = yield* auth.userId(request);
-  if (user === null) return yield* ReviewUnauthorized.make();
-  return yield* Schema.decodeEffect(UserId)(user);
+  const { session, setCookie } = yield* auth.getSession(request);
+  if (setCookie !== null) {
+    yield* HttpEffect.appendPreResponseHandler((_request, response) =>
+      Effect.succeed(HttpServerResponse.setHeader(response, "set-cookie", setCookie)),
+    );
+  }
+  return session;
+});
+
+/** The signed-in account, or `ReviewUnauthorized` without a session. */
+export const signedInAccount = Effect.fn("OrganizationAccess.signedInAccount")(function* () {
+  const session = yield* currentSession();
+  if (session === null) return yield* ReviewUnauthorized.make();
+  return session.user.id;
 });
 
 export interface OrganizationAccess {

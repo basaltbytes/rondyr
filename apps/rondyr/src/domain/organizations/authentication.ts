@@ -13,6 +13,9 @@ export const otpMaxAttempts = 5;
 /** At most five codes are sent to one address in an hour. */
 export const otpMaxCodesPerHour = 5;
 
+/** At most ten codes are sent to one address in a day. */
+export const otpMaxCodesPerDay = 10;
+
 /** A WebAuthn challenge expires after five minutes. */
 export const challengeLifetimeMillis = 5 * 60 * 1000;
 
@@ -70,7 +73,7 @@ export const PasskeyCreationOptions = Schema.Struct({
   authenticatorSelection: Schema.Struct({
     residentKey: Schema.Literal("required"),
     requireResidentKey: Schema.Literal(true),
-    userVerification: Schema.Literal("preferred"),
+    userVerification: Schema.Literal("required"),
   }),
   excludeCredentials: Schema.optionalKey(Schema.Array(PasskeyCredentialDescriptor)),
 });
@@ -80,7 +83,7 @@ export const PasskeyRequestOptions = Schema.Struct({
   challenge: Base64UrlString,
   rpId: Schema.String,
   timeout: Schema.Int,
-  userVerification: Schema.Literal("preferred"),
+  userVerification: Schema.Literal("required"),
   allowCredentials: Schema.Array(PasskeyCredentialDescriptor),
 });
 export type PasskeyRequestOptions = typeof PasskeyRequestOptions.Type;

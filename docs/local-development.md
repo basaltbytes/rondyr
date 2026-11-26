@@ -18,7 +18,7 @@ pnpm dev
 
 If your checkout predates the root `wrangler.json`, run `pnpm db:migrate` once more after pulling: the local database has a new ID, so the dev server starts on an empty one.
 
-Vite prints the local URL, usually `http://localhost:5173`. Public sign-up is closed. Open the URL: **Create the owner account** asks for the setup token from `apps/rondyr/.env`, your name, and your email address, then prompts your browser to register a passkey and signs you in immediately. Rondyr refuses to create a second account even while the token is set, so you can leave it in `apps/rondyr/.env` or remove it. Other people join an organization through an invitation link from **Settings → Members**; see [Team and accounts](./team.md).
+Vite prints the local URL, usually `http://localhost:5173`. Use `localhost` and not `127.0.0.1`: a browser refuses a passkey for an IP address, so sign-in answers `503` there. Public sign-up is closed. Open the URL: **Create the owner account** asks for the setup token from `apps/rondyr/.env`, your name, and your email address, then prompts your browser to register a passkey and signs you in immediately. Rondyr refuses to create a second account even while the token is set, so you can leave it in `apps/rondyr/.env` or remove it. Other people join an organization through an invitation link from **Settings → Members**; see [Team and accounts](./team.md).
 
 ## Demo data
 

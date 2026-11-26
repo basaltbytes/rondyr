@@ -43,12 +43,14 @@ Removing a member removes them from the organization only; their account still e
 
 ## Passkeys and Email OTP
 
-Every Rondyr instance enables passkey sign-in out of the box with no external configuration. On `/sign-in`, select **Sign in with a passkey** to authenticate with a discoverable passkey stored in your browser, OS keychain, or hardware security key.
+Every Rondyr instance enables passkey sign-in out of the box with no external configuration. On `/sign-in`, select **Sign in with a passkey** to authenticate with a discoverable passkey stored in your browser, OS keychain, or hardware security key. A passkey is the only factor, so Rondyr requires user verification: the device asks for its PIN, fingerprint or face, and a hardware security key needs a PIN.
 
 When an email provider is configured (see [Send messages by email](./email.md)), **Or sign in with an email code** appears automatically on `/sign-in`:
 
 - Entering an account's email address sends a single-use 6-digit code valid for 10 minutes.
-- A code locks out after 5 wrong guesses, and each address can receive up to 5 codes per hour.
+- Each address can receive up to 5 codes per hour and 10 per day. Past a cap, the page shows the same confirmation and no email is sent.
+- Asking for another code leaves the earlier ones valid until they expire, so a request made in your name cannot cancel the code you hold. Signing in spends every code of the address.
+- 5 wrong guesses lock out every code the address holds at that moment; ask for a new one.
 - Unknown email addresses never create an account and receive the same confirmation message for privacy.
 
 When no email provider is configured, Email OTP stays hidden and its endpoints return `503`.
@@ -59,7 +61,8 @@ Open the account menu at the foot of the sidebar and select **Security** to mana
 
 - Add backup passkeys (for example a second device or a hardware security key) with an optional label.
 - Rename existing passkeys at any time.
-- Delete passkeys you no longer use. When Email OTP is not configured, Rondyr refuses to delete your last remaining passkey so you don't lock yourself out.
+- Delete passkeys you no longer use. When Email OTP is not configured, Rondyr refuses to delete your last passkey for the current domain so you don't lock yourself out; a passkey bound to another hostname does not count, because it cannot sign in here.
+- Deleting a passkey signs your account out on every other device, so a session opened with that passkey ends with it.
 - Passkeys bound to another hostname (such as an old `workers.dev` address after attaching a custom domain) are marked with their domain name so you can clean them up once your new passkey works.
 
 ## Recover access and migrate domains
@@ -67,7 +70,7 @@ Open the account menu at the foot of the sidebar and select **Security** to mana
 WebAuthn passkeys are bound to a hostname (`rpID`), so a passkey created on `*.workers.dev` does not work after attaching a custom domain. You have two recovery paths:
 
 - **With email configured:** open `/sign-in` on the new domain or device, sign in with an email code, then open **Account → Security** to register a new passkey.
-- **Without email configured (or full lockout):** add a secret named `RONDYR_RECOVERY_TOKEN` (at least 32 characters, for example `openssl rand -hex 32`) in Cloudflare under **Workers & Pages → rondyr → Settings → Variables and Secrets**. Reload `/sign-in`, select **Recover access**, enter the recovery token and an existing account's email address, and register a new passkey for the current domain. You are signed in immediately. Delete `RONDYR_RECOVERY_TOKEN` from Cloudflare afterward.
+- **Without email configured (or full lockout):** add a secret named `RONDYR_RECOVERY_TOKEN` (at least 32 characters, for example `openssl rand -hex 32`) in Cloudflare under **Workers & Pages → rondyr → Settings → Variables and Secrets**. Reload `/sign-in`, select **Recover access**, enter the recovery token and an existing account's email address, and register a new passkey for the current domain. You are signed in immediately, and every earlier session of that account ends. Delete `RONDYR_RECOVERY_TOKEN` from Cloudflare afterward.
 
 ## Rotate instance secrets
 

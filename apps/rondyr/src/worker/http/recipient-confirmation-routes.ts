@@ -22,7 +22,7 @@ const sameOrigin = Effect.gen(function* () {
   const auth = yield* Authentication;
   const incoming = yield* HttpServerRequest.HttpServerRequest;
   const request = yield* HttpServerRequest.toWeb(incoming);
-  yield* auth.userId(request);
+  yield* auth.verifyOrigin(request);
 });
 
 /**

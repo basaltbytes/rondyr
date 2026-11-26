@@ -1,7 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { assert, beforeAll, describe, it } from "@effect/vitest";
-import { Duration, Effect, Schedule, Schema } from "effect";
+import { Clock, Duration, Effect, Schedule, Schema } from "effect";
 
 import {
   testOrigin,
@@ -16,6 +16,8 @@ import {
 } from "../../../tests/integration/webauthn-helper.mjs";
 import {
   AccountPasskeys,
+  otpMaxCodesPerDay,
+  otpMaxCodesPerHour,
   PasskeyCreationOptions,
   PasskeyRequestOptions,
   PasskeySummary,
@@ -107,6 +109,45 @@ const waitForOtpEmail = Effect.fnUntraced(function* (
     Effect.retry({ schedule: Schedule.spaced(Duration.millis(100)), times: 80 }),
   );
 });
+
+const sessionCookieOf = (response: Response) =>
+  response.headers.getSetCookie().find((value) => value.startsWith("__Host-rondyr_session="));
+
+/** The account a cookie signs in on the test Worker, or null. */
+const sessionOf = (cookie: string) =>
+  Effect.promise(() =>
+    env.TEST_WORKER.fetch(`${testOrigin}/api/auth/get-session`, { headers: { cookie } }),
+  ).pipe(Effect.flatMap((response) => Effect.promise(() => response.json())));
+
+const signInWith = Effect.fnUntraced(function* (passkey: VirtualPasskey) {
+  const options = yield* postJson(
+    env.TEST_WORKER,
+    `${testOrigin}/api/auth/passkey/options`,
+    {},
+  ).pipe(
+    Effect.flatMap((res) => Effect.promise(() => res.json())),
+    Effect.flatMap(decodeRequestOptions),
+  );
+  const credential = yield* Effect.promise(() =>
+    assertVirtualPasskey(passkey, options, testOrigin),
+  );
+  const signedIn = yield* postJson(env.TEST_WORKER, `${testOrigin}/api/auth/passkey/verify`, {
+    credential,
+  });
+  assert.strictEqual(signedIn.status, 200);
+  return cookieOf(signedIn);
+});
+
+/** Whether a cookie still signs in on the test Worker. */
+const opensSession = (cookie: string) =>
+  Effect.map(sessionOf(cookie), (session) => session !== null);
+
+const otpRowsOf = (email: string) =>
+  Effect.promise(() =>
+    env.DB.prepare("SELECT count(*) AS total FROM auth_email_otps WHERE email = ?")
+      .bind(email)
+      .first("total"),
+  );
 
 let ownerPasskey: VirtualPasskey | undefined;
 let ownerCookie = "";
@@ -237,6 +278,47 @@ describe("first-run passkey setup", () => {
   );
 });
 
+describe("session renewal", () => {
+  it.live(
+    "sends the renewed cookie with the answer of any route once half the lifetime is spent",
+    () =>
+      Effect.gen(function* () {
+        const headers = { cookie: ownerCookie, origin: testOrigin };
+        const fresh = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(`${testOrigin}/api/organization-creation`, { headers }),
+        );
+        assert.strictEqual(fresh.status, 200);
+        assert.isUndefined(sessionCookieOf(fresh));
+
+        // One day left of thirty: the session is renewed by the next request, whatever its route.
+        const day = 24 * 60 * 60 * 1000;
+        const soon = (yield* Clock.currentTimeMillis) + day;
+        yield* Effect.promise(() =>
+          env.DB.prepare("UPDATE auth_sessions SET expires_at = ?").bind(soon).run(),
+        );
+        const renewed = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(`${testOrigin}/api/organization-creation`, { headers }),
+        );
+        assert.strictEqual(renewed.status, 200);
+        const cookie = sessionCookieOf(renewed) ?? "";
+        assert.strictEqual(cookie.split(";", 1)[0], ownerCookie);
+        assert.match(cookie, /; Max-Age=2592000/u);
+        assert.match(cookie, /; Secure/iu);
+        assert.match(cookie, /; HttpOnly/iu);
+        const expiresAt = yield* Effect.promise(() =>
+          env.DB.prepare("SELECT expires_at FROM auth_sessions").first<number>("expires_at"),
+        );
+        assert.isAbove(expiresAt ?? 0, soon + 28 * day);
+
+        // Renewed once: the next answers carry no cookie again.
+        const after = yield* Effect.promise(() =>
+          env.TEST_WORKER.fetch(`${testOrigin}/api/auth/get-session`, { headers }),
+        );
+        assert.isUndefined(sessionCookieOf(after));
+      }),
+  );
+});
+
 describe("passkey sign-in security", () => {
   it.effect(
     "signs in with discoverable credentials, updates counter and last_used_at, and rejects replays or tampering",
@@ -253,6 +335,7 @@ describe("passkey sign-in security", () => {
           Effect.flatMap(decodeRequestOptions),
         );
         assert.deepEqual(options.allowCredentials, []);
+        assert.strictEqual(options.userVerification, "required");
 
         const assertion = yield* Effect.promise(() =>
           assertVirtualPasskey(ownerPasskey!, options, testOrigin),
@@ -277,12 +360,14 @@ describe("passkey sign-in security", () => {
         assert.strictEqual(row?.counter, 1);
         assert.isNotNull(row?.last_used_at);
 
-        // Wrong origin, wrong rpId, tampered signature, and non-advancing counter are all rejected.
+        // Wrong origin, wrong rpId, tampered signature, non-advancing counter, and an
+        // authenticator that did not verify its user are all rejected.
         for (const badOverrides of [
           { origin: "https://attacker.example", counter: 2 },
           { rpId: "attacker.example", counter: 3 },
           { tamperSignature: true, counter: 4 },
           { counter: 1 },
+          { userVerified: false, counter: 5 },
         ]) {
           const freshOptions = yield* postJson(
             env.TEST_WORKER,
@@ -388,6 +473,73 @@ describe("Email OTP sign-in", () => {
         assert.strictEqual(replayed.status, 401);
       }),
   );
+
+  it.live(
+    "keeps an earlier code valid when another is requested, and spends them all at sign-in",
+    () =>
+      Effect.gen(function* () {
+        const request = postJson(env.TEST_WORKER, `${testOrigin}/api/auth/otp/request`, {
+          email: owner.email,
+          language: "en",
+        });
+        const first = yield* request;
+        assert.strictEqual(first.status, 202);
+        const earlier = yield* waitForOtpEmail(owner.email, 3, "sign-in code");
+        // Anyone can ask for a code in the owner's name: that does not cancel the one they hold.
+        const second = yield* request;
+        assert.strictEqual(second.status, 202);
+        const later = yield* waitForOtpEmail(owner.email, 4, "sign-in code");
+        assert.notStrictEqual(later, earlier);
+
+        const verified = yield* postJson(env.TEST_WORKER, `${testOrigin}/api/auth/otp/verify`, {
+          email: owner.email,
+          code: earlier,
+        });
+        assert.strictEqual(verified.status, 200);
+        const spent = yield* postJson(env.TEST_WORKER, `${testOrigin}/api/auth/otp/verify`, {
+          email: owner.email,
+          code: later,
+        });
+        assert.strictEqual(spent.status, 401);
+      }),
+  );
+
+  it.live("stops sending codes to one address past the hourly and the daily cap", () =>
+    Effect.gen(function* () {
+      /** Ask for a code, and return how many the address has been issued since. */
+      const requestThenCount = Effect.gen(function* () {
+        const response = yield* postJson(env.TEST_WORKER, `${testOrigin}/api/auth/otp/request`, {
+          email: owner.email,
+        });
+        assert.strictEqual(response.status, 202);
+        return yield* otpRowsOf(owner.email);
+      });
+      const twoHoursPass = Effect.promise(() =>
+        env.DB.prepare("UPDATE auth_email_otps SET created_at = created_at - ?")
+          .bind(2 * 60 * 60 * 1000)
+          .run(),
+      );
+      const already = yield* otpRowsOf(owner.email);
+      assert.strictEqual(already, 4);
+      const atHourlyCap = yield* requestThenCount;
+      assert.strictEqual(atHourlyCap, otpMaxCodesPerHour);
+
+      // Past the hourly cap the answer is the same and no code is stored or sent.
+      const pastHourlyCap = yield* requestThenCount;
+      assert.strictEqual(pastHourlyCap, otpMaxCodesPerHour);
+
+      // Two hours later the hour is free again, and the day still counts these codes.
+      yield* twoHoursPass;
+      const counts = yield* Effect.forEach(
+        Array.from({ length: otpMaxCodesPerDay - otpMaxCodesPerHour }),
+        () => requestThenCount,
+      );
+      assert.strictEqual(counts.at(-1), otpMaxCodesPerDay);
+      yield* twoHoursPass;
+      const pastDailyCap = yield* requestThenCount;
+      assert.strictEqual(pastDailyCap, otpMaxCodesPerDay);
+    }),
+  );
 });
 
 describe("recovery token and custom-domain migration", () => {
@@ -443,6 +595,13 @@ describe("recovery token and custom-domain migration", () => {
         assert.strictEqual(recovered.status, 201);
         const recoveredCookie = cookieOf(recovered);
         assert.isNotEmpty(recoveredCookie);
+
+        // Recovery takes the account back: the sessions opened before it have ended.
+        const earlierSession = yield* opensSession(ownerCookie);
+        assert.isFalse(earlierSession);
+        const recoveredSession = yield* opensSession(recoveredCookie);
+        assert.isTrue(recoveredSession);
+        ownerCookie = recoveredCookie;
 
         // The recovered passkey can now sign in normally.
         const signInOpts = yield* postJson(
@@ -527,6 +686,34 @@ describe("account passkey management", () => {
         );
         assert.strictEqual(renamed.name, "YubiKey 5");
 
+        // An authenticator that did not verify its user cannot register a passkey.
+        const unverifiedOpts = yield* postJson(
+          env.TEST_WORKER,
+          `${testOrigin}/api/account/passkeys/options`,
+          {},
+          headers,
+        ).pipe(
+          Effect.flatMap((res) => Effect.promise(() => res.json())),
+          Effect.flatMap(decodeCreationOptions),
+        );
+        assert.strictEqual(unverifiedOpts.authenticatorSelection.userVerification, "required");
+        const unverified = yield* Effect.promise(() =>
+          registerVirtualPasskey(unverifiedOpts, testOrigin, { userVerified: false }),
+        );
+        const refusedUnverified = yield* postJson(
+          env.TEST_WORKER,
+          `${testOrigin}/api/account/passkeys/verify`,
+          { credential: unverified.credential },
+          headers,
+        );
+        assert.strictEqual(refusedUnverified.status, 400);
+
+        // Deleting a passkey ends the other sessions of the account and keeps this one.
+        if (ownerPasskey === undefined) return assert.fail("Expected owner passkey");
+        const elsewhere = yield* signInWith(ownerPasskey);
+        const openElsewhere = yield* opensSession(elsewhere);
+        assert.isTrue(openElsewhere);
+
         // Delete two passkeys down to 1, then verify KEYLESS_WORKER (no Email OTP) refuses deleting the last one.
         for (const id of [added.id, initial.passkeys[0]!.id]) {
           const del = yield* Effect.promise(() =>
@@ -537,6 +724,10 @@ describe("account passkey management", () => {
           );
           assert.strictEqual(del.status, 204);
         }
+        const stillElsewhere = yield* opensSession(elsewhere);
+        assert.isFalse(stillElsewhere);
+        const stillHere = yield* opensSession(ownerCookie);
+        assert.isTrue(stillHere);
         const remainingId = initial.passkeys[1]!.id;
         const refusedLast = yield* Effect.promise(() =>
           env.KEYLESS_WORKER.fetch(`${testOrigin}/api/account/passkeys/${remainingId}`, {
@@ -547,6 +738,48 @@ describe("account passkey management", () => {
         assert.strictEqual(refusedLast.status, 409);
         const refusedBody = yield* Effect.promise(() => refusedLast.json());
         assert.deepEqual(refusedBody, { error: "last-passkey" });
+
+        // A passkey of another domain cannot sign in here: it does not make the passkey of
+        // this domain deletable, and it can itself always be deleted.
+        const otherOpts = yield* postJson(
+          env.TEST_WORKER,
+          `${testOrigin}/api/account/passkeys/options`,
+          {},
+          headers,
+        ).pipe(
+          Effect.flatMap((res) => Effect.promise(() => res.json())),
+          Effect.flatMap(decodeCreationOptions),
+        );
+        const other = yield* Effect.promise(() => registerVirtualPasskey(otherOpts, testOrigin));
+        const otherPasskey = yield* postJson(
+          env.TEST_WORKER,
+          `${testOrigin}/api/account/passkeys/verify`,
+          { credential: other.credential },
+          headers,
+        ).pipe(
+          Effect.flatMap((res) => Effect.promise(() => res.json())),
+          Effect.flatMap(decodePasskeySummary),
+        );
+        // Registered without a name: stored unnamed, and the dashboard labels it.
+        assert.strictEqual(otherPasskey.name, "");
+        yield* Effect.promise(() =>
+          env.DB.prepare("UPDATE auth_passkeys SET rp_id = ? WHERE id = ?")
+            .bind("rondyr-old.example.test", otherPasskey.id)
+            .run(),
+        );
+        const deleteOn = (id: string) =>
+          Effect.promise(() =>
+            env.KEYLESS_WORKER.fetch(`${testOrigin}/api/account/passkeys/${id}`, {
+              method: "DELETE",
+              headers,
+            }),
+          ).pipe(Effect.map(({ status }) => status));
+        const currentDomainFirst = yield* deleteOn(remainingId);
+        assert.strictEqual(currentDomainFirst, 409);
+        const otherDomain = yield* deleteOn(otherPasskey.id);
+        assert.strictEqual(otherDomain, 204);
+        const currentDomainLast = yield* deleteOn(remainingId);
+        assert.strictEqual(currentDomainLast, 409);
       }),
   );
 });
@@ -582,6 +815,24 @@ describe("origin without RONDYR_PUBLIC_URL and legacy BETTER_AUTH_SECRET fallbac
           {},
         );
         assert.strictEqual(plainHttp.status, 503);
+
+        // Local development is `localhost` only: a browser refuses an IP address as RP ID.
+        const local = yield* postJson(
+          env.DERIVED_ORIGIN_WORKER,
+          "http://localhost:8787/api/auth/passkey/options",
+          {},
+        );
+        assert.strictEqual(local.status, 200);
+        const localOptions = yield* Effect.promise(() => local.json()).pipe(
+          Effect.flatMap(decodeRequestOptions),
+        );
+        assert.strictEqual(localOptions.rpId, "localhost");
+        const loopbackAddress = yield* postJson(
+          env.DERIVED_ORIGIN_WORKER,
+          "http://127.0.0.1:8787/api/auth/passkey/options",
+          {},
+        );
+        assert.strictEqual(loopbackAddress.status, 503);
 
         const customPort = yield* postJson(
           env.DERIVED_ORIGIN_WORKER,

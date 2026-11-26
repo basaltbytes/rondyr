@@ -111,6 +111,8 @@ export const verifyRegistrationAttestation = Effect.fn("WebAuthn.verifyRegistrat
     if (
       !authenticatorData.verifyRelyingPartyIdHash(expectedRpId) ||
       !authenticatorData.userPresent ||
+      // The passkey is the only factor: the authenticator must have checked a PIN or a biometric.
+      !authenticatorData.userVerified ||
       authenticatorData.credential === null
     ) {
       return yield* PasskeyInvalid.make();
@@ -244,7 +246,9 @@ export const verifyAssertionSignature = Effect.fn("WebAuthn.verifyAssertionSigna
     if (!authenticatorData.verifyRelyingPartyIdHash(input.expectedRpId)) {
       return yield* PasskeyInvalid.make();
     }
-    if (!authenticatorData.userPresent) return yield* PasskeyInvalid.make();
+    if (!authenticatorData.userPresent || !authenticatorData.userVerified) {
+      return yield* PasskeyInvalid.make();
+    }
     // WebAuthn §7.2 step 21: synced passkeys may keep counter = 0 on both sides; any non-zero
     // counter must strictly advance so cloned authenticators are refused.
     if (

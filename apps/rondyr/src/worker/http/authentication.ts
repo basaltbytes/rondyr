@@ -35,7 +35,7 @@ import { Authentication, type IssuedEmailOtp } from "../ports/authentication.ts"
 import { BackgroundTasks } from "../ports/background-tasks.ts";
 import { EmailSender } from "../ports/email-sender.ts";
 import { enforceClientRateLimit, rateLimitedResponse } from "./client-rate-limit.ts";
-import { signedInAccount } from "./organization-access.ts";
+import { currentSession, signedInAccount } from "./organization-access.ts";
 
 const smallBodyLimit = ByteSize.kibibytes(8);
 const webauthnBodyLimit = ByteSize.kibibytes(16);
@@ -101,10 +101,8 @@ const authStatus = Effect.gen(function* () {
 });
 
 const getSession = Effect.gen(function* () {
-  const service = yield* Authentication;
-  const request = yield* webRequest;
-  const { session, setCookie } = yield* service.getSession(request);
-  return yield* HttpServerResponse.schemaJson(SessionResponse)(session, withCookie(setCookie));
+  const session = yield* currentSession();
+  return yield* HttpServerResponse.schemaJson(SessionResponse)(session, noStore);
 });
 
 const signOut = Effect.gen(function* () {
@@ -329,7 +327,8 @@ const deleteAccountPasskey = Effect.gen(function* () {
     Effect.catchTag("EmailProviderMissing", () => Effect.succeed(false)),
   );
   const service = yield* Authentication;
-  yield* service.deletePasskey(userId, id, emailOtpEnabled);
+  const request = yield* webRequest;
+  yield* service.deletePasskey(request, userId, id, emailOtpEnabled);
   return HttpServerResponse.empty({ status: 204, ...noStore });
 });
 
