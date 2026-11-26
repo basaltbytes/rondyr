@@ -46,6 +46,7 @@ const readEmails = Schema.decodeUnknownEffect(
         Schema.Struct({
           to: Schema.Array(Schema.String),
           subject: Schema.String,
+          html: Schema.String,
           text: Schema.String,
         }),
       ),
@@ -266,6 +267,9 @@ it.live("invites by email, lists the invitation, and stores only the hash of its
     assert.lengthOf(emails, 1);
     assert.include(emails[0]?.body.text, Redacted.value(issued.link));
     assert.notInclude(emails[0]?.body.text, "Invitation listing");
+    assert.isTrue(emails[0]?.body.html.startsWith("<!DOCTYPE html>"));
+    assert.include(emails[0]?.body.html, Redacted.value(issued.link));
+    assert.notInclude(emails[0]?.body.html, "Invitation listing");
   }),
 );
 

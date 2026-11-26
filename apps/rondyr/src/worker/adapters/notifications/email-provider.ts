@@ -34,9 +34,9 @@ const noConfirmedRecipient =
   "No recipient of this destination has confirmed their address yet. Rondyr sends email only to confirmed addresses.";
 
 /**
- * Sends a delivery as one plain text email to the recipients of its target
- * that the organization has confirmed, through the provider of the stage. The
- * delivery ID is the idempotency key.
+ * Sends a delivery as one email (HTML + plain text) to the recipients of its
+ * target that the organization has confirmed, through the provider of the stage.
+ * The delivery ID is the idempotency key.
  */
 export const emailProvider = Effect.gen(function* () {
   const email = yield* EmailSender;
@@ -71,8 +71,10 @@ export const emailProvider = Effect.gen(function* () {
       );
     if (confirmed.length === 0) return yield* permanent(noConfirmedRecipient);
     const to = EmailRecipients.make(confirmed);
-    const { replyTo, subject, text } = yield* write(configuration.language ?? legacyEmailLanguage);
-    yield* email.send({ from, to, replyTo, subject, text, idempotencyKey: key }).pipe(
+    const { replyTo, subject, html, text } = yield* write(
+      configuration.language ?? legacyEmailLanguage,
+    );
+    yield* email.send({ from, to, replyTo, subject, html, text, idempotencyKey: key }).pipe(
       Effect.catchTags({
         EmailRejected: ({ summary }) => Effect.fail(permanent(summary)),
         EmailUnavailable: ({ summary }) =>

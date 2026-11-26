@@ -575,6 +575,7 @@ it.live("sends a test email through the built Worker configured for Cloudflare",
               from: Schema.String,
               to: Schema.Array(Schema.String),
               subject: Schema.String,
+              html: Schema.String,
               text: Schema.String,
               replyTo: Schema.optionalKey(Schema.String),
             }),
@@ -591,6 +592,8 @@ it.live("sends a test email through the built Worker configured for Cloudflare",
       [testEmailFrom, ["proof@example.test"], "Test message: Classes", undefined],
     );
     assert.include(message.text, `Test ID: ${result.testId}`);
+    assert.isTrue(message.html.startsWith("<!DOCTYPE html>"));
+    assert.include(message.html, result.testId);
   }),
 );
 

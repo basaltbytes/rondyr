@@ -7,6 +7,7 @@ import { call } from "./organization-fixture.ts";
 const ResendEmail = Schema.Struct({
   to: Schema.Array(Schema.String),
   subject: Schema.String,
+  html: Schema.String,
   text: Schema.String,
 });
 const readEmails = Schema.decodeUnknownEffect(

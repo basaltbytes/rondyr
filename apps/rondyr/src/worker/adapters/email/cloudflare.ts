@@ -57,6 +57,7 @@ export function cloudflareTransport(binding: SendEmail) {
           from: message.from,
           to: [...message.to],
           subject: message.subject,
+          html: message.html,
           text: message.text,
           ...(Option.isSome(message.replyTo) && { replyTo: message.replyTo.value }),
         }),

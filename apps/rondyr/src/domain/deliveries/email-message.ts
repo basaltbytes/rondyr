@@ -2,14 +2,16 @@ import { Option, Schema } from "effect";
 
 import type { SubmissionFields } from "../submissions/submission-fields.ts";
 import type { DeliveredSubmission, DeliveryId } from "./delivery.ts";
+import { emailFields, emailMeta, emailParagraph, renderEmailLayout } from "./email-layout.ts";
 import { EmailAddress, type EmailLanguage } from "./email.ts";
 
-// The text of the email sent for an accepted submission, in the language of its
-// destination. A new language only adds an entry to `copy`.
+// The HTML and plain text email sent for an accepted submission, in the language of
+// its destination. A new language only adds an entry to `copy`.
 
 export interface EmailContent {
   /** Built from the form name only, never from the submission fields. */
   readonly subject: string;
+  readonly html: string;
   readonly text: string;
   /** The `email` field of the submission, when it is a single valid address. */
   readonly replyTo: Option.Option<EmailAddress>;
@@ -100,22 +102,42 @@ export function emailContent(delivery: DeliveredEmail, language: EmailLanguage):
   const words = copy[language];
   const formName = oneLine(submission.formName);
   const email = delivery.fields["email"];
+  const received = words.date.format(submission.receivedAt);
+  const subject = subjectFor(words.subject, words.colon, submission.formName);
+  const entries = Object.entries(delivery.fields).map(([name, value]) => {
+    const lines = multiline(value);
+    const empty = lines === "";
+    return { label: oneLine(name), value: empty ? words.empty : lines, empty };
+  });
   const text = [
     words.intro(formName),
-    ...Object.entries(delivery.fields).map(([name, value]) => {
-      const lines = multiline(value);
-      return `${oneLine(name)}${words.colon}\n${lines === "" ? words.empty : lines}`;
-    }),
+    ...entries.map(({ label, value }) => `${label}${words.colon}\n${value}`),
     [
       "-- ",
       `${words.form}${words.colon} ${formName}`,
-      `${words.received}${words.colon} ${words.date.format(submission.receivedAt)}`,
+      `${words.received}${words.colon} ${received}`,
       `${words.deliveryId}${words.colon} ${delivery.deliveryId}`,
     ].join("\n"),
     words.duplicates,
   ].join("\n\n");
+  const html = renderEmailLayout({
+    language,
+    title: subject,
+    maxWidth: 580,
+    bodyHtml: [
+      emailParagraph(words.intro(formName)),
+      emailFields(entries),
+      emailMeta([
+        { label: `${words.form}${words.colon}`, value: formName },
+        { label: `${words.received}${words.colon}`, value: received },
+        { label: `${words.deliveryId}${words.colon}`, value: delivery.deliveryId },
+      ]),
+    ],
+    reason: words.duplicates,
+  });
   return {
-    subject: subjectFor(words.subject, words.colon, submission.formName),
+    subject,
+    html,
     text: `${text}\n`,
     replyTo: email !== undefined && isAddress(email) ? Option.some(email) : Option.none(),
   };
@@ -132,18 +154,36 @@ export interface TestEmail {
 export function testEmailContent(test: TestEmail, language: EmailLanguage): EmailContent {
   const words = copy[language];
   const formName = oneLine(test.formName);
+  const sent = words.date.format(test.sentAt);
+  const subject = subjectFor(words.testSubject, words.colon, test.formName);
   const text = [
     words.testIntro(formName),
     words.testNote,
     [
       "-- ",
       `${words.form}${words.colon} ${formName}`,
-      `${words.sent}${words.colon} ${words.date.format(test.sentAt)}`,
+      `${words.sent}${words.colon} ${sent}`,
       `${words.testId}${words.colon} ${test.testId}`,
     ].join("\n"),
   ].join("\n\n");
+  const html = renderEmailLayout({
+    language,
+    title: subject,
+    maxWidth: 580,
+    bodyHtml: [
+      emailParagraph(words.testIntro(formName)),
+      emailParagraph(words.testNote),
+      emailMeta([
+        { label: `${words.form}${words.colon}`, value: formName },
+        { label: `${words.sent}${words.colon}`, value: sent },
+        { label: `${words.testId}${words.colon}`, value: test.testId },
+      ]),
+    ],
+    reason: words.testNote,
+  });
   return {
-    subject: subjectFor(words.testSubject, words.colon, test.formName),
+    subject,
+    html,
     text: `${text}\n`,
     replyTo: Option.none(),
   };

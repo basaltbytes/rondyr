@@ -150,6 +150,9 @@ it.live("confirms a recipient once with the link of its email, which names no or
     assert.strictEqual(email?.subject, "Confirm your email address for Rondyr");
     assert.notInclude(email?.text, "Confirmation studio");
     assert.notInclude(email?.text, "Contact");
+    assert.isTrue(email?.html.startsWith("<!DOCTYPE html>"));
+    assert.notInclude(email?.html, "Confirmation studio");
+    assert.notInclude(email?.html, "Contact");
     assert.strictEqual(confirmed.status, 204);
     assert.strictEqual(reused.status, 404);
     assert.deepEqual(reusedBody, { error: "confirmation-invalid" });

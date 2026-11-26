@@ -40,6 +40,7 @@ const decodeEmails = Schema.decodeUnknownEffect(
         Schema.Struct({
           to: Schema.Array(Schema.String),
           subject: Schema.String,
+          html: Schema.String,
           text: Schema.String,
         }),
       ),
@@ -103,6 +104,8 @@ const waitForOtpEmail = Effect.fnUntraced(function* (
     const match = /\b([0-9]{6})\b/u.exec(latest.body.text);
     const code = match?.[1];
     if (code === undefined) return yield* Effect.fail("waiting" as const);
+    assert.isTrue(latest.body.html.startsWith("<!DOCTYPE html>"));
+    assert.include(latest.body.html, code);
     return code;
   });
   return yield* readOnce.pipe(

@@ -183,13 +183,14 @@ const sendOtpEmail = Effect.fnUntraced(function* (
   if (Result.isFailure(recipients)) return;
   const email = yield* EmailSender;
   const from = yield* email.sender;
-  const { subject, text } = emailOtpEmail(issued.code, language ?? defaultEmailLanguage);
+  const { subject, html, text } = emailOtpEmail(issued.code, language ?? defaultEmailLanguage);
   yield* email
     .send({
       from,
       to: recipients.success,
       replyTo: Option.none(),
       subject,
+      html,
       text,
       idempotencyKey: SecureRandom.uuidV4Unsafe(),
     })

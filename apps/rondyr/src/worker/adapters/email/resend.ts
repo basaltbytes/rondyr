@@ -10,6 +10,7 @@ const ResendEmail = Schema.Struct({
   from: Schema.String,
   to: Schema.Array(Schema.String),
   subject: Schema.String,
+  html: Schema.String,
   text: Schema.String,
   reply_to: Schema.optionalKey(Schema.Array(Schema.String)),
 });
@@ -26,6 +27,7 @@ function body(message: EmailMessage): typeof ResendEmail.Type {
     from: message.from,
     to: message.to,
     subject: message.subject,
+    html: message.html,
     text: message.text,
   };
   return Option.match(message.replyTo, {
