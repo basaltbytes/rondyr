@@ -1,0 +1,81 @@
+---
+// One row of the dashboard's classification table: the icon and the name of a check, then
+// what it found. A repetition check shows its pips, and a rule of the AI analysis its meter.
+import { percent } from "../../lifecycle.ts";
+import type { IconName } from "./icons.ts";
+import ScoreMeter from "./score-meter.astro";
+import Icon from "./ui-icon.astro";
+
+interface Props {
+  readonly icon: IconName;
+  readonly name: string;
+  /** The value of a check without a score. */
+  readonly value?: string;
+  /** The row is muted: the check is off or has nothing set. */
+  readonly off?: boolean;
+  /** The earlier messages a repetition check counted, against its threshold. */
+  readonly pips?: { readonly value: number; readonly threshold: number };
+  /** The scale of a rule of the AI analysis; its value is the score. */
+  readonly meter?: {
+    readonly id: string;
+    readonly score: number;
+    readonly zones: ReadonlyArray<{
+      readonly from: number;
+      readonly to: number;
+      readonly strong: boolean;
+    }>;
+    readonly ticks: readonly number[];
+  };
+}
+
+const { icon, name, value, off = false, pips, meter } = Astro.props;
+const fired =
+  meter !== undefined && meter.zones.some(({ from, to }) => meter.score >= from && meter.score <= to);
+---
+
+<tbody class="check" data-check data-fired={fired ? "" : undefined}>
+  <tr class:list={[meter === undefined && "border-b border-ui-border/70"]}>
+    <th scope="row" class="py-2 pr-2 text-left align-top font-normal">
+      <span class="flex items-center gap-2.5">
+        <Icon name={icon} class="check-icon size-4 text-ui-muted-foreground" />
+        <span class:list={["min-w-0", off ? "text-ui-muted-foreground" : "text-ui-foreground"]}>
+          {name}
+        </span>
+      </span>
+    </th>
+    <td
+      class:list={[
+        "relative py-2 pl-3 text-right align-top whitespace-nowrap tabular-nums",
+        off ? "text-ui-muted-foreground" : "text-ui-foreground",
+      ]}
+    >
+      <span class="check-spinner"><Icon name="loader-circle" class="size-3.5" /></span>
+      <span class="check-value inline-flex items-center justify-end gap-2" data-reveal>
+        {
+          pips !== undefined && (
+            <span class="inline-flex gap-0.5">
+              {Array.from({ length: pips.threshold }, (_, index) => (
+                <span
+                  class:list={[
+                    "h-1.5 w-3 rounded-full",
+                    index < pips.value ? "bg-ui-foreground/60" : "bg-ui-foreground/15",
+                  ]}
+                />
+              ))}
+            </span>
+          )
+        }
+        {meter === undefined ? value : <span data-score-text>{percent(meter.score)}</span>}
+      </span>
+    </td>
+  </tr>
+  {
+    meter !== undefined && (
+      <tr aria-hidden="true" class="border-b border-ui-border/70">
+        <td colspan="2" class="pr-0.5 pl-6.5">
+          <ScoreMeter {...meter} />
+        </td>
+      </tr>
+    )
+  }
+</tbody>

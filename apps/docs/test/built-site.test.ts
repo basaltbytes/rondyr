@@ -7,6 +7,7 @@ import { fromHtml } from "hast-util-from-html";
 import { toString } from "hast-util-to-string";
 import { visit } from "unist-util-visit";
 
+import { lifecycleSteps, story } from "../src/lifecycle.ts";
 import {
   listDocuments,
   pageRoute,
@@ -211,7 +212,6 @@ test("the landing page has the Deploy to Cloudflare button, brand marks, prompt,
   assert.match(text, /TypeSafe AI/u);
   assert.match(text, /OpenAI/u);
   assert.match(text, /Cloudflare/u);
-  assert.match(text, /action="https:\/\/rondyr\.example\.com\/f\/YOUR_PUBLIC_ID"/u);
   assert.ok(hrefs(tree).includes("https://x.com/_philDL"));
   assert.ok(hrefs(tree).includes("https://basaltbytes.com"));
   const steps = elements(
@@ -223,6 +223,66 @@ test("the landing page has the Deploy to Cloudflare button, brand marks, prompt,
   assert.equal(steps.length, 3);
   for (const document of documents)
     assert.ok(hrefs(tree).includes(pageRoute(document.id)), document.path);
+});
+
+test("the landing page shows every step of the message lifecycle at its end", () => {
+  const tree = builtPage("/");
+  const stages = elements(tree, (node) => node.properties["dataStage"] !== undefined);
+  assert.deepEqual(
+    stages.map((stage) => stage.properties["dataStage"]),
+    lifecycleSteps.map((step) => step.id),
+  );
+  const texts = stages.map((stage) => toString(stage).replaceAll(/\s+/gu, " "));
+  const [create, connect, submit, reception, analysis, review] = texts;
+  for (const [index, step] of lifecycleSteps.entries()) {
+    assert.ok(texts[index]?.includes(step.title), step.id);
+  }
+  // Without the page's script a step is not played: its window has to show the result.
+  assert.ok(create?.includes(story.form.business));
+  assert.ok(create?.includes(story.address));
+  assert.ok(connect?.includes(`action="${story.address}"`));
+  assert.ok(connect?.includes('method="post"'));
+  assert.ok(submit?.includes(story.message));
+  assert.match(reception ?? "", /Origin\s*allowed/u);
+  assert.match(reception ?? "", /Turnstile\s*verified/u);
+  assert.match(analysis ?? "", /Sales outreach\s*93%/u);
+  assert.ok(analysis?.includes("Probable sales outreach (93%). Goes to review above 50%."));
+  assert.match(review ?? "", /To review\s*0\s*1/u);
+  assert.ok(review?.includes("Accept and send"));
+
+  // Each step has a window, and a control in a window that plays it again. Without the
+  // script no control works, so each one is disabled; the start of a step is inert.
+  for (const stage of stages) {
+    const root: Root = { type: "root", children: [stage] };
+    const [figure, ...others] = elements(root, (node) => node.tagName === "figure");
+    assert.equal(others.length, 0);
+    assert.ok(String(figure?.properties["ariaLabel"]).length > 10);
+    for (const start of elements(root, (node) => node.properties["dataAlt"] === "a")) {
+      assert.equal(start.properties["inert"], true);
+    }
+  }
+  const controls = elements(tree, (node) => node.properties["dataControl"] !== undefined);
+  for (const control of controls) {
+    assert.equal(control.tagName, "button");
+    assert.equal(control.properties["disabled"], true);
+    assert.ok(
+      toString(control).trim() !== "" || control.properties["ariaLabel"] !== undefined,
+      "a control has a name",
+    );
+  }
+  const played = new Set(
+    stages.flatMap((stage) =>
+      elements({ type: "root", children: [stage] }, (node) => node.tagName === "button").map(
+        (control) => control.properties["dataControl"] || stage.properties["dataStage"],
+      ),
+    ),
+  );
+  assert.deepEqual([...played].toSorted(), lifecycleSteps.map((step) => step.id).toSorted());
+
+  // The excerpts of the dashboard take its palette, light and dark.
+  const page = built("index.html");
+  assert.match(page, /\.rondyr-ui\{--ui-background:oklch\(/u);
+  assert.match(page, /:root\[data-theme="dark"\] \.rondyr-ui\{--ui-background:oklch\(/u);
 });
 
 test("ships robots.txt, llms.txt, llms-full.txt, per-page .md mirrors, og-image.png, and _headers", () => {

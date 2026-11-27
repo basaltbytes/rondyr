@@ -7,14 +7,17 @@ name: Deploy docs
 # The job uses the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets that the Worker's
 # deployment uses; apps/docs/README.md lists the permissions it needs.
 #
-# It runs when the site or the Markdown it renders changes. It never deploys the Rondyr
-# Worker, and the Worker's deployment never deploys the site.
+# It runs when the site or the Markdown it renders changes, or the dashboard's theme and
+# English texts, which the landing page shows in its excerpts of the dashboard. It never
+# deploys the Rondyr Worker, and the Worker's deployment never deploys the site.
 on:
   push:
     branches: [main]
     paths:
       - "apps/docs/**"
       - "docs/**"
+      - "apps/rondyr/src/dashboard/dashboard.css"
+      - "apps/rondyr/src/dashboard/locales/en/translation.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - "patches/lucode-starlight@*.patch"

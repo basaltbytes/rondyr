@@ -1,0 +1,17 @@
+---
+// A Lucide icon at the size its class gives it, in the color of the text around it.
+import { icons, type IconName } from "./icons.ts";
+
+interface Props {
+  readonly name: IconName;
+  readonly class?: string;
+}
+
+const { name, class: className = "size-4" } = Astro.props;
+---
+
+<span
+  aria-hidden="true"
+  class:list={["inline-flex shrink-0 [&>svg]:size-full", className]}
+  set:html={icons[name]}
+/>

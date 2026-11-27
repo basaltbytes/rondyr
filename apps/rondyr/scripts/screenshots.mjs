@@ -406,6 +406,10 @@ try {
   await page.goto(`${dashboard}/messages?folder=quarantined`);
   await open("Sam");
   await capture("review");
+  // The landing page of the site shows this screen in its dark theme too.
+  await page.emulateMedia({ colorScheme: "dark" });
+  await capture("review-dark");
+  await page.emulateMedia({ colorScheme: "light" });
 
   await api("POST", `${formPath}/origins`, { origin: site });
   await api("PUT", `${formPath}/success-url`, { url: `${site}/thanks` });

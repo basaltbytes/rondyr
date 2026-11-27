@@ -1,0 +1,96 @@
+---
+// The ScoreMeter of the dashboard's classification table: a score on its scale from 0 to
+// 100 %, with a hatched zone where the rule sends a message to review and a tick at each
+// threshold. The dashboard draws the dot in the SVG. Here the dot is an element over it, on
+// a rail as wide as the scale, so the page's script moves it with a transform and the
+// browser composites the move without painting the scale again.
+import { percent } from "../../lifecycle.ts";
+
+interface Zone {
+  readonly from: number;
+  readonly to: number;
+  readonly strong: boolean;
+}
+
+interface Props {
+  /** A name unique on the page, for the pattern and the clip path. */
+  readonly id: string;
+  readonly score: number;
+  readonly zones: readonly Zone[];
+  readonly ticks: readonly number[];
+}
+
+const { id, score, zones, ticks } = Astro.props;
+const at = (value: number) => `${(Math.max(0, Math.min(1, value)) * 100).toFixed(2)}%`;
+const inZone = zones.some(({ from, to }) => score >= from && score <= to);
+---
+
+<div
+  class="meter relative mt-1 mb-1"
+  aria-hidden="true"
+  data-meter
+  data-score={score}
+  data-zones={zones.map(({ from, to }) => `${from}:${to}`).join(" ")}
+>
+<svg class="block h-8.5 w-full overflow-visible">
+  <defs>
+    <pattern
+      id={`${id}-hatch`}
+      patternUnits="userSpaceOnUse"
+      width="4.5"
+      height="4.5"
+      patternTransform="rotate(45)"
+    >
+      <rect width="1.5" height="4.5" class="fill-ui-warning"></rect>
+    </pattern>
+    <clipPath id={`${id}-track`}>
+      <rect y="4" width="100%" height="8" rx="4"></rect>
+    </clipPath>
+  </defs>
+  <rect y="4" width="100%" height="8" rx="4" class="fill-ui-foreground/10"></rect>
+  <g clip-path={`url(#${id}-track)`}>
+    {
+      zones.map((zone) => (
+        <rect
+          x={at(zone.from)}
+          y="4"
+          width={at(zone.to - zone.from)}
+          height="8"
+          fill={`url(#${id}-hatch)`}
+          class={zone.strong ? "opacity-70" : "opacity-35"}
+        />
+      ))
+    }
+  </g>
+  {
+    ticks.map((tick) => (
+      <g>
+        <line
+          x1={at(tick)}
+          x2={at(tick)}
+          y1="0"
+          y2="16"
+          stroke-width="1"
+          class="stroke-ui-foreground/30"
+        />
+        <text
+          x={at(tick)}
+          y="30"
+          text-anchor="middle"
+          class="fill-ui-muted-foreground text-xs tabular-nums"
+        >
+          {percent(tick)}
+        </text>
+      </g>
+    ))
+  }
+</svg>
+<div
+  class="meter-rail"
+  style={`transform: translateX(${at(score)})`}
+  data-rail
+  data-in-zone={inZone ? "" : undefined}
+>
+  <span class="meter-dot"></span>
+</div>
+</div>
