@@ -34,6 +34,40 @@ export const firstRun: readonly FirstRunStep[] = [
   },
 ];
 
+export interface Feature {
+  readonly title: string;
+  /** One paragraph of HTML. */
+  readonly html: string;
+}
+
+/** What Rondyr does around the message lifecycle, below it on the landing page. */
+export const features: readonly Feature[] = [
+  {
+    title: "Any HTML form",
+    html: 'Point a <code>&lt;form&gt;</code> at Rondyr from a static site built with Astro, Next.js, Hugo, Eleventy or plain HTML. Visitors get a confirmation page or your own thank-you page. The same address accepts cross-origin JSON from <code>fetch</code>, and server-side submissions through the <a href="/api/">HTTP API</a>. <a href="/forms/">Put a form on your site</a>.',
+  },
+  {
+    title: "Saved before the answer",
+    html: "Rondyr saves every message in your Cloudflare account before it answers your site, so a model or a mail provider that is down for an hour loses nothing.",
+  },
+  {
+    title: "Two classifier models",
+    html: 'Jev on Workers AI scores each message for spam, sales outreach and relevance, with no API key to set up. The OpenAI Decisions API can give a second opinion on possible spam. <a href="/spam-protection/">Honeypot fields, Cloudflare Turnstile, and rate limits</a> run before either model.',
+  },
+  {
+    title: "Doubtful messages wait",
+    html: 'Probable spam, possible spam, sales outreach, off-topic messages and failed analyses go to <a href="/inbox/"><strong>To review</strong></a> with their reason. A person accepts or archives each one.',
+  },
+  {
+    title: "Accepted messages are forwarded",
+    html: 'They go out by <a href="/email/">email</a> through Resend or Cloudflare Email Sending, by <a href="/webhooks/">HMAC-signed webhooks</a>, or to <a href="/connectors/">Discord, Slack, and Airtable</a>. With the <a href="/emdash/">EmDash plugin</a>, editors review messages inside EmDash.',
+  },
+  {
+    title: "Your account, your data",
+    html: 'Messages stay in your own Cloudflare account, with a retention period you set and CSV or JSON Lines exports. You pay Cloudflare directly, with no markup per form or per message; see <a href="/costs/">Costs and limits</a>.',
+  },
+];
+
 export interface FaqItem {
   readonly question: string;
   /** Plain-text answer used verbatim in FAQPage JSON-LD. */

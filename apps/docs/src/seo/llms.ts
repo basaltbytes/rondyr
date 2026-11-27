@@ -11,6 +11,7 @@ import {
   formSnippet,
   landingMeta,
 } from "../landing.ts";
+import { lifecycleIntro, lifecycleSteps } from "../lifecycle.ts";
 import {
   documentId,
   githubBranch,
@@ -123,6 +124,12 @@ export function renderLandingMarkdown(origin: string, root?: URL): string {
     "## Summary",
     "",
     "Rondyr is an open-source, self-hosted form backend with classifier-model spam filtering (Jev on Cloudflare Workers AI or OpenAI Decisions) that runs in your own Cloudflare account. Point any HTML `<form>` or JSON `fetch` call at Rondyr; every submission is saved first, screened for spam, unsolicited sales pitches, and business relevance, and either forwarded automatically or placed in a To review quarantine inbox so real messages are never silently deleted.",
+    "",
+    "## Message lifecycle",
+    "",
+    lifecycleIntro,
+    "",
+    ...lifecycleSteps.map((step, index) => `${index + 1}. **${step.title}.** ${step.text}`),
     "",
     "## Example HTML form",
     "",

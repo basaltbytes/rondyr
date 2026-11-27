@@ -1,17 +1,19 @@
 ---
-import { Code } from "@astrojs/starlight/components";
 import StarlightPage from "@astrojs/starlight/components/StarlightPage.astro";
 import { Image } from "astro:assets";
 import { getCollection } from "astro:content";
 import { ContainerSection } from "lucode-starlight/components";
 
+import reviewScreenshotDark from "../../../../docs/screenshots/review-dark.webp";
 import reviewScreenshot from "../../../../docs/screenshots/review.webp";
+import MessageLifecycle from "../components/lifecycle/message-lifecycle.astro";
 import {
   comparisonRows,
   comparisonTradeoff,
+  deployUrl,
   faqItems,
+  features,
   firstRun,
-  formSnippet,
   landingMeta,
 } from "../landing.ts";
 import { pageRoute } from "../repository/documents.ts";
@@ -25,6 +27,13 @@ const groups = sidebar.map(({ label, items }) => ({
     title: pageLabel ?? titles.get(slug) ?? slug,
   })),
 }));
+
+// A section below the lifecycle: its heading in the column of the lifecycle's step texts,
+// its content in the column of the windows.
+const section =
+  "grid gap-x-14 gap-y-8 border-t border-border pt-14 lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)]";
+const heading = "m-0 text-2xl leading-tight font-[650] tracking-[-0.015em] text-balance text-foreground";
+const lede = "mt-3 mb-0 leading-[1.65] text-pretty text-muted";
 ---
 
 <StarlightPage
@@ -42,18 +51,140 @@ const groups = sidebar.map(({ label, items }) => ({
   }}
 >
   <ContainerSection width="xl">
-    <div class="not-content grid gap-16 pb-16 [&_a]:font-medium [&_a]:text-foreground [&_a]:underline [&_a]:decoration-brand [&_a]:underline-offset-[0.2em] [&_a:hover]:text-brand [&_code]:rounded-[0.3em] [&_code]:bg-surface [&_code]:px-[0.3em] [&_code]:py-[0.1em] [&_code]:text-[0.9em]">
-      <section class="pt-12" aria-labelledby="first-run-heading">
-        <h2
-          id="first-run-heading"
-          class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
-        >
-          First run
-        </h2>
-        <ol class="m-0 grid list-none gap-8 p-0 lg:grid-cols-3 lg:gap-10">
+    <div class="not-content pt-14 pb-20 lg:pt-20">
+      <MessageLifecycle />
+    </div>
+  </ContainerSection>
+
+  <ContainerSection width="xl">
+    <div
+      class="not-content grid gap-16 pb-16 [&_a]:font-medium [&_a]:text-foreground [&_a]:underline [&_a]:decoration-brand [&_a]:underline-offset-[0.2em] [&_a:hover]:text-brand [&_code]:rounded-[0.3em] [&_code]:bg-surface [&_code]:px-[0.3em] [&_code]:py-[0.1em] [&_code]:text-[0.9em]"
+    >
+      <section class={section} aria-labelledby="features">
+        <div>
+          <h2 id="features" class={heading}>Storage, classification and delivery</h2>
+          <p class={lede}>What Rondyr does with every message, on every form.</p>
+        </div>
+        <dl class="m-0 grid gap-x-12 gap-y-9 sm:grid-cols-2">
+          {
+            features.map((feature) => (
+              <div>
+                <dt class="text-[1.0625rem] font-semibold text-foreground">{feature.title}</dt>
+                <dd class="m-0 mt-2 leading-[1.65] text-pretty text-muted" set:html={feature.html} />
+              </div>
+            ))
+          }
+        </dl>
+      </section>
+
+      <section class={section} aria-labelledby="quarantine-preview">
+        <div>
+          <h2 id="quarantine-preview" class={heading}>The To review folder</h2>
+          <p class={lede}>
+            Every message that Rondyr quarantines shows the check or the score that sent it there, next to <strong>Accept and send</strong> and <strong>Archive</strong>.
+          </p>
+        </div>
+        <figure class="m-0 overflow-hidden rounded-2xl border border-border bg-surface">
+          {
+            // One screenshot for each theme of the site; the dark one repeats the light one.
+            [
+              { src: reviewScreenshot, theme: "light" },
+              { src: reviewScreenshotDark, theme: "dark" },
+            ].map(({ src, theme }) => (
+              <Image
+                src={src}
+                alt={
+                  theme === "light"
+                    ? "Rondyr dashboard To review folder showing quarantined messages labeled Probable spam, Sales outreach, Honeypot field filled, Possible spam, and Off-topic, with Archive and Accept and send actions"
+                    : ""
+                }
+                class:list={["review-screenshot block h-auto w-full", `review-screenshot-${theme}`]}
+                loading="lazy"
+                decoding="async"
+              />
+            ))
+          }
+        </figure>
+      </section>
+
+      <section class={section} aria-labelledby="comparison">
+        <div>
+          <h2 id="comparison" class={heading}>Rondyr vs. hosted form backends</h2>
+          <p class={lede}>
+            How self-hosting Rondyr compares with hosted form services like Formspree, Basin, or Web3Forms.
+          </p>
+        </div>
+        <div>
+          <table class="comparison m-0 w-full border-collapse text-left text-[0.9375rem] leading-[1.6]">
+            <thead class="max-md:sr-only">
+              <tr>
+                <th scope="col" class="w-[24%] pb-3 font-medium text-subtle">Aspect</th>
+                <th
+                  scope="col"
+                  class="rounded-t-xl border-x border-t border-border bg-surface px-5 pt-4 pb-3 font-semibold text-foreground"
+                >
+                  Rondyr, self-hosted
+                </th>
+                <th scope="col" class="px-5 pb-3 font-medium text-subtle">Hosted form SaaS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                comparisonRows.map((row, index) => (
+                  <tr class="align-top max-md:block max-md:border-t max-md:border-border max-md:py-5">
+                    <th
+                      scope="row"
+                      class="border-border py-4 pr-4 font-semibold text-foreground max-md:block max-md:p-0 md:border-t"
+                    >
+                      {row.aspect}
+                    </th>
+                    <td
+                      data-label="Rondyr"
+                      class:list={[
+                        "border-border bg-surface px-5 py-4 text-foreground max-md:mt-3 max-md:block max-md:rounded-lg max-md:border md:border-x md:border-t",
+                        index === comparisonRows.length - 1 && "md:rounded-b-xl md:border-b",
+                      ]}
+                    >
+                      {row.rondyr}
+                    </td>
+                    <td
+                      data-label="Hosted form SaaS"
+                      class="border-border px-5 py-4 text-muted max-md:mt-2 max-md:block max-md:px-0 max-md:pb-0 md:border-t"
+                    >
+                      {row.hosted}
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+          <p class="mt-6 mb-0 text-sm leading-[1.6] text-pretty text-subtle">{comparisonTradeoff}</p>
+        </div>
+      </section>
+
+      <section class={section} aria-labelledby="first-run-heading">
+        <div>
+          <h2 id="first-run-heading" class={heading}>First run</h2>
+          <p class={lede}>A few minutes in the browser, with no terminal.</p>
+          <a
+            class="mt-6 inline-flex rounded-md focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-brand"
+            href={deployUrl}
+          >
+            <img
+              class="block h-10 w-auto"
+              src="https://deploy.workers.cloudflare.com/button"
+              alt="Deploy to Cloudflare"
+              width="165"
+              height="32"
+              loading="lazy"
+            />
+          </a>
+          <p class="mt-4 mb-0 text-sm"><a href="/deployment/">Read the deployment guide</a></p>
+        </div>
+        <ol class="m-0 grid list-none gap-8 p-0">
           {
             firstRun.map((step, index) => (
-              <li class="grid grid-cols-[2.25rem_minmax(0,1fr)] grid-rows-[auto_1fr] content-start gap-x-3">
+              <li class="grid grid-cols-[2.25rem_minmax(0,1fr)] grid-rows-[auto_1fr] content-start gap-x-4">
                 <span
                   class="row-span-2 grid size-9 place-items-center rounded-full border-[1.5px] border-brand font-bold tabular-nums text-brand"
                   aria-hidden="true"
@@ -63,179 +194,51 @@ const groups = sidebar.map(({ label, items }) => ({
                 <h3 class="m-0 self-center text-[1.0625rem] font-semibold text-foreground">
                   {step.title}
                 </h3>
-                <p class="mt-2 leading-[1.65] text-muted" set:html={step.html} />
+                <p class="mt-2 mb-0 max-w-[62ch] leading-[1.65] text-pretty text-muted" set:html={step.html} />
               </li>
             ))
           }
         </ol>
       </section>
 
-      <section
-        class="grid gap-x-12 gap-y-6 border-t border-border pt-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center"
-        aria-labelledby="form-on-your-site"
-      >
-        <div class="space-y-4">
-          <h2
-            id="form-on-your-site"
-            class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
-          >
-            The form on your site
-          </h2>
-          <p class="leading-[1.65] text-muted">
-            Point any HTML{" "}
-            <code class="rounded-[0.3em] bg-surface px-[0.3em] py-[0.1em] text-[0.95em]">&lt;form&gt;</code>{" "}
-            at Rondyr from a static site (Astro, Next.js, Hugo, Eleventy, or plain HTML), and it saves every message before screening it for spam, unsolicited sales pitches, and business relevance.
-          </p>
-          <p class="leading-[1.65] text-muted">
-            A regular HTML form shows a confirmation page or redirects visitors to your own thank-you page. The same URL accepts cross-origin JSON from <code>fetch</code>, or server-side submissions through the <a href="/api/">HTTP API</a>.
-          </p>
-          <p class="leading-[1.65] text-muted">
-            <a href="/forms/">Put a form on your site</a>
-          </p>
+      <section class={section} aria-labelledby="faq">
+        <div>
+          <h2 id="faq" class={heading}>Frequently asked questions</h2>
         </div>
-        <div class="min-w-0">
-          <Code code={formSnippet} lang="html" title="contact.html" />
-        </div>
-      </section>
-
-      <section class="border-t border-border pt-12" aria-labelledby="message-path">
-        <h2
-          id="message-path"
-          class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
-        >
-          Message lifecycle
-        </h2>
-        <dl class="m-0 grid gap-x-10 gap-y-8 md:grid-cols-2 xl:grid-cols-3">
-          <div class="border-t-2 border-foreground pt-4">
-            <dt class="font-semibold text-foreground">Saved first</dt>
-            <dd class="mt-2 leading-[1.65] text-muted">
-              Every submission is saved in your Cloudflare account before Rondyr answers your site, so a temporary outage doesn't drop messages.
-            </dd>
-          </div>
-          <div class="border-t-2 border-foreground pt-4">
-            <dt class="font-semibold text-foreground">Classifier-model spam filtering</dt>
-            <dd class="mt-2 leading-[1.65] text-muted">
-              Jev on Workers AI or the OpenAI Decisions API scores each message for spam, unsolicited sales pitches, and (when you describe your business) relevance. Layer <a href="/spam-protection/">honeypot fields, Cloudflare Turnstile, and rate limits</a> in front of the model.
-            </dd>
-          </div>
-          <div class="border-t-2 border-foreground pt-4">
-            <dt class="font-semibold text-foreground">Quarantined, not deleted</dt>
-            <dd class="mt-2 leading-[1.65] text-muted">
-              Probable spam, uncertain messages, sales pitches, off-topic notes, and analysis errors wait in <a href="/inbox/"><strong>To review</strong></a> with a plain reason until a person accepts or archives them.
-            </dd>
-          </div>
-          <div class="border-t-2 border-foreground pt-4">
-            <dt class="font-semibold text-foreground">Forwarded automatically</dt>
-            <dd class="mt-2 leading-[1.65] text-muted">
-              Accepted messages go out by <a href="/email/">email</a> (Resend or Cloudflare Email Sending), <a href="/webhooks/">HMAC-signed webhooks</a>, or <a href="/connectors/">Discord, Slack, and Airtable connectors</a>. With the <a href="/emdash/">EmDash plugin</a>, editors review messages right inside EmDash.
-            </dd>
-          </div>
-          <div class="border-t-2 border-foreground pt-4">
-            <dt class="font-semibold text-foreground">Self-hosted and owned by you</dt>
-            <dd class="mt-2 leading-[1.65] text-muted">
-              Messages stay in your own Cloudflare account with configurable retention and CSV or JSON Lines exports. You pay Cloudflare directly with no per-submission SaaS markup; see <a href="/costs/">Costs and limits</a>.
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section class="border-t border-border pt-12" aria-labelledby="quarantine-preview">
-        <div class="mb-6 max-w-2xl space-y-2">
-          <h2
-            id="quarantine-preview"
-            class="m-0 text-2xl font-[650] tracking-[-0.015em] text-foreground"
-          >
-            Quarantine inbox
-          </h2>
-          <p class="m-0 leading-[1.65] text-muted">
-            Every flagged message shows why the classifier or bot check set it aside, with one-click <strong>Accept and send</strong> or <strong>Archive</strong> actions.
-          </p>
-        </div>
-        <figure class="m-0 overflow-hidden rounded-lg border border-border bg-surface">
-          <Image
-            src={reviewScreenshot}
-            alt="Rondyr dashboard To review folder showing quarantined messages labeled Probable spam, Unsolicited sales outreach, Honeypot field filled, Uncertain classification, and Unrelated to your business, with Archive and Accept and send actions"
-            class="block h-auto w-full"
-            loading="lazy"
-            decoding="async"
-          />
-        </figure>
-      </section>
-
-      <section class="border-t border-border pt-12" aria-labelledby="comparison">
-        <div class="mb-6 max-w-2xl space-y-2">
-          <h2
-            id="comparison"
-            class="m-0 text-2xl font-[650] tracking-[-0.015em] text-foreground"
-          >
-            Rondyr vs. hosted form backends
-          </h2>
-          <p class="m-0 leading-[1.65] text-muted">
-            How self-hosting Rondyr compares with hosted form services like Formspree, Basin, or Web3Forms.
-          </p>
-        </div>
-        <div class="overflow-x-auto rounded-lg border border-border">
-          <table class="m-0 w-full border-collapse text-left text-[0.9375rem] leading-[1.6]">
-            <thead>
-              <tr class="border-b border-border bg-surface text-foreground">
-                <th scope="col" class="px-4 py-3 font-semibold">Aspect</th>
-                <th scope="col" class="px-4 py-3 font-semibold">Rondyr (self-hosted)</th>
-                <th scope="col" class="px-4 py-3 font-semibold">Hosted form SaaS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {
-                comparisonRows.map((row) => (
-                  <tr class="border-t border-border align-top">
-                    <th scope="row" class="px-4 py-3 font-medium text-foreground">
-                      {row.aspect}
-                    </th>
-                    <td class="px-4 py-3 text-foreground">{row.rondyr}</td>
-                    <td class="px-4 py-3 text-muted">{row.hosted}</td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
-        </div>
-        <p class="mt-4 text-sm leading-[1.6] text-subtle">{comparisonTradeoff}</p>
-      </section>
-
-      <section class="border-t border-border pt-12" aria-labelledby="faq">
-        <h2
-          id="faq"
-          class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
-        >
-          Frequently asked questions
-        </h2>
-        <div class="grid gap-x-10 gap-y-8 md:grid-cols-2">
+        <div class="border-b border-border">
           {
             faqItems.map((item) => (
-              <div class="space-y-2 border-t border-border pt-4">
-                <h3 class="m-0 text-[1.0625rem] font-semibold text-foreground">
-                  {item.question}
-                </h3>
-                <p class="m-0 leading-[1.65] text-muted" set:html={item.html} />
-              </div>
+              <details class="faq group border-t border-border">
+                <summary class="flex cursor-pointer list-none items-start justify-between gap-6 py-4 text-[1.0625rem] font-semibold text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand [&::-webkit-details-marker]:hidden">
+                  <h3 class="m-0 text-[1.0625rem] font-semibold text-pretty">{item.question}</h3>
+                  <svg
+                    class="mt-1.5 size-4 shrink-0 text-subtle transition-transform duration-200 ease-out group-open:rotate-45 motion-reduce:transition-none"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                    stroke-linecap="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M8 2.5v11M2.5 8h11"></path>
+                  </svg>
+                </summary>
+                <p class="m-0 max-w-[68ch] pb-5 leading-[1.65] text-pretty text-muted" set:html={item.html} />
+              </details>
             ))
           }
         </div>
       </section>
 
-      <section class="border-t border-border pt-12" aria-labelledby="documentation">
-        <h2
-          id="documentation"
-          class="m-0 mb-6 text-2xl font-[650] tracking-[-0.015em] text-foreground"
-        >
-          Documentation
-        </h2>
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,13rem),1fr))] gap-8">
+      <section class={section} aria-labelledby="documentation">
+        <div>
+          <h2 id="documentation" class={heading}>Documentation</h2>
+        </div>
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-8">
           {
             groups.map((group) => (
               <div>
-                <h3 class="m-0 mb-3 text-[0.8125rem] font-semibold tracking-[0.08em] text-subtle uppercase">
-                  {group.label}
-                </h3>
+                <h3 class="m-0 mb-3 text-[0.8125rem] font-semibold text-subtle">{group.label}</h3>
                 <ul class="m-0 grid list-none gap-2 p-0">
                   {group.pages.map((page) => (
                     <li>
@@ -251,3 +254,25 @@ const groups = sidebar.map(({ label, items }) => ({
     </div>
   </ContainerSection>
 </StarlightPage>
+
+<style is:global>
+  /* The screenshot of the dashboard in the theme of the site. */
+  :root[data-theme="dark"] .review-screenshot-light,
+  :root:not([data-theme="dark"]) .review-screenshot-dark {
+    display: none;
+  }
+</style>
+
+<style>
+  /* Under 48rem a comparison row is a stack, so each answer says whose it is. */
+  @media (width < 48rem) {
+    .comparison td::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 0.25rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--gray-3);
+    }
+  }
+</style>

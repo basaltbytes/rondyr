@@ -18,6 +18,18 @@ The label is the page title unless the line sets `label`. The build fails while 
 
 The landing page is `src/pages/index.astro`, with its first screen in `src/components/landing-hero.astro` and its text in `src/landing.ts`. Its list of pages comes from `src/sidebar.ts`.
 
+## Message lifecycle
+
+Under its first screen, the landing page follows one message through six steps, from the creation of a form to the To review folder. Each step is a window that plays when the reader scrolls to it, and again when the reader uses its controls: a text is typed, the checks of the reception answer one by one, the scores of the AI analysis move along their scales.
+
+- `src/lifecycle.ts` has the story (the form, the message, its scores) and the text of each step. `/index.md` lists the same steps.
+- `src/components/lifecycle/` has the markup. The windows of Rondyr are excerpts of the dashboard, written with the classes of the dashboard's components. Their texts come from the dashboard's English locale through `ui("verification.checks.origin.name")`, and their colors from the dashboard's stylesheet through `src/dashboard-theme.ts`, for the light and the dark theme. The build fails when the locale no longer has a key or the stylesheet a token.
+- `src/components/lifecycle/director.ts` plays the steps. The markup is the end of every step, which is what a reader without JavaScript or with reduced motion sees; the script takes a step back to its start and plays it. A step that the reader scrolls past goes straight to its end.
+- The controls of a window play its step again: **New form**, **Send**, **Test with current rules**, **Archive** and **Accept and send**; the copy button of the submission address pastes the address again in the code of the site. A control is a `<button data-control>`, disabled in the markup and enabled by the script. Used while its step plays, it takes the step to its end.
+- The script sets attributes, and `src/styles/lifecycle.css` animates only `opacity` and `transform` in answer. The dot of a score moves with a Web Animation of a transform. Keep it that way: no animated `width`, `left` or SVG attribute.
+
+An excerpt copies the markup of a dashboard component, so a change to that component (`features/messages/message-verification.tsx`, `features/forms/form-page.tsx`) needs the same change here.
+
 ## Search, social, and AI agent metadata
 
 `src/components/seo-head.astro` and `src/seo/metadata.ts` enrich Starlight's `<head>` on every route with OpenGraph and Twitter cards (`public/og-image.png`), search-focused `<title>` tags for documentation pages, JSON-LD structured data (`SoftwareApplication`, `SoftwareSourceCode`, and `FAQPage` on the landing page; `TechArticle` and `BreadcrumbList` on documentation pages), `theme-color` tags, per-page `<link rel="alternate" type="text/markdown">` tags, and `noindex, follow` on `404.html`.

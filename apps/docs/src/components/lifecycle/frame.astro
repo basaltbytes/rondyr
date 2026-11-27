@@ -1,0 +1,38 @@
+---
+// The window of one step: a bar that says where the step happens, then its content. The
+// controls of the content play the step again, so the content is not hidden from a screen
+// reader; the parts that show the start of the step are inert.
+import type { IconName } from "./icons.ts";
+import Icon from "./ui-icon.astro";
+
+interface Props {
+  /** The address or the file in the bar. */
+  readonly location: string;
+  readonly icon: IconName;
+  /** Whose window it is: the dashboard, the site or its code. */
+  readonly owner: string;
+  /** An excerpt of the dashboard takes the dashboard's palette and fonts. */
+  readonly dashboard?: boolean;
+}
+
+const { location, icon, owner, dashboard = false } = Astro.props;
+---
+
+<figure
+  aria-label={`${owner}: ${location}`}
+  class="lifecycle-window m-0 overflow-hidden rounded-2xl border border-border bg-background"
+>
+  <div class="flex h-9 items-center gap-2 border-b border-border bg-surface px-3.5 text-xs">
+    <Icon name={icon} class="size-3 text-subtle" />
+    <span class="min-w-0 truncate font-ui-mono text-foreground">{location}</span>
+    <span class="ml-auto shrink-0 text-subtle">{owner}</span>
+  </div>
+  <div
+    class:list={[
+      "@container",
+      dashboard && "rondyr-ui bg-ui-background font-ui tracking-[-0.01em] text-ui-foreground",
+    ]}
+  >
+    <slot />
+  </div>
+</figure>

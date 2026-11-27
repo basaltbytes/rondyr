@@ -153,6 +153,9 @@ catalogs:
     lucide-react:
       specifier: 1.76.0
       version: 1.76.0
+    lucide-static:
+      specifier: 1.76.0
+      version: 1.76.0
     lucode-starlight:
       specifier: 1.0.0
       version: 1.0.0
@@ -263,6 +266,9 @@ importers:
       hast-util-to-string:
         specifier: 'catalog:'
         version: 3.0.1
+      lucide-static:
+        specifier: 'catalog:'
+        version: 1.76.0
       lucode-starlight:
         specifier: 'catalog:'
         version: 1.0.0(patch_hash=11fdd96b911d376fde182ee54f6992acbf03310714a24e6e0b4a0d351af65500)(@astrojs/starlight@0.42.11(@astrojs/markdown-remark@7.3.10(supports-color@10.2.2))(astro@7.4.13(@astrojs/markdown-remark@7.3.10(supports-color@10.2.2))(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(supports-color@10.2.2)(typescript@7.0.2))
@@ -5495,6 +5501,9 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  lucide-static@1.76.0:
+    resolution: {integrity: sha512-8izOkC4xBdjtiIF641S1a21rEZP2DXiAcaRFYMXxwxnaFmgUUqLgelmRMxrNenjuW2pUJZIXEpOMuUcVyadF5Q==}
 
   lucode-starlight@1.0.0:
     resolution: {integrity: sha512-VOWIUFZnbfdXm45MbjnbJ79KlKqcNr66ADpb67meesw6lUZOKDjpkzF8Gb4oZE8gY8UhS1d2qRzDN7KBRqzmIA==}
@@ -11795,6 +11804,8 @@ snapshots:
       react: 19.3.1
     optionalDependencies:
       '@types/react': 19.3.0
+
+  lucide-static@1.76.0: {}
 
   lucode-starlight@1.0.0(patch_hash=11fdd96b911d376fde182ee54f6992acbf03310714a24e6e0b4a0d351af65500)(@astrojs/starlight@0.42.11(@astrojs/markdown-remark@7.3.10(supports-color@10.2.2))(astro@7.4.13(@astrojs/markdown-remark@7.3.10(supports-color@10.2.2))(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(supports-color@10.2.2)(typescript@7.0.2)):
     dependencies:

@@ -1,0 +1,33 @@
+---
+// One step of the message lifecycle: what comes down from the step before, the text of the
+// step, and its window. From 64rem the text stays beside the window while it scrolls. The
+// controls of the window play the step again.
+import type { LifecycleStep } from "../../lifecycle.ts";
+
+interface Props {
+  readonly step: LifecycleStep;
+  readonly number: number;
+}
+
+const { step, number } = Astro.props;
+---
+
+<div
+  class="stage lg:grid lg:grid-cols-[minmax(0,17rem)_minmax(0,1fr)] lg:gap-x-14"
+  data-stage={step.id}
+>
+  <div class="mx-auto w-full max-w-[42rem] lg:col-start-2"><slot name="flux" /></div>
+  <div class="mb-5 lg:sticky lg:top-24 lg:mb-0 lg:self-start lg:pt-1">
+    <p
+      class="m-0 grid size-9 place-items-center rounded-full border-[1.5px] border-brand font-bold tabular-nums text-brand"
+    >
+      <span class="sr-only">Step</span>
+      {number}
+    </p>
+    <h3 class="mt-4 mb-0 text-[1.1875rem] leading-snug font-semibold text-balance text-foreground">
+      {step.title}
+    </h3>
+    <p class="mt-2 mb-0 leading-[1.65] text-pretty text-muted">{step.text}</p>
+  </div>
+  <div class="mx-auto w-full max-w-[42rem] min-w-0" data-stage-window><slot /></div>
+</div>

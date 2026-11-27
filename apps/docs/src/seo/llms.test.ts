@@ -36,6 +36,9 @@ test("renders per-page Markdown with canonical URL and rewritten links", () => {
 
 test("renders landing Markdown with comparison table and FAQ", () => {
   const landing = renderLandingMarkdown("https://rondyr.com");
+  assert.ok(landing.includes("## Message lifecycle"));
+  assert.ok(landing.includes("1. **Create a form and describe your business.**"));
+  assert.ok(landing.includes("6. **To review.**"));
   assert.ok(landing.includes("## Rondyr vs. hosted form backends"));
   assert.ok(landing.includes("## Frequently asked questions"));
   assert.ok(landing.includes("https://rondyr.com/deployment.md"));
