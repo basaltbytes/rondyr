@@ -12,6 +12,8 @@ import type { FormFailure } from "./form-problems.tsx";
 
 interface FieldProps {
   readonly label: string;
+  /** How many entries a setting that is a list has, once they are read. */
+  readonly count?: number | undefined;
   /** The ID of the control that the label focuses. A setting of several controls has none. */
   readonly htmlFor?: string;
   /** Help shown under the control. */
@@ -22,7 +24,10 @@ interface FieldProps {
 }
 
 /** A setting of a form: its name beside its control from 40rem, above it under that. */
-export function Field({ label, htmlFor, hint, hintId, children }: FieldProps) {
+export function Field({ label, count, htmlFor, hint, hintId, children }: FieldProps) {
+  const entries = count !== undefined && (
+    <span className="font-normal text-muted-foreground tabular-nums">{count}</span>
+  );
   const content = (
     <div className="grid min-w-0 grid-cols-1 gap-1.5">
       {children}
@@ -38,6 +43,7 @@ export function Field({ label, htmlFor, hint, hintId, children }: FieldProps) {
       <div className="grid gap-x-6 gap-y-1.5 sm:field-columns">
         <Label htmlFor={htmlFor} className="sm:h-10">
           {label}
+          {entries}
         </Label>
         {content}
       </div>
@@ -45,7 +51,10 @@ export function Field({ label, htmlFor, hint, hintId, children }: FieldProps) {
   }
   return (
     <div className="grid gap-x-6 gap-y-1.5 sm:field-columns">
-      <p className="flex items-center text-sm leading-none font-medium sm:h-10">{label}</p>
+      <p className="flex items-center gap-2 text-sm leading-none font-medium sm:h-10">
+        {label}
+        {entries}
+      </p>
       {content}
     </div>
   );

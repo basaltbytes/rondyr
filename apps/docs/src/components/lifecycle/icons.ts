@@ -10,15 +10,18 @@ import gauge from "lucide-static/icons/gauge.svg?raw";
 import globe from "lucide-static/icons/globe.svg?raw";
 import loaderCircle from "lucide-static/icons/loader-circle.svg?raw";
 import lock from "lucide-static/icons/lock.svg?raw";
+import mail from "lucide-static/icons/mail.svg?raw";
 import mailWarning from "lucide-static/icons/mail-warning.svg?raw";
 import megaphone from "lucide-static/icons/megaphone.svg?raw";
 import panelLeft from "lucide-static/icons/panel-left.svg?raw";
 import plus from "lucide-static/icons/plus.svg?raw";
+import refreshCw from "lucide-static/icons/refresh-cw.svg?raw";
 import repeat2 from "lucide-static/icons/repeat-2.svg?raw";
 import scanText from "lucide-static/icons/scan-text.svg?raw";
 import send from "lucide-static/icons/send.svg?raw";
 import shield from "lucide-static/icons/shield.svg?raw";
 import target from "lucide-static/icons/target.svg?raw";
+import webhook from "lucide-static/icons/webhook.svg?raw";
 
 export const icons = {
   archive,
@@ -31,15 +34,18 @@ export const icons = {
   globe,
   "loader-circle": loaderCircle,
   lock,
+  mail,
   "mail-warning": mailWarning,
   megaphone,
   "panel-left": panelLeft,
   plus,
+  "refresh-cw": refreshCw,
   "repeat-2": repeat2,
   "scan-text": scanText,
   send,
   shield,
   target,
+  webhook,
 } as const;
 
 export type IconName = keyof typeof icons;

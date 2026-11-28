@@ -1,9 +1,13 @@
 // Plays the message lifecycle of the landing page. Each step plays when the reader scrolls
 // to its window and the steps before it have played. A step that the reader has scrolled
 // past, or jumped over, goes straight to its end. The controls of a window play its step
-// again: Send sends the message again, Test with current rules runs the checks again. The
-// markup shows the end of every step; this script takes each step back to its start before
-// playing it.
+// again: Test with current rules runs the checks again. The markup shows the end of every
+// step; this script takes each step back to its start before playing it.
+//
+// The lifecycle follows one message at a time, chosen at random when the page opens. Send
+// sends the next one, and the steps after it play again for that message. What depends on
+// the message is in the markup once for each message, in elements with data-message; the
+// script shows those of the message it follows and hides the others.
 //
 // What moves is moved by the browser's compositor: the script sets attributes that CSS
 // transitions of opacity and transform answer, and the dot of a score is a Web Animation
@@ -38,9 +42,16 @@ async function pause(run: Run, milliseconds: number): Promise<void> {
   if (run.cancelled) throw new Cancelled();
 }
 
+/** The elements of a step for the message that the lifecycle follows. */
+function shown(scope: ParentNode, selector: string): HTMLElement[] {
+  return [...scope.querySelectorAll<HTMLElement>(selector)].filter(
+    (element) => element.closest("[data-message][hidden]") === null,
+  );
+}
+
 function part(scope: ParentNode, name: string): HTMLElement {
-  const found = scope.querySelector<HTMLElement>(`[data-part="${name}"]`);
-  if (found === null) throw new Error(`The lifecycle has no part "${name}".`);
+  const [found] = shown(scope, `[data-part="${name}"]`);
+  if (found === undefined) throw new Error(`The lifecycle has no part "${name}".`);
   return found;
 }
 
@@ -93,9 +104,11 @@ function typedIn(scope: ParentNode): Typed {
   return { element, text, typed, rest };
 }
 
-function erase({ text, typed, rest }: Typed) {
+function erase({ element, text, typed, rest }: Typed) {
   typed.data = "";
   rest.data = text;
+  // An empty field shows its placeholder, when it has one.
+  element.dataset["empty"] = "";
 }
 
 /** Types a text at about `pace` milliseconds a letter, slower after a sentence or a comma. */
@@ -105,6 +118,7 @@ async function type(run: Run, field: HTMLElement, pace: number) {
   field.dataset["focus"] = "";
   await pause(run, 220);
   element.dataset["typing"] = "";
+  delete element.dataset["empty"];
   for (let index = 1; index <= text.length && !run.fast; index += 1) {
     typed.data = text.slice(0, index);
     rest.data = text.slice(index);
@@ -172,8 +186,10 @@ async function sweep(run: Run, check: HTMLElement) {
       // Accelerates then brakes: the dot is on screen from its start to its end.
       easing: "cubic-bezier(0.645, 0.045, 0.355, 1)",
     });
-    while (animation.playState === "running" && !run.fast && !run.cancelled) {
+    while (animation.playState === "running" && !run.fast) {
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      // A cancelled play writes nothing more: its step is already back at its start.
+      if (run.cancelled) break;
       mark(check, score * (animation.effect?.getComputedTiming().progress ?? 1));
     }
     animation.cancel();
@@ -202,16 +218,35 @@ async function decide(run: Run, stage: HTMLElement) {
   await pause(run, 600);
 }
 
+/** The deliveries of an accepted message: each one is being sent, then is delivered. */
+async function deliver(run: Run, stage: HTMLElement) {
+  const deliveries = shown(stage, "[data-delivery]");
+  for (const delivery of deliveries) swap(delivery, "status", "a");
+  for (const delivery of deliveries) {
+    await pause(run, 650);
+    swap(delivery, "status", "b");
+  }
+}
+
+/** What a control does in its own window before its step plays again. */
+const firsts = new Map<string, Play>([
+  ["copy", copy],
+  ["decide", decide],
+]);
+
+/** The part of a step that a control plays again, in place of the whole step. */
+const onlys = new Map<string, Play>([["deliver", deliver]]);
+
 const plays = new Map<string, Play>([
   [
     "create",
     async (run, stage) => {
       await pause(run, 300);
       await type(run, part(stage, "name"), 75);
+      swap(stage, "title", "b");
       await type(run, part(stage, "business"), 36);
-      await press(run, part(stage, "add"));
-      await pause(run, 180);
-      swap(stage, "page", "b");
+      await pause(run, 200);
+      reveal(part(stage, "settings"));
       await pause(run, 900);
       await copy(run, stage);
     },
@@ -238,7 +273,7 @@ const plays = new Map<string, Play>([
     "reception",
     async (run, stage) => {
       await pause(run, 250);
-      for (const check of stage.querySelectorAll<HTMLElement>("[data-check]")) {
+      for (const check of shown(stage, "[data-check]")) {
         check.dataset["active"] = "";
         await pause(run, 260);
         delete check.dataset["active"];
@@ -253,7 +288,7 @@ const plays = new Map<string, Play>([
     "analysis",
     async (run, stage) => {
       await pause(run, 400);
-      for (const check of stage.querySelectorAll<HTMLElement>("[data-check]")) {
+      for (const check of shown(stage, "[data-check]")) {
         delete check.dataset["pending"];
         for (const value of check.querySelectorAll<HTMLElement>("[data-reveal]")) reveal(value);
         await sweep(run, check);
@@ -264,13 +299,17 @@ const plays = new Map<string, Play>([
     },
   ],
   [
-    "review",
+    "outcome",
     async (run, stage) => {
       await pause(run, 150);
       reveal(part(stage, "row"));
       swap(stage, "count", "b");
       await pause(run, 450);
-      reveal(part(stage, "actions"));
+      // A message to review has its actions, an accepted one its deliveries.
+      for (const panel of shown(stage, '[data-part="actions"], [data-part="deliveries"]')) {
+        reveal(panel);
+      }
+      await deliver(run, stage);
     },
   ],
 ]);
@@ -315,9 +354,53 @@ interface Step {
   finished: Promise<void>;
 }
 
-/** Starts the lifecycle of one section. With reduced motion, the section stays as written. */
+/** How a control plays its step again. */
+interface Again {
+  /** What happens in the window of the control before the step goes back to its start. */
+  readonly first: ((run: Run) => Promise<void>) | undefined;
+  /** The part of the step that plays, where the control does not play the whole step. */
+  readonly only: Play | undefined;
+}
+
+/** Shows what the lifecycle has for one message, and hides what it has for the others. */
+function follow(lifecycle: HTMLElement, message: string) {
+  lifecycle.dataset["following"] = message;
+  for (const element of lifecycle.querySelectorAll<HTMLElement>("[data-message]")) {
+    element.hidden = element.dataset["message"] !== message;
+  }
+}
+
+/** Starts the lifecycle of one section. */
 export function direct(lifecycle: HTMLElement) {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const messages = [
+    ...new Set(
+      [...lifecycle.querySelectorAll<HTMLElement>("[data-message]")].flatMap(
+        (element) => element.dataset["message"] ?? [],
+      ),
+    ),
+  ];
+  let following = 0;
+  const followNext = () => {
+    following = (following + 1) % Math.max(messages.length, 1);
+    const message = messages[following];
+    if (message !== undefined) follow(lifecycle, message);
+  };
+  const script = () => {
+    for (const note of lifecycle.querySelectorAll<HTMLElement>("[data-scripted]")) {
+      note.hidden = false;
+    }
+  };
+
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    // Nothing plays: the section stays as written, and Send shows the end of every step
+    // for the next message.
+    for (const control of lifecycle.querySelectorAll<HTMLButtonElement>("[data-next]")) {
+      control.addEventListener("click", followNext);
+      control.disabled = false;
+    }
+    script();
+    return;
+  }
   if (!("IntersectionObserver" in window)) return;
 
   const steps: Step[] = [];
@@ -335,25 +418,29 @@ export function direct(lifecycle: HTMLElement) {
     });
   }
 
-  /** Plays a step from its start; `before` is what happens in its window first. */
-  function start(step: Step, fast: boolean, before?: Play) {
+  /** Plays a step from its start, or plays it again as a control asks. */
+  function start(step: Step, fast: boolean, again?: Again) {
     const run: Run = { fast, cancelled: false, wake: new Set() };
     step.run = run;
     step.state = "playing";
     step.stage.dataset["state"] = "playing";
     step.finished = (async () => {
       try {
-        if (before !== undefined) {
-          await before(run, step.stage);
-          rewind(step.stage, step.flux, true);
-          // The start has to be painted before the step plays, or its transitions do not run.
-          await pause(run, 50);
+        if (again?.only === undefined) {
+          if (again !== undefined) {
+            await again.first?.(run);
+            rewind(step.stage, step.flux, true);
+            // The start has to be painted before the step plays, or its transitions do not run.
+            await pause(run, 50);
+          }
+          if (step.flux !== null) {
+            reveal(step.flux);
+            await pause(run, 850);
+          }
+          await step.play(run, step.stage);
+        } else {
+          await again.only(run, step.stage);
         }
-        if (step.flux !== null) {
-          reveal(step.flux);
-          await pause(run, 850);
-        }
-        await step.play(run, step.stage);
       } catch (cause) {
         if (cause instanceof Cancelled) return;
         throw cause;
@@ -364,10 +451,14 @@ export function direct(lifecycle: HTMLElement) {
     return step.finished;
   }
 
+  // Counts the changes of message: what was waiting to play for the message before stops.
+  let changes = 0;
+
   /** Plays a step after the steps before it; those out of sight go straight to their end. */
   async function reach(index: number) {
+    const change = changes;
     for (const [position, step] of steps.entries()) {
-      if (position > index) return;
+      if (position > index || change !== changes) return;
       if (step.state === "done") continue;
       if (step.state === "playing") {
         await step.finished;
@@ -379,18 +470,21 @@ export function direct(lifecycle: HTMLElement) {
 
   /**
    * A control of a window is used. A step that plays goes to its end, as the control would
-   * end it: Add form adds the form before its name is typed. A step at its end plays again.
+   * end it: Send sends the message before its text is typed. A step at its end plays again.
    */
-  function use(step: Step, before: Play) {
+  function use(step: Step, again: Again) {
     if (step.state === "idle") {
       void reach(steps.indexOf(step));
     } else if (step.state === "playing") {
       if (step.run !== null) hurry(step.run);
     } else {
-      void start(step, false, before);
+      void start(step, false, again);
     }
   }
 
+  following = Math.floor(Math.random() * messages.length) - 1;
+  followNext();
+  script();
   for (const step of steps) rewind(step.stage, step.flux, false);
   lifecycle.dataset["animated"] = "";
 
@@ -416,11 +510,33 @@ export function direct(lifecycle: HTMLElement) {
     },
     { rootMargin: "0px 0px -25% 0px" },
   );
+  const watch = (step: Step) => {
+    const stageWindow = step.stage.querySelector("[data-stage-window]");
+    if (stageWindow !== null) trigger.observe(stageWindow);
+  };
+
+  /**
+   * The lifecycle follows the next message. The steps after the one that sends it go back
+   * to their start, and play for that message when the reader reaches them.
+   */
+  function send(from: Step) {
+    changes += 1;
+    for (const step of steps.slice(steps.indexOf(from) + 1)) {
+      if (step.run !== null) {
+        step.run.cancelled = true;
+        hurry(step.run);
+      }
+      step.state = "idle";
+      delete step.stage.dataset["state"];
+      rewind(step.stage, step.flux, false);
+      watch(step);
+    }
+    followNext();
+  }
 
   for (const step of steps) {
     sight.observe(step.stage);
-    const stageWindow = step.stage.querySelector("[data-stage-window]");
-    if (stageWindow !== null) trigger.observe(stageWindow);
+    watch(step);
     for (const control of step.stage.querySelectorAll<HTMLButtonElement>("[data-control]")) {
       // A control plays the step of its window, or the step it names: copying the address
       // of the form pastes it again in the code of the site.
@@ -428,13 +544,16 @@ export function direct(lifecycle: HTMLElement) {
       const target =
         named === "" ? step : steps.find(({ stage }) => stage.dataset["stage"] === named);
       if (target === undefined) continue;
-      const before: Play =
-        target !== step
-          ? (run) => copy(run, step.stage)
-          : step.stage.dataset["stage"] === "review"
-            ? decide
-            : () => Promise.resolve();
-      control.addEventListener("click", () => use(target, before));
+      const first = firsts.get(control.dataset["first"] ?? "");
+      const again: Again = {
+        first: first === undefined ? undefined : (run) => first(run, step.stage),
+        only: onlys.get(control.dataset["only"] ?? ""),
+      };
+      control.addEventListener("click", () => {
+        // Send sends the next message, once the one before it is sent.
+        if (control.hasAttribute("data-next") && target.state === "done") send(target);
+        use(target, again);
+      });
       control.disabled = false;
     }
   }

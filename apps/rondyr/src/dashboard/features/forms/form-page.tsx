@@ -31,8 +31,9 @@ import { FormTurnstile } from "./form-turnstile.tsx";
 const code = <code className="font-mono wrap-anywhere" />;
 
 // A text edited in place: it looks like the page's text until it is pointed at or focused.
+// Its field is wider than the page's column by its padding, so the text stays on the column.
 const inPlace =
-  "-mx-2 w-[calc(100%+1rem)] min-w-0 rounded-md bg-transparent px-2 transition-colors duration-150 ease-out hover:bg-muted focus:bg-muted disabled:opacity-50";
+  "-mx-3 w-[calc(100%+1.5rem)] min-w-0 bg-transparent px-3 transition-colors duration-150 ease-out hover:bg-muted focus:bg-muted disabled:opacity-50 sm:-mx-4 sm:w-[calc(100%+2rem)] sm:px-4";
 
 interface PageBarProps {
   readonly title: string;
@@ -132,8 +133,8 @@ interface FormPageProps {
 
 /**
  * Everything about one form on one page: its emoji, its name and its business
- * at the top, edited in place; its settings as fields; then its destinations
- * and its allowed origins side by side.
+ * at the top, edited in place; its settings as fields; then its allowed origins
+ * and its destinations side by side.
  */
 export function FormPage({ organizationId, form, destinations }: FormPageProps) {
   const { t } = useTranslation();
@@ -179,7 +180,7 @@ export function FormPage({ organizationId, form, destinations }: FormPageProps) 
         aria-label={t("inbox.forms.settings", { name: form.name })}
         className="mx-auto max-w-4xl px-5 pt-8 pb-16 sm:px-8"
       >
-        <div className="-ml-2">
+        <div className="-ml-3 sm:-ml-4">
           <EmojiPicker
             size="lg"
             value={emojiOf(form)}
@@ -197,7 +198,7 @@ export function FormPage({ organizationId, form, destinations }: FormPageProps) 
             maxLength={100}
             autoComplete="off"
             disabled={saving}
-            className={`${inPlace} h-12 text-2xl font-semibold tracking-tight sm:text-3xl`}
+            className={`${inPlace} h-12 rounded-md text-2xl font-semibold tracking-tight sm:text-3xl`}
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
             }}
@@ -217,7 +218,7 @@ export function FormPage({ organizationId, form, destinations }: FormPageProps) 
           rows={2}
           maxLength={2000}
           disabled={saving}
-          className={`${inPlace} mt-1 field-sizing-content max-w-[80ch] resize-none py-1.5 text-base text-pretty text-muted-foreground placeholder:text-muted-foreground/70 focus:text-foreground pointer-fine:text-sm`}
+          className={`${inPlace} mt-1 field-sizing-content max-w-[calc(80ch+1.5rem)] resize-none rounded-xs py-2 text-base text-pretty text-muted-foreground placeholder:text-muted-foreground/70 focus:text-foreground pointer-fine:text-sm`}
           onKeyDown={(event) => {
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
               event.currentTarget.blur();
@@ -286,25 +287,23 @@ export function FormPage({ organizationId, form, destinations }: FormPageProps) 
               onSave={(field) => save({ change: "honeypot", field })}
             />
           </Field>
+          <BlockedTerms
+            key={`blocked-terms-${form.publicId}`}
+            organizationId={organizationId}
+            form={form}
+          />
           <Field label={t("inbox.forms.turnstile.title")}>
             <FormTurnstile organizationId={organizationId} form={form} onChange={onChange} />
           </Field>
         </div>
 
         <div className="mt-12 grid gap-10 lg:grid-cols-2">
-          {destinations}
           <AllowedOrigins
             key={`origins-${form.publicId}`}
             organizationId={organizationId}
             form={form}
           />
-        </div>
-        <div className="mt-10">
-          <BlockedTerms
-            key={`blocked-terms-${form.publicId}`}
-            organizationId={organizationId}
-            form={form}
-          />
+          {destinations}
         </div>
       </section>
     </main>

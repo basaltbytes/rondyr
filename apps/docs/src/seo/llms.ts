@@ -11,7 +11,7 @@ import {
   formSnippet,
   landingMeta,
 } from "../landing.ts";
-import { lifecycleIntro, lifecycleSteps } from "../lifecycle.ts";
+import { lifecycleIntro, lifecycleMarkdown } from "../lifecycle.ts";
 import {
   documentId,
   githubBranch,
@@ -129,7 +129,7 @@ export function renderLandingMarkdown(origin: string, root?: URL): string {
     "",
     lifecycleIntro,
     "",
-    ...lifecycleSteps.map((step, index) => `${index + 1}. **${step.title}.** ${step.text}`),
+    ...lifecycleMarkdown(),
     "",
     "## Example HTML form",
     "",

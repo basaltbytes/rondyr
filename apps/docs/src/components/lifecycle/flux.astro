@@ -1,25 +1,37 @@
 ---
-// The line between two steps, and what goes down it from one to the next.
+// The line between two steps, and what goes down it from one to the next. Where the next
+// step depends on the message, the line has one chip for each message.
+import type { MessageId } from "../../lifecycle.ts";
 import type { IconName } from "./icons.ts";
 import Icon from "./ui-icon.astro";
 
-interface Props {
+interface Chip {
   readonly icon: IconName;
   readonly label: string;
+  /** The message that this chip is for. Only the chip of the first message is shown. */
+  readonly message?: MessageId;
+}
+
+interface Props {
+  readonly chips: readonly Chip[];
   /** An address or a request is set in the monospace font. */
   readonly code?: boolean;
 }
 
-const { icon, label, code = false } = Astro.props;
+const { chips, code = false } = Astro.props;
 ---
 
 <div class="flux" data-flux aria-hidden="true">
   <span class="flux-line"></span>
   <span class="flux-fill"></span>
-  <span class="flux-chip">
-    <Icon name={icon} class="size-3.5 text-brand" />
-    <span class:list={["min-w-0 truncate", code && "font-ui-mono text-[0.75rem]"]}>{label}</span>
-  </span>
+  {
+    chips.map(({ icon, label, message }, index) => (
+      <span class="flux-chip" data-message={message} hidden={message !== undefined && index > 0}>
+        <Icon name={icon} class="size-3.5 text-brand" />
+        <span class:list={["min-w-0 truncate", code && "font-ui-mono text-[0.75rem]"]}>{label}</span>
+      </span>
+    ))
+  }
   <svg class="flux-arrow" viewBox="0 0 12 7" width="12" height="7" fill="none">
     <path d="M1 1l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
   </svg>
