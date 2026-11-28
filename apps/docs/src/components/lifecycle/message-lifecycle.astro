@@ -3,11 +3,21 @@
 // that plays when the reader reaches it. The windows of Rondyr are excerpts of the
 // dashboard, with its palette, its texts and its markup; director.ts plays them. Without
 // JavaScript, or with reduced motion, every window shows the end of its step.
+//
+// The lifecycle follows one message at a time. What depends on the message is written once
+// for each message in an element with data-message, and every one but the first is hidden;
+// director.ts shows those of the message it follows.
 import "../../styles/lifecycle.css";
 
 import dashboardStylesheet from "../../../../rondyr/src/dashboard/dashboard.css?raw";
 import { dashboardThemeCss } from "../../dashboard-theme.ts";
-import { dashboardText as text, lifecycleIntro, lifecycleSteps, percent, story } from "../../lifecycle.ts";
+import {
+  dashboardText as text,
+  lifecycleIntro,
+  lifecycleSteps,
+  messages,
+  story,
+} from "../../lifecycle.ts";
 import CheckRow from "./check-row.astro";
 import Flux from "./flux.astro";
 import Frame from "./frame.astro";
@@ -21,7 +31,8 @@ const step = (id: (typeof lifecycleSteps)[number]["id"]) => {
   return { step: found, number: index + 1 };
 };
 
-const { form, sender, scores, thresholds } = story;
+const { form, thresholds } = story;
+const { outcome } = text;
 const dashboard = "Rondyr dashboard";
 
 // The address stays on one line of its field: where the field is too narrow, the start is
@@ -99,10 +110,11 @@ const partTones = {
   text: "text-foreground",
 } as const;
 
-const label = "flex items-center gap-2 text-sm leading-none font-medium";
+// A text of the form page edited in place: the field is wider than the column by its
+// padding, so its text stays on the column, and it shows when pointed at or focused.
+const inPlace =
+  "ui-field -mx-3 w-[calc(100%+1.5rem)] min-w-0 px-3 text-left @md:-mx-4 @md:w-[calc(100%+2rem)] @md:px-4";
 const hint = "m-0 text-xs text-pretty text-ui-muted-foreground";
-const input =
-  "flex h-10 w-full min-w-0 items-center rounded-ui border border-ui-border bg-ui-input px-4 text-base";
 // The dashboard's Button: its base, then its default, outline and ghost variants.
 const button =
   "ui-button inline-flex shrink-0 items-center justify-center gap-1.5 rounded-ui font-medium whitespace-nowrap select-none";
@@ -115,6 +127,13 @@ const tableHead = "pb-1 text-xs font-medium text-ui-muted-foreground";
 const groupHead =
   "border-b border-ui-border/70 pt-4 pb-1.5 text-left text-xs font-medium text-ui-muted-foreground";
 const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 text-[0.9375rem]";
+// The dashboard's Badge: its base, then its neutral and success variants.
+const badge =
+  "inline-flex h-5.5 shrink-0 items-center gap-1.5 justify-self-end rounded-full border px-2.5 text-xs font-medium whitespace-nowrap";
+const neutralBadge = `${badge} border-ui-border bg-ui-muted text-ui-muted-foreground`;
+const successBadge = `${badge} border-ui-success/30 bg-ui-success-subtle text-ui-success`;
+const deliveryIcon =
+  "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-ui-muted text-ui-muted-foreground";
 ---
 
 <style is:inline set:html={dashboardThemeCss(dashboardStylesheet)}></style>
@@ -145,69 +164,40 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
           <p class="m-0 flex min-w-0 flex-1 items-center gap-2 px-1 text-sm text-ui-muted-foreground">
             <span class="shrink-0">{text.forms}</span>
             <span>/</span>
-            <span class="swap swap-inline text-ui-foreground" data-swap="page">
-              <span data-alt="a" inert>{text.newForm.title}</span>
+            <span class="swap swap-inline text-ui-foreground" data-swap="title">
+              <span data-alt="a" inert>{text.formPage.newTitle}</span>
               <span data-alt="b">{form.name}</span>
             </span>
           </p>
-          <span class="swap" data-swap="page">
-            <span data-alt="a" inert></span>
-            <span data-alt="b">
-              <button type="button" class:list={[ghostButton, small]} data-control disabled>
-                <Icon name="plus" class="size-3.5" />
-                {text.newForm.title}
-              </button>
-            </span>
-          </span>
         </div>
-        <div class="swap" data-swap="page">
-          <div data-alt="a" inert class="mx-auto grid w-full max-w-xl content-start gap-4 px-5 pt-7 pb-8">
-            <p class="m-0 text-lg font-semibold">{text.newForm.title}</p>
-            <p class="m-0 text-sm text-pretty text-ui-muted-foreground">
-              {text.newForm.details}
-            </p>
-            <div class="flex items-end gap-2">
-              <span class="flex size-10 shrink-0 items-center justify-center text-2xl leading-none">
-                {form.emoji}
-              </span>
-              <div class="grid min-w-0 flex-1 gap-1.5">
-                <span class={label}>{text.newForm.name}</span>
-                <div class={input} data-part="name">
-                  <span data-type>{form.name}</span>
-                </div>
-              </div>
-            </div>
-            <div class="grid gap-1.5">
-              <span class={label}>{text.newForm.business}</span>
-              <div
-                class="min-h-24 w-full rounded-ui border border-ui-border bg-ui-input px-4 py-2.5 text-base leading-normal text-pretty"
-                data-part="business"
-              >
-                <span data-type>{form.business}</span>
-              </div>
-              <p class={hint}>{text.newForm.businessHint}</p>
-            </div>
-            <button
-              type="button"
-              class:list={[primaryButton, "h-10 justify-self-start px-4 text-sm"]}
-              data-part="add"
-              data-control
-              disabled
-            >
-              {text.newForm.add}
-            </button>
+        <div class="px-5 pt-6 pb-8 @md:px-8">
+          <div class="-ml-3 flex h-16 w-18 items-center justify-center text-5xl leading-none @md:-ml-4 @md:w-20">
+            {form.emoji}
           </div>
-
-          <div data-alt="b" class="px-5 pt-6 pb-8 @md:px-8">
-            <div class="-ml-2 flex size-16 items-center justify-center text-5xl leading-none">
-              {form.emoji}
-            </div>
-            <p class="m-0 mt-2 flex h-12 items-center text-2xl font-semibold tracking-[-0.035em] @md:text-3xl">
-              {form.name}
-            </p>
-            <p class="m-0 mt-1 py-1.5 text-sm text-pretty text-ui-muted-foreground">
-              {form.business}
-            </p>
+          <button
+            type="button"
+            class:list={[inPlace, "mt-2 flex h-12 items-center rounded-ui text-2xl font-semibold tracking-[-0.035em] @md:text-3xl"]}
+            aria-label={`${text.formPage.name}: ${form.name}`}
+            data-part="name"
+            data-control
+            disabled
+          >
+            <span data-type>{form.name}</span>
+          </button>
+          <button
+            type="button"
+            class:list={[inPlace, "mt-1 block rounded-ui-xs py-2 text-sm text-pretty text-ui-muted-foreground"]}
+            aria-label={`${text.formPage.business}: ${form.business}`}
+            data-part="business"
+            data-control
+            disabled
+          >
+            <span class="relative block">
+              <span data-type>{form.business}</span>
+              <span class="type-placeholder" aria-hidden="true">{text.formPage.businessPlaceholder}</span>
+            </span>
+          </button>
+          <div data-part="settings" data-reveal>
             <div class="mt-7 grid gap-5">
               <div class="grid gap-x-6 gap-y-1.5 @md:grid-cols-[9.5rem_minmax(0,1fr)]">
                 <p class="m-0 flex items-center text-sm leading-none font-medium @md:h-10">
@@ -230,6 +220,7 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
                       data-swap="copy"
                       data-part="copy"
                       data-control="connect"
+                      data-first="copy"
                       disabled
                     >
                       <span data-alt="a" class="inline-flex" inert><Icon name="copy" /></span>
@@ -257,7 +248,7 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
     </Stage>
 
     <Stage {...step("connect")}>
-      <Flux slot="flux" icon="copy" label={story.address} code />
+      <Flux slot="flux" chips={[{ icon: "copy", label: story.address }]} code />
       <Frame
         location="contact.html"
         icon="globe"
@@ -282,7 +273,13 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
     </Stage>
 
     <Stage {...step("submit")}>
-      <Flux slot="flux" icon="globe" label={`Published on ${story.site.split("/")[0]}`} />
+      <Flux
+        slot="flux"
+        chips={[{ icon: "globe", label: `Published on ${story.site.split("/")[0]}` }]}
+      />
+      <p slot="note" class="mt-3 mb-0 text-sm text-pretty text-subtle" data-scripted hidden>
+        Send again to follow another message.
+      </p>
       <Frame
         location={story.site}
         icon="lock"
@@ -294,26 +291,41 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
             Workshops, orders and commissions. We answer within two days.
           </p>
           <div class="mt-6 grid gap-4">
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div>
-                <span class="studio-label">Name</span>
-                <div class={studioField} data-part="name"><span data-type>{sender.name}</span></div>
-              </div>
-              <div>
-                <span class="studio-label">Email</span>
-                <div class={studioField} data-part="email">
-                  <span class="min-w-0 truncate" data-type>{sender.email}</span>
+            {
+              messages.map(({ id, sender, text: written }, index) => (
+                <div class="grid gap-4" data-message={id} hidden={index > 0}>
+                  <div class="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <span class="studio-label">Name</span>
+                      <div class={studioField} data-part="name">
+                        <span data-type>{sender.name}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span class="studio-label">Email</span>
+                      <div class={studioField} data-part="email">
+                        <span class="min-w-0 truncate" data-type>{sender.email}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <span class="studio-label">Message</span>
+                    <div class:list={[studioField, "min-h-32 items-start leading-[1.6]"]} data-part="message">
+                      <span data-type>{written}</span>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            <div>
-              <span class="studio-label">Message</span>
-              <div class:list={[studioField, "min-h-32 items-start leading-[1.6]"]} data-part="message">
-                <span data-type>{story.message}</span>
-              </div>
-            </div>
+              ))
+            }
             <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-              <button type="button" class="ui-button studio-button" data-part="send" data-control disabled>
+              <button
+                type="button"
+                class="ui-button studio-button"
+                data-part="send"
+                data-control
+                data-next
+                disabled
+              >
                 <span class="swap swap-inline" data-swap="send">
                   <span data-alt="a" inert>Send</span>
                   <span data-alt="b" class="inline-flex items-center gap-1.5">
@@ -321,9 +333,19 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
                   </span>
                 </span>
               </button>
-              <span class="text-sm text-muted" data-part="thanks" data-reveal>
-                Thanks {sender.name}, your message is on its way.
-              </span>
+              {
+                messages.map(({ id, sender }, index) => (
+                  <span
+                    class="text-sm text-muted"
+                    data-part="thanks"
+                    data-reveal
+                    data-message={id}
+                    hidden={index > 0}
+                  >
+                    Thanks {sender.name}, your message is on its way.
+                  </span>
+                ))
+              }
             </div>
           </div>
         </div>
@@ -331,7 +353,7 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
     </Stage>
 
     <Stage {...step("reception")}>
-      <Flux slot="flux" icon="send" label={`POST ${story.shortAddress}`} code />
+      <Flux slot="flux" chips={[{ icon: "send", label: `POST ${story.shortAddress}` }]} code />
       <Frame
         dashboard
         location={story.instance}
@@ -339,10 +361,14 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
         owner={dashboard}
       >
         <div class="grid gap-4 px-5 pt-5 pb-6">
-          <div class="grid gap-1 border-b border-ui-border pb-4">
-            <p class="m-0 text-xl/snug font-semibold">{sender.name}</p>
-            <p class="m-0 text-sm text-ui-muted-foreground">{sender.email}</p>
-          </div>
+          {
+            messages.map(({ id, sender }, index) => (
+              <div class="grid gap-1 border-b border-ui-border pb-4" data-message={id} hidden={index > 0}>
+                <p class="m-0 text-xl/snug font-semibold">{sender.name}</p>
+                <p class="m-0 text-sm text-ui-muted-foreground">{sender.email}</p>
+              </div>
+            ))
+          }
           <div class="flex min-h-8 items-center justify-between gap-3">
             <p class="m-0 text-sm font-semibold">{text.classification.title}</p>
             <button type="button" class:list={[ghostButton, small, "-mr-1"]} data-control disabled>
@@ -382,7 +408,7 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
     </Stage>
 
     <Stage {...step("analysis")}>
-      <Flux slot="flux" icon="scan-text" label={text.analysis.sent} />
+      <Flux slot="flux" chips={[{ icon: "scan-text", label: text.analysis.sent }]} />
       <Frame
         dashboard
         location={story.instance}
@@ -397,80 +423,86 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
               {text.classification.test}
             </button>
           </div>
-          <div class="swap" data-swap="verdict">
-            <p data-alt="a" inert class="m-0 text-sm/relaxed text-pretty">
-              <span class="font-medium">{text.classification.analyzing}.</span>{" "}
-              <span class="text-ui-muted-foreground">
-                {text.classification.analyzingDetail}
-              </span>
-            </p>
-            <p data-alt="b" class="m-0 text-sm/relaxed text-pretty">
-              <span class="font-medium">{text.analysis.verdict}.</span>{" "}
-              <span class="text-ui-muted-foreground">{text.analysis.verdictDetail}</span>
-            </p>
-          </div>
-          <table class="w-full text-sm">
-            <thead>
-              <tr>
-                <th scope="col" class:list={[tableHead, "text-left"]}>
-                  {text.classification.check}
-                </th>
-                <th scope="col" class:list={[tableHead, "pl-3 text-right whitespace-nowrap"]}>
-                  {text.classification.onArrival}
-                </th>
-              </tr>
-              <tr>
-                <th scope="colgroup" colspan="2" class={groupHead}>
-                  <span class="flex items-baseline justify-between gap-3">
-                    {text.classification.aiAnalysis}
-                    <span class="font-normal">{text.classification.model}</span>
-                  </span>
-                </th>
-              </tr>
-            </thead>
-            <CheckRow
-              icon="mail-warning"
-              name={text.analysis.spam}
-              meter={{
-                id: "lifecycle-spam",
-                score: scores.spam,
-                zones: [
-                  { from: thresholds.possibleSpam, to: thresholds.probableSpam, strong: false },
-                  { from: thresholds.probableSpam, to: 1, strong: true },
-                ],
-                ticks: [thresholds.possibleSpam, thresholds.probableSpam],
-              }}
-            />
-            <CheckRow
-              icon="megaphone"
-              name={text.analysis.solicitation}
-              meter={{
-                id: "lifecycle-solicitation",
-                score: scores.solicitation,
-                zones: [{ from: thresholds.solicitation, to: 1, strong: true }],
-                ticks: [thresholds.solicitation],
-              }}
-            />
-            <CheckRow
-              icon="target"
-              name={text.analysis.relevance}
-              meter={{
-                id: "lifecycle-relevance",
-                score: scores.relevance,
-                zones: [{ from: 0, to: thresholds.relevance, strong: true }],
-                ticks: [thresholds.relevance],
-              }}
-            />
-          </table>
+          {
+            messages.map(({ id, scores }, index) => (
+              <div class="grid gap-4" data-message={id} hidden={index > 0}>
+                <div class="swap" data-swap="verdict">
+                  <p data-alt="a" inert class="m-0 text-sm/relaxed text-pretty">
+                    <span class="font-medium">{text.classification.analyzing}.</span>{" "}
+                    <span class="text-ui-muted-foreground">{text.classification.analyzingDetail}</span>
+                  </p>
+                  <p data-alt="b" class="m-0 text-sm/relaxed text-pretty">
+                    <span class="font-medium">{text.analysis.verdicts[id].title}.</span>{" "}
+                    <span class="text-ui-muted-foreground">{text.analysis.verdicts[id].detail}</span>
+                  </p>
+                </div>
+                <table class="w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th scope="col" class:list={[tableHead, "text-left"]}>
+                        {text.classification.check}
+                      </th>
+                      <th scope="col" class:list={[tableHead, "pl-3 text-right whitespace-nowrap"]}>
+                        {text.classification.onArrival}
+                      </th>
+                    </tr>
+                    <tr>
+                      <th scope="colgroup" colspan="2" class={groupHead}>
+                        <span class="flex items-baseline justify-between gap-3">
+                          {text.classification.aiAnalysis}
+                          <span class="font-normal">{text.classification.model}</span>
+                        </span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <CheckRow
+                    icon="mail-warning"
+                    name={text.analysis.spam}
+                    meter={{
+                      id: `lifecycle-${id}-spam`,
+                      score: scores.spam,
+                      zones: [
+                        { from: thresholds.possibleSpam, to: thresholds.probableSpam, strong: false },
+                        { from: thresholds.probableSpam, to: 1, strong: true },
+                      ],
+                      ticks: [thresholds.possibleSpam, thresholds.probableSpam],
+                    }}
+                  />
+                  <CheckRow
+                    icon="megaphone"
+                    name={text.analysis.solicitation}
+                    meter={{
+                      id: `lifecycle-${id}-solicitation`,
+                      score: scores.solicitation,
+                      zones: [{ from: thresholds.solicitation, to: 1, strong: true }],
+                      ticks: [thresholds.solicitation],
+                    }}
+                  />
+                  <CheckRow
+                    icon="target"
+                    name={text.analysis.relevance}
+                    meter={{
+                      id: `lifecycle-${id}-relevance`,
+                      score: scores.relevance,
+                      zones: [{ from: 0, to: thresholds.relevance, strong: true }],
+                      ticks: [thresholds.relevance],
+                    }}
+                  />
+                </table>
+              </div>
+            ))
+          }
         </div>
       </Frame>
     </Stage>
 
-    <Stage {...step("review")}>
+    <Stage {...step("outcome")}>
       <Flux
         slot="flux"
-        icon="megaphone"
-        label={text.review.sent}
+        chips={[
+          { icon: "megaphone", label: outcome.review.sent, message: "review" },
+          { icon: "check", label: outcome.accepted.sent, message: "accepted" },
+        ]}
       />
       <Frame
         dashboard
@@ -478,55 +510,136 @@ const studioField = "studio-field mt-1.5 flex min-h-10 items-center px-3 py-2 te
         icon="lock"
         owner={dashboard}
       >
-        <div class="flex h-14 items-center gap-2 border-b border-ui-border pr-3 pl-1">
-          <span class="grid size-8 shrink-0 place-items-center text-ui-muted-foreground">
-            <Icon name="panel-left" />
-          </span>
-          <p class="m-0 min-w-0 flex-1 truncate text-base font-semibold">
-            {text.review.folder}
-            <span class="swap swap-inline ml-2 text-sm font-normal text-ui-muted-foreground tabular-nums" data-swap="count">
-              <span data-alt="a" inert>0</span>
-              <span data-alt="b">1</span>
-            </span>
-          </p>
-          <span class="flex shrink-0 items-center gap-2" data-part="actions" data-reveal>
-            <button type="button" class:list={[outlineButton, small]} data-control disabled>
-              <Icon name="archive" class="size-3.5" />
-              {text.review.archive}
-            </button>
-            <button type="button" class:list={[primaryButton, small]} data-control disabled>
-              <Icon name="check" class="size-3.5" />
-              <span class="@max-md:hidden">{text.review.acceptAndSend}</span>
-              <span class="@md:hidden">{text.review.accept}</span>
-            </button>
-          </span>
-        </div>
-        <div class="min-h-24">
-          <div
-            class="flex w-full gap-3 border-l-3 border-l-ui-primary bg-ui-primary/10 px-4 py-3"
-            data-part="row"
-            data-reveal
-          >
-            <span class="grid min-w-0 flex-1 grid-cols-1 gap-1">
-              <span class="flex items-baseline justify-between gap-3">
-                <span class="truncate text-sm font-medium">{sender.name}</span>
-                <span class="shrink-0 text-xs text-ui-muted-foreground tabular-nums">
-                  {story.receivedAt}
+        {
+          messages.map(({ id, sender, text: written, receivedAt }, index) => (
+            <div data-message={id} hidden={index > 0}>
+              <div class="flex h-14 items-center gap-2 border-b border-ui-border pr-3 pl-1">
+                <span class="grid size-8 shrink-0 place-items-center text-ui-muted-foreground">
+                  <Icon name="panel-left" />
                 </span>
-              </span>
-              <span class="line-clamp-2 text-sm wrap-anywhere text-ui-muted-foreground">
-                {story.message}
-              </span>
-              <span class="flex items-center gap-2 text-xs text-ui-muted-foreground">
-                <span class="inline-flex shrink-0 items-baseline gap-1 font-medium text-ui-warning">
-                  <Icon name="megaphone" class="size-3.5 self-center" />
-                  <span>{text.review.reason}</span>
-                </span>
-                <span class="truncate">{form.name}</span>
-              </span>
-            </span>
-          </div>
-        </div>
+                <p class="m-0 min-w-0 flex-1 truncate text-base font-semibold">
+                  {outcome[id].folder}
+                  <span
+                    class="swap swap-inline ml-2 text-sm font-normal text-ui-muted-foreground tabular-nums"
+                    data-swap="count"
+                  >
+                    <span data-alt="a" inert>0</span>
+                    <span data-alt="b">1</span>
+                  </span>
+                </p>
+                {
+                  id === "review" && (
+                    <span class="flex shrink-0 items-center gap-2" data-part="actions" data-reveal>
+                      <button
+                        type="button"
+                        class:list={[outlineButton, small]}
+                        data-control
+                        data-first="decide"
+                        disabled
+                      >
+                        <Icon name="archive" class="size-3.5" />
+                        {outcome.review.archive}
+                      </button>
+                      <button
+                        type="button"
+                        class:list={[primaryButton, small]}
+                        data-control
+                        data-first="decide"
+                        disabled
+                      >
+                        <Icon name="check" class="size-3.5" />
+                        <span class="@max-md:hidden">{outcome.review.acceptAndSend}</span>
+                        <span class="@md:hidden">{outcome.review.accept}</span>
+                      </button>
+                    </span>
+                  )
+                }
+              </div>
+              <div class="min-h-24">
+                <div
+                  class="flex w-full gap-3 border-l-3 border-l-ui-primary bg-ui-primary/10 px-4 py-3"
+                  data-part="row"
+                  data-reveal
+                >
+                  <span class="grid min-w-0 flex-1 grid-cols-1 gap-1">
+                    <span class="flex items-baseline justify-between gap-3">
+                      <span class="truncate text-sm font-medium">{sender.name}</span>
+                      <span class="shrink-0 text-xs text-ui-muted-foreground tabular-nums">
+                        {receivedAt}
+                      </span>
+                    </span>
+                    <span class="line-clamp-2 text-sm wrap-anywhere text-ui-muted-foreground">
+                      {written}
+                    </span>
+                    <span class="flex items-center gap-2 text-xs text-ui-muted-foreground">
+                      {
+                        id === "review" && (
+                          <span class="inline-flex shrink-0 items-baseline gap-1 font-medium text-ui-warning">
+                            <Icon name="megaphone" class="size-3.5 self-center" />
+                            <span class="text-xs">{outcome.review.reason}</span>
+                          </span>
+                        )
+                      }
+                      <span class="truncate text-xs">{form.name}</span>
+                    </span>
+                  </span>
+                </div>
+              </div>
+              {
+                id === "accepted" && (
+                  <div class="border-t border-ui-border bg-ui-card" data-part="deliveries" data-reveal>
+                    <div class="flex h-11 items-center gap-2 pr-3 pl-5">
+                      <p class="m-0 min-w-0 flex-1 text-sm font-semibold">{outcome.accepted.deliveries}</p>
+                      <button
+                        type="button"
+                        class:list={[ghostButton, "relative size-8 before:absolute before:-inset-1"]}
+                        aria-label={outcome.accepted.refresh}
+                        data-control
+                        data-only="deliver"
+                        disabled
+                      >
+                        <Icon name="refresh-cw" class="size-4" />
+                      </button>
+                    </div>
+                    <ul class="m-0 list-none divide-y divide-ui-border px-5 pt-1 pb-6">
+                      <li class="m-0 flex items-start gap-3 py-3 first:pt-1 last:pb-0" data-delivery>
+                        <span class={deliveryIcon}>
+                          <Icon name="mail" class="size-3.5" />
+                        </span>
+                        <div class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                          <p class="m-0 min-w-0 flex-1 basis-44 text-sm font-medium wrap-anywhere">
+                            {outcome.accepted.email}
+                          </p>
+                          <span class="swap" data-swap="status">
+                            <span data-alt="a" inert class={neutralBadge}>{outcome.accepted.sending}</span>
+                            <span data-alt="b" class={successBadge}>{outcome.accepted.delivered}</span>
+                          </span>
+                        </div>
+                      </li>
+                      <li class="m-0 flex items-start gap-3 py-3 first:pt-1 last:pb-0" data-delivery>
+                        <span class={deliveryIcon}>
+                          <Icon name="webhook" class="size-3.5" />
+                        </span>
+                        <div class="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                          <p class="m-0 min-w-0 flex-1 basis-44 text-sm font-medium wrap-anywhere">
+                            {outcome.accepted.webhook}
+                            <span class="ml-1 font-ui-mono text-xs font-normal text-ui-muted-foreground">
+                              {story.destinations.webhook}
+                            </span>
+                          </p>
+                          <span class="swap" data-swap="status">
+                            <span data-alt="a" inert class={neutralBadge}>{outcome.accepted.sending}</span>
+                            <span data-alt="b" class={successBadge}>{outcome.accepted.delivered}</span>
+                          </span>
+                        </div>
+                      </li>
+                    </ul>
+                  </div>
+                )
+              }
+            </div>
+          ))
+        }
       </Frame>
     </Stage>
   </div>

@@ -17,7 +17,8 @@
   }
 
   /* A control of a window, without the browser's look of a button. */
-  .ui-button {
+  .ui-button,
+  .ui-field {
     appearance: none;
     margin: 0;
     border: 0;
@@ -36,6 +37,15 @@
 
 .rondyr-ui {
   font-synthesis: none;
+}
+
+/*
+ * What depends on the message is written once for each message, and shown for one. The rule
+ * is outside the layers, so it also hides an element with a display utility.
+ */
+.lifecycle [data-message][hidden],
+.lifecycle [data-scripted][hidden] {
+  display: none;
 }
 
 /* What a step changes in its window stays in its window: no layout or paint outside it. */
@@ -72,6 +82,42 @@
 .rondyr-ui .ui-button:focus-visible {
   outline: 2px solid var(--ui-primary);
   outline-offset: -2px;
+}
+
+/*
+ * A text of the form page that the dashboard edits in place. It looks like the page's text
+ * until it is pointed at or its step types in it. It is as wide as its column: no press scale.
+ */
+.ui-field {
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+
+.ui-field:disabled {
+  pointer-events: none;
+  cursor: default;
+}
+
+.ui-field[data-focus] {
+  background: var(--ui-muted);
+  color: var(--ui-foreground);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .ui-field:enabled:hover {
+    background: var(--ui-muted);
+  }
+}
+
+.rondyr-ui .ui-field:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: -2px;
+}
+
+/* The site sets a size on every element of a page: a typed text has the size of its field. */
+.ui-field * {
+  font-size: inherit;
 }
 
 /* Two states of one place, stacked in one cell: the second is the end of the step. */
@@ -131,6 +177,18 @@
   width: 1.5px;
   background: currentColor;
   opacity: 0;
+}
+
+/* What an empty field says, in the place of its text. */
+.type-placeholder {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  color: color-mix(in oklab, var(--ui-muted-foreground) 70%, transparent);
+}
+
+[data-type][data-empty] + .type-placeholder {
+  opacity: 1;
 }
 
 [data-focus] .type-caret::after {

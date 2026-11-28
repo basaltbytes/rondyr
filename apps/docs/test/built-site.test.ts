@@ -7,7 +7,7 @@ import { fromHtml } from "hast-util-from-html";
 import { toString } from "hast-util-to-string";
 import { visit } from "unist-util-visit";
 
-import { lifecycleSteps, story } from "../src/lifecycle.ts";
+import { captionsOf, lifecycleSteps, messages, story } from "../src/lifecycle.ts";
 import {
   listDocuments,
   pageRoute,
@@ -233,22 +233,54 @@ test("the landing page shows every step of the message lifecycle at its end", ()
     lifecycleSteps.map((step) => step.id),
   );
   const texts = stages.map((stage) => toString(stage).replaceAll(/\s+/gu, " "));
-  const [create, connect, submit, reception, analysis, review] = texts;
+  const [create, connect, submit, reception, analysis, outcome] = texts;
   for (const [index, step] of lifecycleSteps.entries()) {
-    assert.ok(texts[index]?.includes(step.title), step.id);
+    for (const caption of captionsOf(step)) {
+      assert.ok(texts[index]?.includes(caption.title), step.id);
+      assert.ok(texts[index]?.includes(caption.text), step.id);
+    }
   }
   // Without the page's script a step is not played: its window has to show the result.
+  assert.match(create ?? "", /Forms\s*\/\s*New form\s*Contact/u);
   assert.ok(create?.includes(story.form.business));
   assert.ok(create?.includes(story.address));
   assert.ok(connect?.includes(`action="${story.address}"`));
   assert.ok(connect?.includes('method="post"'));
-  assert.ok(submit?.includes(story.message));
+  for (const message of messages) {
+    assert.ok(submit?.includes(message.text), message.id);
+    assert.ok(reception?.includes(message.sender.email), message.id);
+    assert.ok(outcome?.includes(message.text), message.id);
+  }
   assert.match(reception ?? "", /Origin\s*allowed/u);
   assert.match(reception ?? "", /Turnstile\s*verified/u);
   assert.match(analysis ?? "", /Sales outreach\s*93%/u);
   assert.ok(analysis?.includes("Probable sales outreach (93%). Goes to review above 50%."));
-  assert.match(review ?? "", /To review\s*0\s*1/u);
-  assert.ok(review?.includes("Accept and send"));
+  assert.match(analysis ?? "", /Sales outreach\s*3%/u);
+  assert.ok(analysis?.includes("Accepted automatically by Jev. No check sent it to review."));
+  assert.match(outcome ?? "", /To review\s*0\s*1/u);
+  assert.ok(outcome?.includes("Accept and send"));
+  assert.match(outcome ?? "", /Accepted\s*0\s*1/u);
+  assert.match(
+    outcome ?? "",
+    new RegExp(`Email to ${story.destinations.email}\\s*Sending\\s*Delivered`, "u"),
+  );
+
+  // What depends on the message is there for each message from the step that sends it, and
+  // without the script only the first message is shown.
+  const [shown] = messages;
+  for (const stage of stages.slice(2)) {
+    const root: Root = { type: "root", children: [stage] };
+    const written = elements(root, (node) => node.properties["dataMessage"] !== undefined);
+    for (const message of messages) {
+      assert.ok(
+        written.some((node) => node.properties["dataMessage"] === message.id),
+        `${String(stage.properties["dataStage"])} for ${message.id}`,
+      );
+    }
+    for (const node of written) {
+      assert.equal(node.properties["hidden"] === true, node.properties["dataMessage"] !== shown.id);
+    }
+  }
 
   // Each step has a window, and a control in a window that plays it again. Without the
   // script no control works, so each one is disabled; the start of a step is inert.

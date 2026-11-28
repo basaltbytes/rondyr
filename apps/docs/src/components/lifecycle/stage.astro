@@ -1,8 +1,9 @@
 ---
-// One step of the message lifecycle: what comes down from the step before, the text of the
-// step, and its window. From 64rem the text stays beside the window while it scrolls. The
-// controls of the window play the step again.
-import type { LifecycleStep } from "../../lifecycle.ts";
+// One step of the message lifecycle: what comes down from the step before, the caption of
+// the step, and its window. From 64rem the caption stays beside the window while it
+// scrolls. The controls of the window play the step again. A step that depends on the
+// message has one caption for each message, and shows the caption of the first.
+import { captionsOf, type LifecycleStep } from "../../lifecycle.ts";
 
 interface Props {
   readonly step: LifecycleStep;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 const { step, number } = Astro.props;
+const captions = captionsOf(step);
 ---
 
 <div
@@ -24,10 +26,17 @@ const { step, number } = Astro.props;
       <span class="sr-only">Step</span>
       {number}
     </p>
-    <h3 class="mt-4 mb-0 text-[1.1875rem] leading-snug font-semibold text-balance text-foreground">
-      {step.title}
-    </h3>
-    <p class="mt-2 mb-0 leading-[1.65] text-pretty text-muted">{step.text}</p>
+    {
+      captions.map(({ title, text, message }, index) => (
+        <div data-message={message?.id} hidden={index > 0}>
+          <h3 class="mt-4 mb-0 text-[1.1875rem] leading-snug font-semibold text-balance text-foreground">
+            {title}
+          </h3>
+          <p class="mt-2 mb-0 leading-[1.65] text-pretty text-muted">{text}</p>
+        </div>
+      ))
+    }
+    <slot name="note" />
   </div>
   <div class="mx-auto w-full max-w-[42rem] min-w-0" data-stage-window><slot /></div>
 </div>
