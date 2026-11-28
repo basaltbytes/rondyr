@@ -1,9 +1,9 @@
 ---
 // One step of the message lifecycle: what comes down from the step before, the caption of
 // the step, and its window. From 64rem the caption is beside the window, at the middle of
-// its height. The number of the step is on the first line of the title. The controls of the
-// window play the step again. A step that depends on the message has one caption for each
-// message, and shows the caption of the first.
+// its height. The number of the step is beside the title, at the middle of its height. The
+// controls of the window play the step again. A step that depends on the message has one
+// caption for each message, and shows the caption of the first.
 import { captionsOf, type LifecycleStep } from "../../lifecycle.ts";
 
 interface Props {
@@ -20,24 +20,32 @@ const captions = captionsOf(step);
   data-stage={step.id}
 >
   <div class="mx-auto w-full max-w-[42rem] lg:col-start-2"><slot name="flux" /></div>
-  <div class="relative mb-5 lg:mb-0 lg:self-center">
+  <div
+    class="mb-5 grid grid-cols-[2rem_minmax(0,1fr)] items-center gap-x-3 lg:mb-0 lg:self-center"
+  >
     <p
-      class="absolute top-0 left-0 m-0 grid size-8 place-items-center rounded-full border-[1.5px] border-brand text-sm font-bold tabular-nums text-brand"
+      class="col-start-1 row-start-1 m-0 grid size-8 place-items-center rounded-full border-[1.5px] border-brand text-sm font-bold tabular-nums text-brand"
     >
       <span class="sr-only">Step</span>
       {number}
     </p>
     {
       captions.map(({ title, text, message }, index) => (
-        <div data-message={message?.id} hidden={index > 0}>
-          <h3 class="m-0 min-h-8 pt-[0.1875rem] pl-11 text-[1.1875rem] leading-snug font-semibold text-balance text-foreground">
+        <div class="contents" data-message={message?.id} hidden={index > 0}>
+          <h3 class="col-start-2 row-start-1 m-0 text-[1.1875rem] leading-snug font-semibold text-balance text-foreground">
             {title}
           </h3>
-          <p class="mt-3 mb-0 leading-[1.65] text-pretty text-muted">{text}</p>
+          <p class="col-span-2 mt-3 mb-0 leading-[1.65] text-pretty text-muted">{text}</p>
         </div>
       ))
     }
-    <slot name="note" />
+    {
+      Astro.slots.has("note") && (
+        <div class="col-span-2">
+          <slot name="note" />
+        </div>
+      )
+    }
   </div>
   <div class="mx-auto w-full max-w-[42rem] min-w-0" data-stage-window><slot /></div>
 </div>
