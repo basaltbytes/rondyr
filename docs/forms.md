@@ -8,7 +8,7 @@ In the sidebar of the dashboard, **Forms** lists the forms of your organization.
 
 A form has one page, with its name and its settings at the top, then its **Destinations** and its **Allowed origins**. The name, the business description, the redirect URL and the honeypot field name save when you leave the field or press Enter.
 
-![Page of the Contact form showing its emoji and name, the submission address with its copy button, the status, the redirect URL and the honeypot field name](./screenshots/forms.webp)
+![Page of the Contact form showing its emoji and name, the submission address with its copy button, the status, the redirect URL, the honeypot field name and the blocked words](./screenshots/forms.webp)
 
 Select the copy button in **Submission address** to copy your form's public URL. It looks like `https://forms.example.com/f/YOUR_PUBLIC_ID` and never changes, even if you rename the form later.
 
@@ -82,7 +82,7 @@ By default, a form accepts browser submissions from any origin. To make sure onl
 1. Open your form from **Forms** in the sidebar and go to **Allowed origins**, at the end of its page.
 2. Enter your site's origin, such as `https://www.example.com`, and select **Add origin**.
 
-![Destinations and allowed origins of the Contact form, with https://www.claywork.example in the allowed origins](./screenshots/origins.webp)
+![Allowed origins and destinations of the Contact form, with https://www.claywork.example in the allowed origins](./screenshots/origins.webp)
 
 An origin is just the scheme, host, and optional port, with no path or wildcard. Origins must use `https://`, except `http://localhost` and loopback addresses (`http://127.0.0.1:8080`) for local testing. Once a form lists at least one origin, browsers on any other site are refused. Keep in mind that allowed origins stop other websites from submitting through their visitors' browsers, not automated scripts outside a browser; see [Fight spam](./spam-protection.md) for bot defenses.
 

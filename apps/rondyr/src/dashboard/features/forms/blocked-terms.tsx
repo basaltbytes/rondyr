@@ -20,6 +20,8 @@ import {
 } from "~/lib/api/blocked-terms";
 import type { ManagedForm } from "~/lib/api/forms";
 
+import { Field } from "./form-field.tsx";
+
 type BlockedTermFailure = BlockedTermRequestError | "unexplained";
 
 async function attempt(request: () => Promise<void>): Promise<BlockedTermFailure | null> {
@@ -57,6 +59,10 @@ interface BlockedTermsProps {
   readonly form: ManagedForm;
 }
 
+/**
+ * The blocked words of a form, as a setting of its page: the field that adds one, then
+ * the words, each with the button that removes it.
+ */
 export function BlockedTerms({ organizationId, form }: BlockedTermsProps) {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
@@ -90,67 +96,25 @@ export function BlockedTerms({ organizationId, form }: BlockedTermsProps) {
     null,
   );
 
-  const title = useId();
+  const ids = useId();
   return (
-    <section
-      aria-label={t("inbox.blockedTerms.label", { name: form.name })}
-      className="grid min-w-0 grid-cols-1 content-start gap-3"
+    <Field
+      label={t("inbox.sections.blockedTerms")}
+      count={terms?.length}
+      htmlFor={`${ids}-term`}
+      hintId={`${ids}-hint`}
+      hint={
+        terms?.length === 0
+          ? t("inbox.blockedTerms.empty", { limit: maxFormBlockedTerms })
+          : t("inbox.blockedTerms.description", { limit: maxFormBlockedTerms })
+      }
     >
-      <div className="grid gap-1">
-        <h2 id={title} className="flex items-baseline gap-2 font-semibold">
-          {t("inbox.sections.blockedTerms")}
-          {terms !== null && (
-            <span className="text-sm font-normal text-muted-foreground tabular-nums">
-              {terms.length}
-            </span>
-          )}
-        </h2>
-        <p className="text-xs text-pretty text-muted-foreground">
-          {terms?.length === 0
-            ? t("inbox.blockedTerms.empty", { limit: maxFormBlockedTerms })
-            : t("inbox.blockedTerms.description", { limit: maxFormBlockedTerms })}
-        </p>
-      </div>
-      {query.isError && (
-        <ReadFailure
-          cause={query.error}
-          title={t("inbox.blockedTerms.loadFailed")}
-          retry={t("common.retry")}
-          retrying={query.isFetching}
-          onRetry={() => void query.refetch()}
-        />
-      )}
-      {query.isPending && <ChipListSkeleton label={t("inbox.blockedTerms.loading")} />}
-      {terms !== null && terms.length > 0 && (
-        <ul aria-labelledby={title} className="flex flex-wrap gap-1.5">
-          {terms.map((item) => (
-            <li key={item.term} className="max-w-full rounded-md bg-muted">
-              <form action={remove} className="flex min-h-9 items-center gap-1 pr-1 pl-3">
-                <code className="min-w-0 font-mono text-sm wrap-anywhere">{item.term}</code>
-                <input type="hidden" name="term" value={item.term} />
-                <Button
-                  type="submit"
-                  variant="ghost"
-                  size="icon-sm"
-                  className="pointer-coarse:before:hidden"
-                  aria-label={t("inbox.blockedTerms.removeLabel", { term: item.term })}
-                  disabled={removing}
-                >
-                  <X aria-hidden="true" className="size-4" />
-                </Button>
-              </form>
-            </li>
-          ))}
-        </ul>
-      )}
-      <BlockedTermFailureNote
-        failure={removeFailure}
-        fallback={t("inbox.blockedTerms.problems.notRemoved")}
-      />
-      <form action={add} className="grid max-w-xl gap-2">
+      <form action={add} className="grid gap-1.5">
         <div className="flex flex-wrap gap-2">
           <Input
+            id={`${ids}-term`}
             aria-label={t("inbox.blockedTerms.term")}
+            aria-describedby={`${ids}-hint`}
             className="min-w-0 flex-1 basis-48"
             name="term"
             value={input}
@@ -176,6 +140,45 @@ export function BlockedTerms({ organizationId, form }: BlockedTermsProps) {
           fallback={t("inbox.blockedTerms.problems.notAdded")}
         />
       </form>
-    </section>
+      {query.isError && (
+        <ReadFailure
+          cause={query.error}
+          title={t("inbox.blockedTerms.loadFailed")}
+          retry={t("common.retry")}
+          retrying={query.isFetching}
+          onRetry={() => void query.refetch()}
+        />
+      )}
+      {query.isPending && <ChipListSkeleton label={t("inbox.blockedTerms.loading")} />}
+      {terms !== null && terms.length > 0 && (
+        <ul
+          aria-label={t("inbox.blockedTerms.label", { name: form.name })}
+          className="flex flex-wrap gap-1.5"
+        >
+          {terms.map((item) => (
+            <li key={item.term} className="max-w-full rounded-md bg-muted">
+              <form action={remove} className="flex min-h-9 items-center gap-1 pr-1 pl-3">
+                <code className="min-w-0 font-mono text-sm wrap-anywhere">{item.term}</code>
+                <input type="hidden" name="term" value={item.term} />
+                <Button
+                  type="submit"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="pointer-coarse:before:hidden"
+                  aria-label={t("inbox.blockedTerms.removeLabel", { term: item.term })}
+                  disabled={removing}
+                >
+                  <X aria-hidden="true" className="size-4" />
+                </Button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      )}
+      <BlockedTermFailureNote
+        failure={removeFailure}
+        fallback={t("inbox.blockedTerms.problems.notRemoved")}
+      />
+    </Field>
   );
 }

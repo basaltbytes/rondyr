@@ -66,7 +66,10 @@ export function EmojiPicker({ value, onChange, disabled, size }: EmojiPickerProp
             disabled={disabled}
             className={cn(
               "flex shrink-0 items-center justify-center rounded-md leading-none transition-colors duration-150 ease-out hover:bg-muted disabled:pointer-events-none disabled:opacity-50 data-popup-open:bg-muted",
-              size === "lg" ? "size-16 text-5xl" : "size-10 text-2xl pointer-coarse:size-11",
+              // The emoji has the padding of the texts edited in place under it on the page.
+              size === "lg"
+                ? "h-16 w-18 text-5xl sm:w-20"
+                : "size-10 text-2xl pointer-coarse:size-11",
             )}
           />
         }

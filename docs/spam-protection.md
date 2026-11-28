@@ -43,7 +43,7 @@ When a visitor leaves `_hp` blank, Rondyr strips it out before saving the messag
 
 For persistent bots that ignore honeypots, attach a [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/get-started/) widget to your form.
 
-![Page of the Contact form showing the honeypot field name and Turnstile turned on, with the state of the stored key and the HTML embed snippet](./screenshots/spam-form.webp)
+![Page of the Contact form showing the honeypot field name, the blocked words and Turnstile turned on, with the state of the stored key and the HTML embed snippet](./screenshots/spam-form.webp)
 
 1. In your Cloudflare dashboard, create a Turnstile widget for your website's hostname and copy its **Site key** and **Secret key**.
 2. In Rondyr, open your form from **Forms** in the sidebar, select **Configure** next to **Turnstile**, paste both keys, and select **Save Turnstile keys**. Rondyr checks the secret key with Cloudflare right away so typos are caught before saving.
