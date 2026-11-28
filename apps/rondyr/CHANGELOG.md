@@ -1,5 +1,19 @@
 # rondyr
 
+## 0.3.0
+
+### Minor Changes
+
+- [#129](https://github.com/basaltbytes/rondyr/pull/129) [`a9c9e2d`](https://github.com/basaltbytes/rondyr/commit/a9c9e2dc630ca3be2206e75ead563b800a3396c8) Thanks [@PhilDL](https://github.com/PhilDL)! - Replace password authentication and `better-auth` with passwordless Passkeys (`@oslojs/webauthn` + Web Crypto), conditional Email OTP sign-in, `RONDYR_RECOVERY_TOKEN` recovery and custom-domain migration, and an Account Security passkey manager, enabling one-click test-drives on Cloudflare Workers Free within the 10 ms CPU limit.
+  
+  **Upgrading an existing instance:** this release deletes the stored passwords, and everyone signs in again. With an email provider configured, sign in with an email code and add a passkey in **Account → Security**. Without one, set the `RONDYR_RECOVERY_TOKEN` secret (at least 32 characters), use **Recover access** on `/sign-in` for each account, then delete the secret. See "Update from a version that signed in with passwords" in `docs/deployment.md`.
+
+### Patch Changes
+
+- [#137](https://github.com/basaltbytes/rondyr/pull/137) [`2a50edf`](https://github.com/basaltbytes/rondyr/commit/2a50edf8b245e16dd9e0e88fb3788e1f0e34c230) Thanks [@PhilDL](https://github.com/PhilDL)! - Tidy the page of a form: the name and the description have more room when they are edited in place, the blocked words are a setting next to the honeypot field and Turnstile, the allowed origins come before the destinations, and every multi-line field has less round corners.
+
+- [#132](https://github.com/basaltbytes/rondyr/pull/132) [`fde9769`](https://github.com/basaltbytes/rondyr/commit/fde976977977a96f777b5d92da80d8ff27bf0340) Thanks [@PhilDL](https://github.com/PhilDL)! - Send multipart HTML and plain-text transactional emails (Email OTP sign-in codes, team invitations, recipient confirmations, form deliveries, and test messages) in English and French using a shared Rondyr email layout.
+
 ## 0.2.0
 
 ### Minor Changes
