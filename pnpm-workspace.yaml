@@ -18,7 +18,7 @@ catalog:
   "@changesets/cli": 3.0.3
   "@cloudflare/kumo": 2.15.0
   "@cloudflare/vite-plugin": 1.70.1
-  "@cloudflare/vitest-plugin": 1.8.5
+  "@cloudflare/vitest-plugin": 1.9.2
   "@effect/platform-node": 4.1.4
   "@effect/tsgo": 0.70.0
   "@effect/vitest": 4.1.4
@@ -73,7 +73,7 @@ catalog:
   vfile: 6.0.3
   vite: 8.3.8
   vitest: 5.1.1
-  wrangler: 4.165.0
+  wrangler: 4.168.0
 
 allowBuilds:
   "@swc/core": false
